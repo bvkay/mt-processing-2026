@@ -135,6 +135,29 @@ def _apply_h_scale(run, site: SiteConfig) -> None:
         run.dataset[comp].attrs["filters"] = flist
 
 
+def _group_contiguous(files: list[Path], max_run_files: int | None = None) -> list[list[Path]]:
+    """Group B423 files into contiguous runs using their epoch filenames.
+
+    Files are nominally back-to-back (epoch spacing == file length, typically
+    5400 s); any other spacing means a real gap (e.g. the short first file
+    after deployment) and starts a new run. Long runs matter: aurora STFTs
+    each run independently, so the longest estimable period is set by run
+    length, not total recording.
+    """
+    epochs = [int(f.stem) for f in files]
+    diffs = np.diff(epochs)
+    nominal = int(np.median(diffs)) if diffs.size else 0
+
+    groups: list[list[Path]] = [[files[0]]]
+    for fn, diff in zip(files[1:], diffs):
+        full = max_run_files is not None and len(groups[-1]) >= max_run_files
+        if diff == nominal and not full:
+            groups[-1].append(fn)
+        else:
+            groups.append([fn])
+    return groups
+
+
 def ingest_site(
     survey: Survey,
     site_name: str,
@@ -142,12 +165,13 @@ def ingest_site(
     end=None,
     out_path: Path | None = None,
     overwrite: bool = False,
+    max_run_files: int | None = None,
 ) -> Path:
-    """Read a site's B423 files and write an MTH5 (one run per raw file).
+    """Read a site's B423 files and write an MTH5.
 
-    Runs stay one-per-file because consecutive B423 files can be separated by
-    small gaps; concatenating across them would corrupt sample timing. Aurora
-    merges spectra across runs, so many short runs cost almost nothing.
+    Contiguous files (exact epoch spacing) are merged into long runs so aurora
+    can use long STFT windows; any spacing anomaly starts a new run, so gaps
+    never corrupt sample timing.
     """
     site = survey.site(site_name)
     site_dir = survey.site_dirs()[site_name]
@@ -179,14 +203,17 @@ def ingest_site(
             f"coil response and TFs will be wrong"
         )
 
-    logger.info(f"{site_name}: ingesting {len(files)} files -> {out_path}")
+    groups = _group_contiguous(files, max_run_files)
+    logger.info(
+        f"{site_name}: ingesting {len(files)} files as {len(groups)} run(s) -> {out_path}"
+    )
     m = MTH5(file_version="0.2.0")
     m.open_mth5(out_path, mode="w")
     try:
         m.add_survey(survey.name)
         station_group = None
-        for i, fn in enumerate(files, 1):
-            run = read_lemi423(fn, **read_kwargs)
+        for i, group in enumerate(groups, 1):
+            run = read_lemi423(group if len(group) > 1 else group[0], **read_kwargs)
             _standardise_e_orientation(run, site)
             _apply_h_scale(run, site)
             run_id = f"sr{int(run.sample_rate)}_{i:04d}"
@@ -197,7 +224,10 @@ def ingest_site(
                 station_group.write_metadata()
             run_group = station_group.add_run(run_id)
             run_group.from_runts(run)
-            logger.info(f"{site_name}: run {run_id} <- {fn.name}")
+            logger.info(
+                f"{site_name}: run {run_id} <- {len(group)} file(s) "
+                f"({group[0].name} .. {group[-1].name})"
+            )
     finally:
         m.close_mth5()
     return out_path

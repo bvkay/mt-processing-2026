@@ -59,6 +59,11 @@ class Survey:
         return cls(config, path.parent)
 
     @property
+    def processing(self) -> dict:
+        """Band/period targets for aurora (kwargs for bbmt.bands schemes)."""
+        return self.config.get("processing") or {}
+
+    @property
     def workspace(self) -> Path:
         """Output folder for mth5/TF/figure products (gitignored)."""
         ws = self.config.get("workspace")

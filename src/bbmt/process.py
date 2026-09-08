@@ -22,13 +22,14 @@ def process_station(
     remote_station: str | None = None,
     out_dir: Path | None = None,
     min_run_seconds: float = 0.0,
+    band_scheme: dict | None = None,
     **config_kwargs,
 ):
     """Estimate a transfer function for `station`, optionally remote-referenced.
 
-    Any `config_kwargs` are passed to aurora's
-    ``ConfigCreator.create_from_kernel_dataset`` (e.g. band_specification_style,
-    emtf_band_file, num_samples_window).
+    `band_scheme` is the dict from bbmt.bands (band_edges, decimation_factors,
+    num_samples_window); any further `config_kwargs` go to aurora's
+    ``ConfigCreator.create_from_kernel_dataset``.
     Returns the mt_metadata TF object; writes an EDI when `out_dir` is given.
     """
     rs = RunSummary()
@@ -42,8 +43,18 @@ def process_station(
     if min_run_seconds:
         kd.drop_runs_shorter_than(min_run_seconds)
 
+    if band_scheme:
+        config_kwargs = {**band_scheme, **config_kwargs}
     cc = ConfigCreator()
     config = cc.create_from_kernel_dataset(kd, **config_kwargs)
+
+    # deep decimation levels have windows lasting hours: boost their overlap
+    # so the longest-period bands still see a usable number of windows
+    for dec in config.decimations:
+        w = dec.stft.window
+        window_seconds = w.num_samples / dec.decimation.sample_rate
+        if window_seconds > 600.0:
+            w.overlap = int(w.num_samples * 0.75)
 
     logger.info(
         f"aurora: {station}" + (f" RR {remote_station}" if remote_station else " single-station")

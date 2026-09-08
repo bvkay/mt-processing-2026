@@ -15,6 +15,7 @@ sys.path.insert(0, str(REPO / "src"))
 
 import yaml
 
+from bbmt.bands import lemimt_band_scheme
 from bbmt.compare import plot_comparison
 from bbmt.ingest import ingest_site
 from bbmt.process import process_station
@@ -23,8 +24,8 @@ from bbmt.survey import Survey
 SURVEY_YAML = REPO / "surveys" / "curnamona_cube" / "survey.yaml"
 REFERENCE_EDIS = SURVEY_YAML.parent / "reference_edis.yaml"  # merged lemimt EDIs
 LOCAL, REMOTE = "D02", "E08"
-# 6 h of concurrent night-time (ACST) recording; extend once the slice works
-START, END = "2021-06-29 12:00", "2021-06-29 18:00"
+# full D02 deployment (the shorter of the pair) so the longest bands resolve
+START, END = "2021-06-29 06:00", "2021-07-01 00:00"
 
 
 def main() -> None:
@@ -32,8 +33,10 @@ def main() -> None:
     local_h5 = ingest_site(survey, LOCAL, start=START, end=END)
     remote_h5 = ingest_site(survey, REMOTE, start=START, end=END)
 
+    scheme = lemimt_band_scheme(survey.sample_rate, **survey.processing)
     tf = process_station(
-        local_h5, LOCAL, remote_h5, REMOTE, out_dir=survey.workspace / "tf"
+        local_h5, LOCAL, remote_h5, REMOTE,
+        out_dir=survey.workspace / "tf", band_scheme=scheme,
     )
 
     refs = sorted((survey.data_root / "EDIs").glob(f"P-{LOCAL}_RR-{REMOTE}_S-1000Hz_*.edi"))
