@@ -8,6 +8,9 @@ defaults:
   azimuth_ex: 0.0
   azimuth_ey: 90.0
   calibration_fn: sensors/l120n.rsp
+  # empirical magnetics correction vs lemimt convention: pT -> nT + polarity
+  # (validated on D02/E08: constant 1e6 rho offset, exact 180 deg phase)
+  h_scale: -1000.0
 sites:
   A02:
     dipole_length_ex: 50.0

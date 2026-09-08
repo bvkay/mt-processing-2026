@@ -7,10 +7,38 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 from loguru import logger
+import mt_io.lemi.lemi423 as _lemi423
 from mt_io.lemi.lemi423 import read_lemi423
 from mth5.mth5 import MTH5
 
 from .survey import SiteConfig, Survey
+
+
+def _read_coil_response(calibration_fn, coil_number=None):
+    """Copy of mt_io's read_lemi_coil_response with unit names that pass
+    mt_metadata 1.0.10 validation ("millivolts" is rejected, "milliVolt" is
+    accepted). TODO remove once fixed upstream in mt-io."""
+    calibration_fn = Path(calibration_fn)
+    cal_data = np.loadtxt(calibration_fn, skiprows=2)
+    fap = _lemi423.FrequencyResponseTableFilter()
+    fap.frequencies = cal_data[:, 0]
+    fap.amplitudes = cal_data[:, 1]
+    fap.phases = np.deg2rad(cal_data[:, 2])
+    # The .rsp amplitudes are normalized (~1 in passband): a shape-only
+    # deconvolution. Labelling it dimensionless in the count domain keeps
+    # mt_metadata's chain-consistency check happy with the reader's filter
+    # order [linear nT->count, coil]; see docs/upstream_issues.md #2.
+    fap.units_in = "digital counts"
+    fap.units_out = "digital counts"
+    fap.name = (
+        f"lemi_120_{coil_number}_response" if coil_number else "lemi_120_response"
+    )
+    fap.calibration_date = "1970-01-01T00:00:00+00:00"
+    fap.comments = f"LEMI-120 coil response from {calibration_fn.name}"
+    return fap
+
+
+_lemi423.read_lemi_coil_response = _read_coil_response
 
 
 def select_files(site_dir: Path, start=None, end=None) -> list[Path]:
@@ -58,13 +86,53 @@ def _standardise_e_orientation(run, site: SiteConfig) -> None:
                 f"{site.name} {comp}: azimuth {az} needs a real rotation — "
                 f"only reversed (180 deg) dipoles are handled at ingest"
             )
+        # the reader already writes the standard azimuth into the channel
+        # attrs, so flipping the data is the whole correction. NB mutate
+        # run.dataset directly: run.<comp> accessors return fresh copies.
         run.dataset[comp].data = -run.dataset[comp].data
-        ch = getattr(run, comp)
-        ch.channel_metadata.measurement_azimuth = standard
-        ch.channel_metadata.comments = (
-            f"recorded at azimuth {az} deg, sign-flipped to {standard} deg at ingest"
-        )
         logger.info(f"{site.name} {comp}: azimuth {az} -> sign-flipped to {standard}")
+
+
+def _apply_h_scale(run, site: SiteConfig) -> None:
+    """Fold `h_scale` into each magnetic channel's filter chain.
+
+    Appended as an explicit CoefficientFilter so the correction is visible in
+    the MTH5 provenance. Calibration divides by the chain response, so a gain
+    of -1000 turns the reader's pT-with-inverted-polarity output into nT in
+    the lemimt convention. Applied to hz too, which leaves the tipper
+    unchanged (numerator and denominator flip together).
+    """
+    if site.h_scale == 1.0:
+        return
+    coef = _lemi423.CoefficientFilter()
+    coef.name = "lemi423_b_scale"
+    coef.gain = site.h_scale
+    # labelled dimensionless in the count domain to satisfy the chain
+    # consistency check (see docs/upstream_issues.md #2)
+    coef.units_in = "digital counts"
+    coef.units_out = "digital counts"
+    coef.comments = (
+        f"empirical magnetic scale/polarity vs lemimt convention: "
+        f"gain {site.h_scale} (pT -> nT with sign flip)"
+    )
+    # RunTS keeps filters in run.filters and the per-channel applied list in
+    # dataset attrs; run.<comp> accessors return fresh copies, so mutating
+    # those would be lost.
+    run.filters[coef.name] = coef
+    for comp in ("hx", "hy", "hz"):
+        if comp not in run.dataset:
+            continue
+        flist = list(run.dataset[comp].attrs.get("filters") or [])
+        flist.append(
+            {
+                "applied_filter": {
+                    "applied": True,
+                    "name": coef.name,
+                    "stage": len(flist) + 1,
+                }
+            }
+        )
+        run.dataset[comp].attrs["filters"] = flist
 
 
 def ingest_site(
@@ -120,6 +188,7 @@ def ingest_site(
         for i, fn in enumerate(files, 1):
             run = read_lemi423(fn, **read_kwargs)
             _standardise_e_orientation(run, site)
+            _apply_h_scale(run, site)
             run_id = f"sr{int(run.sample_rate)}_{i:04d}"
             run.run_metadata.id = run_id
             if station_group is None:

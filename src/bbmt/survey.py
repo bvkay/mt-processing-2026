@@ -28,6 +28,12 @@ class SiteConfig:
     elevation: float | None = None
     # coil response file (e.g. LEMI-120 .rsp); relative paths resolve against data_root
     calibration_fn: str | None = None
+    # extra gain folded into the magnetic channel filter chain. For LEMI-423
+    # the counts->field calibration comes out in pT with inverted polarity
+    # relative to the lemimt convention, hence -1000 (pT -> nT + sign).
+    # Established empirically against merged lemimt EDIs on Curnamona Cube
+    # (constant 1e6 rho offset, exact 180 deg on both phase modes).
+    h_scale: float = 1.0
 
 
 class Survey:
