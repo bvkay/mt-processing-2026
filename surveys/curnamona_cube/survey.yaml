@@ -1,0 +1,482 @@
+name: curnamona_cube
+instrument: lemi423
+sample_rate: 1000
+data_root: E:/MT_Timeseries_DATA/MT_Curnamona_Cube_MT
+defaults:
+  dipole_length_ex: 50.0
+  dipole_length_ey: 50.0
+  azimuth_ex: 0.0
+  azimuth_ey: 90.0
+sites:
+  A02:
+    dipole_length_ex: 50.0
+    dipole_length_ey: 50.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -29.499906
+    longitude: 139.249633
+    elevation: 60.0
+  A03:
+    dipole_length_ex: 50.0
+    dipole_length_ey: 50.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -29.49973
+    longitude: 139.499275
+    elevation: 40.0
+  A04:
+    dipole_length_ex: 50.0
+    dipole_length_ey: 50.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -29.4998
+    longitude: 139.750518
+    elevation: 13.0
+  A05:
+    dipole_length_ex: 50.0
+    dipole_length_ey: 49.5
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -29.488578
+    longitude: 139.970015
+    elevation: 20.9
+  A06:
+    dipole_length_ex: 49.5
+    dipole_length_ey: 50.0
+    azimuth_ex: 180.0
+    azimuth_ey: 90.0
+    latitude: -29.491954
+    longitude: 140.168431
+    elevation: 96.0
+  A07:
+    dipole_length_ex: 50.0
+    dipole_length_ey: 50.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -29.512872
+    longitude: 140.503839
+    elevation: 54.0
+  B01:
+    dipole_length_ex: 50.0
+    dipole_length_ey: 50.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -29.748333
+    longitude: 139.001944
+    elevation: 120.0
+  B02:
+    dipole_length_ex: 50.0
+    dipole_length_ey: 50.0
+    azimuth_ex: 0.0
+    azimuth_ey: 270.0
+    latitude: -29.749167
+    longitude: 139.258889
+    elevation: 103.0
+  B03:
+    dipole_length_ex: 50.0
+    dipole_length_ey: 50.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -29.750278
+    longitude: 139.501111
+    elevation: 76.0
+  B06:
+    dipole_length_ex: 50.0
+    dipole_length_ey: 50.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -29.751478
+    longitude: 140.249999
+    elevation: 19.7
+  B07:
+    dipole_length_ex: 50.0
+    dipole_length_ey: 50.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -29.751218
+    longitude: 140.500446
+    elevation: 56.0
+  B08:
+    dipole_length_ex: 50.0
+    dipole_length_ey: 50.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -29.749778
+    longitude: 140.750882
+    elevation: 77.0
+  B09:
+    dipole_length_ex: 50.0
+    dipole_length_ey: 50.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -29.754166
+    longitude: 140.99638
+    elevation: 99.0
+  C06:
+    dipole_length_ex: 56.8
+    dipole_length_ey: 56.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -30.001231
+    longitude: 140.250317
+    elevation: 47.0
+  C07:
+    dipole_length_ex: 50.0
+    dipole_length_ey: 50.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -29.999249
+    longitude: 140.519063
+    elevation: 36.5
+  C08:
+    dipole_length_ex: 50.0
+    dipole_length_ey: 50.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -30.00012
+    longitude: 140.749816
+    elevation: 72.7
+  C09:
+    dipole_length_ex: 54.0
+    dipole_length_ey: 54.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -30.016422
+    longitude: 140.983817
+    elevation: 114.0
+  D02:
+    dipole_length_ex: 37.0
+    dipole_length_ey: 50.0
+    azimuth_ex: 180.0
+    azimuth_ey: 90.0
+    latitude: -30.255749
+    longitude: 139.22817
+    elevation: 519.2
+  D06:
+    dipole_length_ex: 54.8
+    dipole_length_ey: 55.5
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -30.253146
+    longitude: 140.24891
+    elevation: 38.0
+  D07:
+    dipole_length_ex: 54.0
+    dipole_length_ey: 54.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -30.250286
+    longitude: 140.500592
+    elevation: 63.58
+  D08:
+    dipole_length_ex: 54.0
+    dipole_length_ey: 54.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -30.250817
+    longitude: 140.750696
+    elevation: 79.98
+  D09:
+    dipole_length_ex: 54.0
+    dipole_length_ey: 54.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -30.246066
+    longitude: 140.999056
+    elevation: 106.19
+  E06:
+    dipole_length_ex: 54.8
+    dipole_length_ey: 56.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -30.499241
+    longitude: 140.2498
+    elevation: 46.0
+  E07:
+    dipole_length_ex: 54.0
+    dipole_length_ey: 54.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -30.491921
+    longitude: 140.497588
+    elevation: 69.17
+  E08:
+    dipole_length_ex: 54.0
+    dipole_length_ey: 54.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -30.498951
+    longitude: 140.751198
+    elevation: 86.0
+  E09:
+    dipole_length_ex: 54.0
+    dipole_length_ey: 54.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -30.503909
+    longitude: 140.998911
+    elevation: 84.83
+  F02:
+    dipole_length_ex: 55.0
+    dipole_length_ey: 55.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -30.7548
+    longitude: 139.287931
+    elevation: 125.0
+  F05:
+    dipole_length_ex: 56.0
+    dipole_length_ey: 57.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -30.743882
+    longitude: 140.035817
+    elevation: 40.0
+  F06:
+    dipole_length_ex: 52.5
+    dipole_length_ey: 55.4
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -30.759518
+    longitude: 140.26305
+    elevation: 43.0
+  F07:
+    dipole_length_ex: 54.0
+    dipole_length_ey: 54.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -30.750638
+    longitude: 140.499788
+    elevation: 73.3
+  F08:
+    dipole_length_ex: 54.0
+    dipole_length_ey: 54.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -30.752611
+    longitude: 140.74283
+    elevation: 101.0
+  F09:
+    dipole_length_ex: 54.0
+    dipole_length_ey: 54.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -30.75135
+    longitude: 140.997208
+    elevation: 104.0
+  G02:
+    dipole_length_ex: 54.0
+    dipole_length_ey: 53.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -30.9862
+    longitude: 139.288979
+    elevation: 95.0
+  G03:
+    dipole_length_ex: 54.5
+    dipole_length_ey: 54.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -31.001528
+    longitude: 139.4992
+    elevation: 30.0
+  G04:
+    dipole_length_ex: 53.0
+    dipole_length_ey: 54.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -31.074152
+    longitude: 139.753083
+    elevation: 20.0
+  H02:
+    dipole_length_ex: 54.0
+    dipole_length_ey: 53.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -31.239367
+    longitude: 139.254567
+    elevation: 134.0
+  H03:
+    dipole_length_ex: 53.3
+    dipole_length_ey: 56.4
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -31.243997
+    longitude: 139.500467
+    elevation: 54.0
+  H04:
+    dipole_length_ex: 50.0
+    dipole_length_ey: 50.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -31.252224
+    longitude: 139.737404
+    elevation: 55.0
+  H05:
+    dipole_length_ex: 50.0
+    dipole_length_ey: 50.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -31.254667
+    longitude: 140.000562
+    elevation: 42.0
+  H07:
+    dipole_length_ex: 54.0
+    dipole_length_ey: 54.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -31.249057
+    longitude: 140.500454
+    elevation: 62.0
+  H08:
+    dipole_length_ex: 54.0
+    dipole_length_ey: 54.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -31.254741
+    longitude: 140.751483
+    elevation: 76.0
+  H09r:
+    dipole_length_ex: 55.0
+    dipole_length_ey: 56.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -31.254563
+    longitude: 140.997217
+    elevation: 90.0
+  I04:
+    dipole_length_ex: 54.2
+    dipole_length_ey: 54.6
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -31.499581
+    longitude: 139.75
+    elevation: 50.0
+  I05:
+    dipole_length_ex: 54.0
+    dipole_length_ey: 54.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -31.502515
+    longitude: 139.99945
+    elevation: 100.0
+  I07:
+    dipole_length_ex: 50.0
+    dipole_length_ey: 50.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -31.489716
+    longitude: 140.49885
+    elevation: 80.0
+  I09:
+    dipole_length_ex: 54.0
+    dipole_length_ey: 52.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -31.500948
+    longitude: 140.995771
+    elevation: 111.0
+  J04:
+    dipole_length_ex: 52.3
+    dipole_length_ey: 56.3
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -31.750891
+    longitude: 139.7496
+    elevation: 134.0
+  K04:
+    dipole_length_ex: 54.0
+    dipole_length_ey: 54.5
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -31.999528
+    longitude: 139.750117
+    elevation: 220.0
+  K05:
+    dipole_length_ex: 54.3
+    dipole_length_ey: 55.7
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -31.999831
+    longitude: 140.010633
+    elevation: 220.0
+  K09:
+    dipole_length_ex: 54.0
+    dipole_length_ey: 54.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -31.995733
+    longitude: 140.994133
+    elevation: 193.0
+  L06:
+    dipole_length_ex: 52.5
+    dipole_length_ey: 55.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -32.289167
+    longitude: 140.273
+    elevation: 50.0
+  L07:
+    dipole_length_ex: 40.0
+    dipole_length_ey: 50.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -32.199834
+    longitude: 140.510035
+    elevation: 50.0
+  M03:
+    dipole_length_ex: 53.0
+    dipole_length_ey: 53.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -32.590201
+    longitude: 139.546149
+    elevation: 50.0
+  M04:
+    dipole_length_ex: 53.3
+    dipole_length_ey: 52.7
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -32.497517
+    longitude: 139.768811
+    elevation: 50.0
+  M08:
+    dipole_length_ex: 54.0
+    dipole_length_ey: 54.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -32.498352
+    longitude: 140.742983
+    elevation: 190.0
+  M09:
+    dipole_length_ex: 54.0
+    dipole_length_ey: 54.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -32.499263
+    longitude: 140.988233
+    elevation: 200.0
+  N07:
+    dipole_length_ex: 54.6
+    dipole_length_ey: 57.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -32.749471
+    longitude: 140.480733
+    elevation: 179.0
+  N08:
+    dipole_length_ex: 54.5
+    dipole_length_ey: 55.5
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -32.75325
+    longitude: 140.7494
+    elevation: 148.0
+  N09:
+    dipole_length_ex: 55.6
+    dipole_length_ey: 57.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -32.752059
+    longitude: 140.997292
+    elevation: 123.0

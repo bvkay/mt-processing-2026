@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bbmt"
+version = "0.1.0"
+description = "Broadband magnetotelluric processing for Adelaide Uni surveys (LEMI-423, Earth Data loggers) using the mth5/aurora stack"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = [
+    "mth5==0.6.9",
+    "mt-io==0.0.5",
+    "mt-timeseries==0.0.2",
+    "mt-metadata==1.0.10",
+    "aurora==0.6.2",
+    "matplotlib",
+    "pyyaml",
+    "openpyxl",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]

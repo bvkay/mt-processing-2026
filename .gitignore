@@ -1,0 +1,13 @@
+# python
+__pycache__/
+*.egg-info/
+.ipynb_checkpoints/
+build/
+
+# processing outputs (mth5 archives, TFs, figures live in each survey's work/)
+surveys/*/work/
+*.h5
+
+# local-only material (field docs, drafts, big files)
+docs/local/
+local/
