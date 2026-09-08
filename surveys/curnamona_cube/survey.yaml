@@ -7,6 +7,7 @@ defaults:
   dipole_length_ey: 50.0
   azimuth_ex: 0.0
   azimuth_ey: 90.0
+  calibration_fn: sensors/l120n.rsp
 sites:
   A02:
     dipole_length_ex: 50.0

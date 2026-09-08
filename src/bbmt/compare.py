@@ -25,8 +25,21 @@ def rho_phi(tf_or_path):
     return period, rho, phi
 
 
-def plot_comparison(main, references=(), title="", out_png=None, main_label="aurora", ref_label="lemimt"):
-    """Overlay xy/yx apparent resistivity and phase; `main` bold, refs grey."""
+def plot_comparison(
+    main,
+    references=(),
+    baseline=None,
+    title="",
+    out_png=None,
+    main_label="aurora",
+    ref_label="lemimt chunks",
+    baseline_label="lemimt merged",
+):
+    """Overlay xy/yx apparent resistivity and phase.
+
+    `main` bold and coloured, `baseline` (e.g. the final merged legacy EDI)
+    black dashed, `references` (e.g. per-chunk EDIs) thin grey.
+    """
     fig, (ax_r, ax_p) = plt.subplots(
         2, 1, figsize=(8, 9), sharex=True, height_ratios=[2, 1], layout="constrained"
     )
@@ -35,6 +48,14 @@ def plot_comparison(main, references=(), title="", out_png=None, main_label="aur
         kw = dict(color="0.65", lw=0.8, alpha=0.8)
         ax_r.loglog(p, rho[:, 0, 1], label=f"xy ({ref_label})" if i == 0 else None, **kw)
         ax_r.loglog(p, rho[:, 1, 0], ls="--", label=f"yx ({ref_label})" if i == 0 else None, **kw)
+        ax_p.semilogx(p, phi[:, 0, 1], **kw)
+        ax_p.semilogx(p, phi[:, 1, 0] + 180.0, ls="--", **kw)
+
+    if baseline is not None:
+        p, rho, phi = rho_phi(baseline)
+        kw = dict(color="k", lw=1.4)
+        ax_r.loglog(p, rho[:, 0, 1], label=f"xy ({baseline_label})", **kw)
+        ax_r.loglog(p, rho[:, 1, 0], ls="--", label=f"yx ({baseline_label})", **kw)
         ax_p.semilogx(p, phi[:, 0, 1], **kw)
         ax_p.semilogx(p, phi[:, 1, 0] + 180.0, ls="--", **kw)
 

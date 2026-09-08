@@ -59,5 +59,7 @@ legacy lemimt EDIs.
 - [x] Comparison plots against legacy lemimt EDIs
 - [ ] Validation vs lemimt on clean Curnamona Cube pairs (in progress)
 - [ ] Noise toolbox: time masks, band schemes (next)
+- [ ] Stacked/synthetic remote references from multiple array sites
+      (as in AusLAMP-Processing-2026) — test value at broadband
 - [ ] Earth Data logger ingest
 - [ ] Batch CLI, then GUI

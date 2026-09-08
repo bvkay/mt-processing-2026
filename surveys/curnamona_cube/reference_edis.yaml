@@ -1,0 +1,165 @@
+A02:
+  distance_km: 0.001
+  edi: E:\Ben_Documents\EDIs\Curnamona_Cube\Cube_001.edi
+A03:
+  distance_km: 0.001
+  edi: E:\Ben_Documents\EDIs\Curnamona_Cube\Cube_002.edi
+A04:
+  distance_km: 0.0
+  edi: E:\Ben_Documents\EDIs\Curnamona_Cube\Cube_003.edi
+A05:
+  distance_km: 0.0
+  edi: E:\Ben_Documents\EDIs\Curnamona_Cube\Cube_004.edi
+A06:
+  distance_km: 0.0
+  edi: E:\Ben_Documents\EDIs\Curnamona_Cube\Cube_005.edi
+A07:
+  distance_km: 0.001
+  edi: E:\Ben_Documents\EDIs\Curnamona_Cube\Cube_006.edi
+B01:
+  distance_km: 0.002
+  edi: E:\Ben_Documents\EDIs\Curnamona_Cube\Cube_007.edi
+B02:
+  distance_km: 0.013
+  edi: E:\Ben_Documents\EDIs\Curnamona_Cube\Cube_008.edi
+B03:
+  distance_km: 0.011
+  edi: E:\Ben_Documents\EDIs\Curnamona_Cube\Cube_009.edi
+B06:
+  distance_km: 0.001
+  edi: E:\Ben_Documents\EDIs\Curnamona_Cube\Cube_012.edi
+B07:
+  distance_km: 0.0
+  edi: E:\Ben_Documents\EDIs\Curnamona_Cube\Cube_013.edi
+B08:
+  distance_km: 0.0
+  edi: E:\Ben_Documents\EDIs\Curnamona_Cube\Cube_014.edi
+B09:
+  distance_km: 0.0
+  edi: E:\Ben_Documents\EDIs\Curnamona_Cube\Cube_015.edi
+C06:
+  distance_km: 0.004
+  edi: E:\Ben_Documents\EDIs\Curnamona_Cube\Cube_021.edi
+C07:
+  distance_km: 0.0
+  edi: E:\Ben_Documents\EDIs\Curnamona_Cube\Cube_022.edi
+C08:
+  distance_km: 0.0
+  edi: E:\Ben_Documents\EDIs\Curnamona_Cube\Cube_023.edi
+C09:
+  distance_km: 0.0
+  edi: E:\Ben_Documents\EDIs\Curnamona_Cube\Cube_024.edi
+D02:
+  distance_km: 0.001
+  edi: E:\Ben_Documents\EDIs\Curnamona_Cube\Cube_025.edi
+D06:
+  distance_km: 0.048
+  edi: E:\Ben_Documents\EDIs\Curnamona_Cube\Cube_030.edi
+D07:
+  distance_km: 0.0
+  edi: E:\Ben_Documents\EDIs\Curnamona_Cube\Cube_031.edi
+D08:
+  distance_km: 0.001
+  edi: E:\Ben_Documents\EDIs\Curnamona_Cube\Cube_032.edi
+D09:
+  distance_km: 0.0
+  edi: E:\Ben_Documents\EDIs\Curnamona_Cube\Cube_033.edi
+E06:
+  distance_km: 0.01
+  edi: E:\Ben_Documents\EDIs\Curnamona_Cube\Cube_038.edi
+E07:
+  distance_km: 0.0
+  edi: E:\Ben_Documents\EDIs\Curnamona_Cube\Cube_039.edi
+E08:
+  distance_km: 0.0
+  edi: E:\Ben_Documents\EDIs\Curnamona_Cube\Cube_040.edi
+E09:
+  distance_km: 0.0
+  edi: E:\Ben_Documents\EDIs\Curnamona_Cube\Cube_041.edi
+F02:
+  distance_km: 0.004
+  edi: E:\Ben_Documents\EDIs\Curnamona_Cube\Cube_043.edi
+F05:
+  distance_km: 0.009
+  edi: E:\Ben_Documents\EDIs\Curnamona_Cube\Cube_045.edi
+F06:
+  distance_km: 0.007
+  edi: E:\Ben_Documents\EDIs\Curnamona_Cube\Cube_046.edi
+F07:
+  distance_km: 0.0
+  edi: E:\Ben_Documents\EDIs\Curnamona_Cube\Cube_047.edi
+F08:
+  distance_km: 0.0
+  edi: E:\Ben_Documents\EDIs\Curnamona_Cube\Cube_048.edi
+F09:
+  distance_km: 0.0
+  edi: E:\Ben_Documents\EDIs\Curnamona_Cube\Cube_049.edi
+G02:
+  distance_km: 0.006
+  edi: E:\Ben_Documents\EDIs\Curnamona_Cube\Cube_053.edi
+G03:
+  distance_km: 0.003
+  edi: E:\Ben_Documents\EDIs\Curnamona_Cube\Cube_054.edi
+G04:
+  distance_km: 0.007
+  edi: E:\Ben_Documents\EDIs\Curnamona_Cube\Cube_055.edi
+H02:
+  distance_km: 0.014
+  edi: E:\Ben_Documents\EDIs\Curnamona_Cube\Cube_068.edi
+H03:
+  distance_km: 0.004
+  edi: E:\Ben_Documents\EDIs\Curnamona_Cube\Cube_069.edi
+H04:
+  distance_km: 0.011
+  edi: E:\Ben_Documents\EDIs\Curnamona_Cube\Cube_070.edi
+H05:
+  distance_km: 0.008
+  edi: E:\Ben_Documents\EDIs\Curnamona_Cube\Cube_071.edi
+H07:
+  distance_km: 0.012
+  edi: E:\Ben_Documents\EDIs\Curnamona_Cube\Cube_073.edi
+H08:
+  distance_km: 0.006
+  edi: E:\Ben_Documents\EDIs\Curnamona_Cube\Cube_074.edi
+H09r:
+  distance_km: 0.012
+  edi: E:\Ben_Documents\EDIs\Curnamona_Cube\Cube_075.edi
+I04:
+  distance_km: 0.009
+  edi: E:\Ben_Documents\EDIs\Curnamona_Cube\Cube_090.edi
+I05:
+  distance_km: 0.007
+  edi: E:\Ben_Documents\EDIs\Curnamona_Cube\Cube_089.edi
+I07:
+  distance_km: 0.004
+  edi: E:\Ben_Documents\EDIs\Curnamona_Cube\Cube_087.edi
+I09:
+  distance_km: 0.006
+  edi: E:\Ben_Documents\EDIs\Curnamona_Cube\Cube_085.edi
+K04:
+  distance_km: 0.004
+  edi: E:\Ben_Documents\EDIs\Curnamona_Cube\Cube_110.edi
+K05:
+  distance_km: 0.007
+  edi: E:\Ben_Documents\EDIs\Curnamona_Cube\Cube_111.edi
+L06:
+  distance_km: 0.022
+  edi: E:\Ben_Documents\EDIs\Curnamona_Cube\Cube_114.edi
+L07:
+  distance_km: 0.265
+  edi: E:\Ben_Documents\EDIs\Curnamona_Cube\Cube_113.edi
+M08:
+  distance_km: 0.004
+  edi: E:\Ben_Documents\EDIs\Curnamona_Cube\Cube_122.edi
+M09:
+  distance_km: 0.008
+  edi: E:\Ben_Documents\EDIs\Curnamona_Cube\Cube_121.edi
+N07:
+  distance_km: 0.003
+  edi: E:\Ben_Documents\EDIs\Curnamona_Cube\Cube_118.edi
+N08:
+  distance_km: 0.005
+  edi: E:\Ben_Documents\EDIs\Curnamona_Cube\Cube_119.edi
+N09:
+  distance_km: 0.004
+  edi: E:\Ben_Documents\EDIs\Curnamona_Cube\Cube_120.edi

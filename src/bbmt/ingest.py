@@ -93,6 +93,24 @@ def ingest_site(
             return out_path
         out_path.unlink()
 
+    read_kwargs = dict(
+        station_id=site_name,
+        dipole_length_ex=site.dipole_length_ex,
+        dipole_length_ey=site.dipole_length_ey,
+    )
+    if site.calibration_fn:
+        cal = Path(site.calibration_fn)
+        if not cal.is_absolute():
+            cal = survey.data_root / cal
+        if not cal.exists():
+            raise FileNotFoundError(f"coil calibration file not found: {cal}")
+        read_kwargs["calibration_fn"] = cal
+    else:
+        logger.warning(
+            f"{site_name}: no calibration_fn — magnetic channels will lack a "
+            f"coil response and TFs will be wrong"
+        )
+
     logger.info(f"{site_name}: ingesting {len(files)} files -> {out_path}")
     m = MTH5(file_version="0.2.0")
     m.open_mth5(out_path, mode="w")
@@ -100,12 +118,7 @@ def ingest_site(
         m.add_survey(survey.name)
         station_group = None
         for i, fn in enumerate(files, 1):
-            run = read_lemi423(
-                fn,
-                station_id=site_name,
-                dipole_length_ex=site.dipole_length_ex,
-                dipole_length_ey=site.dipole_length_ey,
-            )
+            run = read_lemi423(fn, **read_kwargs)
             _standardise_e_orientation(run, site)
             run_id = f"sr{int(run.sample_rate)}_{i:04d}"
             run.run_metadata.id = run_id

@@ -13,12 +13,15 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "src"))
 
+import yaml
+
 from bbmt.compare import plot_comparison
 from bbmt.ingest import ingest_site
 from bbmt.process import process_station
 from bbmt.survey import Survey
 
 SURVEY_YAML = REPO / "surveys" / "curnamona_cube" / "survey.yaml"
+REFERENCE_EDIS = SURVEY_YAML.parent / "reference_edis.yaml"  # merged lemimt EDIs
 LOCAL, REMOTE = "D02", "E08"
 # 6 h of concurrent night-time (ACST) recording; extend once the slice works
 START, END = "2021-06-29 12:00", "2021-06-29 18:00"
@@ -34,9 +37,15 @@ def main() -> None:
     )
 
     refs = sorted((survey.data_root / "EDIs").glob(f"P-{LOCAL}_RR-{REMOTE}_S-1000Hz_*.edi"))
+    baseline = None
+    if REFERENCE_EDIS.exists():
+        mapping = yaml.safe_load(REFERENCE_EDIS.read_text(encoding="utf-8")) or {}
+        if LOCAL in mapping:
+            baseline = mapping[LOCAL]["edi"]
     out_png = survey.workspace / "tf" / f"{LOCAL}_rr-{REMOTE}_vs_lemimt.png"
     plot_comparison(
-        tf, refs, title=f"{LOCAL} RR {REMOTE} — aurora vs lemimt ({START} to {END} UTC)",
+        tf, refs, baseline=baseline,
+        title=f"{LOCAL} RR {REMOTE} — aurora vs lemimt ({START} to {END} UTC)",
         out_png=out_png,
     )
     print(f"comparison figure: {out_png}")

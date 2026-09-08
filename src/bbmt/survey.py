@@ -26,6 +26,8 @@ class SiteConfig:
     latitude: float | None = None
     longitude: float | None = None
     elevation: float | None = None
+    # coil response file (e.g. LEMI-120 .rsp); relative paths resolve against data_root
+    calibration_fn: str | None = None
 
 
 class Survey:
