@@ -39,7 +39,6 @@ def main() -> None:
         out_dir=survey.workspace / "tf", band_scheme=scheme,
     )
 
-    refs = sorted((survey.data_root / "EDIs").glob(f"P-{LOCAL}_RR-{REMOTE}_S-1000Hz_*.edi"))
     baseline = None
     if REFERENCE_EDIS.exists():
         mapping = yaml.safe_load(REFERENCE_EDIS.read_text(encoding="utf-8")) or {}
@@ -47,7 +46,7 @@ def main() -> None:
             baseline = mapping[LOCAL]["edi"]
     out_png = survey.workspace / "tf" / f"{LOCAL}_rr-{REMOTE}_vs_lemimt.png"
     plot_comparison(
-        tf, refs, baseline=baseline,
+        tf, baseline=baseline,
         title=f"{LOCAL} RR {REMOTE} — aurora vs lemimt ({START} to {END} UTC)",
         out_png=out_png,
     )

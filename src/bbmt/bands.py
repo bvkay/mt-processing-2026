@@ -12,6 +12,25 @@ from __future__ import annotations
 import numpy as np
 
 
+def _apply_notches(
+    bands: np.ndarray, notch_frequencies, notch_fraction: float, df: float
+) -> np.ndarray:
+    """Trim band edges away from notch lines; drop slivers narrower than one FC bin."""
+    for f0 in notch_frequencies:
+        lo, hi = f0 * (1 - notch_fraction), f0 * (1 + notch_fraction)
+        trimmed = []
+        for a, b in bands:
+            if b <= lo or a >= hi:
+                trimmed.append((a, b))
+                continue
+            if a < lo:
+                trimmed.append((a, lo))
+            if b > hi:
+                trimmed.append((hi, b))
+        bands = np.array([(a, b) for a, b in trimmed if (b - a) >= df])
+    return bands
+
+
 def lemimt_band_scheme(
     sample_rate: float,
     min_period: float = 0.005,
@@ -19,9 +38,14 @@ def lemimt_band_scheme(
     periods_per_decade: float = 10.0,
     window: int = 128,
     factor: int = 4,
+    notch_frequencies: tuple = (),
+    notch_fraction: float = 0.08,
 ) -> dict:
     """Build kwargs for aurora's ConfigCreator.create_from_kernel_dataset.
 
+    `notch_frequencies` (Hz, e.g. mains at 50 and its harmonics) carve a
+    guard of +-`notch_fraction` out of any band touching them, so no band
+    integrates energy from those lines.
     Returns {"band_edges", "decimation_factors", "num_samples_window"}.
     """
     f_top = min(1.0 / min_period, 0.25 * sample_rate)
@@ -44,7 +68,10 @@ def lemimt_band_scheme(
         f_lo = max(f_hi / factor, f_floor)
         n_bands = max(1, round(periods_per_decade * np.log10(f_hi / f_lo)))
         edges = np.geomspace(f_lo, f_hi, n_bands + 1)
-        band_edges[level] = np.column_stack([edges[:-1], edges[1:]])
+        bands = np.column_stack([edges[:-1], edges[1:]])
+        df_level = sample_rate / factor**level / window
+        bands = _apply_notches(bands, notch_frequencies, notch_fraction, df_level)
+        band_edges[level] = bands
         if f_lo <= f_floor or level >= 15:
             break
         level += 1

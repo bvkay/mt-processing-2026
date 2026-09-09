@@ -13,16 +13,28 @@ from mt_metadata.transfer_functions.core import TF
 
 
 def rho_phi(tf_or_path):
-    """Return (period, rho[nf,2,2], phase_deg[nf,2,2]) from a TF or EDI path."""
+    """Return (period, rho, phase_deg, rho_err, phase_err) from a TF or EDI path.
+
+    All arrays are (nf, 2, 2); errors are 1-sigma, propagated from the
+    impedance errors (zeros when the file carries no variances).
+    """
     tf = tf_or_path
     if not isinstance(tf, TF):
         tf = TF(fn=str(tf_or_path))
         tf.read()
     period = np.asarray(tf.period, dtype=float)
     z = np.asarray(tf.impedance.data)  # mV/km/nT
-    rho = 0.2 * period[:, None, None] * np.abs(z) ** 2
+    az = np.abs(z)
+    rho = 0.2 * period[:, None, None] * az**2
     phi = np.degrees(np.angle(z))
-    return period, rho, phi
+    ze = np.zeros_like(az)
+    if tf.impedance_error is not None:
+        ze = np.nan_to_num(np.asarray(tf.impedance_error.data, dtype=float))
+    with np.errstate(divide="ignore", invalid="ignore"):
+        rel = np.where(az > 0, ze / az, 0.0)
+    rho_err = 2.0 * rho * rel
+    phi_err = np.degrees(rel)
+    return period, rho, phi, rho_err, phi_err
 
 
 def plot_comparison(
@@ -44,26 +56,31 @@ def plot_comparison(
         2, 1, figsize=(8, 9), sharex=True, height_ratios=[2, 1], layout="constrained"
     )
     for i, ref in enumerate(references):
-        p, rho, phi = rho_phi(ref)
+        p, rho, phi, _, _ = rho_phi(ref)
         kw = dict(color="0.65", lw=0.8, alpha=0.8)
         ax_r.loglog(p, rho[:, 0, 1], label=f"xy ({ref_label})" if i == 0 else None, **kw)
         ax_r.loglog(p, rho[:, 1, 0], ls="--", label=f"yx ({ref_label})" if i == 0 else None, **kw)
         ax_p.semilogx(p, phi[:, 0, 1], **kw)
         ax_p.semilogx(p, phi[:, 1, 0] + 180.0, ls="--", **kw)
 
-    if baseline is not None:
-        p, rho, phi = rho_phi(baseline)
-        kw = dict(color="k", lw=1.4)
-        ax_r.loglog(p, rho[:, 0, 1], label=f"xy ({baseline_label})", **kw)
-        ax_r.loglog(p, rho[:, 1, 0], ls="--", label=f"yx ({baseline_label})", **kw)
-        ax_p.semilogx(p, phi[:, 0, 1], **kw)
-        ax_p.semilogx(p, phi[:, 1, 0] + 180.0, ls="--", **kw)
+    ax_r.set_xscale("log")
+    ax_r.set_yscale("log")
+    ax_p.set_xscale("log")
 
-    p, rho, phi = rho_phi(main)
-    ax_r.loglog(p, rho[:, 0, 1], "o-", color="C0", ms=3.5, lw=1.2, label=f"xy ({main_label})")
-    ax_r.loglog(p, rho[:, 1, 0], "s-", color="C3", ms=3.5, lw=1.2, label=f"yx ({main_label})")
-    ax_p.semilogx(p, phi[:, 0, 1], "o-", color="C0", ms=3.5, lw=1.2)
-    ax_p.semilogx(p, phi[:, 1, 0] + 180.0, "s-", color="C3", ms=3.5, lw=1.2)
+    if baseline is not None:
+        p, rho, phi, rerr, perr = rho_phi(baseline)
+        kw = dict(color="k", lw=1.2, elinewidth=0.7, capsize=1.5, alpha=0.85)
+        ax_r.errorbar(p, rho[:, 0, 1], yerr=rerr[:, 0, 1], label=f"xy ({baseline_label})", **kw)
+        ax_r.errorbar(p, rho[:, 1, 0], yerr=rerr[:, 1, 0], ls="--", label=f"yx ({baseline_label})", **kw)
+        ax_p.errorbar(p, phi[:, 0, 1], yerr=perr[:, 0, 1], **kw)
+        ax_p.errorbar(p, phi[:, 1, 0] + 180.0, yerr=perr[:, 1, 0], ls="--", **kw)
+
+    p, rho, phi, rerr, perr = rho_phi(main)
+    kw = dict(ms=3.5, lw=1.2, elinewidth=0.8, capsize=2.0)
+    ax_r.errorbar(p, rho[:, 0, 1], yerr=rerr[:, 0, 1], fmt="o-", color="C0", label=f"xy ({main_label})", **kw)
+    ax_r.errorbar(p, rho[:, 1, 0], yerr=rerr[:, 1, 0], fmt="s-", color="C3", label=f"yx ({main_label})", **kw)
+    ax_p.errorbar(p, phi[:, 0, 1], yerr=perr[:, 0, 1], fmt="o-", color="C0", **kw)
+    ax_p.errorbar(p, phi[:, 1, 0] + 180.0, yerr=perr[:, 1, 0], fmt="s-", color="C3", **kw)
 
     ax_r.set_ylabel(r"$\rho_a$ ($\Omega$m)")
     ax_p.set_ylabel("phase (deg)")
