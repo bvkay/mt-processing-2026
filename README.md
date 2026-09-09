@@ -57,7 +57,9 @@ legacy lemimt EDIs.
       sign-corrected from field-sheet azimuths)
 - [x] Aurora single-station / remote-reference wrapper -> EDI
 - [x] Comparison plots against legacy lemimt EDIs
-- [ ] Validation vs lemimt on clean Curnamona Cube pairs (in progress)
+- [x] Validation vs lemimt on a clean Curnamona Cube pair: D02 RR E08 matches
+      the merged lemimt EDI over 0.005-~3000 s (rho and phase, both modes)
+      with the lemimt-style 60-band scheme
 - [ ] Noise toolbox: time masks, band schemes (next)
 - [ ] Stacked/synthetic remote references from multiple array sites
       (as in AusLAMP-Processing-2026) — test value at broadband

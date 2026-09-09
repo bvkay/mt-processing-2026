@@ -53,5 +53,6 @@ def lemimt_band_scheme(
     return {
         "band_edges": band_edges,
         "decimation_factors": decimation_factors,
-        "num_samples_window": window,
+        # aurora requires one window size per level when band_edges is given
+        "num_samples_window": [window] * len(band_edges),
     }
