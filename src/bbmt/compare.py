@@ -41,6 +41,7 @@ def plot_comparison(
     main,
     references=(),
     baseline=None,
+    others=(),
     title="",
     out_png=None,
     main_label="aurora",
@@ -50,7 +51,8 @@ def plot_comparison(
     """Overlay xy/yx apparent resistivity and phase.
 
     `main` bold and coloured, `baseline` (e.g. the final merged legacy EDI)
-    black dashed, `references` (e.g. per-chunk EDIs) thin grey.
+    black dashed, `references` (e.g. per-chunk EDIs) thin grey, `others` a
+    list of (tf_or_path, label, colour) plotted thin (xy solid, yx dashed).
     """
     fig, (ax_r, ax_p) = plt.subplots(
         2, 1, figsize=(8, 9), sharex=True, height_ratios=[2, 1], layout="constrained"
@@ -74,6 +76,14 @@ def plot_comparison(
         ax_r.errorbar(p, rho[:, 1, 0], yerr=rerr[:, 1, 0], ls="--", label=f"yx ({baseline_label})", **kw)
         ax_p.errorbar(p, phi[:, 0, 1], yerr=perr[:, 0, 1], **kw)
         ax_p.errorbar(p, phi[:, 1, 0] + 180.0, yerr=perr[:, 1, 0], ls="--", **kw)
+
+    for other, label, colour in others:
+        p, rho, phi, rerr, perr = rho_phi(other)
+        kw = dict(color=colour, lw=1.0, ms=2.0, elinewidth=0.5, capsize=1.0, alpha=0.9)
+        ax_r.errorbar(p, rho[:, 0, 1], yerr=rerr[:, 0, 1], fmt="o-", label=f"xy ({label})", **kw)
+        ax_r.errorbar(p, rho[:, 1, 0], yerr=rerr[:, 1, 0], fmt="s--", label=f"yx ({label})", **kw)
+        ax_p.errorbar(p, phi[:, 0, 1], yerr=perr[:, 0, 1], fmt="o-", **kw)
+        ax_p.errorbar(p, phi[:, 1, 0] + 180.0, yerr=perr[:, 1, 0], fmt="s--", **kw)
 
     p, rho, phi, rerr, perr = rho_phi(main)
     kw = dict(ms=3.5, lw=1.2, elinewidth=0.8, capsize=2.0)
