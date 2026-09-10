@@ -45,7 +45,8 @@ def main() -> None:
     tf_syn = process_station(
         local_h5, LOCAL, syn_h5, "SYN01", out_dir=tf_dir, band_scheme=scheme
     )
-    tf_ss = process_station(local_h5, LOCAL, out_dir=tf_dir, band_scheme=scheme)
+    if not (tf_dir / f"{LOCAL}_ss.edi").exists():
+        process_station(local_h5, LOCAL, out_dir=tf_dir, band_scheme=scheme)
 
     baseline = None
     if REFERENCE_EDIS.exists():
