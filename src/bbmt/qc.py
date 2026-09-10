@@ -24,7 +24,7 @@ def load_channel(mth5_path: Path, survey_name: str, station: str, run: str, comp
     try:
         ch = m.get_channel(station, run, comp, survey_name)
         data = ch.hdf5_dataset[:].astype("float64")
-        start = pd.Timestamp(ch.metadata.time_period.start)
+        start = pd.Timestamp(str(ch.metadata.time_period.start))
         sr = float(ch.metadata.sample_rate)
     finally:
         m.close_mth5()
@@ -41,7 +41,7 @@ def longest_run(mth5_path: Path, survey_name: str, station: str) -> str:
         for run_id in st.groups_list:
             rg = st.get_run(run_id)
             t = rg.metadata.time_period
-            length = (pd.Timestamp(t.end) - pd.Timestamp(t.start)).total_seconds()
+            length = (pd.Timestamp(str(t.end)) - pd.Timestamp(str(t.start))).total_seconds()
             if length > best_len:
                 best, best_len = run_id, length
     finally:
@@ -107,4 +107,7 @@ def band_coherence(x: np.ndarray, y: np.ndarray, sample_rate: float, scheme: dic
             gamma2 = np.abs(sxy_b) ** 2 / (sxx_b * syy_b)
         periods.extend(1.0 / np.sqrt(edges[:, 0] * edges[:, 1]))
         g2.extend(gamma2)
-    return np.asarray(periods), np.asarray(g2)
+    periods = np.asarray(periods)
+    g2 = np.asarray(g2)
+    order = np.argsort(periods)
+    return periods[order], g2[order]

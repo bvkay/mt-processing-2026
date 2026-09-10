@@ -61,7 +61,16 @@ legacy lemimt EDIs.
       the merged lemimt EDI over 0.005-~3000 s (rho and phase, both modes)
       with the lemimt-style 60-band scheme
 - [ ] Noise toolbox: time masks, band schemes (next)
-- [ ] Stacked/synthetic remote references from multiple array sites
-      (as in AusLAMP-Processing-2026) — test value at broadband
+- [ ] Band-placement experiment around mains: 50 Hz at band edge vs notched
+      vs band centre (anchor option in bands.py), same data three ways
+- [x] Stacked/synthetic remote references from multiple array sites — mean
+      stack implemented and tested on D02 (found A07's dead hx in the process)
+- [ ] Coherence-weighted stacking: per-member weights per time chunk and
+      band group (0.1–1, 1–10, 10–100, 100–1000 s), then full per-band
+      weighting at the Fourier-coefficient level; median stack as the
+      robust baseline
+- [ ] Time-resolved coherence QC (coherogram): Bx–Ey, By–Ex, Bx–By, Ex–Ey,
+      and local-E vs remote-B pairs per band group across time — drives
+      both stack weights and time masking for noisy sites
 - [ ] Earth Data logger ingest
 - [ ] Batch CLI, then GUI

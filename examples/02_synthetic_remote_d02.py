@@ -28,7 +28,9 @@ from bbmt.virtual import build_synthetic_remote
 SURVEY_YAML = REPO / "surveys" / "curnamona_cube" / "survey.yaml"
 REFERENCE_EDIS = SURVEY_YAML.parent / "reference_edis.yaml"
 LOCAL = "D02"
-MEMBERS = ["A05", "A07", "B06", "F08", "F09"]  # concurrent, well spread, no E08
+# concurrent, well spread, no E08. A07 excluded: its hx is dead for this
+# window (gamma2 = 0 vs E08 at all periods; see surveys/curnamona_cube/qc_notes.md)
+MEMBERS = ["A05", "B06", "F08", "F09"]
 START, END = "2021-06-29 06:00", "2021-07-01 00:00"
 
 
