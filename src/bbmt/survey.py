@@ -34,6 +34,26 @@ class SiteConfig:
     # Established empirically against merged lemimt EDIs on Curnamona Cube
     # (constant 1e6 rho offset, exact 180 deg on both phase modes).
     h_scale: float = 1.0
+    # How to read a 180/270 deg dipole azimuth on the field sheet. True
+    # (Curnamona): the pair was wired reversed, so the data are sign-flipped at
+    # ingest. False (Burra): the azimuth records layout direction only, the
+    # logger's N/S/E/W terminals fix polarity, and nothing is flipped. Decide
+    # per survey from the impedance phase quadrants (bbmt.compare.phase_quadrants);
+    # a wrong choice puts one mode 180 deg out.
+    flip_reversed_dipoles: bool = True
+    # channels to keep at ingest; None keeps everything the reader returns.
+    # Broadband deployments carried no hz sensor (the B423 Bz column is an
+    # open input, constant -2^31), so those surveys set [ex, ey, hx, hy] and
+    # aurora never estimates a tipper from a dead channel.
+    channels: list[str] | None = None
+    # declared time-domain filters applied at ingest, in order (see
+    # bbmt.noise); from <survey>/filters.yaml, never auto-detected.
+    filters: list[dict] | None = None
+    # logger clock status from the field timing sheets ("Correct"/"Behind"/
+    # "No data"); None when the site is not listed on one.
+    timing: str | None = None
+    # free-form field-sheet remarks (noise sources, chewed cables, ...).
+    notes: str | None = None
 
 
 class Survey:
@@ -50,6 +70,13 @@ class Survey:
         self.data_root = Path(config["data_root"])
         self._defaults: dict = config.get("defaults") or {}
         self._sites: dict = config.get("sites") or {}
+        # per-site noise decisions live in their own file so regenerating the
+        # sites block from the field sheet never wipes them
+        self._filters: dict = {}
+        filters_yaml = self.config_dir / "filters.yaml"
+        if filters_yaml.exists():
+            with open(filters_yaml, encoding="utf-8") as f:
+                self._filters = yaml.safe_load(f) or {}
 
     @classmethod
     def from_yaml(cls, path: str | Path) -> "Survey":
@@ -87,4 +114,6 @@ class Survey:
             )
             overrides = {}
         merged = {**self._defaults, **overrides}
+        if name in self._filters and "filters" not in merged:
+            merged["filters"] = self._filters[name]
         return SiteConfig(name=name, **merged)

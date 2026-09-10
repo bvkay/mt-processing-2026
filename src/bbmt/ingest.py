@@ -11,6 +11,7 @@ import mt_io.lemi.lemi423 as _lemi423
 from mt_io.lemi.lemi423 import read_lemi423
 from mth5.mth5 import MTH5
 
+from .noise import apply_filters
 from .survey import SiteConfig, Survey
 
 
@@ -86,6 +87,12 @@ def _standardise_e_orientation(run, site: SiteConfig) -> None:
                 f"{site.name} {comp}: azimuth {az} needs a real rotation — "
                 f"only reversed (180 deg) dipoles are handled at ingest"
             )
+        if not site.flip_reversed_dipoles:
+            logger.info(
+                f"{site.name} {comp}: azimuth {az} taken as layout direction only "
+                f"(flip_reversed_dipoles=False) — no sign flip"
+            )
+            continue
         # the reader already writes the standard azimuth into the channel
         # attrs, so flipping the data is the whole correction. NB mutate
         # run.dataset directly: run.<comp> accessors return fresh copies.
@@ -133,6 +140,106 @@ def _apply_h_scale(run, site: SiteConfig) -> None:
             }
         )
         run.dataset[comp].attrs["filters"] = flist
+
+
+def _keep_channels(run, site: SiteConfig) -> None:
+    """Drop channels not listed in `site.channels` (e.g. the unconnected hz).
+
+    The reader always returns all five B423 columns; the survey says which
+    ones had a sensor attached. Dropping here keeps the MTH5 honest and stops
+    aurora from producing a tipper out of an open input.
+    """
+    if not site.channels:
+        return
+    keep = [c.lower() for c in site.channels]
+    drop = [c for c in run.dataset.data_vars if c not in keep]
+    if not drop:
+        return
+    run.dataset = run.dataset.drop_vars(drop)
+    for attr in ("channels_recorded_magnetic", "channels_recorded_electric", "channels_recorded_auxiliary"):
+        current = getattr(run.run_metadata, attr, None)
+        if current:
+            setattr(run.run_metadata, attr, [c for c in current if c.lower() in keep])
+    logger.info(f"{site.name}: dropped {drop} at ingest (survey channels {keep})")
+
+
+def _replace_channels(run, survey: Survey, spec: dict, tag: str) -> str:
+    """Replace magnetic channels with another site's, over this run's span.
+
+    `spec` maps component -> donor site, e.g. {hx: B07} or {hx: B07, hy: B07}
+    (the field crews' "replace magnetics" for a dead or swamped coil). The
+    donor's raw files covering the run are read with the donor's own coil
+    calibration and h_scale, aligned on the exact sample grid (asserted), and
+    the channel's data, attributes and filter chain are swapped in. The run is
+    trimmed to the span the donor covers. Returns a provenance line.
+    """
+    comps = {c.lower(): str(site) for c, site in (spec or {}).items()}
+    bad = [c for c in comps if c not in ("hx", "hy", "hz")]
+    if bad:
+        raise ValueError(f"{tag}: replace handles magnetic channels only, got {bad}")
+    t0 = pd.Timestamp(run.dataset.time.values[0])
+    t1 = pd.Timestamp(run.dataset.time.values[-1])
+    notes = []
+    for comp, donor in comps.items():
+        donor_cfg = survey.site(donor)
+        files = select_files(survey.site_dirs()[donor], start=t0, end=t1)
+        groups = _group_contiguous(files)
+        group = max(groups, key=len)
+        if len(groups) > 1:
+            logger.warning(f"{tag}: donor {donor} has {len(groups)} contiguous groups in the span; using the longest")
+        kwargs = dict(station_id=donor)
+        if donor_cfg.calibration_fn:
+            cal = Path(donor_cfg.calibration_fn)
+            if not cal.is_absolute():
+                cal = next((c for c in (survey.config_dir / cal, survey.data_root / cal) if c.exists()), survey.data_root / cal)
+            kwargs["calibration_fn"] = cal
+        other = read_lemi423(group if len(group) > 1 else group[0], **kwargs)
+        # the donor channel brings only its linear + coil filters; the site's
+        # magnetic scale (h_scale) is appended once for every coil by
+        # ingest_site afterwards. A second `lemi423_b_scale` entry here would
+        # duplicate a stage name and make mt_metadata drop the whole chain.
+        site_h_scale = survey.site(tag).h_scale
+        if donor_cfg.h_scale != site_h_scale:
+            logger.warning(
+                f"{tag}: donor {donor} h_scale {donor_cfg.h_scale} != site h_scale "
+                f"{site_h_scale}; the site's is applied to the borrowed channel"
+            )
+        lo = max(run.dataset.time.values[0], other.dataset.time.values[0])
+        hi = min(run.dataset.time.values[-1], other.dataset.time.values[-1])
+        if lo >= hi:
+            raise ValueError(f"{tag}: donor {donor} does not overlap this run for {comp}")
+        if lo > run.dataset.time.values[0] or hi < run.dataset.time.values[-1]:
+            logger.warning(f"{tag}: trimming run to the span {donor} covers ({lo} .. {hi})")
+            run.dataset = run.dataset.sel(time=slice(lo, hi))
+        ods = other.dataset.sel(time=slice(lo, hi))
+        if ods.time.size != run.dataset.time.size or not np.array_equal(ods.time.values, run.dataset.time.values):
+            raise ValueError(f"{tag}: donor {donor} sample grid does not align for {comp} (GPS timing assumption)")
+        run.dataset[comp] = ods[comp]
+        # the donor's attrs describe the donor's read span and run: make the
+        # swapped channel describe THIS run (mth5/aurora place channels by
+        # their own time_period, so a stale start would misalign it)
+        attrs = run.dataset[comp].attrs
+        attrs["station.id"] = run.station_metadata.id
+        attrs["run.id"] = run.run_metadata.id
+        t_start = str(np.datetime_as_string(run.dataset.time.values[0])) + "+00:00"
+        t_end = str(np.datetime_as_string(run.dataset.time.values[-1])) + "+00:00"
+        for key, val in (("time_period.start", t_start), ("time_period.end", t_end)):
+            if key in attrs:
+                attrs[key] = val
+        attrs["comments"] = f"replaced with {donor}'s {comp} at ingest"
+        # rewrite the applied-filter list in the form the archive expects
+        # (applied=True, stages 1..n): the donor's entries serialise with
+        # applied=False/stage 0, and aurora then skips the calibration
+        names = [f["applied_filter"]["name"] for f in attrs.get("filters", [])]
+        attrs["filters"] = [
+            {"applied_filter": {"applied": True, "name": name, "stage": i + 1}}
+            for i, name in enumerate(names)
+        ]
+        for name in names:
+            run.filters[name] = other.filters[name]
+        notes.append(f"{comp} <- {donor}")
+        logger.info(f"{tag}: replaced {comp} with {donor}'s ({ods.time.size} samples, filters carried over)")
+    return "replace magnetics: " + ", ".join(notes)
 
 
 def _group_contiguous(files: list[Path], max_run_files: int | None = None) -> list[list[Path]]:
@@ -193,7 +300,12 @@ def ingest_site(
     if site.calibration_fn:
         cal = Path(site.calibration_fn)
         if not cal.is_absolute():
-            cal = survey.data_root / cal
+            # relative paths: the survey folder first (sensor files kept with
+            # the config, as for Burra), then the raw-data root (Curnamona).
+            cal = next(
+                (c for c in (survey.config_dir / cal, survey.data_root / cal) if c.exists()),
+                survey.data_root / cal,
+            )
         if not cal.exists():
             raise FileNotFoundError(f"coil calibration file not found: {cal}")
         read_kwargs["calibration_fn"] = cal
@@ -214,6 +326,19 @@ def ingest_site(
         station_group = None
         for i, group in enumerate(groups, 1):
             run = read_lemi423(group if len(group) > 1 else group[0], **read_kwargs)
+            _keep_channels(run, site)
+            if site.filters:
+                # channel replacement first (the borrowed channel then gets the
+                # same notch/cp treatment as the site's own), then the filters
+                provenance = [
+                    _replace_channels(run, survey, spec["replace"], site_name)
+                    for spec in site.filters if "replace" in spec
+                ]
+                rest = [spec for spec in site.filters if "replace" not in spec]
+                provenance += apply_filters(run, rest, float(run.sample_rate), tag=site_name)
+                # write into the Comment's value: a plain string would be
+                # parsed on "|" into author/value/time fields
+                run.run_metadata.comments.value = "ingest filters (in order): " + "; then ".join(provenance)
             _standardise_e_orientation(run, site)
             _apply_h_scale(run, site)
             run_id = f"sr{int(run.sample_rate)}_{i:04d}"

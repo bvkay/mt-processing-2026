@@ -1,9 +1,14 @@
-"""Match renamed reference EDIs back to survey sites by coordinates.
+"""Match reference EDIs back to survey sites, and write reference_edis.yaml.
 
-The final merged lemimt EDIs were renamed (e.g. Cube_017.edi), so the only
-link back to site names is position. This scans a folder of EDIs, matches each
-survey site to the nearest EDI within `MAX_KM`, and writes the mapping to
-<survey folder>/reference_edis.yaml.
+Four rules, tried in order, first hit wins:
+
+1. file name — ``<site>.edi`` sits in the folder (Burra_2017-18);
+2. INFO-block SITE name — the merged lemimt EDIs were renamed
+   (e.g. Cube_017.edi) but kept "SITE : P-A02_RR-A03" inside;
+3. nearest EDI not yet claimed, within `MAX_KM`;
+4. nearest EDI overall within `MAX_KM`, reusing one already claimed — a repeat
+   deployment (Burra10repeat) sits on its original site's position and so
+   shares that site's EDI.
 
 Usage:
     python scripts/match_reference_edis.py <edi_dir> <survey.yaml>
@@ -53,36 +58,67 @@ def km_between(lat1, lon1, lat2, lon2) -> float:
     return 2 * r * math.asin(math.sqrt(a))
 
 
+def entry_for(edi: Path, pos, site: dict) -> dict:
+    entry = {"edi": str(edi)}
+    if pos and site.get("latitude") is not None:
+        d = km_between(site["latitude"], site["longitude"], *pos)
+        entry["distance_km"] = round(d, 3)
+        if d > MAX_KM:
+            entry["warning"] = f"EDI position {d:.1f} km from field-sheet position"
+    return entry
+
+
+def nearest(positions: dict, site: dict):
+    """(path, distance_km) of the closest EDI in `positions` to `site`."""
+    best = min(
+        positions.items(),
+        key=lambda kv: km_between(site["latitude"], site["longitude"], *kv[1]),
+    )
+    return best[0], km_between(site["latitude"], site["longitude"], *best[1])
+
+
 def main(edi_dir: str, survey_yaml: str) -> None:
     edi_dir, survey_yaml = Path(edi_dir), Path(survey_yaml)
     config = yaml.safe_load(survey_yaml.read_text(encoding="utf-8"))
 
     sites = config.get("sites") or {}
     mapping, by_coords, unmatched = {}, {}, []
+    all_coords = {edi: edi_position(edi) for edi in sorted(edi_dir.glob("*.edi"))}
+    all_coords = {edi: pos for edi, pos in all_coords.items() if pos}
 
-    for edi in sorted(edi_dir.glob("*.edi")):
+    # 1. the EDI is named after the site (Burra_2017-18: Burra57.edi -> Burra57)
+    for name, site in sites.items():
+        edi = edi_dir / f"{name}.edi"
+        if edi.exists():
+            mapping[name] = entry_for(edi, all_coords.get(edi), site)
+    claimed = {Path(e["edi"]) for e in mapping.values()}
+
+    # 2. the original processing name survives in the INFO block
+    for edi, pos in all_coords.items():
+        if edi in claimed:
+            continue
         name = edi_site_name(edi)
-        pos = edi_position(edi)
-        if name and name in sites:
-            entry = {"edi": str(edi)}
-            site = sites[name]
-            if pos and site.get("latitude") is not None:
-                d = km_between(site["latitude"], site["longitude"], *pos)
-                entry["distance_km"] = round(d, 3)
-                if d > MAX_KM:
-                    entry["warning"] = f"EDI position {d:.1f} km from field-sheet position"
-            mapping[name] = entry
-        elif pos:
+        if name and name in sites and name not in mapping:
+            mapping[name] = entry_for(edi, pos, sites[name])
+        else:
             by_coords[edi] = pos
 
-    # fall back to nearest-coordinate match for EDIs without a usable SITE name
+    # 3. fall back to nearest-coordinate match among the EDIs still unclaimed
     for name, site in sites.items():
         if name in mapping or site.get("latitude") is None or not by_coords:
             continue
-        best = min(by_coords.items(), key=lambda kv: km_between(site["latitude"], site["longitude"], *kv[1]))
-        dist = km_between(site["latitude"], site["longitude"], *best[1])
+        best, dist = nearest(by_coords, site)
         if dist <= MAX_KM:
-            mapping[name] = {"edi": str(best[0]), "distance_km": round(dist, 3)}
+            mapping[name] = {"edi": str(best), "distance_km": round(dist, 3)}
+
+    # 4. last resort: nearest EDI overall, reusing one another site already
+    #    claimed — repeat/rr folders reoccupy an earlier site's position
+    for name, site in sites.items():
+        if name in mapping or site.get("latitude") is None or not all_coords:
+            continue
+        best, dist = nearest(all_coords, site)
+        if dist <= MAX_KM:
+            mapping[name] = {"edi": str(best), "distance_km": round(dist, 3)}
         else:
             unmatched.append((name, round(dist, 1)))
 

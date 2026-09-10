@@ -37,6 +37,23 @@ def rho_phi(tf_or_path):
     return period, rho, phi, rho_err, phi_err
 
 
+def phase_quadrants(tf_or_path, pmin: float = 0.01, pmax: float = 0.1) -> dict:
+    """Median impedance phases over [pmin, pmax] s and whether they sit in the
+    physical quadrants: xy in (0, 90) deg, yx in (-180, -90) deg.
+
+    One mode 180 deg out means an E or H channel has the wrong sign — almost
+    always a dipole-polarity convention (see SiteConfig.flip_reversed_dipoles).
+    Short periods are used because the signal is strongest there.
+    """
+    period, _, phi, _, _ = rho_phi(tf_or_path)
+    mask = (period >= pmin) & (period <= pmax)
+    if not mask.any():
+        mask = np.ones_like(period, dtype=bool)
+    xy = float(np.nanmedian(phi[mask, 0, 1]))
+    yx = float(np.nanmedian(phi[mask, 1, 0]))
+    return {"xy": xy, "yx": yx, "xy_ok": 0.0 < xy < 90.0, "yx_ok": -180.0 < yx < -90.0}
+
+
 def plot_comparison(
     main,
     references=(),

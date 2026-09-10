@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pandas as pd
 from aurora.config.config_creator import ConfigCreator
 from aurora.pipelines.process_mth5 import process_mth5
 from loguru import logger
@@ -15,6 +16,38 @@ except ImportError:  # older aurora
     from aurora.transfer_function.kernel_dataset import KernelDataset
 
 
+def clip_to_window(kd, start=None, end=None):
+    """Restrict a KernelDataset to [start, end) UTC without touching the MTH5s.
+
+    The archive keeps every run; which part of it goes into an estimate is a
+    processing decision (e.g. Burra35's Ex died 16.5 h in). Runs entirely
+    outside the window are dropped, runs straddling it are trimmed.
+    """
+    if start is None and end is None:
+        return kd
+    df = kd.df.copy()
+    if start is not None:
+        df["start"] = df["start"].clip(lower=pd.Timestamp(start, tz="UTC"))
+    if end is not None:
+        df["end"] = df["end"].clip(upper=pd.Timestamp(end, tz="UTC"))
+    df = df[df["end"] > df["start"]]
+    if df.empty:
+        raise ValueError(f"no data in processing window [{start}, {end})")
+    kd.df = df
+    kd._update_duration_column()
+    # restrict_run_intervals_to_simultaneous intersects local against remote
+    # runs; with no remote (single-station) its remote_df is always empty, so
+    # it raises "do not overlap" on every call. Only meaningful, and only
+    # safe to call, in RR mode.
+    if kd.remote_station_id:
+        kd.df = kd.restrict_run_intervals_to_simultaneous(kd.df)
+    logger.info(
+        f"processing window [{start}, {end}) UTC -> {len(kd.df)} run interval(s), "
+        f"{kd.df.duration.sum() / 3600:.1f} station-hours"
+    )
+    return kd
+
+
 def process_station(
     local_h5: Path,
     station: str,
@@ -23,13 +56,18 @@ def process_station(
     out_dir: Path | None = None,
     min_run_seconds: float = 0.0,
     band_scheme: dict | None = None,
+    start=None,
+    end=None,
+    tag: str | None = None,
     **config_kwargs,
 ):
     """Estimate a transfer function for `station`, optionally remote-referenced.
 
     `band_scheme` is the dict from bbmt.bands (band_edges, decimation_factors,
-    num_samples_window); any further `config_kwargs` go to aurora's
-    ``ConfigCreator.create_from_kernel_dataset``.
+    num_samples_window); `start`/`end` (UTC) restrict the estimate to a
+    processing window (see `clip_to_window`); `tag` overrides the output file
+    stem (default ``<station>_rr-<remote>`` or ``<station>_ss``). Any further
+    `config_kwargs` go to aurora's ``ConfigCreator.create_from_kernel_dataset``.
     Returns the mt_metadata TF object; writes an EDI when `out_dir` is given.
     """
     rs = RunSummary()
@@ -40,6 +78,7 @@ def process_station(
 
     kd = KernelDataset()
     kd.from_run_summary(rs, station, remote_station)
+    clip_to_window(kd, start, end)
     if min_run_seconds:
         kd.drop_runs_shorter_than(min_run_seconds)
 
@@ -64,7 +103,8 @@ def process_station(
     if out_dir is not None:
         out_dir = Path(out_dir)
         out_dir.mkdir(parents=True, exist_ok=True)
-        tag = f"{station}_rr-{remote_station}" if remote_station else f"{station}_ss"
+        if tag is None:
+            tag = f"{station}_rr-{remote_station}" if remote_station else f"{station}_ss"
         edi_path = out_dir / f"{tag}.edi"
         tf.write(fn=edi_path, file_type="edi")
         logger.info(f"wrote {edi_path}")

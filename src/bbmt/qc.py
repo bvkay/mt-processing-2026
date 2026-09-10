@@ -49,6 +49,50 @@ def longest_run(mth5_path: Path, survey_name: str, station: str) -> str:
     return best
 
 
+def run_periods(mth5_path: Path, survey_name: str, station: str) -> dict[str, tuple[pd.Timestamp, pd.Timestamp]]:
+    """Map run id -> (start, end) for every run group of a station.
+
+    Auxiliary station-level groups written by aurora/mth5 (Features,
+    Fourier_Coefficients, Transfer_Functions, ...) come back with a null
+    1980-01-01 period, same as in `longest_run`, so they never win an
+    overlap search.
+    """
+    m = MTH5()
+    m.open_mth5(Path(mth5_path), mode="r")
+    try:
+        st = m.get_station(station, survey=survey_name)
+        periods = {}
+        for run_id in st.groups_list:
+            t = st.get_run(run_id).metadata.time_period
+            periods[run_id] = (pd.Timestamp(str(t.start)), pd.Timestamp(str(t.end)))
+    finally:
+        m.close_mth5()
+    return periods
+
+
+def best_overlap_runs(
+    mth5_a: Path, survey_name: str, station_a: str, mth5_b: Path, station_b: str
+) -> tuple[str, str, float]:
+    """Run ids (one per station) whose time periods overlap the most, plus the overlap in seconds.
+
+    Unlike `longest_run` (longest run of a single station, regardless of a
+    partner), this picks the run *pair* that shares the most time -- the
+    right choice for a local/remote or local/stack comparison where each
+    station may have been split into several runs (e.g. a run boundary
+    forced by a file-timing anomaly; see scripts/timing_qc.py).
+    """
+    periods_a = run_periods(mth5_a, survey_name, station_a)
+    periods_b = run_periods(mth5_b, survey_name, station_b)
+    best_a = best_b = None
+    best_overlap = -1.0
+    for run_a, (a0, a1) in periods_a.items():
+        for run_b, (b0, b1) in periods_b.items():
+            overlap = (min(a1, b1) - max(a0, b0)).total_seconds()
+            if overlap > best_overlap:
+                best_a, best_b, best_overlap = run_a, run_b, overlap
+    return best_a, best_b, best_overlap
+
+
 def align(channels: list[tuple[np.ndarray, pd.Timestamp, float]]) -> list[np.ndarray]:
     """Slice channels (all same sample rate, ms-aligned grids) to their common span."""
     srs = {sr for _, _, sr in channels}
