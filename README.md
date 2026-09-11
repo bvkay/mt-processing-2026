@@ -9,8 +9,9 @@ LEMI-423 (and later Earth Data) loggers, built on the IAGA-DVI stack
 Design rules, in order:
 
 1. **Thin.** `bbmt` wraps the community packages; it does not re-implement them.
-2. **Headless first.** Everything runs from a script or the command line; the GUI
-   (coming later) calls the same functions.
+2. **Headless first.** Everything runs from a script or the command line; the
+   desktop GUI (`src/bbmt_gui`, see "The GUI" below) calls the same scripts
+   and computes no product of its own.
 3. **Decisions are data.** Noise masks, band choices and remote-reference pairs
    live in per-survey YAML/JSON files, never buried in code or notebooks.
 
@@ -26,25 +27,31 @@ conda activate bbmt-2026
 ```
 src/bbmt/          the package: survey.py, ingest.py, process.py, compare.py,
                    bands.py, qc.py, timefreq.py, virtual.py
+src/bbmt_gui/      the desktop GUI: a launcher and viewer over scripts/ and
+                   survey.yaml, no processing code of its own (see below and
+                   src/bbmt_gui/README.md)
 surveys/<name>/    one folder per survey: survey.yaml (config), reference_edis.yaml,
                    qc_notes.md (what was learned about each site) + work/ (outputs, gitignored)
 scripts/           the student-facing command line, one job each (see below)
 examples/          runnable end-to-end examples for students
+tests/             unit tests (no Qt) plus the GUI smoke test
 ```
 
 ## Command line (no notebooks, no LLM: plain scripts a student runs)
 
 | step | script |
 |---|---|
+| new survey: a folder of site folders -> `survey.yaml` (each site's first B423 header via mt-io: position, serial, firmware, sample rate; span from the file names; dipoles left to `defaults:`; `--site-table` merges a CSV/XLSX, template `docs/site_table_template.csv`; also the GUI's Metadata tab "New survey...") | `scripts/new_survey.py <data_root> --name NAME [--timezone TZ] [--site-table CSV] [--out PATH]` |
 | field sheet -> `sites:` block | `scripts/site_table_to_yaml.py`, `scripts/burra_notes_to_yaml.py` |
 | legacy EDIs -> `reference_edis.yaml` | `scripts/match_reference_edis.py <edi_dir> <survey.yaml>` |
 | before ingest: file-boundary slips, clock offset vs remote, GPS status | `scripts/timing_qc.py <survey.yaml> <local> <remote>` |
 | quick look at raw noise (Welch PSD, mains zoom) | `scripts/noise_psd.py <survey.yaml> <site>` |
-| ingest both sites, remote-reference TF, overlay on lemimt | `scripts/process_rr.py <survey.yaml> <local> <remote> [start] [end]` |
+| ingest both sites, remote-reference TF, overlay on lemimt (advanced: `--taper`, `--overlap`, `--no-prewhiten`, `--r0` ... on every decimation level) | `scripts/process_rr.py <survey.yaml> <local> <remote> [start] [end]` |
 | per-site QC set: overview, band coherence vs time, coherogram, spectrogram | `scripts/site_qc.py <survey.yaml> <site> [--remote R]` |
 | whole-record PSD per channel from the archive, remote overlaid, lines marked, before/after filters | `scripts/psd_qc.py <survey.yaml> <site> [--remote R] [--before]` |
 | stacked synthetic remote from concurrent sites (members' declared filters applied) | `scripts/build_stack.py <survey.yaml> <name> <start> <end> <member>...` |
 | band-averaged coherence on the processing bands | `scripts/coherence_qc.py <survey.yaml> <local> <remote> [--stack S]` |
+| map background for the GUI's site map, fetched once while online (warped to lon/lat; `<workspace>/basemap.png` + `.json`) | `scripts/fetch_basemap.py <survey.yaml> [--provider NAME] [--margin F] [--zoom N\|auto]` |
 
 Every product is remote-referenced: an adjacent site, a dedicated remote, or a
 stacked synthetic remote (`bbmt.virtual`). There is no single-station product.
@@ -78,6 +85,47 @@ tf = process_station(local, "D02", remote, "E08", out_dir=survey.workspace / "tf
 
 See `examples/01_validate_d02_e08.py` for the full validation run against the
 legacy lemimt EDIs.
+
+## The GUI
+
+A desktop launcher and viewer over the scripts above and each survey's YAML,
+built 2026-09-22/23 to replace the MATLAB App Designer app the students know,
+tab for tab: a site/window tree on the Time Series tab (2 h windows at
+1000 Hz, 4 h at 500 Hz, as the MATLAB app offered them), live Spectra,
+Spectrogram and Coherence views that compute only through `bbmt.timefreq` on
+the loaded window, a Filter Data tab driving `<survey>/filters.yaml`, a
+Process tab laid out like the MATLAB Process Data tab that queues the scripts
+above as subprocesses (Add to queue / Run queue, the MATLAB two-step flow),
+and a View EDIs tab drawn with mtpy-v2. **No product** (archive, transfer
+function, EDI, report figure) is computed in the GUI, and no PNG is ever
+displayed in it. Full detail: `src/bbmt_gui/README.md`.
+
+```bash
+python -m bbmt_gui surveys/<survey>/survey.yaml
+```
+
+Tests, each run on its own (no pytest runner wired up yet); the smoke test
+needs an offscreen Qt platform and writes its screenshots to
+`surveys/curnamona_cube/work/qc/gui_*.png` (gitignored — regenerate them by
+running it):
+
+```bash
+QT_QPA_PLATFORM=offscreen python tests/gui_smoke.py
+python tests/windows_unit.py
+python tests/segment_unit.py
+python tests/psd_ladder_unit.py
+python tests/survey_unit.py          # distance_km, Survey.timezone
+python tests/ingest_unit.py          # ingest_site(ignore_filters=...)
+python tests/process_rr_cli_unit.py  # process_rr.py --dry-run, the estimator tweaks
+python tests/basemap_unit.py         # fetch_basemap.py's warp, network mocked
+python tests/new_survey_unit.py      # new_survey.py on synthetic B423s, then the Curnamona headers
+```
+
+New dependencies (`environment.yml`, `pyproject.toml`): `PySide6` and
+`pyqtgraph` for the GUI itself, and `mtpy-v2` (2.1.4) for the View EDIs tab's
+rho/phase and phase-tensor plots (induction arrows later) — which also drags
+in `contextily` + `xyzservices` (reused by `scripts/fetch_basemap.py`'s tile
+fetch), `geopandas`, `rasterio`, `pyproj`, `simpeg`, `bokeh` and `panel`.
 
 ## Status
 
@@ -119,5 +167,16 @@ legacy lemimt EDIs.
       figures): whole-record overview, band coherence vs time, coherogram and
       spectrogram for Bx–Ey, By–Ex, Bx–By, Ex–Ey and the local-E vs remote-B
       pairs — the input for stack weights and time masks (next)
+- [x] New-survey bootstrap from a raw folder (`scripts/new_survey.py`): B423
+      headers -> `survey.yaml` via mt-io, `--site-table` merge, also reachable
+      from the GUI's Metadata tab ("New survey...")
+- [x] Desktop GUI (`src/bbmt_gui`, 2026-09-22/23): PySide6 + pyqtgraph
+      launcher-and-viewer over the scripts and per-survey YAML, mirroring the
+      MATLAB App Designer app tab for tab — see "The GUI" above
+- [ ] Cross-power editor: per-band, per-window cross-powers/coherence/rho-phase
+      against time, masks saved as UTC intervals in `<survey>/masks.yaml`,
+      `process_rr.py` excluding them
+- [ ] Burra in the GUI (93 sites, remotes filled per stage, `filters.yaml` for
+      Burra35/57, timezone set — the config side is ready, untested in the GUI)
 - [ ] Earth Data logger ingest
-- [ ] Batch CLI, then GUI
+- [ ] Batch CLI
