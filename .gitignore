@@ -11,3 +11,6 @@ surveys/*/work/
 # local-only material (field docs, drafts, big files)
 docs/local/
 local/
+
+# working notes, prototypes, figures and upstream-issue log stay local
+docs/

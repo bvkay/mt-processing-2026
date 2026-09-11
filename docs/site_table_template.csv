@@ -1,2 +1,0 @@
-site,latitude,longitude,elevation,dipole_length_ex,dipole_length_ey,azimuth_ex,azimuth_ey,remote,timing,notes
-SITE01,-31.123456,138.654321,123.4,50.0,48.5,0,90,SITE02,Correct,example row - replace it; an empty cell leaves that value alone
