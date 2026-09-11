@@ -47,3 +47,13 @@ deleted.
   electrode voltage, with only a log warning. Fine as a default, but consider
   making the resulting units metadata reflect that (channel still claims MT
   field units downstream). Low priority.
+
+### 4. `lemi423` reader discards the per-sample GPS status columns
+- **Found:** 2026-09-22, mt-io 0.0.5
+- **Detail:** each 30-byte B423 record carries `sync` (int8, deviation from
+  PPS) and `stage` (uint8, PLL accuracy). `Read_Lemi_Data` names them in the
+  dtype but drops them before returning. They are the only in-band record of
+  GPS lock quality, so timing QC (e.g. for the Burra "Behind" flags) has to
+  re-read the raw file. Suggest exposing them (e.g. an optional `gps_summary`
+  or as run metadata: fraction of samples with `sync != 0`, distinct `stage`
+  values). Low priority; not a correctness bug.

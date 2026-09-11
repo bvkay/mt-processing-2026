@@ -1,0 +1,881 @@
+name: burra
+instrument: lemi423
+sample_rate: 1000
+data_root: E:/MT_Timeseries_DATA/MT_Burra_2017-2020
+defaults:
+  dipole_length_ex: 50.0
+  dipole_length_ey: 50.0
+  azimuth_ex: 0.0
+  azimuth_ey: 90.0
+  calibration_fn: sensors/l120n.rsp
+  # empirical magnetics correction vs lemimt convention: pT -> nT + polarity
+  # (validated on D02/E08: constant 1e6 rho offset, exact 180 deg phase)
+  h_scale: -1000.0
+  # the Burra field sheet's 180/270 azimuths record layout direction, not a
+  # reversed pair: the raw channels are already in standard polarity. Flipping
+  # them put yx (Burra35, Ey at 270) and xy (Burra57, Ex at 180) 180 deg out
+  # of the physical quadrant against the lemimt EDIs (2026-09-22).
+  flip_reversed_dipoles: false
+  # no hz sensor was attached on any broadband deployment (Ben, 2026-09-22):
+  # the B423 Bz column is an open input, so it is dropped at ingest
+  channels: [ex, ey, hx, hy]
+# lemimt-style even log-period band layout (see bbmt.bands.lemimt_band_scheme)
+processing:
+  min_period: 0.005
+  max_period: 5000.0
+  periods_per_decade: 10.0
+  # keep bands clear of mains and its first in-range harmonic
+  notch_frequencies: [50.0, 150.0]
+sites:
+  Burra01:
+    dipole_length_ex: 50.0
+    dipole_length_ey: 50.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -33.334933
+    longitude: 138.552235
+    elevation: 475.0
+    timing: Correct
+  Burra02:
+    dipole_length_ex: 50.0
+    dipole_length_ey: 34.0
+    azimuth_ex: 180.0
+    azimuth_ey: 90.0
+    latitude: -33.3386
+    longitude: 138.621851
+    elevation: 516.0
+    timing: Correct
+  Burra04:
+    dipole_length_ex: 50.0
+    dipole_length_ey: 50.0
+    azimuth_ex: 180.0
+    azimuth_ey: 90.0
+    latitude: -33.342644
+    longitude: 138.862
+    elevation: 532.4
+    timing: Correct
+  Burra05:
+    dipole_length_ex: 50.0
+    dipole_length_ey: 50.0
+    azimuth_ex: 0.0
+    azimuth_ey: 270.0
+    latitude: -33.3376
+    longitude: 139.050105
+    elevation: 484.4
+    timing: Behind
+  Burra06:
+    dipole_length_ex: 50.0
+    dipole_length_ey: 50.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -33.359033
+    longitude: 139.394882
+    elevation: 157.5
+    timing: Behind
+    notes: Very little 50Hz noise, Instrument picked up day early due to heavy rain
+      forcast
+  Burra07:
+    dipole_length_ex: 50.0
+    dipole_length_ey: 50.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -33.414146
+    longitude: 138.546004
+    elevation: 319.0
+    timing: Correct
+  Burra08:
+    dipole_length_ex: 50.0
+    dipole_length_ey: 49.0
+    azimuth_ex: 180.0
+    azimuth_ey: 90.0
+    latitude: -33.420321
+    longitude: 138.628605
+    elevation: 382.0
+    timing: Correct
+  Burra10:
+    dipole_length_ex: 50.0
+    dipole_length_ey: 50.0
+    azimuth_ex: 180.0
+    azimuth_ey: 270.0
+    latitude: -33.43783
+    longitude: 138.849787
+    elevation: 617.0
+    notes: Ex cable chewed apart 2 hours in
+  Burra10repeat:
+    dipole_length_ex: 50.0
+    dipole_length_ey: 50.0
+    azimuth_ex: 180.0
+    azimuth_ey: 270.0
+    latitude: -33.437833
+    longitude: 138.849787
+    elevation: 618.0
+    timing: Correct
+    notes: electrodes dug up upon retrival
+  Burra12:
+    dipole_length_ex: 50.0
+    dipole_length_ey: 35.0
+    azimuth_ex: 180.0
+    azimuth_ey: 90.0
+    latitude: -33.43375
+    longitude: 139.064687
+    elevation: 480.1
+    timing: Correct
+  Burra13:
+    dipole_length_ex: 49.0
+    dipole_length_ey: 49.0
+    azimuth_ex: 180.0
+    azimuth_ey: 90.0
+    latitude: -33.4157
+    longitude: 139.183841
+    elevation: 250.9
+    timing: Behind
+  Burra14:
+    dipole_length_ex: 49.0
+    dipole_length_ey: 49.0
+    azimuth_ex: 180.0
+    azimuth_ey: 90.0
+    latitude: -33.435983
+    longitude: 139.268471
+    elevation: 208.7
+    timing: Behind
+  Burra15:
+    dipole_length_ex: 50.0
+    dipole_length_ey: 50.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -33.4488
+    longitude: 139.386255
+    elevation: 172.9
+    timing: Behind
+  Burra16:
+    dipole_length_ex: 50.0
+    dipole_length_ey: 50.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -33.496883
+    longitude: 138.536501
+    elevation: 246.0
+    timing: Correct
+    notes: coils dug up + electrode dug up
+  Burra17:
+    dipole_length_ex: 47.0
+    dipole_length_ey: 47.0
+    azimuth_ex: 180.0
+    azimuth_ey: 270.0
+    latitude: -33.516617
+    longitude: 138.623342
+    elevation: 293.0
+    timing: No data
+  Burra18:
+    dipole_length_ex: 49.0
+    dipole_length_ey: 46.0
+    azimuth_ex: 180.0
+    azimuth_ey: 90.0
+    latitude: -33.510783
+    longitude: 138.742328
+    elevation: 424.0
+    timing: Correct
+    notes: field-sheet row b18r matched by deployment time (name swap in zips)
+  Burra18repeat:
+    dipole_length_ex: 50.0
+    dipole_length_ey: 50.0
+    azimuth_ex: 180.0
+    azimuth_ey: 90.0
+    latitude: -33.510783
+    longitude: 138.742328
+    elevation: 424.0
+    notes: electrode pulled out 3 hours in; field-sheet row b18 matched by deployment
+      time (name swap in zips)
+  Burra19:
+    dipole_length_ex: 49.7
+    dipole_length_ey: 49.5
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -33.873768
+    longitude: 138.877176
+    elevation: 446.7
+  Burra20:
+    dipole_length_ex: 49.2
+    dipole_length_ey: 49.3
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -33.883624
+    longitude: 138.961684
+    elevation: 472.0
+  Burra21:
+    dipole_length_ex: 50.0
+    dipole_length_ey: 49.0
+    azimuth_ex: 180.0
+    azimuth_ey: 90.0
+    latitude: -33.511067
+    longitude: 138.846801
+    elevation: 576.5
+    timing: Correct
+  Burra22:
+    dipole_length_ex: 50.0
+    dipole_length_ey: 50.0
+    azimuth_ex: 90.0
+    azimuth_ey: 270.0
+    latitude: -33.521317
+    longitude: 138.958588
+    elevation: 560.6
+    timing: Correct
+  Burra23:
+    dipole_length_ex: 49.0
+    dipole_length_ey: 50.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -33.51836
+    longitude: 139.278609
+    elevation: 208.1
+    timing: Behind
+  Burra24:
+    dipole_length_ex: 46.0
+    dipole_length_ey: 48.0
+    azimuth_ex: 180.0
+    azimuth_ey: 270.0
+    latitude: -33.502432
+    longitude: 139.377494
+    elevation: 168.6
+    timing: Correct
+  Burra25:
+    dipole_length_ex: 50.0
+    dipole_length_ey: 48.0
+    azimuth_ex: 0.0
+    azimuth_ey: 270.0
+    latitude: -33.606433
+    longitude: 138.541643
+    elevation: 407.0
+    timing: Correct
+  Burra27:
+    dipole_length_ex: 50.0
+    dipole_length_ey: 49.9
+    azimuth_ex: 180.0
+    azimuth_ey: 270.0
+    latitude: -33.787604
+    longitude: 138.874239
+    elevation: 541.0
+  Burra28:
+    dipole_length_ex: 50.0
+    dipole_length_ey: 50.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -33.783399
+    longitude: 138.962433
+    elevation: 480.9
+  Burra29:
+    dipole_length_ex: 50.0
+    dipole_length_ey: 50.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -33.782751
+    longitude: 139.024312
+    elevation: 410.3
+  Burra30:
+    dipole_length_ex: 50.0
+    dipole_length_ey: 38.0
+    azimuth_ex: 0.0
+    azimuth_ey: 270.0
+    latitude: -33.598289
+    longitude: 138.734896
+    elevation: 368.6
+    timing: Behind
+    notes: 'conflict: Burra_DeploymentNotes.xlsx Azimuth (Ex, Ey) "180, 270"'
+  Burra31:
+    dipole_length_ex: 50.0
+    dipole_length_ey: 50.0
+    azimuth_ex: 0.0
+    azimuth_ey: 270.0
+    latitude: -33.598683
+    longitude: 139.167185
+    elevation: 271.3
+    timing: Behind
+  Burra32:
+    dipole_length_ex: 50.0
+    dipole_length_ey: 49.0
+    azimuth_ex: 0.0
+    azimuth_ey: 270.0
+    latitude: -33.60661
+    longitude: 139.271093
+    elevation: 197.3
+    timing: Correct
+  Burra33:
+    dipole_length_ex: 50.0
+    dipole_length_ey: 49.0
+    azimuth_ex: 180.0
+    azimuth_ey: 90.0
+    latitude: -33.616998
+    longitude: 139.381764
+    elevation: 146.0
+    timing: Correct
+  Burra34:
+    dipole_length_ex: 48.0
+    dipole_length_ey: 50.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -33.696383
+    longitude: 138.611785
+    elevation: 338.0
+    timing: Correct
+    notes: Very close to flowing creek
+  Burra35:
+    dipole_length_ex: 28.5
+    dipole_length_ey: 31.0
+    azimuth_ex: 0.0
+    azimuth_ey: 270.0
+    latitude: -33.688517
+    longitude: 138.740593
+    elevation: 375.0
+    timing: Correct
+    notes: Ex + Ey short due to track; Ex cable pulled out upon retrival
+  Burra36:
+    dipole_length_ex: 50.0
+    dipole_length_ey: 50.0
+    azimuth_ex: 0.0
+    azimuth_ey: 270.0
+    latitude: -33.697753
+    longitude: 138.947462
+    elevation: 468.1
+  Burra37:
+    dipole_length_ex: 50.0
+    dipole_length_ey: 47.0
+    azimuth_ex: 180.0
+    azimuth_ey: 90.0
+    latitude: -33.712167
+    longitude: 138.843819
+    elevation: 456.0
+    timing: Correct
+    notes: house for sale 200 m NE; Manila Road 10 m N; dry creek 100 S
+  Burra38:
+    dipole_length_ex: 50.0
+    dipole_length_ey: 48.0
+    azimuth_ex: 0.0
+    azimuth_ey: 270.0
+    latitude: -33.694833
+    longitude: 139.050917
+    elevation: 373.9
+    timing: Correct
+  Burra39:
+    dipole_length_ex: 50.0
+    dipole_length_ey: 50.0
+    azimuth_ex: 0.0
+    azimuth_ey: 270.0
+    latitude: -33.69524
+    longitude: 139.171888
+    elevation: 225.2
+    timing: Correct
+  Burra40:
+    dipole_length_ex: 50.0
+    dipole_length_ey: 49.0
+    azimuth_ex: 0.0
+    azimuth_ey: 270.0
+    latitude: -33.70345
+    longitude: 139.27492
+    elevation: 180.1
+    timing: Behind
+  Burra41:
+    dipole_length_ex: 50.0
+    dipole_length_ey: 50.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -33.700289
+    longitude: 139.379101
+    elevation: 134.3
+    timing: Correct
+  Burra43:
+    dipole_length_ex: 50.0
+    dipole_length_ey: 50.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -33.618819
+    longitude: 138.857819
+    elevation: 517.9
+  Burra44:
+    dipole_length_ex: 50.0
+    dipole_length_ey: 50.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -33.62769
+    longitude: 138.993839
+    elevation: 511.0
+    notes: no field-sheet row; dipoles/azimuths are survey defaults
+  Burra44repeat:
+    dipole_length_ex: 50.0
+    dipole_length_ey: 50.0
+    azimuth_ex: 0.0
+    azimuth_ey: 270.0
+    latitude: -33.626967
+    longitude: 138.993445
+    elevation: 511.0
+    timing: Behind
+  Burra45:
+    dipole_length_ex: 50.0
+    dipole_length_ey: 50.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -33.592962
+    longitude: 139.07433
+    elevation: 376.6
+  Burra46:
+    dipole_length_ex: 50.0
+    dipole_length_ey: 50.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -33.772517
+    longitude: 138.730395
+    elevation: 494.0
+    timing: Correct
+  Burra48:
+    dipole_length_ex: 50.0
+    dipole_length_ey: 50.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -33.7872
+    longitude: 139.385124
+    elevation: 126.2
+    timing: Correct
+  Burra50:
+    dipole_length_ex: 50.0
+    dipole_length_ey: 50.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -33.874633
+    longitude: 138.717852
+    elevation: 461.0
+    timing: Behind
+    notes: stone homstead ruins 100 N; fence 90 m E
+  Burra52:
+    dipole_length_ex: 50.0
+    dipole_length_ey: 49.0
+    azimuth_ex: 0.0
+    azimuth_ey: 270.0
+    latitude: -33.876483
+    longitude: 139.058708
+    elevation: 387.0
+    timing: Behind
+    notes: old wombat borrows nearby; fence + track 100 E; Ex cable chewed + By coil
+      moved upon retrieval
+  Burra53:
+    dipole_length_ex: 50.0
+    dipole_length_ey: 50.0
+    azimuth_ex: 0.0
+    azimuth_ey: 270.0
+    latitude: -33.519709
+    longitude: 139.067663
+    elevation: 425.8
+  Burra54:
+    dipole_length_ex: 50.0
+    dipole_length_ey: 50.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -33.54062
+    longitude: 139.174254
+    elevation: 253.4
+  Burra54rr:
+    dipole_length_ex: 50.0
+    dipole_length_ey: 50.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -33.540609
+    longitude: 139.173689
+    elevation: 261.4
+    notes: no field-sheet row; dipoles/azimuths are survey defaults
+  Burra54rr2:
+    dipole_length_ex: 50.0
+    dipole_length_ey: 50.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -33.540615
+    longitude: 139.173679
+    elevation: 260.5
+    notes: no field-sheet row; dipoles/azimuths are survey defaults
+  Burra54rr3:
+    dipole_length_ex: 50.0
+    dipole_length_ey: 50.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -33.54063
+    longitude: 139.173664
+    elevation: 258.7
+    notes: no field-sheet row; dipoles/azimuths are survey defaults
+  Burra54rr4:
+    dipole_length_ex: 50.0
+    dipole_length_ey: 50.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -33.540618
+    longitude: 139.173665
+    elevation: 259.9
+    notes: no field-sheet row; dipoles/azimuths are survey defaults
+  Burra55:
+    dipole_length_ex: 50.0
+    dipole_length_ey: 50.0
+    azimuth_ex: 180.0
+    azimuth_ey: 270.0
+    latitude: -33.878825
+    longitude: 139.377168
+    elevation: 127.7
+    timing: Behind
+  Burra57:
+    dipole_length_ex: 50.0
+    dipole_length_ey: 50.0
+    azimuth_ex: 180.0
+    azimuth_ey: 90.0
+    latitude: -33.966867
+    longitude: 138.718033
+    elevation: 349.0
+    timing: Behind
+    notes: Gates locked for orginal site; moved to current location; small powerline
+      50m  SW; high pressure gas line 100m E
+  Burra58:
+    dipole_length_ex: 50.0
+    dipole_length_ey: 50.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -33.95455
+    longitude: 138.831921
+    elevation: 464.0
+    notes: Powerline 400m SW; Barrier highway 500 E; Windturbines    visible to NE
+  Burra58r:
+    dipole_length_ex: 48.0
+    dipole_length_ey: 50.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -33.954494
+    longitude: 138.831943
+    elevation: 464.7
+    timing: Correct
+  Burra59:
+    dipole_length_ex: 50.0
+    dipole_length_ey: 36.5
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -33.963917
+    longitude: 138.947037
+    elevation: 529.0
+    timing: Correct
+    notes: Ey stopped at fence 36.5 m from box
+  Burra60:
+    dipole_length_ex: 50.0
+    dipole_length_ey: 47.0
+    azimuth_ex: 90.0
+    azimuth_ey: 270.0
+    latitude: -33.968683
+    longitude: 139.074217
+    elevation: 344.0
+    notes: DC powerlines a few Km N; water pipe to the south; large shed to South with
+      heavy machinary
+  Burra61:
+    dipole_length_ex: 50.0
+    dipole_length_ey: 50.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -33.970404
+    longitude: 139.377552
+    elevation: 125.6
+    timing: Correct
+  Burra62:
+    dipole_length_ex: 50.0
+    dipole_length_ey: 44.0
+    azimuth_ex: 90.0
+    azimuth_ey: 270.0
+    latitude: -34.044331
+    longitude: 138.620279
+    elevation: 272.4
+    timing: Correct
+  Burra63:
+    dipole_length_ex: 45.0
+    dipole_length_ey: 45.0
+    azimuth_ex: 180.0
+    azimuth_ey: 90.0
+    latitude: -34.046349
+    longitude: 138.735946
+    elevation: 305.0
+    timing: Behind
+  Burra64:
+    dipole_length_ex: 50.0
+    dipole_length_ey: 45.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -34.043142
+    longitude: 138.84154
+    elevation: 401.0
+    timing: Correct
+  Burra65:
+    dipole_length_ex: 50.0
+    dipole_length_ey: 50.0
+    azimuth_ex: 0.0
+    azimuth_ey: 270.0
+    latitude: -34.06025
+    longitude: 138.963261
+    elevation: 563.0
+    timing: Correct
+  Burra66:
+    dipole_length_ex: 49.0
+    dipole_length_ey: 38.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -34.04975
+    longitude: 139.040662
+    elevation: 409.0
+  Burra67:
+    dipole_length_ex: 49.0
+    dipole_length_ey: 49.0
+    azimuth_ex: 0.0
+    azimuth_ey: 270.0
+    latitude: -34.060333
+    longitude: 139.154271
+    elevation: 272.0
+    timing: Correct
+  Burra68:
+    dipole_length_ex: 50.0
+    dipole_length_ey: 50.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -34.0674
+    longitude: 139.39259
+    elevation: 118.7
+    timing: Behind
+  Burra69:
+    dipole_length_ex: 50.0
+    dipole_length_ey: 46.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -34.140987
+    longitude: 138.928408
+    elevation: 408.0
+    timing: Correct
+  Burra70:
+    dipole_length_ex: 49.0
+    dipole_length_ey: 48.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -34.311088
+    longitude: 138.91083
+    elevation: 300.0
+    timing: Correct
+  Burra72:
+    dipole_length_ex: 50.0
+    dipole_length_ey: 46.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -33.686137
+    longitude: 138.556493
+    elevation: 377.0
+    timing: Correct
+  Burra73:
+    dipole_length_ex: 50.0
+    dipole_length_ey: 50.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -33.774753
+    longitude: 138.562703
+    elevation: 392.0
+    timing: Correct
+    notes: Ey cable chewed, not cut
+  Burra74:
+    dipole_length_ex: 49.0
+    dipole_length_ey: 48.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -33.868354
+    longitude: 138.594596
+    elevation: 441.0
+    timing: Behind
+  Burra75:
+    dipole_length_ex: 50.0
+    dipole_length_ey: 50.0
+    azimuth_ex: 180.0
+    azimuth_ey: 270.0
+    latitude: -33.955134
+    longitude: 138.579683
+    elevation: 338.0
+    timing: Behind
+    notes: Ex cable cut, 22 hour in
+  Burra76:
+    dipole_length_ex: 50.0
+    dipole_length_ey: 50.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -34.051597
+    longitude: 138.600782
+    elevation: 260.0
+    timing: No data
+  Burra77:
+    dipole_length_ex: 50.0
+    dipole_length_ey: 50.0
+    azimuth_ex: 180.0
+    azimuth_ey: 90.0
+    latitude: -34.12686
+    longitude: 138.571371
+    elevation: 203.0
+    timing: Correct
+  Burra78:
+    dipole_length_ex: 50.0
+    dipole_length_ey: 49.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -34.149283
+    longitude: 138.645537
+    elevation: 283.0
+    timing: No data
+    notes: Ex cable chwed off
+  Burra79:
+    dipole_length_ex: 48.0
+    dipole_length_ey: 49.0
+    azimuth_ex: 180.0
+    azimuth_ey: 90.0
+    latitude: -34.135752
+    longitude: 138.720664
+    elevation: 300.0
+    timing: Correct
+  Burra80:
+    dipole_length_ex: 50.0
+    dipole_length_ey: 50.0
+    azimuth_ex: 180.0
+    azimuth_ey: 90.0
+    latitude: -34.139263
+    longitude: 138.823868
+    elevation: 409.0
+    timing: No data
+  Burra81:
+    dipole_length_ex: 36.0
+    dipole_length_ey: 39.0
+    azimuth_ex: 180.0
+    azimuth_ey: 270.0
+    latitude: -34.12683
+    longitude: 139.044434
+    elevation: 510.0
+    timing: No data
+    notes: First site location next to railway line, moved 2.3 km North
+  Burra82:
+    dipole_length_ex: 50.0
+    dipole_length_ey: 48.0
+    azimuth_ex: 180.0
+    azimuth_ey: 90.0
+    latitude: -34.137334
+    longitude: 139.14399
+    elevation: 325.0
+    timing: Behind
+  Burra83:
+    dipole_length_ex: 49.0
+    dipole_length_ey: 43.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -34.186149
+    longitude: 138.639287
+    elevation: 282.0
+    timing: No data
+  Burra84:
+    dipole_length_ex: 50.0
+    dipole_length_ey: 50.0
+    azimuth_ex: 180.0
+    azimuth_ey: 90.0
+    latitude: -34.22226
+    longitude: 138.707303
+    elevation: 297.0
+    timing: Correct
+    notes: Ey  bite marks on cable, electrode half pulled out, sheep in paddock
+  Burra85:
+    dipole_length_ex: 50.0
+    dipole_length_ey: 50.0
+    azimuth_ex: 0.0
+    azimuth_ey: 270.0
+    latitude: -34.214902
+    longitude: 138.828519
+    elevation: 445.0
+    timing: Correct
+  Burra86:
+    dipole_length_ex: 50.0
+    dipole_length_ey: 50.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -34.248288
+    longitude: 138.943129
+    elevation: 344.0
+    timing: No data
+  Burra87:
+    dipole_length_ex: 50.0
+    dipole_length_ey: 50.0
+    azimuth_ex: 180.0
+    azimuth_ey: 90.0
+    latitude: -34.225672
+    longitude: 139.046496
+    elevation: 369.0
+    timing: Behind
+  Burra88:
+    dipole_length_ex: 50.0
+    dipole_length_ey: 48.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -33.779924
+    longitude: 139.167753
+    elevation: 210.0
+    timing: Correct
+  Burra89:
+    dipole_length_ex: 50.0
+    dipole_length_ey: 49.0
+    azimuth_ex: 0.0
+    azimuth_ey: 270.0
+    latitude: -33.784954
+    longitude: 139.27241
+    elevation: 174.0
+    timing: Correct
+  Burra90:
+    dipole_length_ex: 49.0
+    dipole_length_ey: 49.0
+    azimuth_ex: 180.0
+    azimuth_ey: 270.0
+    latitude: -33.877893
+    longitude: 139.142381
+    elevation: 286.5
+    timing: Behind
+    notes: azimuth cell read as "180, 270" from raw text "180270"
+  Burra91:
+    dipole_length_ex: 46.0
+    dipole_length_ey: 47.0
+    azimuth_ex: 0.0
+    azimuth_ey: 270.0
+    latitude: -33.877969
+    longitude: 139.27034
+    elevation: 212.0
+    timing: Correct
+    notes: Ex cable cut/chewed 9 hours in
+  Burra91repeat:
+    dipole_length_ex: 46.0
+    dipole_length_ey: 47.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -33.877972
+    longitude: 139.270319
+    elevation: 206.3
+    timing: Correct
+    notes: Ex cable cut/chewed 5.2 hours in
+  Burra92:
+    dipole_length_ex: 50.0
+    dipole_length_ey: 48.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -33.969812
+    longitude: 139.157133
+    elevation: 274.7
+    timing: Correct
+  Burra93:
+    dipole_length_ex: 50.0
+    dipole_length_ey: 46.0
+    azimuth_ex: 180.0
+    azimuth_ey: 270.0
+    latitude: -33.968282
+    longitude: 139.270265
+    elevation: 192.7
+    timing: Correct
+    notes: 4 days of data, only processing first 48 hours for now
+  Burra94:
+    dipole_length_ex: 50.0
+    dipole_length_ey: 46.0
+    azimuth_ex: 180.0
+    azimuth_ey: 90.0
+    latitude: -34.058351
+    longitude: 139.268133
+    elevation: 177.0
+    timing: Correct

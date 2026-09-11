@@ -1,0 +1,10 @@
+# Per-site decisions applied at ingest, in the order listed (bbmt.noise and
+# bbmt.ingest._replace_channels). Declared by hand after looking at the QC
+# figures. A `replace` entry takes a magnetic channel from another site, with
+# that site's own coil calibration, over the span it covers.
+#
+# A07: hx is dead for the whole test window (gamma2 = 0 against E08 at every
+# period, hy excellent). Borrow hx from A06, the nearest concurrent site (32 km; B07 had already been picked up), then
+# remote-reference on E08 as usual and compare with the lemimt A07 EDI.
+A07:
+  - replace: {hx: A06}

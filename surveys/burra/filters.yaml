@@ -1,0 +1,32 @@
+# Per-site time-domain filters applied at ingest, in the order listed
+# (bbmt.noise). Declared by hand after looking at the QC figures — nothing is
+# auto-detected. Kept separate from survey.yaml so regenerating the sites
+# block from the field sheet never wipes these decisions.
+#
+# Cathodic protection on the Burra gas main: a 12.0000 s cycle (square wave
+# on the electrics, edge impulses on the coils). Stack-and-subtract per
+# 10-min window on every channel; no edge detection, no cutting.
+Burra35:
+  - notch: {f0: 50.0, harmonics: 9, q: 30.0}
+  - cp: {period_s: 12.0, window_minutes: 10, channels: [ex, ey, hx, hy]}
+Burra57:
+  - notch: {f0: 50.0, harmonics: 9, q: 30.0}
+  - cp: {period_s: 12.0, window_minutes: 10, channels: [ex, ey, hx, hy]}
+# Stack members concurrent with Burra35's good-Ex window (Jun 22 2018). Field
+# log: "50 Hz + (strong) harmonics" on the coils, no cathodic protection.
+Burra10:
+  - notch: {f0: 50.0, harmonics: 9, q: 30.0}
+Burra18repeat:
+  - notch: {f0: 50.0, harmonics: 9, q: 30.0}
+# Stack members for Burra57's window (Jun 24 2018), selected per coil from the
+# member QC (coherence with Burra54rr3): hx <- 01, 60, 52; hy <- 60, 52, 07, 34.
+Burra01:
+  - notch: {f0: 50.0, harmonics: 9, q: 30.0}
+Burra07:
+  - notch: {f0: 50.0, harmonics: 9, q: 30.0}
+Burra34:
+  - notch: {f0: 50.0, harmonics: 9, q: 30.0}
+Burra52:
+  - notch: {f0: 50.0, harmonics: 9, q: 30.0}
+Burra60:
+  - notch: {f0: 50.0, harmonics: 9, q: 30.0}
