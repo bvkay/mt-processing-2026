@@ -111,19 +111,25 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from loguru import logger
-from scipy.signal import decimate, welch
 
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "src"))
 
 from bbmt.ingest import _apply_h_scale, _group_contiguous, _keep_channels, read_lemi423, select_files
 from bbmt.survey import Survey
-from bbmt.timefreq import CHANNELS, COLOUR, UNIT, load_station, line_excess, merge
+from bbmt.timefreq import CHANNELS, COLOUR, UNIT, load_station, line_excess, merge, psd_ladder
 
 DPI = 150
 NPERSEG = 2**16
 STAGE_FACTOR = 10
 N_STAGES = 4
+# the ladder itself is `bbmt.timefreq.psd_ladder`, which stops a stage short of
+# `min_segments` whole Welch segments. 1 here, not the library's default of 4:
+# this script always ran every stage on a whole record, and 41 h at the 1 Hz
+# stage is 148 k samples -- 2.3 segment lengths -- so the default would drop
+# stage 3 (0.002-0.02 Hz) on every archive in both surveys. One whole segment
+# is what welch needs to run at the stated nperseg at all.
+MIN_SEGMENTS = 1
 # stage index -> (low Hz, high Hz) plotted; must run high-to-low and join
 # seamlessly (each entry's low edge is the next entry's high edge)
 BANDS_HZ = ((2.0, 500.0), (0.2, 2.0), (0.02, 0.2), (0.002, 0.02))
@@ -196,65 +202,7 @@ def cp_period_s(survey: Survey, site: str) -> float | None:
     return None
 
 
-# ---------------------------------------------------------------- the stage ladder
-
-
-def stage_cascade(
-    arrays: dict[str, np.ndarray],
-    gaps: list[tuple[int, int]],
-    fs0: float,
-    channels: list[str],
-    nperseg: int = NPERSEG,
-    factor: int = STAGE_FACTOR,
-    n_stages: int = N_STAGES,
-):
-    """The four-stage decimation ladder: one entry per stage, (fs, freqs, {channel: psd}).
-
-    Native rate first, `/factor` per subsequent stage, plain `scipy.signal.welch`
-    at the fixed `nperseg` over the whole spectrum available at that rate --
-    not just the stage's assigned plotting band, see the module docstring.
-
-    **`arrays` is consumed**: each channel is cast to float64 in place (the
-    float32 it replaces is released as soon as its channel is done, not held
-    alongside every other channel's float64 copy), then replaced by its
-    decimated copy at every subsequent stage -- the same memory discipline
-    `bbmt.timefreq.cascade` uses, so the peak footprint is one stage's worth
-    of channels, not the whole ladder's. Gap samples are zeroed first (the
-    arrays are already offset-removed by `load_station`, so zero is the
-    channel mean); any NaN outside the declared gaps is zeroed too, with a
-    warning, defensively.
-    """
-    for a, b in gaps:
-        for c in channels:
-            arrays[c][a:b] = 0.0
-    for c in channels:
-        n_nan = int(np.isnan(arrays[c]).sum())
-        if n_nan:
-            logger.warning(f"{c}: {n_nan} NaN outside the run gaps -- zeroed")
-            np.nan_to_num(arrays[c], copy=False)
-        arrays[c] = arrays[c].astype("float64")
-
-    fs = float(fs0)
-    stages = []
-    for level in range(n_stages):
-        t0 = time.time()
-        freqs, row = None, {}
-        for c in channels:
-            freqs, row[c] = welch(
-                arrays[c], fs=fs, window="hann", nperseg=nperseg, detrend="constant", scaling="density"
-            )
-        stages.append((fs, freqs, row))
-        logger.info(
-            f"stage {level}: {fs:g} Hz, {arrays[channels[0]].size} samples, "
-            f"welch {time.time() - t0:.1f} s"
-        )
-        if level < n_stages - 1:
-            t0 = time.time()
-            for c in channels:
-                arrays[c] = decimate(arrays[c], factor, ftype="fir", zero_phase=True)
-            fs /= factor
-            logger.info(f"  decimate x{factor} -> {fs:g} Hz: {time.time() - t0:.1f} s")
-    return stages
+# ---------------------------------------------------------------- checks
 
 
 def check_boundary_continuity(stages, channels, bands_hz=BANDS_HZ, tol_db=BOUNDARY_TOL_DB) -> bool:
@@ -603,7 +551,10 @@ def main(argv=None) -> None:
     logger.info(f"load: {t_load:.1f} s ({record.n} samples, {record.duration_s / 3600:.2f} h)")
 
     t0 = time.time()
-    stages = stage_cascade(record.arrays, record.gaps, record.sample_rate, all_channels)
+    stages = psd_ladder(
+        record.arrays, record.gaps, record.sample_rate, all_channels,
+        nperseg=NPERSEG, factor=STAGE_FACTOR, n_stages=N_STAGES, min_segments=MIN_SEGMENTS,
+    )
     t_cascade = time.time() - t0
     logger.info(f"cascade ({len(stages)} stages, {len(all_channels)} channels): {t_cascade:.1f} s")
 
@@ -611,7 +562,7 @@ def main(argv=None) -> None:
     t_before = 0.0
     if args.before:
         # record.arrays is already consumed down to its final (1 Hz) stage by
-        # stage_cascade above, so the raw before-filters read below adds at
+        # psd_ladder above, so the raw before-filters read below adds at
         # most one full-resolution channel set to the peak footprint, not two
         t0 = time.time()
         t1_before = record.t0 + pd.Timedelta(seconds=record.duration_s)
@@ -620,7 +571,10 @@ def main(argv=None) -> None:
         )
         if abs(fs_before - record.sample_rate) > 1e-6:
             raise ValueError(f"before-filters sample rate {fs_before:g} != archive {record.sample_rate:g}")
-        stages_before = stage_cascade(before_arrays, [], fs_before, list(before_arrays))
+        stages_before = psd_ladder(
+            before_arrays, [], fs_before, list(before_arrays),
+            nperseg=NPERSEG, factor=STAGE_FACTOR, n_stages=N_STAGES, min_segments=MIN_SEGMENTS,
+        )
         t_before = time.time() - t0
         logger.info(f"before-filters ({before_note}): {t_before:.1f} s")
 

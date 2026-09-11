@@ -57,3 +57,55 @@ deleted.
   re-read the raw file. Suggest exposing them (e.g. an optional `gps_summary`
   or as run metadata: fraction of samples with `sync != 0`, distinct `stage`
   values). Low priority; not a correctness bug.
+
+### 5. mth5: `KernelDataset.from_run_summary` opens the local archive read-write
+
+Found 2026-09-23 while building an aurora config for a test. `RunSummary.from_mth5s` opens every archive through `initialize_mth5(path, mode="a")`, and `KernelDataset.from_run_summary` opens the local station again through `MTH5().open_mth5(path)`, whose default mode is also read-write. Two consequences: (1) a config cannot be built while another process (the GUI, a test) holds the archive open read-only, because HDF5 file locking refuses the read-write open (`OSError: unable to lock file`); (2) every processing run touches the archive's modification time even though it only reads metadata. The content is unchanged (checked with an independent h5py read of samples). Workaround in tests: monkeypatch `mth5.processing.run_summary.initialize_mth5` and `mth5.mth5.MTH5.open_mth5` to force `mode="r"` (see `tests/process_rr_cli_unit.py`). Worth an upstream request for a read-only mode on both.
+
+### 6. `lemi423` header parser fails on four-digit altitudes (`%Alt1060.0,m`)
+
+Found 2026-09-23 building the Morocco Atlas survey. LEMI-423 firmware 2.1 writes
+the altitude line with a fixed field width, so once the value has four digits
+there is no space after the tag: `%Alt1060.0,m 12 1` (three-digit values read
+`%Alt 125.2,m 12 1`, two-digit `%Alt  27.1,m 12 2`). `Read_Lemi_Header._extract_coordinates`
+takes `header[11].split(",")[0].split()[-1]`, which is `'%Alt1060.0'`, and
+`float()` raises `ValueError: could not convert string to float: '%Alt1060.0'`.
+`read_lemi423` therefore refuses every file of every site above 1000 m: 47 of
+the 103 Morocco sites. Reproduction: the header lines above with any B423 body.
+Workaround: `bbmt.ingest` installs a tolerant `_extract_coordinates` that
+retries with a space inserted after `%Alt` (unit test
+`tests/ingest_unit.py::test_glued_altitude_header_line`). Suggested fix
+upstream: strip the `%Alt` tag before splitting, e.g.
+`header[11].split(",")[0].replace("%Alt", "").strip()`.
+
+### 7. `LEMICollection.to_dataframe` drops every LEMI-423 file by default
+
+Found 2026-09-23. `LEMICollection(folder, file_ext=["B423"]).to_dataframe()`
+returns an empty frame and logs only "No entries found for LEMI collection",
+after reading every file's header and summary (22 s for one Morocco site).
+Cause: `to_dataframe(sample_rates=None)` sets `sample_rates = [1]` (the
+LEMI-424 rate) and then `if sample_rate not in sample_rates: continue`
+silently skips each 1000 Hz file. Passing `sample_rates=[1000]` returns the
+files. The docstring's own LEMI-423 example passes `[1000]`, so the default is
+the trap: a LEMI-423 folder listed with the documented `file_ext=['B423']`
+yields nothing and no per-file message. Suggested fix: default to the
+instrument's rates when `file_ext` names B423 files, or warn per skipped file
+with its rate. Not used by this repo (bbmt.ingest lists files itself), logged
+for students who try mt-io's collection directly.
+
+### 8. `lemi423` sample-rate detection returns None silently for a faulty file
+
+Found 2026-09-23 on Morocco site R05 (the remote's fifth deployment, 393 h
+over 16 days), whose files hold one record per second with the millisecond
+tick always 0 (5400 records in a 5400 s file). The LEMI-423 has no 1 Hz mode
+(owner), so this is an instrument fault, and mt-io's reaction is reasonable:
+`Read_Lemi_Data` derives the rate as `tick_max + 1`, gets `tick_max == 0`,
+and returns `sample_rate = None`; `read_summary()` the same; `LEMICollection`
+then skips the file. What is missing is a message: nothing says why the file
+was dropped, and a student sees only an empty collection. Suggested fix
+upstream: warn with the record count per second when `tick_max == 0`. Also
+worth checking upstream: the tick-plus-one formula assumes the tick is a
+millisecond counter that coincides with the sample index, which only holds
+at 1000 Hz (500 and 250 Hz files were not available here to test).
+Workaround: `scripts/new_survey.py` counts records per second itself and
+reports a non-LEMI rate as measured with an instrument-fault warning.

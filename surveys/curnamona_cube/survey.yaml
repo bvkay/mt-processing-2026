@@ -2,6 +2,9 @@ name: curnamona_cube
 instrument: lemi423
 sample_rate: 1000
 data_root: E:/MT_Timeseries_DATA/MT_Curnamona_Cube_MT
+# local time of the field area (IANA name), for display only: every
+# timestamp in the YAML, the archives and the scripts is UTC
+timezone: Australia/Adelaide
 defaults:
   dipole_length_ex: 50.0
   dipole_length_ey: 50.0
@@ -21,6 +24,7 @@ processing:
   periods_per_decade: 10.0
   # keep bands clear of mains and its first in-range harmonic
   notch_frequencies: [50.0, 150.0]
+generated_by: scripts/site_table_to_yaml.py
 sites:
   A02:
     dipole_length_ex: 50.0
@@ -70,6 +74,7 @@ sites:
     latitude: -29.512872
     longitude: 140.503839
     elevation: 54.0
+    remote: E08
   B01:
     dipole_length_ex: 50.0
     dipole_length_ey: 50.0
@@ -166,6 +171,7 @@ sites:
     latitude: -30.255749
     longitude: 139.22817
     elevation: 519.2
+    remote: E08
   D06:
     dipole_length_ex: 54.8
     dipole_length_ey: 55.5

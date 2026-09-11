@@ -18,6 +18,11 @@ dependencies = [
     "matplotlib",
     "pyyaml",
     "openpyxl",
+    # desktop GUI (src/bbmt_gui): PySide6 widgets, pyqtgraph time series
+    "PySide6",
+    "pyqtgraph",
+    # transfer-function plots in the View EDIs tab (rho/phase, phase tensor, later induction arrows)
+    "mtpy-v2",
 ]
 
 [tool.setuptools.packages.find]

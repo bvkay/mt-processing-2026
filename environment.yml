@@ -6,3 +6,6 @@ dependencies:
   - pip
   - pip:
       - -e .
+      - PySide6
+      - pyqtgraph
+      - mtpy-v2

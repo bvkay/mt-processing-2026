@@ -45,6 +45,7 @@ rather than drawn as a hole.
 
 from __future__ import annotations
 
+import time
 import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -53,7 +54,7 @@ import numpy as np
 import pandas as pd
 from loguru import logger
 from mth5.mth5 import MTH5
-from scipy.signal import decimate, get_window
+from scipy.signal import decimate, get_window, welch
 
 DAY = 86400.0
 
@@ -654,6 +655,106 @@ def line_excess(freqs: np.ndarray, psd: np.ndarray, f0: float, half_width: float
     k = int(np.argmin(np.abs(freqs - f0)))
     with np.errstate(divide="ignore", invalid="ignore"):
         return float(10.0 * np.log10(psd[k] / np.nanmedian(psd[floor_m])))
+
+
+# ---------------------------------------------------------------- the PSD ladder
+
+PSD_NPERSEG = 2**16
+PSD_FACTOR = 10
+PSD_STAGES = 4
+PSD_MIN_SEGMENTS = 4
+
+
+def psd_ladder(
+    arrays: dict[str, np.ndarray],
+    gaps: list[tuple[int, int]],
+    fs0: float,
+    channels,
+    nperseg: int = PSD_NPERSEG,
+    factor: int = PSD_FACTOR,
+    n_stages: int = PSD_STAGES,
+    min_segments: int = PSD_MIN_SEGMENTS,
+):
+    """The whole-spectrum decimation ladder: one entry per stage, (fs, freqs, {channel: psd}).
+
+    `scripts/psd_qc.py`'s stage ladder, moved here so the GUI's segment QC can
+    call it on a 1-3 h stretch: native rate first, `/factor` per subsequent
+    stage, plain `scipy.signal.welch` at the fixed `nperseg` over the whole
+    spectrum available at that rate (the script then draws each stage's
+    assigned decade; see its module docstring for the table).
+
+    A stage is only computed while its array still holds at least
+    `min_segments * nperseg` samples; the ladder stops early otherwise, so a
+    short segment gets the stages its length supports and never a Welch
+    estimate scipy has quietly shrunk `nperseg` for. At 1000 Hz with the
+    defaults (65536-point segments, four of them) the thresholds are
+
+        stage  fs       needs      samples at that rate
+        0      1000 Hz  262 s      4 x 65536
+        1      100 Hz   43.7 min   4 x 65536
+        2      10 Hz    7.28 h     4 x 65536
+        3      1 Hz     72.8 h     4 x 65536
+
+    so a 1 h segment (3.6 M samples) yields stages 0 and 1, and so does a 3 h
+    one (10.8 M): stage 2 would need 7.3 h. Even the whole 41 h Curnamona
+    record is short of the default at stage 3 (148 k samples at 1 Hz, 2.3
+    segment lengths), which is why `scripts/psd_qc.py` passes `min_segments=1`
+    -- one whole segment -- and keeps every stage it always had.
+
+    **`arrays` is consumed**: each channel is cast to float64 in place (the
+    float32 it replaces is released as soon as its channel is done, not held
+    alongside every other channel's float64 copy), then replaced by its
+    decimated copy at every subsequent stage -- the same memory discipline
+    `cascade` uses, so the peak footprint is one stage's worth of channels,
+    not the whole ladder's. Gap samples are zeroed first (the arrays are
+    already offset-removed by `load_station`, so zero is the channel mean);
+    any NaN outside the declared gaps is zeroed too, with a warning,
+    defensively.
+    """
+    for a, b in gaps:
+        for c in channels:
+            arrays[c][a:b] = 0.0
+    for c in channels:
+        n_nan = int(np.isnan(arrays[c]).sum())
+        if n_nan:
+            logger.warning(f"{c}: {n_nan} NaN outside the run gaps -- zeroed")
+            np.nan_to_num(arrays[c], copy=False)
+        arrays[c] = arrays[c].astype("float64")
+
+    fs = float(fs0)
+    stages = []
+    for level in range(n_stages):
+        n_level = arrays[channels[0]].size
+        if n_level < min_segments * nperseg:
+            logger.info(
+                f"stage {level}: {n_level} samples at {fs:g} Hz is under {min_segments} x "
+                f"{nperseg} -- ladder stops below it"
+            )
+            break
+        t0 = time.time()
+        freqs, row = None, {}
+        for c in channels:
+            freqs, row[c] = welch(
+                arrays[c], fs=fs, window="hann", nperseg=nperseg, detrend="constant", scaling="density"
+            )
+        stages.append((fs, freqs, row))
+        logger.info(
+            f"stage {level}: {fs:g} Hz, {arrays[channels[0]].size} samples, "
+            f"welch {time.time() - t0:.1f} s"
+        )
+        if level < n_stages - 1:
+            t0 = time.time()
+            for c in channels:
+                arrays[c] = decimate(arrays[c], factor, ftype="fir", zero_phase=True)
+            fs /= factor
+            logger.info(f"  decimate x{factor} -> {fs:g} Hz: {time.time() - t0:.1f} s")
+    return stages
+
+
+def power_db(power: np.ndarray) -> np.ndarray:
+    """10 log10 of a power density, NaN where it is zero or missing (for a spectrogram)."""
+    with np.errstate(divide="ignore", invalid="ignore"):
+        return 10.0 * np.log10(power)
 
 
 # ---------------------------------------------------------------- stitching levels

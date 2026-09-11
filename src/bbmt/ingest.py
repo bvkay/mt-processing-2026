@@ -8,7 +8,27 @@ import numpy as np
 import pandas as pd
 from loguru import logger
 import mt_io.lemi.lemi423 as _lemi423
-from mt_io.lemi.lemi423 import read_lemi423
+from mt_io.lemi.lemi423 import Read_Lemi_Header, read_lemi423
+
+
+def _extract_coordinates_tolerant(self, header):
+    """mt-io's `Read_Lemi_Header._extract_coordinates`, tolerant of the
+    altitude line firmware 2.1 writes once the value has four digits:
+    ``%Alt1060.0,m 12 1`` (no space after ``%Alt``), where the reader's
+    ``split()[-1]`` yields ``'%Alt1060.0'`` and ``float()`` raises. 47 of the
+    103 Morocco Atlas sites are above 1000 m (docs/upstream_issues.md, 6).
+    """
+    try:
+        return _mtio_extract_coordinates(self, header)
+    except ValueError:
+        fixed = list(header)
+        fixed[11] = header[11].replace("%Alt", "%Alt ", 1)
+        return _mtio_extract_coordinates(self, fixed)
+
+
+_mtio_extract_coordinates = Read_Lemi_Header._extract_coordinates
+if Read_Lemi_Header._extract_coordinates is not _extract_coordinates_tolerant:
+    Read_Lemi_Header._extract_coordinates = _extract_coordinates_tolerant
 from mth5.mth5 import MTH5
 
 from .noise import apply_filters
@@ -42,13 +62,48 @@ def _read_coil_response(calibration_fn, coil_number=None):
 _lemi423.read_lemi_coil_response = _read_coil_response
 
 
+# what the run comment says when `ignore_filters` skipped the declared list
+NO_FILTERS_COMMENT = "ingest filters: none (ignore_filters)"
+
+
+def default_archive_path(survey: Survey, site_name: str, ignore_filters: bool = False) -> Path:
+    """Where `ingest_site` writes a site by default.
+
+    ``<workspace>/mth5/<site>.h5`` normally, ``<site>_unfiltered.h5`` when the
+    site's declared filters are being skipped -- so a filtered and an
+    unfiltered archive of the same site can sit side by side and neither is
+    ever mistaken for the other.
+    """
+    suffix = "_unfiltered" if ignore_filters else ""
+    return survey.workspace / "mth5" / f"{site_name}{suffix}.h5"
+
+
+def b423_files(site_dir: Path) -> list[Path]:
+    """Every real B423 record file under `site_dir`, sorted by its epoch name.
+
+    A B423 file is named by the unix epoch of its first sample, so a name
+    that is not a whole number is not a record: data copied through a Mac
+    arrives with an AppleDouble twin per file (`._1677774771.B423`, a 4 kB
+    resource fork), and those are skipped with one warning per folder.
+    """
+    real, skipped = [], []
+    for f in site_dir.rglob("*.B423"):
+        (real if f.stem.isdigit() else skipped).append(f)
+    if skipped:
+        logger.warning(
+            f"{site_dir.name}: skipped {len(skipped)} non-record .B423 name(s) "
+            f"such as {skipped[0].name!r} (AppleDouble copies from a Mac?)"
+        )
+    return sorted(real, key=lambda p: int(p.stem))
+
+
 def select_files(site_dir: Path, start=None, end=None) -> list[Path]:
     """Return the site's B423 files overlapping [start, end).
 
     B423 filenames are unix epochs (UTC) of the file start; a file's span is
     taken as running to the next file's epoch (median spacing for the last).
     """
-    files = sorted(site_dir.rglob("*.B423"), key=lambda p: int(p.stem))
+    files = b423_files(site_dir)
     if not files:
         raise FileNotFoundError(f"no .B423 files under {site_dir}")
     if start is None and end is None:
@@ -273,18 +328,27 @@ def ingest_site(
     out_path: Path | None = None,
     overwrite: bool = False,
     max_run_files: int | None = None,
+    ignore_filters: bool = False,
 ) -> Path:
     """Read a site's B423 files and write an MTH5.
 
     Contiguous files (exact epoch spacing) are merged into long runs so aurora
     can use long STFT windows; any spacing anomaly starts a new run, so gaps
     never corrupt sample timing.
+
+    `ignore_filters=True` skips the site's declared filters entirely -- every
+    kind, `replace` included -- and the default `out_path` becomes
+    ``<site>_unfiltered.h5`` (`default_archive_path`), so the unfiltered
+    archive never overwrites the filtered one. Nothing else changes: channel
+    selection, dipole polarity, the coil response and `h_scale` are applied
+    exactly as always. It exists for the "was that filter worth it?" question
+    (`scripts/process_rr.py --no-filters`).
     """
     site = survey.site(site_name)
     site_dir = survey.site_dirs()[site_name]
     files = select_files(site_dir, start, end)
 
-    out_path = Path(out_path) if out_path else survey.workspace / "mth5" / f"{site_name}.h5"
+    out_path = Path(out_path) if out_path else default_archive_path(survey, site_name, ignore_filters)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     if out_path.exists():
         if not overwrite:
@@ -327,7 +391,14 @@ def ingest_site(
         for i, group in enumerate(groups, 1):
             run = read_lemi423(group if len(group) > 1 else group[0], **read_kwargs)
             _keep_channels(run, site)
-            if site.filters:
+            if ignore_filters:
+                if site.filters:
+                    logger.warning(
+                        f"{site_name}: ignore_filters -- the {len(site.filters)} declared "
+                        f"filter(s) are NOT applied to this archive"
+                    )
+                run.run_metadata.comments.value = NO_FILTERS_COMMENT
+            elif site.filters:
                 # channel replacement first (the borrowed channel then gets the
                 # same notch/cp treatment as the site's own), then the filters
                 provenance = [

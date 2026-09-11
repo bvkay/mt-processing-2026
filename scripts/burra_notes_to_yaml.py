@@ -17,10 +17,18 @@ Sources, all under the survey's ``data_root``:
 * ``Burra_Timing.xlsx`` / "Sheet1" - clock status for the June 2018 phases.
 * ``BurraTimingPhase2.xlsx`` / "Sheet2" - clock status for Sep-Oct 2018.
 * ``lemi423_metadata_summary.csv`` - positions read from the B423 headers, used
-  where the field sheet has none and as a cross-check where it has both.
+  where the field sheet has none and as a cross-check where it has both, plus
+  the recording window of every folder.
 
 The authoritative site list is the set of zip stems in ``data_root`` (site name
 = folder name = zip stem), not the field sheet: a few folders have no row.
+
+Each site also gets its ``remote``: the dedicated remote is one location
+redeployed once per stage as the folders Burra54, Burra54rr, Burra54rr2,
+Burra54rr3 and Burra54rr4, so a site's remote is simply the Burra54* run whose
+recording window overlaps the site's for the longest time (a site that overlaps
+none of them gets no ``remote`` and a note saying so; the Burra54* folders
+themselves get none).
 
 Usage:
     python scripts/burra_notes_to_yaml.py surveys/burra/survey.yaml
@@ -66,6 +74,9 @@ EXCLUDE_STEMS = {"Burra_PrincessRoyal_Zonge_2019"}
 
 VALID_AZIMUTHS = ("270", "180", "90", "0")
 NO_FIELD_ROW_NOTE = "no field-sheet row; dipoles/azimuths are survey defaults"
+# the dedicated remote: one location, one folder per deployment stage
+REMOTE_FOLDER_PREFIX = "Burra54"
+NO_REMOTE_NOTE = "no Burra54 remote deployment overlaps this site"
 # a field-sheet position and the B423 header position further apart than this
 # means one of the two is for a different site
 POSITION_TOLERANCE_KM = 0.2
@@ -79,6 +90,11 @@ MATCH_TOLERANCE_S = 6 * 3600.0
 def site_folders(data_root: Path) -> list[str]:
     """Authoritative site list: one zip per site, site name = zip stem."""
     return sorted(p.stem for p in data_root.glob("*.zip") if p.stem not in EXCLUDE_STEMS)
+
+
+def is_remote_folder(name: str) -> bool:
+    """A deployment of the dedicated remote: Burra54, Burra54rr ... Burra54rr4."""
+    return str(name).startswith(REMOTE_FOLDER_PREFIX)
 
 
 def site_number(name: str) -> int | None:
@@ -337,11 +353,21 @@ def read_timing(data_root: Path) -> dict[str, str]:
     return flags
 
 
+def iso_epoch(value) -> float | None:
+    """A "Start/End Time ISO" cell -> unix epoch seconds, None when unparseable."""
+    stamp = pd.to_datetime(clean(value), utc=True, errors="coerce")
+    return None if pd.isna(stamp) else float(stamp.timestamp())
+
+
 def read_header_metadata(data_root: Path) -> dict[str, dict]:
-    """B423 header summary -> {folder: {latitude, longitude, elevation, start}}.
+    """B423 header summary -> {folder: {latitude, longitude, elevation, start,
+    window_start, window_end}}.
 
     ``start`` is the folder's first B423 filename as a unix epoch (the zips are
     never opened); it is what the field sheet's ``UnixTime`` records.
+    ``window_start``/``window_end`` come from the CSV's ISO columns instead, and
+    are only ever compared with each other (they run a constant few hours ahead
+    of the file epochs, which cancels in an overlap between two folders).
     """
     df = pd.read_csv(data_root / METADATA_CSV)
     out = {}
@@ -353,11 +379,44 @@ def read_header_metadata(data_root: Path) -> dict[str, dict]:
             "longitude": clean(row.get("Lon")),
             "elevation": clean(row.get("Alt")),
             "start": float(stem) if stem.isdigit() else None,
+            "window_start": iso_epoch(row.get("Start Time ISO")),
+            "window_end": iso_epoch(row.get("End Time ISO")),
         }
     return out
 
 
-def build_site(folder, row, header, defaults, timing, conflicts, extra_notes, issues) -> dict:
+def assign_remotes(folders: list[str], headers: dict) -> dict[str, str]:
+    """{site folder: Burra54* folder} - the remote run that overlaps it longest.
+
+    The dedicated remote sat at one location and was redeployed once per stage,
+    so which of its folders a site belongs with is a question about time alone:
+    take the Burra54* recording window with the largest overlap with the site's.
+    A site whose window overlaps none of them (or that the header summary has no
+    window for) is left out; so are the Burra54* folders themselves.
+    """
+    windows = {
+        f: (headers.get(f, {}).get("window_start"), headers.get(f, {}).get("window_end"))
+        for f in folders
+    }
+    remotes = {f: w for f, w in windows.items() if is_remote_folder(f) and None not in w}
+    if not remotes:
+        logger.warning(f"no {REMOTE_FOLDER_PREFIX}* folder has a recording window")
+
+    out = {}
+    for folder, (start, end) in windows.items():
+        if is_remote_folder(folder) or start is None or end is None:
+            continue
+        overlaps = {
+            remote: min(end, remote_end) - max(start, remote_start)
+            for remote, (remote_start, remote_end) in remotes.items()
+        }
+        best = max(overlaps, key=overlaps.get, default=None)
+        if best is not None and overlaps[best] > 0:
+            out[folder] = best
+    return out
+
+
+def build_site(folder, row, header, defaults, timing, remote, conflicts, extra_notes, issues) -> dict:
     """One site entry: field sheet first, B423 header metadata as fallback."""
     notes: list[str] = []
     header = header or {}
@@ -409,6 +468,8 @@ def build_site(folder, row, header, defaults, timing, conflicts, extra_notes, is
 
     if timing is not None:
         entry["timing"] = timing
+    if remote is not None:
+        entry["remote"] = remote
     notes.extend(extra_notes or [])
     for conflict in conflicts:
         notes.append(conflict)
@@ -463,6 +524,11 @@ def main(yaml_path: str) -> None:
             continue
         timing[folder] = flag
 
+    remotes = assign_remotes(folders, headers)
+    no_remote = [f for f in folders if f not in remotes and not is_remote_folder(f)]
+    for folder in no_remote:
+        extra_notes.setdefault(folder, []).append(NO_REMOTE_NOTE)
+
     sites = {
         folder: build_site(
             folder,
@@ -470,6 +536,7 @@ def main(yaml_path: str) -> None:
             headers.get(folder),
             defaults,
             timing.get(folder),
+            remotes.get(folder),
             conflicts.get(matched[folder][0]) if folder in matched else None,
             extra_notes.get(folder),
             issues,
@@ -492,6 +559,16 @@ def main(yaml_path: str) -> None:
     counts = {flag: sum(1 for s in sites.values() if s.get("timing") == flag) for flag in sorted(set(timing.values()))}
     counts["unknown"] = sum(1 for s in sites.values() if "timing" not in s)
     logger.info(f"timing flags: {counts}")
+    remote_counts = {
+        remote: sum(1 for r in remotes.values() if r == remote)
+        for remote in sorted(set(remotes.values()))
+    }
+    logger.info(f"remote reference: {remote_counts}")
+    if no_remote:
+        logger.warning(
+            f"{len(no_remote)} site(s) with no overlapping "
+            f"{REMOTE_FOLDER_PREFIX}* deployment: {no_remote}"
+        )
 
 
 if __name__ == "__main__":
