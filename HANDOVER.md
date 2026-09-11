@@ -1,9 +1,9 @@
-# BBMT-processing-2026 - handover (2026-09-23)
+# mt-processing-2026 - handover (2026-09-23)
 
 Where the broadband MT workflow stands after three sessions: the Curnamona
 build-and-validate day (2026-09-21), the first Burra (noisy) day (2026-09-22),
 and the GUI phase (2026-09-22/23, this handover). Repo:
-https://github.com/bvkay/BBMT-processing-2026
+https://github.com/bvkay/mt-processing-2026
 
 The student-facing command line is the table in `README.md`; every step is a
 plain script (no notebooks, no LLM at run time). The desktop GUI

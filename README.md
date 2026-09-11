@@ -1,4 +1,4 @@
-# BBMT-processing-2026
+# mt-processing-2026
 
 Broadband magnetotelluric (BBMT) processing for Adelaide Uni surveys recorded on
 LEMI-423 (and later Earth Data) loggers, built on the IAGA-DVI stack
