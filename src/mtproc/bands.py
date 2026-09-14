@@ -47,6 +47,14 @@ def lemimt_band_scheme(
     guard of +-`notch_fraction` out of any band touching them, so no band
     integrates energy from those lines.
     Returns {"band_edges", "decimation_factors", "num_samples_window"}.
+
+    Raises ValueError, naming the level and the band, when a band of the
+    even layout is narrower than one FFT harmonic spacing of its level (the
+    lowest band of a level spans k_min (factor**(1/n) - 1) harmonics): such a
+    band may hold no harmonic at all, and aurora then stops in mt_metadata
+    with a bare IndexError (docs/upstream_issues.md 20), while with any
+    notch listed `_apply_notches` drops it silently as a sliver. At 10 Hz a
+    `min_period` of 2 s did both: 13 of 41 periods left, or the crash.
     """
     f_top = min(1.0 / min_period, 0.25 * sample_rate)
     f_floor = 1.0 / max_period
@@ -70,6 +78,21 @@ def lemimt_band_scheme(
         edges = np.geomspace(f_lo, f_hi, n_bands + 1)
         bands = np.column_stack([edges[:-1], edges[1:]])
         df_level = sample_rate / factor**level / window
+        narrow = (bands[:, 1] - bands[:, 0]) < df_level * (1.0 - 1e-9)
+        if narrow.any():
+            a, b = bands[narrow][0]
+            ratio = (f_hi / f_lo) ** (1.0 / n_bands)
+            partial = f_lo == f_floor and f_floor > f_hi / factor
+            fix = (f"move max_period off {max_period:g} s (this last level is a {f_hi / f_lo:.2f}x sliver)"
+                   if partial else
+                   f"lower min_period to {(ratio - 1.0) * window / (factor * sample_rate):.3g} s or less, "
+                   f"or raise window")
+            raise ValueError(
+                f"band {a:.4g}-{b:.4g} Hz ({1 / b:.4g}-{1 / a:.4g} s) on decimation level {level} is "
+                f"{(b - a) / df_level:.2f} FFT harmonics wide (spacing {df_level:.4g} Hz: {window} points at "
+                f"{sample_rate / factor**level:.4g} Hz), so it may hold no harmonic ({int(narrow.sum())} of the "
+                f"level's {len(bands)} bands are that narrow): {fix}"
+            )
         bands = _apply_notches(bands, notch_frequencies, notch_fraction, df_level)
         band_edges[level] = bands
         if f_lo <= f_floor or level >= 15:
