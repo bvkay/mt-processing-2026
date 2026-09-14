@@ -3,7 +3,7 @@
 One plot per channel, stacked top to bottom with no gap between them, x
 axes linked so panning one pans all of them, and only the bottom plot showing
 the x tick values and label (`share_x_axis`) -- the MATLAB app's look, with
-its colours from `bbmt_gui.theme`: magnetics blue, electrics red, vertical
+its colours from `mtproc_gui.theme`: magnetics blue, electrics red, vertical
 grid only. The curves get pyqtgraph's automatic peak (per-pixel min/max)
 decimation and clipping to the view, so a 2 h window at 1000 Hz (7.2 M
 points a channel) still pans and zooms smoothly.
@@ -14,7 +14,7 @@ from __future__ import annotations
 import pyqtgraph as pg
 from PySide6.QtWidgets import QWidget
 
-from bbmt_gui import theme
+from mtproc_gui import theme
 
 AXIS_WIDTH = 72  # px, every left axis in a stack: see `stack_plots`
 

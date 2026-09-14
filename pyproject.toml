@@ -3,7 +3,7 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "bbmt"
+name = "mt-processing"
 version = "0.1.0"
 description = "Broadband magnetotelluric processing for Adelaide Uni surveys (LEMI-423, Earth Data loggers) using the mth5/aurora stack"
 readme = "README.md"
@@ -18,7 +18,7 @@ dependencies = [
     "matplotlib",
     "pyyaml",
     "openpyxl",
-    # desktop GUI (src/bbmt_gui): PySide6 widgets, pyqtgraph time series
+    # desktop GUI (src/mtproc_gui): PySide6 widgets, pyqtgraph time series
     "PySide6",
     "pyqtgraph",
     # transfer-function plots in the View EDIs tab (rho/phase, phase tensor, later induction arrows)

@@ -20,8 +20,8 @@ from scipy.signal import welch
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "src"))
 
-from bbmt.ingest import read_lemi423, select_files
-from bbmt.survey import Survey
+from mtproc.ingest import read_lemi423, select_files
+from mtproc.survey import Survey
 
 
 def main(survey_yaml: str, site: str, out_png: str | None = None) -> None:

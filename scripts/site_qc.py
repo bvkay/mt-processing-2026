@@ -49,7 +49,7 @@ Tests, run at the bottom of every invocation and printed as CHECK lines.
     --assert-dead-band, since a clean site legitimately has none.
 
 Two things the checks deliberately do **not** assert, both established on D02
-on 2026-09-22 rather than assumed:
+rather than assumed:
 
 - *the median of the 1-second means is not the median of the samples*. The
   original criterion ("within 1%") fails on D02 by 1-5% of a standard
@@ -82,8 +82,8 @@ from loguru import logger
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "src"))
 
-from bbmt.survey import Survey
-from bbmt.timefreq import (
+from mtproc.survey import Survey
+from mtproc.timefreq import (
     BANDS_S,
     CHANNELS,
     COLOUR,

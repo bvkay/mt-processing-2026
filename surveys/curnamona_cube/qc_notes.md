@@ -4,7 +4,7 @@ Findings from processing/QC, so nobody rediscovers them the hard way.
 
 - **A07 hx is dead** for at least 2021-06-29 06:00 → 2021-07-01 00:00 UTC:
   band-averaged coherence vs E08 hx = 0.00 at all periods (0.005–5000 s),
-  while A07 hy is excellent (0.93–1.00). Found 2026-09-21 when a 5-site
+  while A07 hy is excellent (0.93–1.00). Found when a 5-site
   synthetic remote stack went noisy at 3–100 s. Do not use A07 hx as a
   remote; check whether the whole deployment is affected before processing
   A07 itself.
@@ -17,13 +17,13 @@ Findings from processing/QC, so nobody rediscovers them the hard way.
 - **Dead band 2–10 s is total** at these sites: all coherences (local E–H
   and inter-station H–H) drop to ~0–0.15. Error bars balloon there; that is
   data, not processing.
-- **hz is unusable at D02 and E08** (found 2026-09-22 with `scripts/site_qc.py`,
+- **hz is unusable at D02 and E08** (found with `scripts/site_qc.py`,
   confirmed on raw counts): E08's Bz is a constant −2³¹ counts for the whole
   deployment (open input), D02's saws between −2³¹ and ~−8.6e8. The tipper
   from either is meaningless; the D02 RR E08 validation covers impedance only.
   Look at the overview figure's hz panel before trusting any tipper.
 - **A07 with hx replaced by A06's** (`surveys/curnamona_cube/filters.yaml`:
-  `replace: {hx: A06}`; 2026-09-22; figure
+  `replace: {hx: A06}`; figure
   `docs/figures/A07_hx-from-A06_rr-E08_vs_lemimt.png`): RR on E08 over the
   validation window gives xy matching lemimt 0.005–5000 s (A07's own Hy) and
   a smooth, physical yx from the borrowed coil over 0.005–1000 s (phases +41

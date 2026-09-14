@@ -1,4 +1,4 @@
-"""Unit test for `bbmt.timefreq.psd_ladder` -- the whole-spectrum PSD ladder.
+"""Unit test for `mtproc.timefreq.psd_ladder` -- the whole-spectrum PSD ladder.
 
     python tests/psd_ladder_unit.py
 
@@ -27,7 +27,7 @@ from scipy.signal import welch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from bbmt.timefreq import PSD_NPERSEG, psd_ladder  # noqa: E402
+from mtproc.timefreq import PSD_NPERSEG, psd_ladder  # noqa: E402
 
 FS = 1000.0
 CHANNELS = ["hx", "hy", "ex"]

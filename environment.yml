@@ -1,4 +1,4 @@
-name: bbmt-2026
+name: mt-2026
 channels:
   - conda-forge
 dependencies:

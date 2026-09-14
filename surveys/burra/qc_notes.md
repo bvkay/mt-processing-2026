@@ -8,7 +8,7 @@ are summarised in the handover.
 ## Timing flags ("Correct" / "Behind" / "No data")
 
 The field timing sheets flag each June and Sep–Oct 2018 deployment. Tested
-2026-09-22 whether "Behind" means a clock error in the data, by cross-correlating
+whether "Behind" means a clock error in the data, by cross-correlating
 each site's hx/hy against the remote Burra54rr3 (natural-field band, 1000 Hz
 decimated to 10 Hz and to 1 Hz, lags to ±3000 s; a clock error would move the
 correlation peak off zero lag):
@@ -25,15 +25,15 @@ Tightened to 10 ms resolution (100 Hz, 3–40 Hz Schumann band): Burra35 and
 Burra57 both peak at 0 ms against the remote (r up to 0.98; r ≈ 0 at ±1 s).
 **No timing correction is applied.**
 
-Ben's recollection (2026-09-22): "Behind" marked sites where processing was
-troublesome years ago and a ~1 s timing difference was suspected but never
-confirmed. The likely source is in the **remote**, not the flagged sites:
+"Behind" likely flagged sites where earlier processing suspected a ~1 s
+timing difference that was never confirmed. The likely source is in the
+**remote**, not the flagged sites:
 Burra54rr3's file `1529918021.B423` starts 1 s late (5401 s after its
 predecessor) and is 5399 s long, so the following file is back on the
 original grid. Its samples are correctly timed (peak at 0 ms against Burra57
 for that file and both neighbours), i.e. only the file boundary slipped.
 Concatenating files at a fixed 5400 s would shift everything after it by 1 s;
-`bbmt.ingest` instead starts a new run at any spacing anomaly and keeps the
+`mtproc.ingest` instead starts a new run at any spacing anomaly and keeps the
 per-sample timestamps, so nothing needs fixing. Scan every site's file epochs
 for this (Burra35/57/25 have none); `timing:` in `survey.yaml` is information
 only.
@@ -52,7 +52,7 @@ only.
 - **hz is dead at every Burra site checked** (Burra35, Burra57, Burra54rr3):
   raw Bz counts sit at exactly −2³¹ for the whole record (an open or
   unconnected input), so the tipper from these sites is meaningless. Found
-  2026-09-22 by the whole-record overview (`scripts/site_qc.py`), confirmed
+  by the whole-record overview (`scripts/site_qc.py`), confirmed
   on the raw files. Same at Curnamona E08 (constant) and D02 (saw-toothing
   between −2³¹ and ~−8.6e8). Check any site's hz in the overview before
   believing a tipper.
@@ -79,7 +79,7 @@ only.
 - **Burra35** dipoles are short (28.5 m Ex, 31 m Ey, Ey at 270°) — the rho
   level of anything processed from it depends on those lengths.
 
-## First RR results (2026-09-22, lemimt band scheme, notches 50/150 Hz)
+## First RR results (lemimt band scheme, notches 50/150 Hz)
 
 - **Burra35 RR Burra54rr3, full overlap**: yx matches lemimt 0.005–1000 s;
   xy only below 0.3 s (Ex failure above).
@@ -88,7 +88,7 @@ only.
   lemimt from 0.005 s to ~1 s and from ~15 s to 1000 s; 1–15 s unusable in
   both modes (the CP band).
 - **Same, with the declared filters** (`surveys/burra/filters.yaml`: 50 Hz +
-  harmonics zero-phase notch, then Ben's stack-and-subtract of the 12.0000 s
+  harmonics zero-phase notch, then a stack-and-subtract of the 12.0000 s
   cycle in 10-min windows on all four channels; archive
   `Burra35_rr-Burra54rr3_w20180622T0515-20180622T2140.edi`, figure in
   `docs/figures/Burra35_rr-Burra54rr3_filtered_vs_lemimt.png`): **both modes
@@ -132,7 +132,7 @@ only.
   carry a 12 s **square wave** (~2.5 s off-state, exponential settling
   edges) 30× the natural signal; the coils see a short **impulse** at each
   switching edge (two per cycle) and are clean in between.
-  **What removes it (prototyped 2026-09-22, `docs/prototypes/cp_recipe.py`,
+  **What removes it (prototyped, `docs/prototypes/cp_recipe.py`,
   one 90-min Burra57 file, metric = squared coherence with the remote's
   coils; CP-free control Burra25 hy: 0.86 in 0.3–2 s, 0.45 in 2–10 s):**
   - edge-locked folded template (10-min running median) drops the comb
@@ -145,11 +145,11 @@ only.
     coherence at 0.06–0.14 (a few % residual of a 30× signal), and hurts
     0.05–0.3 s (0.38→0.19) — E needs a per-cycle fit (separate on/off
     levels) or must rely on RR variance averaging. Untested in aurora yet.
-  **Order (Ben): 50 Hz + harmonics first**, then CP on the cleaner series
+  **Order: 50 Hz + harmonics first**, then CP on the cleaner series
   (`docs/prototypes/cp_recipe_notch_first.py`): edge scatter 7 → 5 ms,
   ey–remote-hx coherence 0.06 → 0.19 in 0.3–2 s and 0.40 → 0.64 in
   0.05–0.3 s, coils unchanged within scatter.
-  Not automatic (Ben): the student sees the square wave / comb in the QC
+  Not automatic: the student sees the square wave / comb in the QC
   figures and declares the filter list for that site
   (`filters: [{notch: 50, harmonics: 9}, {cp: {period_s: 12.0, reference: ey}}]`);
   ingest applies it in order and records it in the archive. No
@@ -169,11 +169,11 @@ only.
   a far wider dead band than Curnamona's 2–10 s, because the CP comb sits
   on the local coils there. RR still recovers yx through it.
 
-## Mains at Burra35 (from the before/after PSD, 2026-09-22)
+## Mains at Burra35 (from the before/after PSD)
 
 - The grid frequency wanders 49.91–50.09 Hz between 10-min blocks. One
   Q=30 notch at 50.000 leaves the line ~7 dB above the floor over 90 min
-  (the spike inside the dip Ben spotted); two passes take it 20 dB below.
+  (the spike inside the dip); two passes take it 20 dB below.
   `notch` now applies two passes by default; tracking the block's mean
   frequency does not help because the line moves within the block.
 - Hx 75/125 Hz lines (odd multiples of 25 Hz, a separate source) are only

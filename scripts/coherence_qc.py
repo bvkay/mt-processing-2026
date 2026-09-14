@@ -12,7 +12,7 @@ sensor noise matters; the dead band should dip in everything.
 
 Reads the MTH5s already in <workspace>/mth5 (ingest first). Local and remote
 each use whichever of their runs overlaps the other the most (`best_overlap_runs`);
-a station split into several runs (e.g. by a file-timing anomaly) is no longer
+a station split into several runs (e.g. by a file-timing anomaly) is not
 reduced to its single longest run before checking overlap. When --stack is
 given, the stack's run is chosen to best overlap the local run already chosen
 against the remote, not re-optimised against the stack independently.
@@ -34,9 +34,9 @@ from loguru import logger
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "src"))
 
-from bbmt.bands import lemimt_band_scheme
-from bbmt.qc import align, band_coherence, best_overlap_runs, load_channel, run_periods
-from bbmt.survey import Survey
+from mtproc.bands import lemimt_band_scheme
+from mtproc.qc import align, band_coherence, best_overlap_runs, load_channel, run_periods
+from mtproc.survey import Survey
 
 
 def parse_args(argv=None) -> argparse.Namespace:

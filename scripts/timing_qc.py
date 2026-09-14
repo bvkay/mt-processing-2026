@@ -8,7 +8,7 @@ clock offset by cross-correlation, (c) GPS lock status per file.
 This check fails if any cross-correlation peak sits more than 50 ms from zero
 lag (a real clock error, which no downstream step can repair). A file-start
 spacing other than 5400 s after the first file is reported as a WARNING, not a
-failure: `bbmt.ingest` starts a new run at every spacing anomaly and keeps the
+failure: `mtproc.ingest` starts a new run at every spacing anomaly and keeps the
 per-sample timestamps, so a one-second file-boundary slip (seen on Burra54rr3
 at 2018-06-25 09:13:41 UTC, samples inside correctly timed) costs nothing.
 
@@ -37,8 +37,8 @@ from scipy.signal import decimate
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "src"))
 
-from bbmt.ingest import select_files
-from bbmt.survey import Survey
+from mtproc.ingest import select_files
+from mtproc.survey import Survey
 
 # 30-byte little-endian record after the 1024-byte ASCII header; identical to
 # mt_io.lemi.lemi423.Read_Lemi_Data.binary_format.

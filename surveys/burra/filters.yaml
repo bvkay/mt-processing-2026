@@ -1,5 +1,5 @@
 # Per-site time-domain filters applied at ingest, in the order listed
-# (bbmt.noise). Declared by hand after looking at the QC figures — nothing is
+# (mtproc.noise). Declared by hand after looking at the QC figures — nothing is
 # auto-detected. Kept separate from survey.yaml so regenerating the sites
 # block from the field sheet never wipes these decisions.
 #

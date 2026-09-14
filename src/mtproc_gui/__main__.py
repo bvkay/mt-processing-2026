@@ -1,9 +1,9 @@
-"""Entry point: ``python -m bbmt_gui [survey.yaml]``.
+"""Entry point: ``python -m mtproc_gui [survey.yaml]``.
 
 The optional argument is a survey config (e.g.
 ``surveys/curnamona_cube/survey.yaml``); without it the window opens empty and
 the survey is chosen from the File menu or the Metadata tab. The look --
-the dark grey surface and the channel colours -- is `bbmt_gui.theme`, applied
+the dark grey surface and the channel colours -- is `mtproc_gui.theme`, applied
 to the application before the window is built.
 """
 
@@ -13,8 +13,8 @@ import sys
 
 from PySide6.QtWidgets import QApplication
 
-from bbmt_gui import theme
-from bbmt_gui.app import MainWindow
+from mtproc_gui import theme
+from mtproc_gui.app import MainWindow
 
 
 def main(argv: list[str] | None = None) -> int:

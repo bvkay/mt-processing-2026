@@ -14,10 +14,10 @@ defaults:
   # empirical magnetics correction vs lemimt convention: pT -> nT + polarity
   # (validated on D02/E08: constant 1e6 rho offset, exact 180 deg phase)
   h_scale: -1000.0
-  # no hz sensor was attached on any broadband deployment (Ben, 2026-09-22):
+  # no hz sensor was attached on any broadband deployment:
   # the B423 Bz column is an open input, so it is dropped at ingest
   channels: [ex, ey, hx, hy]
-# lemimt-style even log-period band layout (see bbmt.bands.lemimt_band_scheme)
+# lemimt-style even log-period band layout (see mtproc.bands.lemimt_band_scheme)
 processing:
   min_period: 0.005
   max_period: 5000.0

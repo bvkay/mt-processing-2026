@@ -1,4 +1,4 @@
-"""One `bbmt_gui.archive` read in its own thread, for tabs that draw an MTH5.
+"""One `mtproc_gui.archive` read in its own thread, for tabs that draw an MTH5.
 
 A read of a 41 h 1000 Hz site takes a few seconds and a full-rate detail read
 about a second; either would freeze the window if run on the GUI thread. A
@@ -7,7 +7,7 @@ about a second; either would freeze the window if run on the GUI thread. A
 
 `ArchiveLock` is how the window keeps to **one archive open at a time across
 threads**: the Time Series tab's reads and the segment QC worker
-(`bbmt_gui.segment_store`) each `acquire` it before opening an archive and
+(`mtproc_gui.segment_store`) each `acquire` it before opening an archive and
 `release` it when the file is closed, and whoever could not get it retries
 on `changed`. It is a flag, not a mutex: everything that touches it runs on
 the GUI thread (the workers signal back rather than releasing themselves).

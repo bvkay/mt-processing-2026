@@ -22,9 +22,9 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-from bbmt.bands import lemimt_band_scheme
-from bbmt.qc import align, band_coherence, load_channel, longest_run
-from bbmt.survey import Survey
+from mtproc.bands import lemimt_band_scheme
+from mtproc.qc import align, band_coherence, load_channel, longest_run
+from mtproc.survey import Survey
 
 SURVEY_YAML = REPO / "surveys" / "curnamona_cube" / "survey.yaml"
 LOCAL, REMOTE, SYN = "D02", "E08", "SYN01"

@@ -1,4 +1,4 @@
-"""Unit test for `bbmt_gui.segment` -- the segment QC engine on a synthetic hour, no Qt.
+"""Unit test for `mtproc_gui.segment` -- the segment QC engine on a synthetic hour, no Qt.
 
     python tests/segment_unit.py
 
@@ -38,9 +38,9 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from bbmt.timefreq import line_excess  # noqa: E402
-from bbmt_gui.archive import Grid, run_slices  # noqa: E402
-from bbmt_gui.segment import Segment, compute_segment_qc  # noqa: E402
+from mtproc.timefreq import line_excess  # noqa: E402
+from mtproc_gui.archive import Grid, run_slices  # noqa: E402
+from mtproc_gui.segment import Segment, compute_segment_qc  # noqa: E402
 
 FS = 1000.0
 N = int(3600 * FS)

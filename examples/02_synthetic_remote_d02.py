@@ -18,12 +18,12 @@ sys.path.insert(0, str(REPO / "src"))
 
 import yaml
 
-from bbmt.bands import lemimt_band_scheme
-from bbmt.compare import plot_comparison
-from bbmt.ingest import ingest_site
-from bbmt.process import process_station
-from bbmt.survey import Survey
-from bbmt.virtual import build_synthetic_remote
+from mtproc.bands import lemimt_band_scheme
+from mtproc.compare import plot_comparison
+from mtproc.ingest import ingest_site
+from mtproc.process import process_station
+from mtproc.survey import Survey
+from mtproc.virtual import build_synthetic_remote
 
 SURVEY_YAML = REPO / "surveys" / "curnamona_cube" / "survey.yaml"
 REFERENCE_EDIS = SURVEY_YAML.parent / "reference_edis.yaml"

@@ -1,9 +1,8 @@
 """ConsoleStrip: a small always-visible echo of what the backend is doing.
 
-The owner's request, verbatim: "a small two-three line area at the bottom of
-our GUI, where it echoes the command line terminal, that way the students can
-see the python commands and outputs that are part of the backend that are
-running when they click on something." `ConsoleStrip` is a read-only,
+A small, always-visible area at the bottom of the GUI that echoes the
+command-line terminal, so students can see the python commands and outputs
+from the backend as they run when something is clicked. `ConsoleStrip` is a read-only,
 monospace `QPlainTextEdit`, three lines tall by default (in the dark theme,
 `theme.apply` already having set the application palette every widget draws
 with, so nothing here sets a colour of its own), holding at most `MAX_BLOCKS`
@@ -19,7 +18,7 @@ Three sources feed it, all through the `append(line)` slot:
 2. the in-process backend's own `loguru` logger, through `LoguruQtSink`
    below: a small `QObject` loguru calls as a plain sink, which re-emits
    each formatted line as a `Signal(str)` so a line logged from a worker
-   thread (`bbmt.timefreq`'s `cascade` and `psd_ladder`, called off the GUI
+   thread (`mtproc.timefreq`'s `cascade` and `psd_ladder`, called off the GUI
    thread by `SegmentStore`'s worker) reaches the strip on the GUI thread
    through a queued connection, not a direct call across threads. Only
    loguru records reach it, so pyqtgraph's and Qt's own console noise --

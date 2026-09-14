@@ -200,7 +200,7 @@ ASCII_SUBSTITUTIONS = {
 
 
 def ascii_text(text: str) -> str:
-    """Plain-ASCII note text: substitute what we know, drop anything left over."""
+    """Plain-ASCII note text: substitute known characters, drop anything left over."""
     for bad, good in ASCII_SUBSTITUTIONS.items():
         text = text.replace(bad, good)
     stripped = text.encode("ascii", "ignore").decode("ascii")

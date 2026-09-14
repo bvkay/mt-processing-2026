@@ -17,12 +17,12 @@ defaults:
   # the Burra field sheet's 180/270 azimuths record layout direction, not a
   # reversed pair: the raw channels are already in standard polarity. Flipping
   # them put yx (Burra35, Ey at 270) and xy (Burra57, Ex at 180) 180 deg out
-  # of the physical quadrant against the lemimt EDIs (2026-09-22).
+  # of the physical quadrant against the lemimt EDIs.
   flip_reversed_dipoles: false
-  # no hz sensor was attached on any broadband deployment (Ben, 2026-09-22):
+  # no hz sensor was attached on any broadband deployment:
   # the B423 Bz column is an open input, so it is dropped at ingest
   channels: [ex, ey, hx, hy]
-# lemimt-style even log-period band layout (see bbmt.bands.lemimt_band_scheme)
+# lemimt-style even log-period band layout (see mtproc.bands.lemimt_band_scheme)
 processing:
   min_period: 0.005
   max_period: 5000.0

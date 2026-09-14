@@ -1,7 +1,7 @@
 """Whole-record power spectral density per channel, in physical units, full band.
 
 The fifth per-site QC figure (after `scripts/site_qc.py`'s four). Where
-`site_qc.py`'s spectrogram walks `bbmt.timefreq.cascade`'s factor-4 decimation
+`site_qc.py`'s spectrogram walks `mtproc.timefreq.cascade`'s factor-4 decimation
 ladder and bins into log-period *and* time (a time-resolved view, log-period
 binned so a window's Welch segments are few), this one wants a single,
 whole-record spectrum at frequency resolution fine enough to actually show a
@@ -28,7 +28,7 @@ spectrum (there is no lemimt EDI at these frequencies).
 Gaps: `load_station` returns NaN outside the runs it found, with each
 channel's DC offset already removed (`Record.arrays`). Gap samples are
 zeroed in place -- zero is therefore already the channel mean, not
-subtracted again -- rather than dropped, exactly as `bbmt.timefreq.cascade`
+subtracted again -- rather than dropped, exactly as `mtproc.timefreq.cascade`
 does before its own decimation: one contiguous array per channel keeps the
 FIR decimation simple, and a zeroed window softly lowers that window's
 average power instead of the spurious spectral content a NaN or a straight
@@ -45,24 +45,24 @@ Usage:
 
 `--before` overlays each local channel's PSD *before* any declared ingest
 filter, in grey dashed, labelled "before filters (raw file)". The raw trace
-comes straight from the site's B423 files (`bbmt.ingest.select_files` over
-the archive's own time span, `bbmt.ingest.read_lemi423` with the same read
+comes straight from the site's B423 files (`mtproc.ingest.select_files` over
+the archive's own time span, `mtproc.ingest.read_lemi423` with the same read
 kwargs `ingest_site` uses -- dipole lengths and `calibration_fn` from
-`survey.site(site)` -- then `bbmt.ingest._keep_channels`), calibrated to the
+`survey.site(site)` -- then `mtproc.ingest._keep_channels`), calibrated to the
 same physical units the archived trace uses by the same scalar-gain rule
 `load_station` applies (`_raw_scalar_gain` below, `_scalar_gain`'s rule on a
 raw channel's filter chain -- LEMI linear coefficient, dipole length,
-`lemi423_b_scale` -- run through `bbmt.ingest._apply_h_scale` since the
+`lemi423_b_scale` -- run through `mtproc.ingest._apply_h_scale` since the
 archived channels already carry it) but with none of `filters.yaml`'s
-declared filters applied: `bbmt.noise.apply_filters` never runs on it. A site
+declared filters applied: `mtproc.noise.apply_filters` never runs on it. A site
 with no declared filters is the correctness test -- the two traces should
 coincide, since they are the same samples through the same gain -- and the
 CHECK lines below quantify how well they do. A 45 h record is ~160M samples
 per channel, so `load_before` reads every file in the archive's span in one
 `read_lemi423` call (matching `load_station`, which also concatenates every
 run) only up to MAX_BEFORE_SAMPLES; past that it falls back to the
-**longest** contiguous group of B423 files instead (`bbmt.ingest._group_contiguous`,
-the same economy `bbmt.ingest._replace_channels` uses), logging the drop.
+**longest** contiguous group of B423 files instead (`mtproc.ingest._group_contiguous`,
+the same economy `mtproc.ingest._replace_channels` uses), logging the drop.
 Comparing the archive's full-span Welch estimate against a shorter group's is
 not the same test -- two disjoint spans of the same natural field disagree by
 several dB from Welch sampling scatter alone (measured directly: dropping
@@ -89,8 +89,8 @@ record -- and a Welch estimate's own sampling scatter (chi-squared, ~2x the
 segment count degrees of freedom) grows the same way; two honest independent
 estimates of a physically non-stationary natural field can disagree by a few
 dB purely by chance once one side is down to a few dozen segments, before
-either pipeline has done anything wrong. Measured on Curnamona D02/E08
-(2026-09-22): under 1 dB at the 2 Hz boundary, up to 3.6 dB at 0.2 Hz, up to
+either pipeline has done anything wrong. Measured on Curnamona D02/E08:
+under 1 dB at the 2 Hz boundary, up to 3.6 dB at 0.2 Hz, up to
 6.0 dB at 0.02 Hz (r_hx, decimated three times, ~3 segments on that side) --
 one channel at a time, mixed sign, never every channel moving together,
 which is what a real decimation or scaling bug would look like instead.
@@ -115,15 +115,15 @@ from loguru import logger
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "src"))
 
-from bbmt.ingest import _apply_h_scale, _group_contiguous, _keep_channels, read_lemi423, select_files
-from bbmt.survey import Survey
-from bbmt.timefreq import CHANNELS, COLOUR, UNIT, load_station, line_excess, merge, psd_ladder
+from mtproc.ingest import _apply_h_scale, _group_contiguous, _keep_channels, read_lemi423, select_files
+from mtproc.survey import Survey
+from mtproc.timefreq import CHANNELS, COLOUR, UNIT, load_station, line_excess, merge, psd_ladder
 
 DPI = 150
 NPERSEG = 2**16
 STAGE_FACTOR = 10
 N_STAGES = 4
-# the ladder itself is `bbmt.timefreq.psd_ladder`, which stops a stage short of
+# the ladder itself is `mtproc.timefreq.psd_ladder`, which stops a stage short of
 # `min_segments` whole Welch segments. 1 here, not the library's default of 4:
 # this script always ran every stage on a whole record, and 41 h at the 1 Hz
 # stage is 148 k samples -- 2.3 segment lengths -- so the default would drop
@@ -156,7 +156,7 @@ YLIM_PCTL = (1.0, 99.0)
 YLIM_PAD_DECADES = 1.0
 # three bands whose archived/before-filter power ratio is printed with
 # --before: mains, then the two a cathodic-protection stack acts on (see
-# bbmt.noise's module docstring)
+# mtproc.noise's module docstring)
 RATIO_BANDS_HZ = (
     (45.0, 55.0, "45-55 Hz (mains)"),
     (0.07, 0.2, "0.07-0.2 Hz"),
@@ -232,9 +232,9 @@ def check_boundary_continuity(stages, channels, bands_hz=BANDS_HZ, tol_db=BOUNDA
 
 
 def _raw_scalar_gain(filters_list, label: str) -> tuple[float, bool]:
-    """`bbmt.timefreq._scalar_gain`'s rule, for a raw channel's filter chain.
+    """`mtproc.timefreq._scalar_gain`'s rule, for a raw channel's filter chain.
 
-    `read_lemi423` + `bbmt.ingest._apply_h_scale` builds the same chain a
+    `read_lemi423` + `mtproc.ingest._apply_h_scale` builds the same chain a
     channel gets at ingest -- [dipole coefficient, linear coefficient] for an
     electric, [linear coefficient, coil response, `lemi423_b_scale`] for a
     magnetic -- just not yet written to an MTH5 channel group, so it has no
@@ -262,7 +262,7 @@ def load_before(survey: Survey, site_name: str, channels: list[str], t0, t1):
     site = survey.site(site_name)
     site_dir = survey.site_dirs()[site_name]
     # select_files localises a naive start/end to UTC itself (as
-    # bbmt.ingest._replace_channels calls it, from a naive xarray time
+    # mtproc.ingest._replace_channels calls it, from a naive xarray time
     # coordinate) and rejects an already tz-aware Timestamp; record.t0 is
     # tz-aware (from run metadata), so strip that here rather than in
     # select_files, which every other caller already gets right.
@@ -415,7 +415,7 @@ def psd_figure(
 ):
     """One panel per local channel present (2x2: hx, hy, ex, ey), log-log, 0.002-500 Hz.
 
-    Local channel in its `bbmt.timefreq.COLOUR`; the remote's matching coil
+    Local channel in its `mtproc.timefreq.COLOUR`; the remote's matching coil
     (r_hx under hx, r_hy under hy) in grey; with `stages_before`, that same
     channel's before-any-ingest-filter PSD in grey dashed, drawn under the
     archived line (see the module docstring's `--before`). Faint dotted lines

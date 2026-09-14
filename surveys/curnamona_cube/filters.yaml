@@ -1,5 +1,5 @@
-# Per-site decisions applied at ingest, in the order listed (bbmt.noise and
-# bbmt.ingest._replace_channels). Declared by hand after looking at the QC
+# Per-site decisions applied at ingest, in the order listed (mtproc.noise and
+# mtproc.ingest._replace_channels). Declared by hand after looking at the QC
 # figures. A `replace` entry takes a magnetic channel from another site, with
 # that site's own coil calibration, over the span it covers.
 #
