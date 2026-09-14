@@ -1,4 +1,4 @@
-"""Unit test for `bbmt.survey.distance_km` and `Survey.timezone` -- no Qt, no archive.
+"""Unit test for `mtproc.survey`: distance_km, Survey.timezone, the channel presets -- no Qt, no archive.
 
     python tests/survey_unit.py
 
@@ -12,7 +12,41 @@ with no top-level `timezone:` does not report "UTC"; a survey that declares
 one does not report exactly it; or the two real survey configs do not both
 declare `Australia/Adelaide` **above** their `sites:` block, where
 `scripts/burra_notes_to_yaml.py`'s `write_sites_block` keeps the head of the
-file byte-for-byte.
+file byte-for-byte; or the channel presets (`CHANNEL_PRESETS`, `preset_label`,
+`channels_from_label`) break: a preset of either instrument does not round
+trip label -> list -> label; the LEMI-423 default (the first preset) is not
+"Ex Ey Bx By" = [ex, ey, hx, hy]; the same set in another order or case does
+not get the preset's label; "Bx By Bz" does not mean hx hy hz on a LEMI-423
+and bx by bz on a LEMI-424; a custom list is not written "a, b, c" and read
+back unchanged; a typed "hx hy" is not [hx, hy]; None is not "all columns"
+and back; a returned preset list is not a copy; or a preset names a channel
+the reader does not produce (LEMI-424: mt-io's own `LEMI424().file_column_names`;
+LEMI-423: hx hy hz ex ey, as `LEMI423Reader.read` stores Bx By Bz Ex Ey; EDL:
+mt-io's own `UoACollection.CHANNEL_MAP`), the presets' instruments are not
+exactly `INSTRUMENTS` (lemi423, lemi424, edl) or the EDL default is not
+"Ex Ey Bx By Bz" = [ex, ey, hx, hy, hz]; or a preset's words in another
+order, with commas or in another case ("Bx By Ex Ey", Hillside's
+`--channels`) are not that preset ([ex, ey, hx, hy] on an EDL or LEMI-423,
+not [bx, by, ex, ey], which drops both coils at ingest), or a typed list
+that is no preset's words is not kept as typed.
+
+And the instrument detection: in a scratch data root holding a B423 folder,
+a LEMI-424 folder (a 12-digit .txt whose first line has the reader's 24
+fields), an EDL folder with only a channel file, an EDL folder with only
+`config/recorder.ini`, a folder whose 12-digit .txt holds prose, a folder of
+AppleDouble twins only, and a folder with both B423 and LEMI-424 files,
+`Survey.site_dirs()` does not list exactly the five data folders or
+`instrument_of` does not name each one's recorder -- the mixed folder
+lemi423 in a lemi423 survey and lemi424 in a lemi424 survey (the survey's
+instrument is preferred) -- or a site's own `instrument:` does not win over
+its files, or an unknown one does not raise ValueError, or a site with no
+folder does not fall back to the survey's instrument.
+
+And the electric chain gain key (a field-notes fact about the electric
+chain, not a PR6-24 pre-amplifier setting): with `defaults: electric_gain: 10.0`, a site
+with no key of its own does not read 10.0 from `Survey.site(...).electric_gain`,
+a site's own number does not win over the default, or a survey without the
+key does not give 1.0 (no filter, the EDL default).
 """
 
 from __future__ import annotations
@@ -23,7 +57,10 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "src"))
 
-from bbmt.survey import Survey, distance_km  # noqa: E402
+from mtproc.survey import (  # noqa: E402
+    ALL_CHANNELS, CHANNEL_PRESETS, INSTRUMENTS, Survey, channels_from_label, default_preset, distance_km,
+    preset_label,
+)
 
 ONE_DEGREE_KM = 111.2
 TOLERANCE_KM = 0.5
@@ -85,7 +122,7 @@ def test_matlab_survey_csv_columns() -> None:
     Pickup_Notes, TimeZone, ...) is not read into our site-table columns, or
     its two note columns are not joined into `notes`."""
     import tempfile
-    from bbmt.survey import read_site_table
+    from mtproc.survey import read_site_table
     lines = [
         "﻿SiteName,Latitude,Longitude,Elevation,TimeZone,ExDipole,ExAzimuth,EyDipole,EyAzimuth,Resistance_NG,Deployment_Notes,Pickup_Notes",
         "A01,31.54,-9.686,125.2,Africa/Casablanca,55,0,54,90,4.18,Surrounded by houses,",
@@ -101,6 +138,111 @@ def test_matlab_survey_csv_columns() -> None:
     assert rows["A02"]["notes"] == "electrode dug up", rows["A02"].get("notes")
     assert "resistance_ng" in ignored and "timezone" in ignored, ignored
     print(f"  MATLAB CSV read: A01 {rows['A01']}, ignored {ignored}")
+
+
+def test_channel_presets() -> None:
+    from mt_io.lemi.lemi424 import LEMI424
+    from mt_io.uoa import UoACollection
+    produced = {"lemi423": {"hx", "hy", "hz", "ex", "ey"}, "lemi424": set(LEMI424().file_column_names),
+                "edl": {comp for comp, _n in UoACollection.CHANNEL_MAP.values()}}
+    assert set(CHANNEL_PRESETS) == set(INSTRUMENTS) == {"lemi423", "lemi424", "edl"}, list(CHANNEL_PRESETS)
+    for instrument, presets in CHANNEL_PRESETS.items():
+        for label, channels in presets.items():
+            back = channels_from_label(label, instrument)
+            assert back == channels and preset_label(back, instrument) == label, (instrument, label, back)
+            assert set(channels) <= produced[instrument], (instrument, label, set(channels) - produced[instrument])
+        print(f"  {instrument}: {len(presets)} presets round trip; default {default_preset(instrument)!r}")
+    assert default_preset("lemi423") == "Ex Ey Bx By"
+    assert default_preset("edl") == "Ex Ey Bx By Bz"
+    assert channels_from_label("Ex Ey Bx By Bz", "edl") == ["ex", "ey", "hx", "hy", "hz"]
+    assert channels_from_label("Ex Ey Bx By", "lemi423") == ["ex", "ey", "hx", "hy"]
+    assert preset_label(["HX", "hy", "Ey", "ex"], "lemi423") == "Ex Ey Bx By"
+    assert channels_from_label("bx by bz", "lemi423") == ["hx", "hy", "hz"]
+    assert channels_from_label("Bx By Bz", "lemi424") == ["bx", "by", "bz"]
+    for custom in (["hx", "ey"], ["ex", "ey", "hx", "hy", "hz", "tx"], ["e1", "e2", "hx", "hy"]):
+        label = preset_label(custom, "lemi423")
+        assert label == ", ".join(custom) and channels_from_label(label, "lemi423") == custom, (custom, label)
+    assert channels_from_label("hx hy", "lemi423") == ["hx", "hy"]
+    assert preset_label(["hx", "hy"], "lemi423") == "Bx By (magnetics only)"
+    assert preset_label(None, "lemi423") == ALL_CHANNELS and channels_from_label(ALL_CHANNELS, "lemi423") is None
+    assert preset_label(["ex", "ey", "hx", "hy"], "earthdata") == "ex, ey, hx, hy"  # no presets: the list
+    got = channels_from_label("Bx By (magnetics only)", "lemi423")
+    got.append("hz")
+    assert CHANNEL_PRESETS["lemi423"]["Bx By (magnetics only)"] == ["hx", "hy"], "a preset list was handed out, not copied"
+    print("  default Ex Ey Bx By; order and case ignored; Bx By Bz per instrument; custom lists kept; "
+          "None <-> 'all columns'")
+
+
+def test_preset_words_in_any_order() -> None:
+    # Hillside (EDL broadband): `new_survey.py --channels "Bx By Ex Ey"` declared
+    # [bx, by, ex, ey], and ingest kept only ex, ey -- the EDL reader names its coils hx hy
+    for typed in ("Bx By Ex Ey", "bx, by, ex, ey", "  EY EX BY BX "):
+        for instrument in ("edl", "lemi423"):
+            got = channels_from_label(typed, instrument)
+            assert got == ["ex", "ey", "hx", "hy"], (typed, instrument, got)
+            assert preset_label(got, instrument) == "Ex Ey Bx By", (typed, instrument)
+    assert channels_from_label("Bx By Bz Ex Ey", "edl") == ["ex", "ey", "hx", "hy", "hz"]
+    assert channels_from_label("Bx By Bz E1 E2", "lemi424") == ["e1", "e2", "bx", "by", "bz"]
+    # a typed list that is no preset's words is still the list, as typed
+    assert channels_from_label("hx, hy, ex, ey", "edl") == ["hx", "hy", "ex", "ey"]
+    assert channels_from_label("Bx By Ex", "edl") == ["bx", "by", "ex"]
+    assert channels_from_label("bx, by", "lemi424") == ["bx", "by"]
+    print("  'Bx By Ex Ey' (any order, commas, case) -> [ex, ey, hx, hy] on edl and lemi423; "
+          "a non-preset list unchanged")
+
+
+LEMI424_LINE = ("2024 10 25 00 00 00 27150.959 -74.552 -50540.593 27.73 36.16 -154.411 -297.117 "
+                "94.135 -767.370 12.00  512.8 2800.28816 S 12054.72277 E 12 2 0\n")
+
+
+def test_instrument_detection() -> None:
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        files = {
+            "S01/1624949744.B423": b"",
+            "MBJ21/202410250000.txt": LEMI424_LINE.encode(),
+            "EGF01/001/EGF01_190110000000.EX": b"1\n2\n",
+            "EGF02/config/recorder.ini": b"[recorder]\nchannel_0_samplerate=10\n",
+            "NOTES/202410250000.txt": b"field notes, not a record\n",
+            "GHOST/._1677774771.B423": bytes(8),
+            "MIXED/1624949744.B423": b"",
+            "MIXED/202410250000.txt": LEMI424_LINE.encode(),
+        }
+        for name, data in files.items():
+            (root / name).parent.mkdir(parents=True, exist_ok=True)
+            (root / name).write_bytes(data)
+        expected = {"EGF01": "edl", "EGF02": "edl", "MBJ21": "lemi424", "MIXED": "lemi423", "S01": "lemi423"}
+        survey = Survey({"name": "t", "data_root": str(root), "sites": {"S01": {}}}, root)
+        assert list(survey.site_dirs()) == sorted(expected), list(survey.site_dirs())
+        got = {site: survey.instrument_of(site) for site in expected}
+        assert got == expected, got
+        other = Survey({"name": "t", "instrument": "lemi424", "data_root": str(root)}, root)
+        assert other.instrument_of("MIXED") == "lemi424" and other.instrument_of("S01") == "lemi423"
+        declared = Survey({"name": "t", "data_root": str(root),
+                           "sites": {"S01": {"instrument": "edl"}, "BAD": {"instrument": "lemi999"}}}, root)
+        assert declared.instrument_of("S01") == "edl" and declared.site("S01").instrument == "edl"
+        try:
+            declared.instrument_of("BAD")
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("an unknown instrument was accepted")
+        assert declared.instrument_of("NOFOLDER") == "lemi423"
+        print(f"  site_dirs {sorted(expected)}; instruments {got}; MIXED is lemi424 in a lemi424 survey; "
+              f"declared wins; unknown raises; no folder -> the survey's")
+
+
+def test_electric_gain_resolve() -> None:
+    config = {"name": "t", "instrument": "edl", "data_root": ".",
+              "defaults": {"electric_gain": 10.0},
+              "sites": {"A": {}, "B": {"electric_gain": 1.0}, "C": {"electric_gain": 5.0}}}
+    survey = Survey(config, Path("."))
+    got = {s: survey.site(s).electric_gain for s in "ABC"}
+    assert got == {"A": 10.0, "B": 1.0, "C": 5.0}, got
+    plain = Survey({"name": "t", "instrument": "edl", "data_root": ".", "sites": {"A": {}}}, Path("."))
+    assert plain.site("A").electric_gain == 1.0
+    print(f"  electric_gain: default 10.0; {got}; no key -> 1.0 (no filter)")
 
 
 if __name__ == "__main__":

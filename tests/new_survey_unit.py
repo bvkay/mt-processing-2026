@@ -22,19 +22,79 @@ B423 file. S02's files sit one folder down. **This test fails if**
     1000 Hz above) does not return exactly 1000.0 -- the bounded-read scan
     new_survey.py now uses in place of mt-io's whole-file `read_summary`;
 (4) generated_by is not scripts/new_survey.py; the defaults block is not
-    exactly the one asked for (channels, flip_reversed_dipoles true, h_scale
+    exactly the one asked for (channels [ex, ey, hx, hy] -- the LEMI-423's
+    default preset, with no --channels given -- flip_reversed_dipoles true, h_scale
     -1000.0, calibration_fn sensors/l120n.rsp, 50 m dipoles, azimuths 0/90);
     the processing block differs; a site carries a dipole length or azimuth of
     its own (the defaults must apply until edited), or its notes are not the
     "set them from the field sheet" line; the coil response copied into
     sensors/ is not byte-identical to surveys/burra/sensors/l120n.rsp; or
     `Survey.site()` does not read serial/firmware/start/end back as strings
-    and the dipole lengths as the defaults;
+    and the dipole lengths as the defaults; or the `workspace:` key (and
+    `Survey.workspace`) is not `<data_root>/work`, or the script made that
+    folder (it only writes the key: on a real survey it is the data drive);
 (5) a second run without --force does not refuse (exit 2) and leave the file
     byte-identical;
 (6) --site-table with a CSV naming S01 (dipole_length_ex 48.5, azimuth_ex
     180) and a site that does not exist (X99) does not set exactly those two
-    values on S01, leave S02 as it was, and print "1 of 2 sites matched".
+    values on S01, leave S02 as it was, and print "1 of 2 sites matched";
+(7) --workspace DIR (with --force) does not write `workspace:` DIR instead;
+(8) the default run's summary does not print, on each site's line, the
+    columns mt-io reads from the first file ("columns hx hy hz ex ey") next
+    to the declared set ("declared ex ey hx hy"); or --channels "hx,hy"
+    (with --force) does not write `defaults: channels: [hx, hy]`, print
+    "declared hx hy" on both sites' lines and warn about no channel; or
+    --channels "Bx By (magnetics only)" (a preset label) does not write
+    [hx, hy] too;
+(9) --channels "e1,e2,hx,hy" (LEMI-424 electrics on a LEMI-423 survey) does
+    not warn, once per site, that e1 and e2 are not among the first file's
+    columns -- or the run fails because of it (a declaration is the crew's
+    word, only warned about).
+
+Part 3, a mixed data root (`tests/instrument_samples.py`: S01 from part 1's
+synthetic LEMI-423 writer beside one real hour of a LEMI-424, MBJ21, and of
+an EDL, EGFLP02, cut into the scratch folder). **This test fails if**
+
+(10) the default run (instrument auto) does not exit 0 and list exactly
+     EGFLP02, MBJ21 and S01; the survey's `instrument:` is not lemi423 (one
+     site each: the tie goes to the first of `INSTRUMENTS`) or its
+     sample_rate not 1000 (the lemi423 sites' own); S01 carries an
+     `instrument:` or `channels:` of its own; MBJ21 does not carry
+     `instrument: lemi424` and `channels: [e1, e2, e3, e4, bx, by, bz]` (the
+     LEMI-424 default preset), and EGFLP02 `instrument: edl` and
+     `channels: [ex, ey, hx, hy, hz]`; `Survey.instrument_of` does not read
+     the three back;
+(11) MBJ21's serial and firmware are not "160" and "1.4" (the `.inf` says
+     "%LEMI424 #0160", "%FIRMWARE Ver.1.4"), its latitude and longitude are
+     more than 1e-4 degree (11 m: GPS jitter over the hour) from its first data line's DDMM.MMMMM fields
+     decoded HERE (2800.28816 S, 12054.72277 E), or its span is not
+     2024-10-25T00:00:00Z to 01:00:00Z (the last line, 00:59:59, plus one
+     second); EGFLP02's span is not 2019-01-10T00:00:00Z to 01:00:00Z (the
+     stamp plus 36000 samples at recorder.ini's 10 Hz), it has a latitude,
+     or its notes do not say the files carry no position; or the summary
+     lines do not read "1 Hz  lemi424  columns bx by bz e1 e2 e3 e4, declared
+     e1 e2 e3 e4 bx by bz" and "10 Hz  edl  columns hx hy hz ex ey, declared
+     ex ey hx hy hz";
+(12) `--instrument edl` does not make edl the survey's (sample_rate 10) and
+     give S01 `instrument: lemi423` with the LEMI-423 default [ex, ey, hx,
+     hy] and MBJ21 its LEMI-424 set, EGFLP02 none of its own, with
+     `defaults: sensor_type: bartington` (fluxgates at 10 Hz); or the default
+     (lemi423) survey does not give EGFLP02 its own `sensor_type: bartington`;
+(13) an EDL root whose recorder.ini says 1000 Hz (Hillside's LEMI-120
+     coils) does not get `defaults: sensor_type: lemi120` (read back by
+     `Survey.site`), or `--channels "Bx By Ex Ey"` there is not [ex, ey, hx, hy].
+(14) the electric chain gain: over three EDL
+     sites whose recorder.ini sets `channel_n_high_gain` to 1 on the channels
+     its `channel_n_long_id` calls EX and EY (channels 0 and 1 here, so UoA's
+     default order would name hx hy), to 0 on all five, and not at all, the
+     run without --electric-gain does not leave `defaults:` with no
+     `electric_gain` key at all, leave every site's own entry without one
+     too, and print "ST91: recorder.ini sets channel_n_high_gain=1 for ex ey"
+     informationally; `--electric-gain 10` does not write `defaults:
+     electric_gain: 10.0` with no site's own entry given one, with
+     `Survey.site` reading 10.0 back for all three sites; or a non-numeric
+     value, or the flag over part 1's LEMI-423-only root, does not stop the
+     script (exit 2) before it writes anything.
 
 Part 2, the real-data check: the script run over the Curnamona Cube raw data
 (E:, read only) into the scratch folder must give D02 and E08 latitudes and
@@ -62,7 +122,9 @@ import yaml
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "src"))
 
-from bbmt.survey import Survey  # noqa: E402
+from mtproc.survey import Survey  # noqa: E402
+
+from _scratch import scratch_dir
 
 SCRIPT = REPO / "scripts" / "new_survey.py"
 
@@ -72,10 +134,7 @@ SCRIPT = REPO / "scripts" / "new_survey.py"
 _spec = importlib.util.spec_from_file_location("new_survey", SCRIPT)
 new_survey = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(new_survey)
-SCRATCH = Path(
-    r"C:\Users\joint\AppData\Local\Temp\claude\D--BEN-BBMT-Processing-2026"
-    r"\7432a3ce-c47b-448e-8958-b1c946ec7c08\scratchpad\new_survey_unit"
-)
+SCRATCH = scratch_dir("new_survey_unit")
 CURNAMONA_RAW = Path(r"E:\MT_Timeseries_DATA\MT_Curnamona_Cube_MT")
 CURNAMONA_YAML = REPO / "surveys" / "curnamona_cube" / "survey.yaml"
 RSP = REPO / "surveys" / "burra" / "sensors" / "l120n.rsp"
@@ -193,8 +252,11 @@ def part1() -> None:
     assert all(isinstance(v, str) for v in (s01.serial, s01.firmware, s01.start, s01.end)), s01
     assert (s01.dipole_length_ex, s01.azimuth_ey) == (50.0, 90.0), s01
     assert list(survey.site_dirs()) == ["S01", "S02"]
+    assert Path(config["workspace"]) == root.resolve() / "work" == survey.workspace, config["workspace"]
+    assert not (root / "work").exists(), "new_survey.py made the workspace folder"
     print(f"(4) sample_rate 1000, generated_by, defaults and processing blocks as asked, "
-          f"coil response copied; Survey.site('S01') = serial {s01.serial!r}, start {s01.start!r}")
+          f"coil response copied; Survey.site('S01') = serial {s01.serial!r}, start {s01.start!r}; "
+          f"workspace {config['workspace']} (<data_root>/work, not made)")
 
     before = out.read_bytes()
     again = run(root, "--name", "synthetic", "--out", out)
@@ -216,6 +278,33 @@ def part1() -> None:
     assert after["S01"]["elevation"] == sites["S01"]["elevation"], after["S01"]["elevation"]
     assert after["S02"] == sites["S02"], after["S02"]
     print(f"(6) --site-table: S01 changed {changed}, its elevation kept from the header, S02 untouched")
+
+    elsewhere = SCRATCH / "elsewhere"
+    moved = run(root, "--name", "synthetic", "--out", out, "--workspace", elsewhere, "--force")
+    assert moved.returncode == 0, moved.stdout + moved.stderr
+    got = yaml.safe_load(out.read_text(encoding="utf-8"))["workspace"]
+    assert Path(got) == elsewhere.resolve(), got
+    print(f"(7) --workspace {elsewhere}: workspace {got}")
+
+    for site in ("S01", "S02"):
+        line = next(ln for ln in done.stdout.splitlines() if ln.strip().startswith(site))
+        assert line.endswith("columns hx hy hz ex ey, declared ex ey hx hy"), line
+    for arg in ("hx,hy", "Bx By (magnetics only)"):
+        mag = run(root, "--name", "synthetic", "--out", out, "--channels", arg, "--force")
+        assert mag.returncode == 0, mag.stdout + mag.stderr
+        got = yaml.safe_load(out.read_text(encoding="utf-8"))["defaults"]["channels"]
+        assert got == ["hx", "hy"], (arg, got)
+        lines = [ln for ln in mag.stdout.splitlines() if ln.strip().startswith(("S01", "S02"))]
+        assert len(lines) == 2 and all(ln.endswith("declared hx hy") for ln in lines), lines
+        assert "not among" not in mag.stdout, mag.stdout
+        print(f"(8) --channels {arg!r}: defaults channels {got}; S01 {lines[0][lines[0].index('columns'):]}")
+
+    odd = run(root, "--name", "synthetic", "--out", out, "--channels", "e1,e2,hx,hy", "--force")
+    assert odd.returncode == 0, odd.stdout + odd.stderr
+    warned = [ln.strip() for ln in odd.stdout.splitlines() if "not among the first file's columns" in ln]
+    assert [w.split(":")[0] for w in warned] == ["WARNING S01", "WARNING S02"], warned
+    assert all("declared channel(s) e1 e2 not among" in w for w in warned), warned
+    print(f"(9) --channels e1,e2,hx,hy: {warned[0]}")
 
 
 def test_one_hertz_file_is_one_hertz() -> None:
@@ -240,6 +329,138 @@ def test_one_hertz_file_is_one_hertz() -> None:
             got = ns.fast_sample_rate(path)
             assert got == expect, (name, got)
     print("  faulty 1 record/s reported as 1.0, 3 records/s as 3.0: never snapped to a LEMI rate")
+
+
+def dd(ddmm: str, hemisphere: str) -> float:
+    """DDDMM.MMMMM + hemisphere -> signed decimal degrees, decoded here, not by mt-io."""
+    value = float(ddmm)
+    degrees = int(value // 100)
+    return (degrees + (value - 100 * degrees) / 60.0) * (-1 if hemisphere in "SW" else 1)
+
+
+def part3() -> None:
+    sys.path.insert(0, str(REPO / "tests"))
+    import instrument_samples as samples
+
+    done = samples.mixed_survey()
+    print(done.stdout.strip())
+    assert done.returncode == 0, done.stdout + done.stderr
+    config = yaml.safe_load(samples.MIXED_YAML.read_text(encoding="utf-8"))
+    sites = config["sites"]
+    assert list(sites) == ["EGFLP02", "MBJ21", "S01"], list(sites)
+    assert config["instrument"] == "lemi423" and config["sample_rate"] == 1000, (config["instrument"], config["sample_rate"])
+    assert not {"instrument", "channels"} & set(sites["S01"]), sites["S01"]
+    assert sites["MBJ21"]["instrument"] == "lemi424", sites["MBJ21"]
+    assert sites["MBJ21"]["channels"] == ["e1", "e2", "e3", "e4", "bx", "by", "bz"], sites["MBJ21"]["channels"]
+    assert sites["EGFLP02"]["instrument"] == "edl" and sites["EGFLP02"]["channels"] == ["ex", "ey", "hx", "hy", "hz"]
+    survey = Survey.from_yaml(samples.MIXED_YAML)
+    got = {site: survey.instrument_of(site) for site in sites}
+    assert got == {"EGFLP02": "edl", "MBJ21": "lemi424", "S01": "lemi423"}, got
+    print(f"(10) auto: instrument lemi423 (a one-each tie), sample_rate 1000; instruments {got}; "
+          f"MBJ21 channels {sites['MBJ21']['channels']}, EGFLP02 {sites['EGFLP02']['channels']}")
+
+    first = (samples.MIXED_ROOT / "MBJ21" / samples.LEMI424_FILE).read_text().split("\n", 1)[0].split()
+    lat, lon = dd(first[17], first[18]), dd(first[19], first[20])
+    m = sites["MBJ21"]
+    assert (m["serial"], m["firmware"]) == ("160", "1.4"), (m["serial"], m["firmware"])
+    assert abs(m["latitude"] - lat) <= 1e-4 and abs(m["longitude"] - lon) <= 1e-4, (m["latitude"], lat, m["longitude"], lon)
+    assert (m["start"], m["end"]) == ("2024-10-25T00:00:00Z", "2024-10-25T01:00:00Z"), (m["start"], m["end"])
+    e = sites["EGFLP02"]
+    assert (e["start"], e["end"]) == ("2019-01-10T00:00:00Z", "2019-01-10T01:00:00Z"), (e["start"], e["end"])
+    assert "latitude" not in e and "carry no position" in e["notes"], e
+    lines = {ln.split()[0]: ln for ln in done.stdout.splitlines() if ln.strip().startswith(("MBJ21", "EGFLP02"))}
+    assert lines["MBJ21"].endswith("1 Hz  lemi424  columns bx by bz e1 e2 e3 e4, declared e1 e2 e3 e4 bx by bz"), lines
+    assert lines["EGFLP02"].endswith("10 Hz  edl  columns hx hy hz ex ey, declared ex ey hx hy hz"), lines
+    print(f"(11) MBJ21 serial {m['serial']} firmware {m['firmware']}, {m['latitude']} {m['longitude']} "
+          f"(the line says {lat:.6f} {lon:.6f}), {m['start']} to {m['end']}; EGFLP02 {e['start']} to {e['end']}, "
+          f"no position")
+
+    edl = samples.mixed_survey("--instrument", "edl")
+    assert edl.returncode == 0, edl.stdout + edl.stderr
+    config = yaml.safe_load(samples.MIXED_YAML.read_text(encoding="utf-8"))
+    sites = config["sites"]
+    assert config["instrument"] == "edl" and config["sample_rate"] == 10, (config["instrument"], config["sample_rate"])
+    assert config["defaults"]["channels"] == ["ex", "ey", "hx", "hy", "hz"], config["defaults"]["channels"]
+    assert (sites["S01"]["instrument"], sites["S01"]["channels"]) == ("lemi423", ["ex", "ey", "hx", "hy"]), sites["S01"]
+    assert sites["MBJ21"]["instrument"] == "lemi424" and not {"instrument", "channels"} & set(sites["EGFLP02"])
+    assert config["defaults"]["sensor_type"] == "bartington", config["defaults"]
+    print("(12) --instrument edl: survey edl at 10 Hz, defaults sensor_type bartington; S01 lemi423 "
+          "[ex, ey, hx, hy], MBJ21 lemi424, EGFLP02 the default")
+    again = samples.mixed_survey()  # leave the default survey behind for tests/gui_smoke.py
+    assert again.returncode == 0, again.stdout + again.stderr
+    mixed = yaml.safe_load(samples.MIXED_YAML.read_text(encoding="utf-8"))
+    assert mixed["sites"]["EGFLP02"]["sensor_type"] == "bartington" and "sensor_type" not in mixed["defaults"], mixed
+
+
+def test_edl_broadband_sensor_type() -> None:
+    """(13) Fails if an EDL data root whose recorder.ini says 1000 Hz (Hillside: LEMI-120 coils on the
+    PR6-24) does not get `defaults: sensor_type: lemi120` -- or `Survey.site(...).sensor_type` does
+    not read it back -- so that ingest reads the coils with their response, not the fluxgate gain."""
+    root = SCRATCH / "edl_broadband"
+    shutil.rmtree(root, ignore_errors=True)
+    site = root / "raw" / "hs999"
+    (site / "config").mkdir(parents=True)
+    (site / "config" / "recorder.ini").write_text(
+        "[recorder]\n" + "".join(f"channel_{n}_samplerate=1000\n" for n in range(5)), encoding="utf-8")
+    for stamp in ("120327050500", "120327051000"):
+        for suffix in ("BX", "BY", "BZ", "EX", "EY"):
+            (site / f"HS999_{stamp}.{suffix}").write_text("1\n" * 300, encoding="ascii")
+    out = root / "survey.yaml"
+    done = run(root / "raw", "--name", "edl_bb", "--out", out, "--channels", "Bx By Ex Ey")
+    assert done.returncode == 0, done.stdout + done.stderr
+    config = yaml.safe_load(out.read_text(encoding="utf-8"))
+    assert config["instrument"] == "edl" and config["sample_rate"] == 1000, config
+    assert config["defaults"]["sensor_type"] == "lemi120", config["defaults"]
+    assert config["defaults"]["channels"] == ["ex", "ey", "hx", "hy"], config["defaults"]["channels"]
+    assert Survey.from_yaml(out).site("hs999").sensor_type == "lemi120"
+    assert "EDL magnetic sensors (defaults: sensor_type): lemi120" in done.stdout, done.stdout
+    print("(13) EDL at 1000 Hz: defaults sensor_type lemi120, channels 'Bx By Ex Ey' -> [ex, ey, hx, hy]")
+
+
+def test_edl_electric_gain() -> None:
+    """(14) Fails if new_survey.py does not write the declared electric chain gain as asked
+    (`--electric-gain`), leave it unwritten and only note recorder.ini's own flags informationally
+    when it is not given, or accepts a non-numeric value or a root with no EDL site."""
+    root = SCRATCH / "edl_electric_gain"
+    shutil.rmtree(root, ignore_errors=True)
+    # channels 0 and 1 are EX and EY here: the flags are read through the long ids, not an assumed order
+    ids = ("EX", "EY", "BX", "BY", "BZ")
+    ini = ("[recorder]\n" + "".join(f"channel_{n}_samplerate=10\n" for n in range(5))
+           + "".join(f"channel_{n}_long_id={c}\n" for n, c in enumerate(ids)))
+    flags = {"ST91": (1, 1, 0, 0, 0), "ST92": (0, 0, 0, 0, 0), "ST93": None}
+    for site, gains in flags.items():
+        folder = root / "raw" / site
+        (folder / "config").mkdir(parents=True)
+        extra = "" if gains is None else "".join(f"channel_{n}_high_gain={g}\n" for n, g in enumerate(gains))
+        (folder / "config" / "recorder.ini").write_text(ini + extra, encoding="utf-8")
+        for stamp in ("090320000000", "090320010000"):
+            for suffix in ("BX", "BY", "BZ", "EX", "EY"):
+                (folder / f"{site}_{stamp}.{suffix}").write_text("1\n" * 300, encoding="ascii")
+    out = root / "survey.yaml"
+    done = run(root / "raw", "--name", "edl_gain", "--out", out)
+    assert done.returncode == 0, done.stdout + done.stderr
+    config = yaml.safe_load(out.read_text(encoding="utf-8"))
+    assert "electric_gain" not in config["defaults"], config["defaults"]
+    own = {s: config["sites"][s].get("electric_gain") for s in flags}
+    assert own == {"ST91": None, "ST92": None, "ST93": None}, own
+    assert "ST91: recorder.ini sets channel_n_high_gain=1 for ex ey" in done.stdout, done.stdout
+    done = run(root / "raw", "--name", "edl_gain", "--out", out, "--electric-gain", "10", "--force")
+    assert done.returncode == 0, done.stdout + done.stderr
+    config = yaml.safe_load(out.read_text(encoding="utf-8"))
+    assert config["defaults"]["electric_gain"] == 10.0, config["defaults"]
+    own = {s: config["sites"][s].get("electric_gain") for s in flags}
+    assert own == {"ST91": None, "ST92": None, "ST93": None}, own
+    survey = Survey.from_yaml(out)
+    resolved = {s: survey.site(s).electric_gain for s in flags}
+    assert resolved == {"ST91": 10.0, "ST92": 10.0, "ST93": 10.0}, resolved
+    before = out.read_bytes()
+    for args in ((root / "raw", "--electric-gain", "abc"), (SCRATCH / "raw", "--electric-gain", "10")):
+        bad = run(args[0], "--name", "edl_gain", "--out", out, "--force", *args[1:])
+        assert bad.returncode == 2, (args, bad.returncode, bad.stdout, bad.stderr)
+    assert out.read_bytes() == before, "a refused run wrote survey.yaml"
+    print(f"(14) electric gain: no flag -> no defaults key, no site key, recorder.ini noted "
+          f"informationally; '10' -> defaults 10.0, no site key, resolved {resolved}; 'abc' and a "
+          f"LEMI-423-only root refused (exit 2), nothing written")
 
 
 def part2() -> None:
@@ -269,6 +490,12 @@ def main() -> int:
     print()
     part1()
     test_one_hertz_file_is_one_hertz()
+    print()
+    print(__doc__.split("**This test fails if**")[2].split("Part 2, the real-data check:")[0].strip())
+    print()
+    part3()
+    test_edl_broadband_sensor_type()
+    test_edl_electric_gain()
     part2()
     print("\nPASS  new_survey_unit")
     return 0

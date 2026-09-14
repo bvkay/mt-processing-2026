@@ -1,20 +1,27 @@
 """Survey configuration: one YAML per survey, sites discovered from folders.
 
 A survey is a folder of raw site directories plus a small YAML config.
-Site name = folder name; any directory under ``data_root`` that contains raw
-files for the survey's instrument is a site. Per-site settings (dipole lengths,
-azimuths, positions) are optional overrides in the YAML — typically generated
-once from the field spreadsheet (see ``scripts/site_table_to_yaml.py``).
+Site name = folder name; any directory under ``data_root`` that holds raw
+files of an instrument mtproc reads (`INSTRUMENTS`: LEMI-423, LEMI-424, Earth
+Data PR6-24) is a site, and its instrument is detected from those files
+(`detect_instrument`); the YAML's top-level `instrument:` is the survey's
+default and a site's own `instrument:` overrides both (`Survey.instrument_of`).
+Per-site settings (dipole lengths, azimuths, positions) are optional overrides
+in the YAML — typically generated once from the field spreadsheet (see
+``scripts/site_table_to_yaml.py``).
 """
 
 from __future__ import annotations
 
 import math
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
 import yaml
 from loguru import logger
+
+from .instruments import INSTRUMENTS, detect_instrument  # noqa: F401  (mtproc.survey.INSTRUMENTS)
 
 EARTH_RADIUS_KM = 6371.0088  # IUGG mean radius
 
@@ -110,9 +117,87 @@ def read_site_table(path: str | Path) -> tuple[dict[str, dict], list[str]]:
         rows[site] = values
     return rows, ignored
 
+# The channel sets a survey may declare, per instrument, in the names the
+# mt-io reader stores: mt_io.lemi.lemi423 reads the B423 columns Bx By Bz Ex Ey
+# as hx hy hz ex ey; mt_io.lemi.lemi424 keeps e1 e2 e3 e4 bx by bz;
+# mt_io.uoa.pr624 reads the EDL files BX BY BZ EX EY as hx hy hz ex ey. Which
+# columns a file carries is the reader's business; which of them had a sensor
+# attached is a per-survey logistics decision (a LEMI-423 site normally Ex Ey
+# Bx By with the Bz column an open input, some deployments with a Bz coil, a
+# dedicated remote magnetics only), declared as `channels:` and applied at
+# ingest (mtproc.ingest._keep_channels). An instrument's first preset is its
+# default. scripts/new_survey.py --channels and the GUI's Metadata tab use them.
+CHANNEL_PRESETS: dict[str, dict[str, list[str]]] = {
+    "lemi423": {
+        "Ex Ey Bx By": ["ex", "ey", "hx", "hy"],
+        "Ex Ey Bx By Bz": ["ex", "ey", "hx", "hy", "hz"],
+        "Bx By (magnetics only)": ["hx", "hy"],
+        "Bx By Bz": ["hx", "hy", "hz"],
+    },
+    "lemi424": {
+        "E1 E2 E3 E4 Bx By Bz": ["e1", "e2", "e3", "e4", "bx", "by", "bz"],
+        "E1 E2 Bx By Bz": ["e1", "e2", "bx", "by", "bz"],
+        "Bx By Bz": ["bx", "by", "bz"],
+    },
+    "edl": {
+        "Ex Ey Bx By Bz": ["ex", "ey", "hx", "hy", "hz"],
+        "Ex Ey Bx By": ["ex", "ey", "hx", "hy"],
+        "Bx By Bz": ["hx", "hy", "hz"],
+    },
+}
+# the label of no `channels:` at all (None): ingest keeps every column the reader returns
+ALL_CHANNELS = "all columns"
+
+
+def default_preset(instrument: str) -> str:
+    """The label of `instrument`'s default channel set (its first preset)."""
+    return next(iter(CHANNEL_PRESETS[instrument]))
+
+
+def preset_label(channels: list[str] | None, instrument: str) -> str:
+    """A `channels:` list -> its preset's label for `instrument`, else the list as "a, b, c".
+
+    The match ignores order and case, since ingest keeps a set; None is
+    `ALL_CHANNELS`. `channels_from_label` is the inverse.
+    """
+    if channels is None:
+        return ALL_CHANNELS
+    names = [str(c).strip().lower() for c in channels]
+    for label, preset in CHANNEL_PRESETS.get(instrument, {}).items():
+        if sorted(preset) == sorted(names):
+            return label
+    return ", ".join(names)
+
+
+def channels_from_label(label: str, instrument: str) -> list[str] | None:
+    """A preset label (any case) or a typed list ("hx, hy" or "hx hy") -> channel names, lower case.
+
+    `ALL_CHANNELS` gives None. A preset's label gives a copy of its list; the
+    same words mean different names on different instruments ("Bx By Bz" is
+    hx hy hz on a LEMI-423, bx by bz on a LEMI-424). A preset's words in
+    another order or with commas are that preset too: "Bx By Ex Ey" is the
+    "Ex Ey Bx By" preset, [ex, ey, hx, hy] on an EDL or LEMI-423 -- read as a
+    typed list it named bx and by, which those readers never produce, so
+    ingest dropped both coils (Hillside).
+    """
+    text = str(label).strip()
+    if text.lower() == ALL_CHANNELS:
+        return None
+    words = sorted(w.lower() for w in re.split(r"[,\s]+", text) if w)
+    for name, preset in CHANNEL_PRESETS.get(instrument, {}).items():
+        if name.lower() == text.lower() or sorted(w.lower() for w in name.split()) == words:
+            return list(preset)
+    return [c.lower() for c in re.split(r"[,\s]+", text) if c]
+
+
 @dataclass
 class SiteConfig:
     name: str
+    # the recorder, when the site's own `instrument:` names one (a key of
+    # INSTRUMENTS); None = what its files are detected as, else the survey's
+    # (`Survey.instrument_of` resolves it). scripts/new_survey.py writes it
+    # only for a site whose recorder is not the survey's.
+    instrument: str | None = None
     dipole_length_ex: float = 0.0
     dipole_length_ey: float = 0.0
     azimuth_ex: float = 0.0
@@ -120,8 +205,27 @@ class SiteConfig:
     latitude: float | None = None
     longitude: float | None = None
     elevation: float | None = None
-    # coil response file (e.g. LEMI-120 .rsp); relative paths resolve against data_root
+    # coil response file (e.g. LEMI-120 .rsp); relative paths resolve against
+    # the survey folder, then data_root. LEMI-423 sites, and EDL sites whose
+    # `sensor_type` is lemi120; `h_scale` is LEMI-423 only
     calibration_fn: str | None = None
+    # EDL (Earth Data PR6-24) sites only: the magnetic sensors, in mt-io's
+    # names (mtproc.instruments.EDL_SENSORS). "bartington": Mag-03 fluxgates,
+    # the long-period setup (UoA: 10 Hz), and what None means. "lemi120":
+    # LEMI-120 induction coils, the broadband setup (UoA: 500/1000 Hz), whose
+    # response is `calibration_fn`. scripts/new_survey.py writes it for an EDL survey.
+    sensor_type: str | None = None
+    # EDL sites only: the extra gain of the electric chain between the dipoles
+    # and the recorded values, beyond what the reader already models (for the
+    # PR6-24 the reader's x10 terminal box). The electrical gain is hardwired
+    # at the electrical terminal junction box; the other gains would be set on
+    # the PR6-24 during operation, but for Stuart Shelf 2009 those configs are
+    # gone, so the value is declared from the field notes (10.0 there). Default
+    # 1.0 (no filter). Applied to every electric channel of the site (ex, ey)
+    # at ingest (mtproc.instruments.read_run). A `defaults:` value applies to
+    # the survey's EDL sites only; a non-EDL site's own key stops ingest.
+    # scripts/new_survey.py --electric-gain.
+    electric_gain: float = 1.0
     # extra gain folded into the magnetic channel filter chain. For LEMI-423
     # the counts->field calibration comes out in pT with inverted polarity
     # relative to the lemimt convention, hence -1000 (pT -> nT + sign).
@@ -132,16 +236,17 @@ class SiteConfig:
     # (Curnamona): the pair was wired reversed, so the data are sign-flipped at
     # ingest. False (Burra): the azimuth records layout direction only, the
     # logger's N/S/E/W terminals fix polarity, and nothing is flipped. Decide
-    # per survey from the impedance phase quadrants (bbmt.compare.phase_quadrants);
+    # per survey from the impedance phase quadrants (mtproc.compare.phase_quadrants);
     # a wrong choice puts one mode 180 deg out.
     flip_reversed_dipoles: bool = True
     # channels to keep at ingest; None keeps everything the reader returns.
     # Broadband deployments carried no hz sensor (the B423 Bz column is an
     # open input, constant -2^31), so those surveys set [ex, ey, hx, hy] and
-    # aurora never estimates a tipper from a dead channel.
+    # aurora never estimates a tipper from a dead channel. The usual sets are
+    # CHANNEL_PRESETS; a site whose set differs from `defaults:` has its own.
     channels: list[str] | None = None
     # declared time-domain filters applied at ingest, in order (see
-    # bbmt.noise); from <survey>/filters.yaml, never auto-detected.
+    # mtproc.noise); from <survey>/filters.yaml, never auto-detected.
     filters: list[dict] | None = None
     # logger clock status from the field timing sheets ("Correct"/"Behind"/
     # "No data"); None when the site is not listed on one.
@@ -164,7 +269,7 @@ class SiteConfig:
 
 
 class Survey:
-    RAW_PATTERNS = {"lemi423": "*.B423"}
+    RAW_PATTERNS = {name: spec["pattern"] for name, spec in INSTRUMENTS.items()}
 
     def __init__(self, config: dict, config_dir: Path):
         self.config = config
@@ -180,6 +285,8 @@ class Survey:
         self.generated_by: str | None = config.get("generated_by") or None
         self._defaults: dict = config.get("defaults") or {}
         self._sites: dict = config.get("sites") or {}
+        # site -> the instrument its folder was detected as, filled by site_dirs()
+        self._detected: dict[str, str] = {}
         # per-site noise decisions live in their own file so regenerating the
         # sites block from the field sheet never wipes them
         self._filters: dict = {}
@@ -207,8 +314,13 @@ class Survey:
         return str(self.config.get("timezone") or "UTC")
 
     @property
+    def defaults(self) -> dict:
+        """The `defaults:` block (a copy): what a site without a key of its own gets."""
+        return dict(self._defaults)
+
+    @property
     def processing(self) -> dict:
-        """Band/period targets for aurora (kwargs for bbmt.bands schemes)."""
+        """Band/period targets for aurora (kwargs for mtproc.bands schemes)."""
         return self.config.get("processing") or {}
 
     @property
@@ -222,15 +334,44 @@ class Survey:
         return list(self._sites)
 
     def site_dirs(self) -> dict[str, Path]:
-        """Map site name -> raw-data folder, discovered from data_root."""
-        pattern = self.RAW_PATTERNS[self.instrument]
+        """Map site name -> raw-data folder, discovered from data_root.
+
+        A folder is a site when it holds any instrument's data files
+        (`detect_instrument`, the survey's instrument preferred: a LEMI-423
+        survey finds exactly the folders it always did -- a B423 file named by
+        its epoch, not an AppleDouble `._<epoch>.B423` twin); which instrument
+        is recorded for `instrument_of`. The folder is the site's data, all
+        of it: a site's raw recordings go in its folder and nothing else
+        does (no processing copies beside them; Stuart Shelf 2009 was
+        copied out of its archive zips into that layout).
+        """
         out = {}
         for d in sorted(self.data_root.iterdir()):
-            # a record file is named by its epoch; a folder holding only
-            # AppleDouble twins (`._<epoch>.B423`) is not a site
-            if d.is_dir() and any(f.stem.isdigit() for f in d.rglob(pattern)):
+            if not d.is_dir():
+                continue
+            found = detect_instrument(d, prefer=self.instrument)
+            if found:
                 out[d.name] = d
+                self._detected[d.name] = found
         return out
+
+    def instrument_of(self, site: str) -> str:
+        """The site's recorder: its own `instrument:`, else what its folder holds, else the survey's.
+
+        The folder is `data_root/<site>` (site = folder name), detected on
+        first ask unless `site_dirs()` already did; a missing folder (a drive
+        not plugged in) falls back to the survey's instrument.
+        """
+        declared = (self._sites.get(site) or {}).get("instrument")
+        if declared:
+            if declared not in INSTRUMENTS:
+                raise ValueError(f"{site}: unknown instrument {declared!r} (know: {', '.join(INSTRUMENTS)})")
+            return declared
+        if site not in self._detected:
+            folder = self.data_root / site
+            found = detect_instrument(folder, prefer=self.instrument) if folder.is_dir() else None
+            self._detected[site] = found or self.instrument
+        return self._detected[site]
 
     def site(self, name: str) -> SiteConfig:
         overrides = self._sites.get(name)

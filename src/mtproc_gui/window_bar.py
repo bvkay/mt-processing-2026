@@ -9,9 +9,9 @@ the end at its right end -- and above the bar the sync status in the lamps'
 wording, centred between two round lamps of its colour.
 
 Nothing here computes a product: the time arithmetic is a set intersection,
-and the spans come from `bbmt_gui.archive.load_grid` (an archived site) or
-`bbmt.ingest.select_files` (a site that has only its raw B423 files) --
-`site_span`, below. The Process tab's summary (`bbmt_gui.site_map.PairSummary`)
+and the spans come from `mtproc_gui.archive.load_grid` (an archived site) or
+`mtproc.instruments.span` (a site that has only its raw files) --
+`site_span`, below. The Process tab's summary (`mtproc_gui.site_map.PairSummary`)
 reads its hours from `span`, `known` and `read_spans`.
 
 The spans are read off the GUI thread (`load_grid` is 0.66 s for D02, 0.56 s
@@ -25,23 +25,21 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 import pyqtgraph as pg
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QLineEdit, QVBoxLayout, QWidget
 
-from bbmt.ingest import select_files
-from bbmt_gui.archive import load_grid
-from bbmt_gui.reader import ReadThread
-from bbmt_gui.theme import (
+from mtproc.instruments import span as file_span
+from mtproc_gui.archive import load_grid
+from mtproc_gui.reader import ReadThread
+from mtproc_gui.theme import (
     BAD_COLOUR, HIGHLIGHT, IDLE_COLOUR, MARKER_EDGE, OK_COLOUR, PAIR_REMOTE_COLOUR, REGION_ALPHA,
     WARN_COLOUR,
 )
 
 UTC_FMT = "%Y-%m-%d %H:%M"  # what the fields hold and the scripts take
-DEFAULT_FILE_SECONDS = 5400  # a B423 file's nominal span, for a site with one file
 
 
 def site_span(survey, site: str, archive, site_dir):
@@ -49,20 +47,18 @@ def site_span(survey, site: str, archive, site_dir):
 
     The archive when there is one (`load_grid`: the same grid the Time Series
     tab lists windows off, so the bar and the tree agree to the sample),
-    otherwise the raw B423 file names -- first epoch to the last epoch plus
-    the median spacing, which is what `scripts/timing_qc.py` and the MATLAB
-    app's `getSiteBounds` both do. Runs in a `ReadThread`; raises if neither
-    source is there.
+    otherwise the raw file names (`mtproc.instruments.span`, for the site's
+    instrument): for B423s the first epoch to the last epoch plus the median
+    spacing, which is what `scripts/timing_qc.py` and the MATLAB app's
+    `getSiteBounds` both do. Runs in a `ReadThread`; raises if neither source
+    is there.
     """
     if archive is not None and Path(archive).exists():
         grid = load_grid(archive, survey.name, site)
         return grid.t0, grid.t0 + pd.Timedelta(seconds=grid.n_samples / grid.sample_rate)
     if site_dir is not None:
-        files = select_files(Path(site_dir))
-        epochs = np.array([int(f.stem) for f in files], dtype="int64")
-        spacing = int(np.median(np.diff(epochs))) if epochs.size > 1 else DEFAULT_FILE_SECONDS
-        return (pd.Timestamp(int(epochs[0]), unit="s", tz="UTC"),
-                pd.Timestamp(int(epochs[-1]) + spacing, unit="s", tz="UTC"))
+        start, end, _n = file_span(Path(site_dir), survey.instrument_of(site))
+        return start, end
     raise FileNotFoundError(f"{site}: no archive and no raw folder")
 
 
