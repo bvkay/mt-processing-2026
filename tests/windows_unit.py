@@ -1,4 +1,4 @@
-"""Unit test for `bbmt_gui.windows` -- the tree's window list, no Qt, no archive.
+"""Unit test for `mtproc_gui.windows` -- the tree's window list, no Qt, no archive.
 
     python tests/windows_unit.py
 
@@ -7,7 +7,8 @@ run does not give exactly 21 windows -- twenty of 2.0 h from the record
 start and a last one of 1.268 h ending at the record end -- with the first
 labelled '2021-06-29 06:55 UTC (2.0 h)'; 500 Hz data is not offered in 4 h
 windows (a 10 h record: 4 h, 4 h, 2 h); `window_hours` is not 2.0 at 1000 Hz,
-4.0 at 500 Hz, capped at 24 h for 10 Hz and 0.5 h for 1 MHz; a window that
+4.0 at 500 Hz, capped at 24 h for 10 Hz (an EDL) and 1 Hz (a LEMI-424) and
+0.5 h for 1 MHz; a window that
 falls entirely in a gap between two runs is offered, or one that catches
 under 10 minutes of a run is, or one that catches 12 minutes is not; or a
 window is placed by anything other than `run_slices` over the grid (a run
@@ -23,8 +24,8 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from bbmt_gui.archive import Grid  # noqa: E402
-from bbmt_gui.windows import window_hours, window_label, window_list  # noqa: E402
+from mtproc_gui.archive import Grid  # noqa: E402
+from mtproc_gui.windows import window_hours, window_label, window_list  # noqa: E402
 
 T0 = pd.Timestamp("2021-06-29 06:55:49+00:00")
 D02_SAMPLES = 148_564_754  # 41.268 h at 1000 Hz
@@ -57,7 +58,8 @@ def fake_grid(fs: float, runs: list[tuple[float, int]]):
 def test_window_hours() -> None:
     assert window_hours(1000.0) == 2.0
     assert window_hours(500.0) == 4.0
-    assert window_hours(10.0) == 24.0  # 200 h capped
+    assert window_hours(10.0) == 24.0  # 200 h capped: a 10 Hz EDL site
+    assert window_hours(1.0) == 24.0  # 2000 h capped: a 1 Hz LEMI-424 site
     assert window_hours(1e6) == 0.5  # 7.2 s raised to the floor
     print("  1000 Hz -> 2 h, 500 Hz -> 4 h, 10 Hz -> 24 h cap, 1 MHz -> 0.5 h floor")
 

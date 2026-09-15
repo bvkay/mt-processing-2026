@@ -1,7 +1,7 @@
 """Coherence tab: is there signal in the loaded window, and does the remote see the same field?
 
 The live view of the window picked on the Time Series tab: on `qc_ready`
-the `SegmentQC.band_curves` -- `bbmt.timefreq.band_from_levels` over
+the `SegmentQC.band_curves` -- `mtproc.timefreq.band_from_levels` over
 `BANDS_S`, the lines of `scripts/site_qc.py`'s figure 02 -- are drawn as one
 small plot per pair on a grid of **two aligned columns** (`ROWS`), named as
 the MATLAB app names them:
@@ -10,6 +10,10 @@ the MATLAB app names them:
     Bx-Ey (Zyx)         rBx-Ey (Zyx, remote)   local beside remote
     Bx-By (magnetic)    Bx-rBx                 then the two coil checks
     Ex-Ey (electric)    By-rBy
+
+The names are the parts channels play (`mtproc_gui.channels.roles`), so on a
+LEMI-424 the rows read "By-E1 (Zxy)", "Bx-E2 (Zyx)", ..., "E1-E2 (electric)";
+the panels stay keyed by the LEMI-423 pairs of `ROWS`.
 
 Each row puts a local pair beside the remote question that goes with it, so
 a low coherence on the left is read against the coil check on the right. With
@@ -20,9 +24,9 @@ tick labels on the bottom row only -- and every plot is kept on one x range
 the window and to coherence 0-1 (`qc_plots.lock_view`). Over each pair's
 band lines is a thick white "All frequencies" curve, their mean, drawn only.
 
-There is no coherogram here any more (Ben, 2026-09-22): the band curves are
-already coherence against time over the same 1-3 h window, and the image only
-repeated them at a resolution the eye could not use.
+There is no coherogram here: the band curves are already coherence against
+time over the same 1-3 h window, and the image only repeated them at a
+resolution the eye could not use.
 
 Controls: the **remote** the QC is computed against (`State.remote`, preset
 to the station's declared `remote:`; changing it asks the store again), the
@@ -44,23 +48,25 @@ from PySide6.QtWidgets import (
     QComboBox, QGridLayout, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget,
 )
 
-from bbmt.timefreq import BANDS_S
-from bbmt_gui import theme
-from bbmt_gui.plots import share_x_axis
-from bbmt_gui.qc_plots import (
+from mtproc.timefreq import BANDS_S
+from mtproc_gui import channels, theme
+from mtproc_gui.plots import share_x_axis
+from mtproc_gui.qc_plots import (
     PLACEHOLDER, LadderControls, band_legend, band_plot, draw_bands, link_x_ranges,
     lock_view, time_label, window_title,
 )
 
-# (local pair, its label, remote pair, its label) -- one row of the grid.
-# An r names the remote's coil, so "rBx-Ey (Zyx, remote)" is this site's Ey
-# against the REMOTE's Bx.
+# (local pair, its label, remote pair, its label) -- one row of the grid, in
+# the LEMI-423 names standing for each part (`channels.title` names them for
+# the loaded record). An r names the remote's coil, so "rBx-Ey (Zyx, remote)"
+# is this site's Ey against the REMOTE's Bx.
 ROWS = (
-    (("hy", "ex"), "By-Ex (Zxy)", ("ex", "r_hy"), "rBy-Ex (Zxy, remote)"),
-    (("hx", "ey"), "Bx-Ey (Zyx)", ("ey", "r_hx"), "rBx-Ey (Zyx, remote)"),
-    (("hx", "hy"), "Bx-By (magnetic)", ("hx", "r_hx"), "Bx-rBx"),
-    (("ex", "ey"), "Ex-Ey (electric)", ("hy", "r_hy"), "By-rBy"),
+    (("hy", "ex"), "{hy}-{ex} (Zxy)", ("ex", "r_hy"), "{r_hy}-{ex} (Zxy, remote)"),
+    (("hx", "ey"), "{hx}-{ey} (Zyx)", ("ey", "r_hx"), "{r_hx}-{ey} (Zyx, remote)"),
+    (("hx", "hy"), "{hx}-{hy} (magnetic)", ("hx", "r_hx"), "{hx}-{r_hx}"),
+    (("ex", "ey"), "{ex}-{ey} (electric)", ("hy", "r_hy"), "{hy}-{r_hy}"),
 )
+LEMI423 = {name: name for name in channels.ROLE_NAMES}  # the parts played by their own names
 LOCAL_COLUMN = [row[0] for row in ROWS]
 REMOTE_COLUMN = [row[2] for row in ROWS]
 CURSOR_PEN = pg.mkPen(theme.CURSOR_COLOUR, width=1.5)
@@ -98,6 +104,7 @@ class CoherenceTab(QWidget):
         # with each one beside it. Every panel carries the same cursor.
         self.band_plots: dict[tuple[str, str], pg.PlotWidget] = {}
         self.labels: dict[tuple[str, str], str] = {}
+        self.templates: dict[tuple[str, str], str] = {}
         self.cursors: dict[tuple[str, str], pg.InfiniteLine] = {}
         panels = QWidget(self)
         self.grid = QGridLayout(panels)
@@ -106,10 +113,12 @@ class CoherenceTab(QWidget):
         self.grid.setHorizontalSpacing(8)
         self.grid.addWidget(QLabel(band_legend([label for _lo, _hi, label in BANDS_S]), panels), 0, 0, 1, 2)
         for row, (local, local_label, remote, remote_label) in enumerate(ROWS, start=1):
-            for column, (pair, label) in enumerate(((local, local_label), (remote, remote_label))):
+            for column, (pair, template) in enumerate(((local, local_label), (remote, remote_label))):
+                label = channels.title(template, LEMI423, {"hx": "r_hx", "hy": "r_hy"})
                 plot = band_plot(panels, label)
                 self.band_plots[pair] = plot
                 self.labels[pair] = label
+                self.templates[pair] = template
                 self._add_cursor(pair, plot)
                 self.grid.addWidget(plot, row, column)
             self.grid.setRowStretch(row, 1)
@@ -172,8 +181,8 @@ class CoherenceTab(QWidget):
             self.clear()
 
     def _started(self, what: str) -> None:
-        # the panels in view stay until the new result replaces them (Ben,
-        # 2026-09-23: picking a remote must not blank the coherence in view)
+        # the panels in view stay until the new result replaces them: picking
+        # a remote must not blank the coherence in view
         self.title_label.setText(f"computing {what}... (showing the previous result until it is done)")
 
     # ------------------------------------------------------------- drawing
@@ -208,9 +217,12 @@ class CoherenceTab(QWidget):
         self.show_remote_column(bool(qc.remote))
         span = qc.duration_s / S_PER_UNIT
         for pair, plot in self.band_plots.items():
-            if pair in qc.band_curves:
+            self.labels[pair] = channels.title(self.templates[pair], qc.roles, qc.remote_roles)
+            plot.setLabel("left", self.labels[pair])
+            actual = channels.resolve_pairs([pair], qc.roles, qc.remote_roles)
+            if actual and actual[0] in qc.band_curves:
                 curves = {label: (t / S_PER_UNIT, values)
-                          for label, (t, values) in qc.band_curves[pair].items()}
+                          for label, (t, values) in qc.band_curves[actual[0]].items()}
                 draw_bands(plot, curves)
             else:
                 plot.clear()

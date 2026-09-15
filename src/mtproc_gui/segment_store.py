@@ -13,6 +13,11 @@ pending / discard; there is one result, the last one asked for). The local
 remote is read and the QC computed: the Time Series tab draws it in about a
 second while the QC tabs wait for `qc_ready`.
 
+The local channels loaded are the station's declared `channels:` (its own or
+the survey's), those the archive holds -- so D02's dead hz column, still in
+its old archive, stays off the plots -- and every electric and magnetic one
+when the declaration names none of them (`mtproc_gui.channels.display`).
+
 The archive is opened only in the worker's load phase, under
 `State.archive_lock`, so the Time Series tab's tree reads and this worker
 never have a file open at once: the worker signals `loaded` when the files
@@ -34,7 +39,7 @@ from dataclasses import dataclass
 import pandas as pd
 from PySide6.QtCore import QObject, QThread, Signal
 
-from bbmt_gui.segment import REMOTE_COMPS, STEP_S, WIN_S, compute_segment_qc, load_segment
+from mtproc_gui.segment import REMOTE_COMPS, STEP_S, WIN_S, compute_segment_qc, load_segment
 
 
 @dataclass(frozen=True)
@@ -58,17 +63,19 @@ class SegmentWorker(QThread):
     result = Signal(object, object)  # (params, (segment, remote segment or None, qc))
     failed = Signal(object, str)  # (params, message)
 
-    def __init__(self, params: QCParams, local_path, remote_path, survey_name: str, parent=None):
+    def __init__(self, params: QCParams, local_path, remote_path, survey_name: str, parent=None,
+                 comps=None):
         super().__init__(parent)
         self.params, self.local_path, self.remote_path, self.survey = (
             params, local_path, remote_path, survey_name,
         )
+        self.comps = comps  # the station's declared channels; None: every one in the archive
 
     def run(self) -> None:
         p = self.params
         try:
             self.progress.emit(0, f"loading {p.station}")
-            segment = load_segment(self.local_path, self.survey, p.station, p.start, p.end)
+            segment = load_segment(self.local_path, self.survey, p.station, p.start, p.end, self.comps)
             self.segment_loaded.emit(p, segment)
             remote, note = None, ""
             if self.remote_path is not None:
@@ -162,8 +169,11 @@ class SegmentStore(QObject):
         remote_path = None
         if params.remote and self.state.has_archive(params.remote):
             remote_path = self.state.archive_path(params.remote)
+        survey = self.state.survey
+        declared = (survey.site(params.station).channels if params.station in self.state.configured_sites()
+                    else survey.defaults.get("channels"))
         thread = SegmentWorker(
-            params, self.state.archive_path(params.station), remote_path, self.state.survey.name, self
+            params, self.state.archive_path(params.station), remote_path, survey.name, self, declared
         )
         thread.segment_loaded.connect(self._on_segment)
         thread.loaded.connect(self._on_loaded)

@@ -6,7 +6,7 @@ One read, read-only, closing the file before it returns:
                 gains and the HDF5 group path, from the run metadata alone
                 (one MTH5 open, no samples read). This is what the Time
                 Series tab's tree needs to list a station's windows
-                (`bbmt_gui.windows`), and what `bbmt_gui.segment.load_segment`
+                (`mtproc_gui.windows`), and what `mtproc_gui.segment.load_segment`
                 slices the datasets with, through h5py alone: rebuilding
                 mth5's channel metadata on every read (`get_channel`, the
                 filter chain) took 0.8 s of a 0.9 s read, and even
@@ -16,16 +16,21 @@ One read, read-only, closing the file before it returns:
 
 Every run of the station goes on one sample grid running from the first
 run's start to the last run's end -- the same concatenation
-`bbmt.timefreq.load_station` does for the QC figures, so a window the GUI
+`mtproc.timefreq.load_station` does for the QC figures, so a window the GUI
 draws and `scripts/site_qc.py`'s figure 01 place a sample at the same time.
 Calibration is the same too: the scalar (frequency-independent) part of the
-channel's MTH5 filter chain, `bbmt.timefreq._scalar_gain`, which leaves the
+channel's MTH5 filter chain, `mtproc.timefreq._scalar_gain`, which leaves the
 electrics fully calibrated in mV/km and the magnetics in nT without the
 coil's shape response (a time series does not need it; the channel is flagged
-in `scalar_only` so the plot can say so).
+in `scalar_only` so the plot can say so). An EDL chain is all coefficients
+(fully calibrated); a LEMI-424 has none (gain 1, the reader's units).
+
+Channels are the archive's own names, whatever the reader called them
+(`mtproc_gui.channels`): `load_grid` takes every electric and magnetic
+channel by default, in the stack order, or the names asked for that exist.
 
 The run arithmetic -- which sample of which run lands where on the grid --
-lives in one place, `run_slices` over a `Grid`. `bbmt_gui.windows.window_list`
+lives in one place, `run_slices` over a `Grid`. `mtproc_gui.windows.window_list`
 walks it to decide which windows a station has; `load_segment` fills a
 window through it.
 """
@@ -38,10 +43,8 @@ from pathlib import Path
 import pandas as pd
 from mth5.mth5 import MTH5
 
-from bbmt.timefreq import UNIT, _real_runs, _scalar_gain
-
-# the broadband channel set; no hz (no sensor was attached -- HANDOVER.md)
-CHANNELS = ("ex", "ey", "hx", "hy")
+from mtproc.timefreq import _real_runs, _scalar_gain
+from mtproc_gui import channels
 
 
 @dataclass
@@ -76,7 +79,7 @@ class Grid:
 
     def unit(self, comp: str) -> str:
         tag = ", scalar gain" if comp in self.scalar_only else ""
-        return UNIT.get(comp, "") + tag
+        return channels.unit(comp) + tag
 
     def time_at(self, hours: float) -> pd.Timestamp:
         """The UTC timestamp `hours` into the record, to the nearest microsecond."""
@@ -104,8 +107,8 @@ def _grid(handle: MTH5, station: str, survey: str, comps):
     runs = _real_runs(station_group)
     if not runs:
         raise ValueError(f"{station}: no runs with data")
-    available = set(station_group.get_run(runs[0][0]).groups_list)
-    comps = [c for c in comps if c in available]
+    available = station_group.get_run(runs[0][0]).groups_list
+    comps = channels.display(available, comps)
     if not comps:
         raise ValueError(f"{station}: none of the requested channels are in the archive")
     sample_rate = float(
@@ -118,11 +121,15 @@ def _grid(handle: MTH5, station: str, survey: str, comps):
     return runs, comps, sample_rate, t0, n, station_group.hdf5_group.name
 
 
-def load_grid(mth5_path: str | Path, survey_name: str, station: str, comps=CHANNELS) -> Grid:
+def load_grid(mth5_path: str | Path, survey_name: str, station: str, comps=None) -> Grid:
     """The station's `Grid` from its run metadata: one MTH5 open, no samples read.
 
+    `comps` None: every electric and magnetic channel of the first run, in
+    `channels.order`; otherwise those of `comps` the run holds, in that
+    order -- and all of them again when it holds none (`channels.display`).
+
     The scalar gain of each channel comes from the first run's filter chain
-    (`bbmt.timefreq._scalar_gain`).
+    (`mtproc.timefreq._scalar_gain`).
     """
     handle = _open(mth5_path)
     try:

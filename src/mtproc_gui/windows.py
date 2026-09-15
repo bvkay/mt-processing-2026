@@ -5,12 +5,13 @@ station in a tree, and a student clicked one file to see its time series,
 Welch spectrum, spectrogram and coherence. An MTH5 archive has no files to
 list, so the tree lists **windows** of a constant 7.2 million samples per
 channel instead: 2 h at 1000 Hz, 4 h at 500 Hz (`window_hours`, capped to
-half an hour and a day), laid from the record's grid start, the last one
-shorter. A window with less than `MIN_COVERED_S` (10 minutes) of samples
+half an hour and a day -- so a 10 Hz EDL site, whose 7.2 M samples would be
+200 h, and a 1 Hz LEMI-424 get 24 h windows of 864,000 and 86,400 samples),
+laid from the record's grid start, the last one shorter. A window with less than `MIN_COVERED_S` (10 minutes) of samples
 inside the runs -- one that falls in a gap between runs, or a sliver at the
 end -- is not offered.
 
-`window_list` walks the grid with `bbmt_gui.archive.run_slices`, the one
+`window_list` walks the grid with `mtproc_gui.archive.run_slices`, the one
 copy of the run arithmetic, so a window's coverage is decided exactly as
 the segment load will fill it. It needs the station's h5py group for the
 datasets' lengths and opens the archive read-only itself when none is given
@@ -22,7 +23,7 @@ from __future__ import annotations
 import h5py
 import pandas as pd
 
-from bbmt_gui.archive import Grid, run_slices
+from mtproc_gui.archive import Grid, run_slices
 
 WINDOW_SAMPLES = 7_200_000  # per channel: 2 h at 1000 Hz, 4 h at 500 Hz
 MIN_HOURS = 0.5

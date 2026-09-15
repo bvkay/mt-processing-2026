@@ -1,7 +1,7 @@
 """Spectrogram tab: the loaded window's power against period and time, per channel.
 
 The live view of the window picked on the Time Series tab: on `qc_ready` the
-`SegmentQC.spectrograms` -- `bbmt.timefreq.cascade`'s power levels stitched
+`SegmentQC.spectrograms` -- `mtproc.timefreq.cascade`'s power levels stitched
 onto the base time grid by `levels_to_grid` and turned to dB by `power_db`,
 the same functions `scripts/site_qc.py` draws figure 04 with -- are drawn as
 four period-against-time images, Bx, By, Ex, Ey top to bottom, stacked
@@ -16,8 +16,7 @@ the spinboxes; Recompute asks the store again with the new values.
 
 Nothing is computed here beyond the picture's colour limits and, for the
 relative view, the row median that is subtracted for display. What to read
-off the images is not written on the tab (Ben, 2026-09-22): that goes in the
-students' PDF.
+off the images is not written on the tab: that goes in the students' PDF.
 """
 
 from __future__ import annotations
@@ -25,17 +24,17 @@ from __future__ import annotations
 import numpy as np
 from PySide6.QtWidgets import QCheckBox, QComboBox, QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
-from bbmt_gui import theme
-from bbmt_gui.plots import share_x_axis
-from bbmt_gui.qc_plots import (
+from mtproc_gui import theme
+from mtproc_gui.plots import clear_layout, share_x_axis
+from mtproc_gui.qc_plots import (
     PLACEHOLDER, SCALES, LadderControls, PeriodImage, percentile_levels, time_label, window_title,
 )
 
-PANELS = theme.CHANNEL_ORDER  # hx, hy, ex, ey: magnetics first
+PANELS = ("hx", "hy", "ex", "ey")  # until a window is loaded; then its own channels, magnetics first
 
 
 class SpectrogramTab(QWidget):
-    """Four x-linked dB images of the loaded window, redrawn on `qc_ready`."""
+    """One x-linked dB image per channel of the loaded window (four on a LEMI-423), redrawn on `qc_ready`."""
 
     def __init__(self, state, parent=None):
         super().__init__(parent)
@@ -60,16 +59,10 @@ class SpectrogramTab(QWidget):
         controls.addWidget(self.ladder)
 
         self.images: dict[str, PeriodImage] = {}
-        panels = QVBoxLayout()
+        panels = self.panels = QVBoxLayout()
         panels.setContentsMargins(0, 0, 0, 0)
         panels.setSpacing(0)
-        for comp in PANELS:
-            image = PeriodImage(self, theme.label(comp), "dB", rounding=0.1)
-            if self.images:
-                image.plot.setXLink(self.images[PANELS[0]].plot)
-            self.images[comp] = image
-            panels.addWidget(image.plot)
-        share_x_axis([image.plot for image in self.images.values()])
+        self._build(PANELS)
 
         layout = QVBoxLayout(self)
         layout.addWidget(self.title_label)
@@ -81,6 +74,20 @@ class SpectrogramTab(QWidget):
         store.qc_ready.connect(self.draw)
         store.qc_failed.connect(lambda m: self.title_label.setText(f"QC failed: {m}"))
         self.state.selection_changed.connect(self._selection_changed)
+
+    def _build(self, comps) -> None:
+        """One image per channel in `comps`, stacked on one x axis (kept when the channels are the same)."""
+        if list(self.images) == list(comps):
+            return
+        clear_layout(self.panels)
+        self.images = {}
+        for comp in comps:
+            image = PeriodImage(self, theme.label(comp), "dB", rounding=0.1)
+            if self.images:
+                image.plot.setXLink(next(iter(self.images.values())).plot)
+            self.images[comp] = image
+            self.panels.addWidget(image.plot)
+        share_x_axis([image.plot for image in self.images.values()])
 
     def reload(self) -> None:
         self.clear()
@@ -111,6 +118,7 @@ class SpectrogramTab(QWidget):
             return
         scale = self.scale_combo.currentData()
         relative = self.relative_check.isChecked()
+        self._build(theme.channel_order(qc.spectrograms) or PANELS)  # the local channels; r_ ones are not drawn
         for comp, image in self.images.items():
             if comp not in qc.spectrograms:
                 image.clear()
@@ -121,6 +129,6 @@ class SpectrogramTab(QWidget):
                     db = db - np.nanmedian(db, axis=0, keepdims=True)
             # x in minutes (a picture's unit), the view locked to the whole window
             image.set(t_s / 60.0, periods, db, percentile_levels(db, scale), qc.duration_s / 60.0)
-        self.images[PANELS[-1]].plot.setLabel("bottom", time_label(qc.t0))
+        list(self.images.values())[-1].plot.setLabel("bottom", time_label(qc.t0))
         mode = "dB relative to each period's median" if relative else "power density, dB"
         self.title_label.setText(f"{window_title(qc)}  -  {mode}, colour scale {scale}")
