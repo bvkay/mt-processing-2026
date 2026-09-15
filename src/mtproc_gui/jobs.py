@@ -2,13 +2,17 @@
 
 Every long job in this GUI is one of the scripts in `scripts/` started with
 `QProcess` from the repo root, exactly as a student would type it in a shell.
-Nothing is imported from `bbmt` and run in-process, for two reasons: the GUI
+Nothing is imported from `mtproc` and run in-process, for two reasons: the GUI
 must never be the place processing lives, and an MTH5 file must never be open
 in two processes at once (HDF5 locking, HANDOVER.md fact 8) -- a queue that
 runs a single job at a time is the simplest way to guarantee that.
 
 `JobRunner` owns the queue; `queue_table.QueuePanel` is the widget that shows
 it (the table of jobs with their status, plus the merged stdout/stderr log).
+`add` only queues; `run_queue` (the Process tab's Run queue) runs every queued
+job in turn; `run_now` starts one job at once and on its own, for the three
+jobs a student waits on that are not processing (New survey, the basemap
+fetch, Build MTH5): jobs queued before it keep waiting for Run queue.
 """
 
 from __future__ import annotations
@@ -44,6 +48,10 @@ class Job:
     remote: str | None = None
     window: str | None = None
     options: str | None = None
+    # "processing" jobs (process_rr, build_stack) are what the Process tab's
+    # queue table and script log show; "utility" jobs (new survey, basemap,
+    # Build MTH5) show only in the console strip
+    kind: str = "processing"
 
     @property
     def command(self) -> str:
@@ -67,6 +75,7 @@ class JobRunner(QObject):
         self._current = -1
         self._partial = ""
         self._cancelled = False
+        self._draining = False  # Run queue was pressed: go on to the next queued job after each
 
     # --------------------------------------------------------- the queue
 
@@ -81,10 +90,24 @@ class JobRunner(QObject):
         return len(self.jobs) - 1
 
     def run_queue(self) -> None:
-        """Start the first queued job, unless one is already running."""
+        """Start the first queued job, unless one is already running; the rest follow in turn."""
         self._cancelled = False
+        self._draining = True
+        self._start_next()
+
+    def run_now(self, label: str, argv, **details) -> int:
+        """Add a job and, if none is running, start that one at once and on its own.
+
+        Jobs queued before it stay queued for Run queue, and the queue does not
+        go on to them when it finishes. With a job running it only joins the
+        queue (and runs in turn if Run queue is draining it). Returns its index.
+        """
+        details.setdefault("kind", "utility")
+        index = self.add(label, argv, **details)
         if self._process is None:
-            self._start_next()
+            self._cancelled = self._draining = False
+            self._start(index)
+        return index
 
     def reset(self) -> None:
         """Drop every job (cancelling a running one) and clear the log."""
@@ -119,10 +142,16 @@ class JobRunner(QObject):
         return -1
 
     def _start_next(self) -> None:
+        if self._process is not None:
+            return  # a job_finished slot has started one already (run_now)
         index = self._next_queued()
-        if index < 0 or self._cancelled:
+        if index < 0 or self._cancelled or not self._draining:
             self._current = -1
+            self._draining = False
             return
+        self._start(index)
+
+    def _start(self, index: int) -> None:
         job = self.jobs[index]
         self._current = index
         self._partial = ""

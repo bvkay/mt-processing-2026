@@ -2,15 +2,16 @@
 
 `SiteTree` is a `QTreeWidget` with one bold, collapsed row per site in
 `State.all_sites()`. A site with an archive is expandable; its window rows
-(`bbmt_gui.windows.window_list` over `bbmt_gui.archive.load_grid`, labelled
+(`mtproc_gui.windows.window_list` over `mtproc_gui.archive.load_grid`, labelled
 by their UTC start) are made the first time it is expanded. The archive
 read runs in a `ReadThread` under `State.archive_lock` -- one at a time,
 sites expanded meanwhile wait their turn -- with a "reading the archive..."
 row in the meantime. A site without an archive is greyed with one disabled
-row saying where to get one. A click on a site row toggles it open or shut;
-a click on a window row emits `window_clicked(station, start, end)`, and
-the tab loads it. That is the MATLAB app's tree, with archive windows where
-it had raw files.
+row saying how to get one (the tab's Build MTH5 button); `refresh_site`
+looks at the archive again once a job has built it. A click on a site row
+toggles it open or shut; a click on a window row emits
+`window_clicked(station, start, end)`, and the tab loads it. That is the
+MATLAB app's tree, with archive windows where it had raw files.
 """
 
 from __future__ import annotations
@@ -19,13 +20,13 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QBrush, QColor
 from PySide6.QtWidgets import QTreeWidget, QTreeWidgetItem
 
-from bbmt_gui.archive import load_grid
-from bbmt_gui.reader import ReadThread
-from bbmt_gui.windows import window_label, window_list
+from mtproc_gui.archive import load_grid
+from mtproc_gui.reader import ReadThread
+from mtproc_gui.windows import window_label, window_list
 
 SITE_ROLE = Qt.UserRole  # a site row's station name
 WINDOW_ROLE = Qt.UserRole + 1  # a window row's (start, end)
-NO_ARCHIVE = "no archive - ingest from the Process tab"
+NO_ARCHIVE = "no MTH5 yet - select the site and press Build MTH5"
 READING = "reading the archive..."
 GREY = QBrush(QColor("#909090"))
 
@@ -44,6 +45,7 @@ class SiteTree(QTreeWidget):
         super().__init__(parent)
         self.state = state
         self._items: dict[str, QTreeWidgetItem] = {}
+        self._archived: dict[str, bool] = {}  # what each site row shows
         self._filled: set[str] = set()
         self._queue: list[str] = []  # sites expanded while a read was running
         self._thread: ReadThread | None = None
@@ -61,6 +63,7 @@ class SiteTree(QTreeWidget):
         self._queue.clear()
         self._filled.clear()
         self._items.clear()
+        self._archived.clear()
         self.clear()
         bold = self.font()
         bold.setBold(True)
@@ -69,15 +72,36 @@ class SiteTree(QTreeWidget):
             item.setData(0, SITE_ROLE, site)
             item.setFont(0, bold)
             item.setExpanded(False)
-            if self.state.has_archive(site):
-                item.setToolTip(0, str(self.state.archive_path(site)))
-                # expandable before it has children: they are read on demand
-                item.setChildIndicatorPolicy(QTreeWidgetItem.ShowIndicator)
-            else:
-                item.setForeground(0, GREY)
-                child = QTreeWidgetItem(item, [NO_ARCHIVE])
-                child.setFlags(Qt.NoItemFlags)
             self._items[site] = item
+            self._show_archive(site)
+
+    def _show_archive(self, site: str) -> None:
+        """Make `site`'s row say whether it has an archive: expandable, or grey with the Build MTH5 hint."""
+        item, has = self._items[site], self.state.has_archive(site)
+        self._archived[site] = has
+        item.takeChildren()
+        if has:
+            item.setToolTip(0, str(self.state.archive_path(site)))
+            item.setData(0, Qt.ForegroundRole, None)  # the default text colour again
+            # expandable before it has children: they are read on demand
+            item.setChildIndicatorPolicy(QTreeWidgetItem.ShowIndicator)
+        else:
+            item.setToolTip(0, "")
+            item.setForeground(0, GREY)
+            child = QTreeWidgetItem(item, [NO_ARCHIVE])
+            child.setFlags(Qt.NoItemFlags)
+
+    def refresh_site(self, site: str, expand: bool = False) -> None:
+        """Look at `site`'s archive again (a job built it): a row whose answer changed is rebuilt,
+        so a new archive drops the placeholder and becomes expandable; `expand` lists its windows."""
+        if site not in self._items:
+            return
+        if self.state.has_archive(site) != self._archived.get(site):
+            self._filled.discard(site)
+            self._show_archive(site)
+        if expand and self._archived[site]:
+            self._items[site].setExpanded(False)  # an open row would not signal again
+            self._items[site].setExpanded(True)  # `_expanded` reads its windows
 
     def site_items(self) -> list[QTreeWidgetItem]:
         return [self.topLevelItem(i) for i in range(self.topLevelItemCount())]

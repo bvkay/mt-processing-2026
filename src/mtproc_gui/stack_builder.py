@@ -12,7 +12,7 @@
                  and nothing for what was not. Under them, collapsed by
                  default, `EstimatorOptions`: "Advanced (aurora estimator)",
                  process_rr.py's --taper ... --tolerance, by the same rule
-                 against the in-use values (`bbmt.process.ESTIMATOR_DEFAULTS`).
+                 against the in-use values (`mtproc.process.ESTIMATOR_DEFAULTS`).
 
 Nothing here computes a product: `StackBuilder.argv` and `RunOptions.flags`
 only assemble command lines from a `WindowBar`, the survey's own
@@ -29,9 +29,10 @@ from PySide6.QtWidgets import (
     QLineEdit, QListWidget, QSpinBox, QToolButton, QVBoxLayout, QWidget,
 )
 
-from bbmt.bands import lemimt_band_scheme
-from bbmt.process import ESTIMATOR_DEFAULTS, TAPERS
-from bbmt_gui.window_bar import UTC_FMT, WindowBar
+from mtproc.bands import lemimt_band_scheme
+from mtproc.ingest import variant_ready
+from mtproc.process import ESTIMATOR_DEFAULTS, TAPERS
+from mtproc_gui.window_bar import UTC_FMT, WindowBar
 
 # the four band kwargs a run can override, in `scripts/process_rr.py`'s order
 BAND_KEYS = ("min_period", "max_period", "periods_per_decade", "notch_frequencies")
@@ -158,10 +159,12 @@ class RunOptions(QGroupBox):
         self.decade_spin = QDoubleSpinBox(self, decimals=1, minimum=1.0, maximum=40.0, singleStep=1.0)
         self.notch_edit = QLineEdit(self)
         self.notch_edit.setToolTip("comma-separated Hz kept out of every band (mains and harmonics)")
-        self.filters_check = QCheckBox("use declared filters at ingest", self, checked=True)
+        self.filters_check = QCheckBox("use declared filters", self, checked=True)
         self.filters_check.setToolTip(
-            "Off adds --no-filters: both sites are ingested into <site>_unfiltered.h5 with "
-            "their declared filters skipped, so a run can be compared with and without them."
+            "On (default): each site is processed from its filtered variant (<site>_f<hash>.h5), "
+            "built on demand from its raw archive. Off adds --no-filters: both sites are processed "
+            "from their raw <site>.h5 outright, so a run can be compared with and without their "
+            "declared filters."
         )
         self.filters_label = QLabel("", self)
         self.filters_label.setWordWrap(True)
@@ -197,15 +200,29 @@ class RunOptions(QGroupBox):
         self.tag_edit.clear()
         self.advanced.reset()
 
-    def describe_filters(self, station) -> None:
-        """One read-only line naming what this station declares in `filters.yaml`."""
+    def describe_filters(self, station, remote=None) -> None:
+        """One read-only line naming what the station and the remote declare in
+        `filters.yaml`; each list is applied on demand, into a filtered
+        variant of the site's raw archive (`mtproc.ingest.processing_archive`),
+        when a run wants it (`RunOptions.filters_check`, on by default)."""
         survey = self.state.survey
         if not station or survey is None:
             self.filters_label.setText("")
             return
-        declared = survey.site(station).filters or []
-        kinds = ", ".join(sorted({k for entry in declared for k in entry})) or "none"
-        self.filters_label.setText(f"{station} declares: {kinds} (edit on the Filter Data tab)")
+
+        def kinds(site):
+            declared = survey.site(site).filters or []
+            names = ", ".join(sorted({k for entry in declared for k in entry})) or "none"
+            if not declared:
+                return names
+            state = "filtered archive ready" if variant_ready(survey, site) else \
+                "filtered archive will be built first, from the raw archive"
+            return f"{names} ({state})"
+
+        text = f"{station} declares: {kinds(station)}"
+        if remote and remote != station and remote in (survey.site_names() + list(self.state.raw_sites())):
+            text += f" | {remote} (remote) declares: {kinds(remote)}"
+        self.filters_label.setText(text + " (edit on the Filter Data tab)")
 
     def flags(self) -> list[str]:
         """Only what differs from the defaults: --min-period ... --notch, --no-filters, --tag, advanced."""
