@@ -1,13 +1,14 @@
 """pyqtgraph helpers for the three QC tabs, and the ladder controls two of them share.
 
-Drawing only -- the numbers are a `bbmt_gui.segment.SegmentQC`, computed by
-`bbmt.timefreq` in the store's worker; the colours are `bbmt_gui.theme`'s:
+Drawing only -- the numbers are a `mtproc_gui.segment.SegmentQC`, computed by
+`mtproc.timefreq` in the store's worker; the colours are `mtproc_gui.theme`'s:
 
 - `draw_psd`       PSD ladders on one log-log plot, each stage over the
                    decade its resolution suits, as `scripts/psd_qc.py` draws
                    figure 05 (2-500 Hz from the 1000 Hz stage, 0.2-2 Hz from
                    the 100 Hz stage, and so on: `stage_bands`), the remote's
-                   coil in grey underneath, the view locked to what was drawn
+                   coil in grey underneath (a "before" ladder dashed light
+                   grey under it all), the view locked to what was drawn
                    (y: below the anti-alias roll-off, `Y_EXTENT_HZ`) and
                    faint dashed lines at the Schumann resonances and at
                    50 Hz and its harmonics (`mark_frequencies`).
@@ -37,8 +38,8 @@ import numpy as np
 import pyqtgraph as pg
 from PySide6.QtWidgets import QDoubleSpinBox, QHBoxLayout, QLabel, QPushButton, QWidget
 
-from bbmt_gui import theme
-from bbmt_gui.plots import AXIS_WIDTH
+from mtproc_gui import theme
+from mtproc_gui.plots import AXIS_WIDTH
 
 PLACEHOLDER = "load a window from the tree on the Time Series tab"
 STAGE_LO = 0.002  # a stage is drawn from fs * STAGE_LO up to the stage above's low edge
@@ -120,33 +121,38 @@ def psd_plot(parent, title: str) -> pg.PlotWidget:
     return plot
 
 
-def draw_psd(plot: pg.PlotWidget, stages, curves, labelled: bool = False) -> int:
-    """`curves` = [(comp, legend name), ...] on `plot`, stage by stage; returns the curves drawn.
+def draw_psd(plot: pg.PlotWidget, stages, curves, labelled: bool = False, before=None) -> list:
+    """`curves` = [(comp, legend name), ...] on `plot`, stage by stage; returns [(comp, item)] drawn.
 
     Each comp in its theme colour (a remote coil grey and underneath), named
-    once in the legend. The view is then locked to the extent of what was
-    drawn -- positive finite values only; in y only inside `Y_EXTENT_HZ` --
-    and the frequency marks go on, their text labels only where `labelled`.
+    once in the legend; `before`, a second ladder of the same channels (the
+    Filter Data tab's raw window), goes under it all dashed light grey, out
+    of the legend (the tab says what grey means). The view is locked to the extent of everything drawn --
+    positive finite values only; in y only inside `Y_EXTENT_HZ` -- and the
+    frequency marks go on, their text labels only where `labelled`.
     """
     plot.clear()
     f_lo, f_hi, p_lo, p_hi = np.inf, -np.inf, np.inf, -np.inf
-    drawn = 0
-    for comp, name in curves:
-        named = False
-        for (_fs, freqs, psd), (lo, hi) in zip(stages, stage_bands(stages)):
-            m = (freqs >= lo) & (freqs <= hi)
-            if comp not in psd or not m.any():
-                continue
-            f, p = freqs[m], psd[comp][m]
-            item = plot.plot(f, p, pen=theme.pen(comp, 1.2), name=None if named else name)
-            item.setZValue(-1 if comp.startswith("r_") else 0)
-            named, drawn = True, drawn + 1
-            ok = np.isfinite(p) & (p > 0)
-            if ok.any():
-                f_lo, f_hi = min(f_lo, f[ok].min()), max(f_hi, f[ok].max())
-            ok &= (f >= Y_EXTENT_HZ[0]) & (f <= Y_EXTENT_HZ[1])
-            if ok.any():
-                p_lo, p_hi = min(p_lo, p[ok].min()), max(p_hi, p[ok].max())
+    drawn = []
+    for ladder, raw in ([(before, True)] if before else []) + [(stages, False)]:
+        for comp, name in curves:
+            named = False
+            for (_fs, freqs, psd), (lo, hi) in zip(ladder, stage_bands(ladder)):
+                m = (freqs >= lo) & (freqs <= hi)
+                if comp not in psd or not m.any():
+                    continue
+                f, p = freqs[m], psd[comp][m]
+                pen = theme.raw_pen(1.0, dashed=True) if raw else theme.pen(comp, 1.2)
+                item = plot.plot(f, p, pen=pen, name=None if named or raw else name)
+                item.setZValue(-2 if raw else -1 if comp.startswith("r_") else 0)
+                named = True
+                drawn.append((comp, item))
+                ok = np.isfinite(p) & (p > 0)
+                if ok.any():
+                    f_lo, f_hi = min(f_lo, f[ok].min()), max(f_hi, f[ok].max())
+                ok &= (f >= Y_EXTENT_HZ[0]) & (f <= Y_EXTENT_HZ[1])
+                if ok.any():
+                    p_lo, p_hi = min(p_lo, p[ok].min()), max(p_hi, p[ok].max())
     if drawn and np.isfinite([f_lo, f_hi, p_lo, p_hi]).all():
         lock_view(plot, x=(float(np.log10(f_lo)), float(np.log10(f_hi))),
                   y=(float(np.log10(p_lo)), float(np.log10(p_hi))))
