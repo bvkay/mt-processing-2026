@@ -1,9 +1,12 @@
 """Metadata tab: start or pick a survey, read and edit what is declared in it.
 
-Drives `surveys/<name>/survey.yaml` (via `bbmt.survey.Survey`) and nothing
+Drives `surveys/<name>/survey.yaml` (via `mtproc.survey.Survey`) and nothing
 else -- no processing. One row per site: the field-sheet numbers as declared,
-the site's usual remote-reference partner (`remote:`, what the
-Process/Spectra/Coherence tabs preselect), the recorder facts
+its recorder (read-only "instrument": `Survey.instrument_of`, the site's own
+`instrument:` or what its folder holds), the site's usual remote-reference partner (`remote:`, what the Process/Spectra/
+Coherence tabs preselect), its channels (`channels_column`), on a PR6-24 (EDL)
+row its declared electric chain gain (`metadata_edit.electric_gain_cell`,
+"-" on any other recorder's), the recorder facts
 `scripts/new_survey.py` read from the B423 headers (serial, firmware, start,
 end -- read-only), whether the raw folder and the MTH5 archive are actually
 there, and whether the site has a declared noise filter list
@@ -15,7 +18,7 @@ changed cells into the `sites:` block (`metadata_edit.rewrite_sites_block`)
 and reopens the survey -- asking first when a script wrote the file
 (`generated_by:`, shown as a yellow line). "New survey..." queues
 `scripts/new_survey.py` on `state.runner` and opens what it wrote once the
-job finishes (`metadata_edit.start_new_survey`, `_new_survey_finished`).
+job finishes (`metadata_edit.start_new_survey`, `handle_new_survey_finished`).
 
 Selecting a row sets `State.site`, which is what the other tabs preselect.
 """
@@ -28,14 +31,14 @@ from PySide6.QtWidgets import (
     QMessageBox, QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
-from bbmt.survey import read_site_table
-from bbmt_gui import metadata_edit
-from bbmt_gui.metadata_edit import EDITABLE, format_cell, parse_cell
-from bbmt_gui.theme import BAD_COLOUR, NOTICE_COLOUR
+from mtproc.survey import read_site_table
+from mtproc_gui import channels_column, metadata_edit
+from mtproc_gui.metadata_edit import EDITABLE, format_cell, parse_cell
+from mtproc_gui.theme import BAD_COLOUR, NOTICE_COLOUR
 
-COLUMNS = ["site", "latitude", "longitude", "elevation", "dipole_length_ex", "dipole_length_ey",
-           "azimuth_ex", "azimuth_ey", "timing", "remote", "serial", "firmware", "start", "end",
-           "raw folder", "archive", "filters", "notes"]
+COLUMNS = ["site", "instrument", "latitude", "longitude", "elevation", "dipole_length_ex", "dipole_length_ey",
+           "azimuth_ex", "azimuth_ey", "timing", "remote", "channels", metadata_edit.ELECTRIC_GAIN, "serial",
+           "firmware", "start", "end", "raw folder", "archive", "filters", "notes"]
 NUMBERS = {"latitude", "longitude", "elevation", "dipole_length_ex", "dipole_length_ey",
            "azimuth_ex", "azimuth_ey"}
 
@@ -133,6 +136,8 @@ class MetadataTab(QWidget):
         self.table.setSortingEnabled(True)
         self.table.itemSelectionChanged.connect(self._selection_changed)
         self.table.itemChanged.connect(lambda _item: self._show_pending())
+        self.table.setItemDelegateForColumn(COLUMNS.index("channels"),
+                                            channels_column.ChannelsDelegate(state, self.table))
 
         layout = QVBoxLayout(self)
         layout.addLayout(header)
@@ -142,7 +147,8 @@ class MetadataTab(QWidget):
         layout.addWidget(self.table)
 
         self.state.site_changed.connect(self.select_site)
-        self.state.runner.job_finished.connect(self._new_survey_finished)
+        self.state.runner.job_finished.connect(  # opens what a New survey job wrote
+            lambda index, ok: metadata_edit.handle_new_survey_finished(self, self.state, index, ok))
         self._set_enabled(False)
 
     # ------------------------------------------------------------ filling
@@ -175,12 +181,21 @@ class MetadataTab(QWidget):
         for row, name in enumerate(sites):
             cfg = survey.site(name)
             for column, key in enumerate(COLUMNS):
-                if key == "site":
-                    item = SortableItem(name)
+                if key in ("site", "instrument"):
+                    item = SortableItem(name if key == "site" else survey.instrument_of(name))
                 elif key in EDITABLE:
                     text = format_cell(key, getattr(cfg, key))
                     self._shown[(name, key)] = text
                     item = SortableItem(text, editable=True, number=key in NUMBERS)
+                elif key == "channels":  # greyed when an archive holds the set it was built with
+                    item = channels_column.cell(SortableItem, cfg.channels, survey.instrument_of(name),
+                                                self.state.has_archive(name))
+                    self._shown[(name, key)] = item.text()
+                elif key == metadata_edit.ELECTRIC_GAIN:  # the EDL electric chain's declared gain: EDL rows only
+                    item = metadata_edit.electric_gain_cell(SortableItem, cfg.electric_gain,
+                                                            survey.instrument_of(name), self.state.has_archive(name))
+                    if item.flags() & Qt.ItemIsEditable:
+                        self._shown[(name, key)] = item.text()
                 elif key == "raw folder":
                     item = _yes_no(name in raw_sites)
                 elif key == "archive":
@@ -216,8 +231,9 @@ class MetadataTab(QWidget):
     def pending(self) -> dict[str, dict]:
         """{site: {column: value}} for every editable cell that no longer reads as it was loaded.
 
-        None means "drop the site's own key" (blank or a dash), so the
-        survey's default applies again. Raises ValueError naming a cell whose number does not parse.
+        None means "drop the site's own key" (blank, a dash, the default's channels or electric-gain
+        number), so the survey's default applies again. Raises ValueError naming a cell whose number
+        does not parse, channels or electric-gain included.
         """
         edits: dict[str, dict] = {}
         for row in range(self.table.rowCount()):
@@ -232,6 +248,15 @@ class MetadataTab(QWidget):
                     raise ValueError(f"{site} {key} {item.text()!r} is not a number") from None
                 if value != parse_cell(key, shown):
                     edits.setdefault(site, {})[key] = value
+            value = channels_column.edit(self.state.survey, self.table.item(row, COLUMNS.index("channels")),
+                                         self._shown.get((site, "channels")), site)
+            if value is not channels_column.UNCHANGED:  # its own rule: a key only off the default's set
+                edits.setdefault(site, {})["channels"] = value
+            gain = self.table.item(row, COLUMNS.index(metadata_edit.ELECTRIC_GAIN))
+            value = metadata_edit.electric_gain_edit(self.state.survey, site, gain.text() if gain else None,
+                                                      self._shown.get((site, metadata_edit.ELECTRIC_GAIN)))
+            if value is not channels_column.UNCHANGED:  # the same rule: a key only off the default's number
+                edits.setdefault(site, {})[metadata_edit.ELECTRIC_GAIN] = value
         return edits
 
     def _show_pending(self) -> None:
@@ -312,10 +337,6 @@ class MetadataTab(QWidget):
         if accepted:
             metadata_edit.start_new_survey(self, self.state, values, out)
 
-    def _new_survey_finished(self, index: int, ok: bool) -> None:
-        """state.runner.job_finished: open the survey a new-survey job wrote (metadata_edit does the work)."""
-        metadata_edit.handle_new_survey_finished(self, self.state, index, ok)
-
     # ------------------------------------------------------------- slots
 
     def _selection_changed(self) -> None:
@@ -341,10 +362,3 @@ class MetadataTab(QWidget):
                     break
         finally:
             self._syncing = False
-
-    def selected_site(self) -> str | None:
-        rows = self.table.selectionModel().selectedRows()
-        if not rows:
-            return None
-        item = self.table.item(rows[0].row(), 0)
-        return None if item is None else item.text()
