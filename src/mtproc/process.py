@@ -2,12 +2,20 @@
 
 from __future__ import annotations
 
+import inspect
+from contextlib import contextmanager
 from pathlib import Path
 
+import aurora.pipelines.transfer_function_helpers as _tf_helpers
+import numpy as np
 import pandas as pd
 from aurora.config.config_creator import ConfigCreator
 from aurora.pipelines.process_mth5 import process_mth5
 from loguru import logger
+
+from mth5.mth5 import MTH5
+
+from .masks import applies, apply_time_masks, split_by_bands, windows_in_mask
 
 try:  # newer stacks host these in mth5
     from mth5.processing import KernelDataset, RunSummary
@@ -48,12 +56,16 @@ def clip_to_window(kd, start=None, end=None):
     return kd
 
 
-# What aurora 0.6.2's ConfigCreator gives every decimation level, i.e. what a
-# run without tweaks uses (overlap_pct: 25 %, then `build_config` boosts levels
-# whose window lasts over 600 s to 75 %). tests/process_rr_cli_unit.py builds a
-# real config and fails if these stop being the in-use values.
+# What a run without tweaks uses on every decimation level: aurora 0.6.2's
+# ConfigCreator values (overlap_pct: 25 %, then `build_config` boosts levels
+# whose window lasts over 600 s to 75 %) except the taper, which `build_config`
+# sets to Hann (aurora's own is boxcar, `AURORA_TAPER`): the boxcar's leakage
+# put D13's 50 Hz line into every 12-46 Hz band at Morocco D03, Hann removed
+# that and lost nothing on Curnamona D02.
+# tests/process_rr_cli_unit.py builds a real config and fails if these stop
+# being the in-use values.
 ESTIMATOR_DEFAULTS = {
-    "taper": "boxcar",
+    "taper": "hann",
     "overlap_pct": 25.0,
     "prewhiten": True,
     "min_windows": 0,
@@ -64,7 +76,231 @@ ESTIMATOR_DEFAULTS = {
     "tolerance": 0.005,
 }
 TAPERS = ("boxcar", "hamming", "hann", "dpss")
+AURORA_TAPER = "boxcar"  # what ConfigCreator sets; a run gets ESTIMATOR_DEFAULTS["taper"] unless told otherwise
 DPSS_NW = 3.0  # scipy's dpss window needs a time-bandwidth product; none is set by aurora
+
+
+# mth5's RunSummary opens every archive read-write to read run metadata, and a
+# read-write open fails while any other process holds the archive read-only
+# (the GUI drawing a window). Processing never writes to an archive, so the
+# summary is read read-only here; see docs/upstream_issues.md, 5.
+import mth5.processing.run_summary as _run_summary
+
+_mth5_initialize = _run_summary.initialize_mth5
+
+
+def _read_only_run_summary(path, mode="a", **kwargs):
+    return _mth5_initialize(path, mode="r", **kwargs)
+
+
+if _run_summary.initialize_mth5 is not _read_only_run_summary:
+    _run_summary.initialize_mth5 = _read_only_run_summary
+
+
+@contextmanager
+def _archives_read_only():
+    """Every `MTH5.open_mth5` inside the block opens read-only.
+
+    `KernelDataset.from_run_summary` opens the local archive with mth5's
+    default mode ("a") just to read the survey metadata; read-write opens
+    fail while any other process holds the archive read-only (the GUI drawing
+    a window) and touch the file's timestamp. Scoped, so ingest in the same
+    process still writes.
+    """
+    original = MTH5.open_mth5
+
+    def read_only(self, filename=None, mode="r", **kwargs):
+        return original(self, filename, mode="r", **kwargs)
+
+    MTH5.open_mth5 = read_only
+    try:
+        yield
+    finally:
+        MTH5.open_mth5 = original
+
+
+# Band-limited masks reach aurora through a scoped patch (docs/upstream_issues.md
+# 22: aurora 0.6.2 takes no per-band window weights or masks from outside).
+# Both of its regression loops take a band's Fourier coefficients from the one
+# function, looked up in `aurora.pipelines.transfer_function_helpers`' globals
+# at call time:
+#   line 249, process_transfer_functions:
+#       X, Y, RR = get_band_for_tf_estimate(band, dec_level_config, local_stft_obj, remote_stft_obj)
+#   line 339, process_transfer_functions_with_weights (per output channel):
+#       X, Y, RR = get_band_for_tf_estimate(band, dec_level_config, local_stft_obj, remote_stft_obj)
+# (`process_mth5.process_tf_decimation_level` tries the second, falls back to the
+# first). `_band_masks_applied` wraps that name, so a band a mask covers gets
+# X, Y, RR without the masked windows: dropped, not zero-weighted, so aurora's
+# own weighting (edf weights, the robust regression) never sees them.
+# `_check_band_patch` fails loudly if aurora moves any of it.
+BAND_PATCH_NAME = "get_band_for_tf_estimate"
+BAND_PATCH_PARAMETERS = ("band", "dec_level_config", "local_stft_obj", "remote_stft_obj")
+BAND_PATCH_CALLERS = ("process_transfer_functions", "process_transfer_functions_with_weights")
+STFT_TIME = "time"  # the STFT's window axis: naive UTC datetime64, each window's first sample
+MIN_MASKED_WINDOWS = 4  # a band mask never leaves a band fewer windows (nor under the level's min_num_stft_windows)
+
+
+def _check_band_patch() -> None:
+    """RuntimeError unless aurora still routes both regression loops through the wrapped name."""
+    target = getattr(_tf_helpers, BAND_PATCH_NAME, None)
+    if target is None:
+        raise RuntimeError(f"aurora.pipelines.transfer_function_helpers has no {BAND_PATCH_NAME}: "
+                           "band-limited masks cannot be applied (see mtproc.process)")
+    got = tuple(inspect.signature(target).parameters)
+    if got != BAND_PATCH_PARAMETERS:
+        raise RuntimeError(f"aurora's {BAND_PATCH_NAME} now takes {got}, the band-mask patch expects "
+                           f"{BAND_PATCH_PARAMETERS}")
+    for name in BAND_PATCH_CALLERS:
+        fn = getattr(_tf_helpers, name, None)
+        if fn is None or fn.__globals__ is not vars(_tf_helpers) or BAND_PATCH_NAME not in fn.__code__.co_names:
+            raise RuntimeError(f"aurora's {name} no longer calls transfer_function_helpers.{BAND_PATCH_NAME}: "
+                               "the band-mask patch would not act")
+
+
+def _mask_label(mask: dict) -> str:
+    return (f"{mask['start']} to {mask['end']} [{mask['bands'][0]:g}, {mask['bands'][1]:g}] s")
+
+
+class _BandMaskLog:
+    """What `_band_masks_applied` did: per decimation level, per band a mask covers,
+    {"windows", "lost", "skipped"}; one log line per level, when the next level starts
+    or the block ends. Aurora asks for a band once per output channel, so a band is
+    recorded (and counted) once."""
+
+    def __init__(self, masks):
+        self.masks = masks
+        self.levels: dict[int, dict[float, dict]] = {}
+        self.errors: list[str] = []
+        self.calls = 0
+        self._matched: set[int] = set()
+        self._current: int | None = None
+        self._flushed: set[int] = set()
+
+    def record(self, level: int, period: float, windows: int, lost: int, skipped: list, matched) -> None:
+        if self._current is not None and level != self._current:
+            self._flush(self._current)
+        self._current = level
+        self._matched.update(matched)
+        self.levels.setdefault(level, {})[period] = {"windows": windows, "lost": lost, "skipped": skipped}
+
+    def lost(self) -> dict[float, int]:
+        """{band centre period: windows dropped}, every band a mask covered."""
+        return {p: b["lost"] for bands in self.levels.values() for p, b in bands.items()}
+
+    def _flush(self, level: int) -> None:
+        if level in self._flushed:
+            return
+        self._flushed.add(level)
+        parts = []
+        for period, b in sorted(self.levels.get(level, {}).items()):
+            parts.append(f"{period:.4g} s lost {b['lost']} of {b['windows']} windows")
+            for m in b["skipped"]:
+                parts.append(f"mask {_mask_label(m)} skipped at {period:.4g} s (it would leave fewer "
+                             f"than the band's minimum)")
+        logger.info(f"band masks, decimation level {level}: " + "; ".join(parts))
+
+    def close(self) -> None:
+        if self._current is not None:
+            self._flush(self._current)
+        for i, m in enumerate(self.masks):
+            if i not in self._matched:
+                logger.warning(f"band mask {_mask_label(m)} covers no band's centre period: not applied")
+
+
+def _drop_masked_windows(band, dec_level_config, X, Y, RR, masks, min_windows: int, log: _BandMaskLog):
+    """X, Y, RR without the STFT windows a band-limited mask covering `band` overlaps.
+
+    A mask covers the band when `mtproc.masks.applies` says so at the band's
+    centre period; a window is dropped when any of its samples lies in the
+    mask's [start, end) (`mtproc.masks.windows_in_mask`). Masks are taken
+    earliest first; one that would leave the band fewer than
+    max(`min_windows`, stft.min_num_stft_windows) windows is skipped for this
+    band (logged, named). A band no mask covers is returned untouched (the
+    same objects).
+    """
+    period = float(band.center_period)
+    covering = [(i, m) for i, m in enumerate(masks) if applies(m, period)]
+    if not covering:
+        return X, Y, RR
+    if STFT_TIME not in X.dims:
+        raise KeyError(f"the STFT has no {STFT_TIME!r} axis (dims {tuple(X.dims)}): cannot place windows in time")
+    level = int(dec_level_config.decimation.level)
+    times = X[STFT_TIME].values
+    n = int(times.size)
+    window_s = dec_level_config.stft.window.num_samples / float(dec_level_config.decimation.sample_rate)
+    floor = max(int(dec_level_config.stft.min_num_stft_windows or 0), int(min_windows))
+    drop = np.zeros(n, dtype=bool)
+    skipped = []
+    for _i, m in covering:
+        hit = windows_in_mask(times, window_s, m)
+        if not hit.any():
+            continue
+        trial = drop | hit
+        if n - int(trial.sum()) < floor:
+            skipped.append(m)
+            continue
+        drop = trial
+    log.record(level, period, n, int(drop.sum()), skipped, [i for i, _m in covering])
+    if not drop.any():
+        return X, Y, RR
+    if any(getattr(c, "weights", None) is not None for c in dec_level_config.channel_weight_specs):
+        # aurora's weighted path would then apply one weight per window of the whole level
+        raise RuntimeError("band masks cannot be combined with feature weights (channel_weight_specs)")
+    keep = ~drop
+    X, Y = X.isel({STFT_TIME: keep}), Y.isel({STFT_TIME: keep})
+    if RR is not None:
+        RR = RR.isel({STFT_TIME: keep})
+    return X, Y, RR
+
+
+@contextmanager
+def _band_masks_applied(masks, min_windows: int = MIN_MASKED_WINDOWS):
+    """For the duration of one `process_mth5` call, band-limited masks act in aurora's regression.
+
+    `masks` is a site's list (`mtproc.masks.load_masks`); only the band-limited
+    ones are used here (`bands: all` masks are time cuts, `apply_time_masks`).
+    Wraps `aurora.pipelines.transfer_function_helpers.get_band_for_tf_estimate`
+    (the comment above `BAND_PATCH_NAME` quotes the two call sites) so that,
+    for a band whose centre period a mask covers, the STFT windows overlapping
+    the mask are dropped from the local and remote Fourier coefficients
+    before the regression (`_drop_masked_windows`). Logs once per decimation
+    level how many windows each covered band lost, and warns about a mask
+    that covers no band. The original function is restored on exit, as
+    `_archives_read_only` restores `MTH5.open_mth5`. Yields a `_BandMaskLog`
+    (None with no band-limited mask, and then nothing is patched).
+
+    Raises RuntimeError before the block when aurora no longer has the
+    expected entry point or signature (`_check_band_patch`), and after it
+    when the wrapper failed inside aurora (which would otherwise drop a whole
+    decimation level with only a log line) or was never called.
+    """
+    _all_band, band_masks = split_by_bands(masks)
+    if not band_masks:
+        yield None
+        return
+    _check_band_patch()
+    original = getattr(_tf_helpers, BAND_PATCH_NAME)
+    log = _BandMaskLog(band_masks)
+
+    def masked(band, dec_level_config, local_stft_obj, remote_stft_obj):
+        X, Y, RR = original(band, dec_level_config, local_stft_obj, remote_stft_obj)
+        log.calls += 1
+        try:
+            return _drop_masked_windows(band, dec_level_config, X, Y, RR, band_masks, min_windows, log)
+        except Exception as exc:
+            log.errors.append(f"{type(exc).__name__}: {exc}")
+            raise
+
+    setattr(_tf_helpers, BAND_PATCH_NAME, masked)
+    try:
+        yield log
+    finally:
+        setattr(_tf_helpers, BAND_PATCH_NAME, original)
+        log.close()
+    if log.errors:
+        raise RuntimeError(f"band masks failed inside aurora ({len(log.errors)} time(s)): {log.errors[0]}")
+    if not log.calls:
+        raise RuntimeError(f"aurora never called {BAND_PATCH_NAME}: the band masks were not applied")
 
 
 def kernel_dataset(local_h5, station, remote_h5=None, remote_station=None,
@@ -74,10 +310,10 @@ def kernel_dataset(local_h5, station, remote_h5=None, remote_station=None,
     paths = [Path(local_h5)]
     if remote_h5 is not None and Path(remote_h5) != Path(local_h5):
         paths.append(Path(remote_h5))
-    rs.from_mth5s(paths)
-
-    kd = KernelDataset()
-    kd.from_run_summary(rs, station, remote_station)
+    with _archives_read_only():
+        rs.from_mth5s(paths)
+        kd = KernelDataset()
+        kd.from_run_summary(rs, station, remote_station)
     clip_to_window(kd, start, end)
     if min_run_seconds:
         kd.drop_runs_shorter_than(min_run_seconds)
@@ -125,7 +361,7 @@ def apply_tweaks(config, tweaks: dict | None):
 
 
 def build_config(kd, band_scheme: dict | None = None, tweaks: dict | None = None, **config_kwargs):
-    """ConfigCreator's config for `kd`, the long-window overlap boost, then `tweaks`."""
+    """ConfigCreator's config for `kd`, the long-window overlap boost, then `tweaks` (the taper defaults to Hann)."""
     if band_scheme:
         config_kwargs = {**band_scheme, **config_kwargs}
     cc = ConfigCreator()
@@ -138,9 +374,10 @@ def build_config(kd, band_scheme: dict | None = None, tweaks: dict | None = None
         window_seconds = w.num_samples / dec.decimation.sample_rate
         if window_seconds > 600.0:
             w.overlap = int(w.num_samples * 0.75)
-    if tweaks:
-        apply_tweaks(config, tweaks)
-        logger.info("estimator tweaks: " + ", ".join(f"{k}={v}" for k, v in tweaks.items()))
+    tweaks = dict(tweaks or {})
+    tweaks.setdefault("taper", ESTIMATOR_DEFAULTS["taper"])  # Hann unless --taper says otherwise
+    apply_tweaks(config, tweaks)
+    logger.info("estimator tweaks: " + ", ".join(f"{k}={v}" for k, v in tweaks.items()))
     return config
 
 
@@ -156,11 +393,22 @@ def process_station(
     end=None,
     tag: str | None = None,
     tweaks: dict | None = None,
+    time_masks: list | None = None,
     **config_kwargs,
 ):
     """Estimate a transfer function for `station`, optionally remote-referenced.
 
-    `band_scheme` is the dict from bbmt.bands (band_edges, decimation_factors,
+    `time_masks` is the site's list from `<survey>/masks.yaml` (`mtproc.masks.load_masks`):
+    the all-band intervals are cut out of the kernel dataset's run intervals
+    before the config is built (`apply_time_masks`). The band-limited ones act
+    inside aurora's regression through a scoped patch (`_band_masks_applied`,
+    aurora 0.6.2 taking no per-band window weights from outside,
+    docs/upstream_issues.md 22): in a band whose centre period a mask covers,
+    the STFT windows overlapping the mask are dropped before the regression,
+    every other band untouched; a mask that would leave a band fewer than
+    `MIN_MASKED_WINDOWS` windows is skipped there, with a log line.
+
+    `band_scheme` is the dict from mtproc.bands (band_edges, decimation_factors,
     num_samples_window); `start`/`end` (UTC) restrict the estimate to a
     processing window (see `clip_to_window`); `tag` overrides the output file
     stem (default ``<station>_rr-<remote>`` or ``<station>_ss``). Any further
@@ -171,7 +419,7 @@ def process_station(
     given are touched (the in-use value when a key is absent in brackets,
     `ESTIMATOR_DEFAULTS`):
 
-    - ``taper``: STFT window, one of boxcar, hamming, hann, dpss [boxcar]
+    - ``taper``: STFT window, one of boxcar, hamming, hann, dpss [hann; aurora's own is boxcar]
       (dpss gets the time-bandwidth product NW = 3, which scipy requires);
     - ``overlap_pct``: STFT overlap in percent of the window, applied to every
       level as ``round(num_samples * pct / 100)`` and **replacing** the boost
@@ -189,13 +437,18 @@ def process_station(
 
     Returns the mt_metadata TF object; writes an EDI when `out_dir` is given.
     """
+    all_band, band_limited = split_by_bands(time_masks)
     kd = kernel_dataset(local_h5, station, remote_h5, remote_station, start, end, min_run_seconds)
+    if all_band:
+        apply_time_masks(kd, all_band)
     config = build_config(kd, band_scheme, tweaks, **config_kwargs)
 
     logger.info(
         f"aurora: {station}" + (f" RR {remote_station}" if remote_station else " single-station")
+        + (f", {len(band_limited)} band-limited mask(s) applied per band" if band_limited else "")
     )
-    tf = process_mth5(config, kd)
+    with _band_masks_applied(band_limited):
+        tf = process_mth5(config, kd)
 
     if out_dir is not None:
         out_dir = Path(out_dir)
