@@ -1,46 +1,45 @@
 """Process tab: pick a pair, pick a window, queue the scripts that make the products.
 
-Laid out as the MATLAB app's Process Data tab, whose arrangement the owner
-finds "much more intuitive in how it's all set up": (1) station, remote and
+Laid out as the MATLAB app's Process Data tab: (1) station, remote and
 the summary (`site_map.PairSummary`); (2) the slide bar, full width
 (`window_bar.WindowBar`: start field at its left end, end field at its right,
 the sync status centred above between two lamps); (3) Add to queue, Run
-queue, Reset queue | Timing check, Site QC figures, Build stack, Fetch
-basemap; (4) the Aurora options (`stack_builder.RunOptions`); (5) the queue
-table over the script log (`queue_table.QueuePanel`). Beside rows 3-5: the
-site map (`site_map.SiteMap`), the stack builder and the Products list.
+queue, Reset queue | Build stack; (4) the Aurora options
+(`stack_builder.RunOptions`); (5) the queue table over the script log
+(`queue_table.QueuePanel`). Beside rows 3-5: the site map
+(`site_map.SiteMap`), the stack builder and the Products list. Timing check,
+Site QC figures and Fetch basemap are left off this tab: the scripts stay
+on the command line, and the basemap is fetched on survey open.
 
 Every button is one command line from README.md's table, queued through
-`bbmt_gui.jobs.JobRunner` and run from the repo root:
+`mtproc_gui.jobs.JobRunner` and run from the repo root:
 
-    Timing check     scripts/timing_qc.py  <survey.yaml> <station> <remote>
     Add to queue     scripts/process_rr.py <survey.yaml> <station> <remote> [start] [end]
                                            [--min-period ...] [--no-filters] [--tag ...]
-    Site QC figures  scripts/site_qc.py    <survey.yaml> <station> --remote <remote>
-                     scripts/psd_qc.py     <survey.yaml> <station> --remote <remote> --before
     Build stack      scripts/build_stack.py <survey.yaml> <name> <start> <end> <members...>
-    Fetch basemap    scripts/fetch_basemap.py <survey.yaml>   (needs internet; the map draws it)
 
 A band option reaches the command line only when it differs from the survey's
 `processing:` block, so a default run reads exactly as it always did.
-`process_rr.py` also does the ingest, so this is where a site without an
-archive gets one -- and where "use declared filters at ingest" can be turned
-off (`--no-filters`, the `_unfiltered` archives). A remote is always
-required: there is no single-station product (HANDOVER.md, "Decisions made").
+`process_rr.py` also does the raw ingest (as the Time Series tab's Build MTH5
+does for one site) and, unless told not to, builds each site's filtered
+variant on top of it (`mtproc.ingest.processing_archive`), and this is where
+"use declared filters" can be turned off (`--no-filters`: both sites are
+processed from their raw archives outright). A remote is always required:
+there is no single-station product (HANDOVER.md, "Decisions made").
 
-**Queuing a job never starts it** (Ben, 2026-09-23, MATLAB kept "add to
-Queue" and "Process Queue" separate): every button here that queues one --
-Add to queue, Timing check, Site QC figures, Build stack, Fetch basemap --
-only calls `JobRunner.add` (`_queue`, below); only **Run queue** runs them.
+**Queuing a job never starts it**, as the legacy MATLAB field app kept "add
+to Queue" and "Process Queue" separate: Add to queue and Build stack only
+call `JobRunner.add` (`_queue`, below); only **Run queue** runs them.
 `status_label` reads "N job(s) queued - press Run queue" while jobs wait and
 the queue is idle (`_queue_status`, `_refresh_status`).
 
 The queue belongs to `State`: every tab queues on the same `state.runner`, so
 every job is a row of the table, and "Reset queue" is `JobRunner.reset`. When
-a run finishes, the `.edi` paths in its output that exist go in the
-**Products** list, and "Show in View EDIs" puts the chosen one, with its
-lemimt reference, on the View EDIs tab. The report PNGs are named in the log
-and left on disk: nothing here displays one.
+a run finishes, the EDI and figure paths its output reports writing (a
+"wrote <path>" line) that exist go in the **Products** list, and "Show in
+View EDIs" puts the chosen EDI, with its lemimt reference, on the View EDIs
+tab. The comparison figure is only ever listed, never displayed here: nothing
+in this tab shows a PNG.
 """
 
 from __future__ import annotations
@@ -53,11 +52,11 @@ from PySide6.QtWidgets import (
     QScrollArea, QSplitter, QVBoxLayout, QWidget,
 )
 
-from bbmt_gui.jobs import QUEUED
-from bbmt_gui.queue_table import ProductList, QueuePanel
-from bbmt_gui.site_map import PairSummary, SiteMap, basemap_argv
-from bbmt_gui.stack_builder import RunOptions, StackBuilder
-from bbmt_gui.window_bar import WindowBar
+from mtproc_gui.jobs import QUEUED
+from mtproc_gui.queue_table import ProductList, QueuePanel
+from mtproc_gui.site_map import PairSummary, SiteMap
+from mtproc_gui.stack_builder import RunOptions, StackBuilder
+from mtproc_gui.window_bar import WindowBar
 
 
 class ProcessTab(QWidget):
@@ -90,14 +89,8 @@ class ProcessTab(QWidget):
         self.run_button = self._button("Run queue", self.runner.run_queue, "start the next queued job")
         self.reset_button = self._button("Reset queue", self.reset_queue,
                                          "cancel the running job, clear the queue and the log")
-        self.timing_button = self._button("Timing check", self.queue_timing_check,
-                                          "timing_qc.py: file-boundary slips, clock offset, GPS status")
-        self.qc_button = self._button("Site QC figures", self.queue_site_qc,
-                                      "site_qc.py and psd_qc.py --before: PNGs to <workspace>/qc")
         self.build_button = self._button("Build stack", self.stack_builder.build,
                                          "build_stack.py: the stacked remote set up on the right")
-        self.basemap_button = self._button("Fetch basemap", self.queue_basemap,
-                                           "fetch_basemap.py: the site map's background (needs internet)")
         self.status_label = QLabel("", self, wordWrap=True)
 
         self.job_panel = QueuePanel(self.runner, self)
@@ -131,8 +124,7 @@ class ProcessTab(QWidget):
 
         buttons = QHBoxLayout()
         separator = QFrame(self, frameShape=QFrame.VLine, frameShadow=QFrame.Sunken)
-        for widget in (self.add_button, self.run_button, self.reset_button, separator,
-                       self.timing_button, self.qc_button, self.build_button, self.basemap_button):
+        for widget in (self.add_button, self.run_button, self.reset_button, separator, self.build_button):
             buttons.addWidget(widget)
         buttons.addStretch(1)
         left = QWidget(self)
@@ -222,7 +214,7 @@ class ProcessTab(QWidget):
         self.window_bar.set_sites(station, remote)
         self.summary.refresh()
         self._update_enabled()
-        self.options.describe_filters(station)
+        self.options.describe_filters(station, remote)
 
     def _paint_map(self) -> None:
         self.site_map.set_roles(self.station_combo.currentData(), self.remote_combo.currentData(),
@@ -235,8 +227,7 @@ class ProcessTab(QWidget):
 
     def _update_enabled(self) -> None:
         ready = bool(self.station_combo.currentData()) and bool(self.remote_combo.currentData())
-        for button in (self.timing_button, self.add_button, self.qc_button):
-            button.setEnabled(ready)
+        self.add_button.setEnabled(ready)
         self._refresh_status()
 
     def _queue_status(self) -> str | None:
@@ -300,17 +291,6 @@ class ProcessTab(QWidget):
         """Add the job to `state.runner`'s queue; it does not start (Run queue does)."""
         return self.runner.add(label, argv, **details)
 
-    def queue_timing_check(self) -> None:
-        """scripts/timing_qc.py: file-boundary slips, clock offset, GPS status."""
-        pair = self._pair()
-        if pair is None:
-            return
-        survey_yaml, station, remote = pair
-        self._queue(
-            f"timing_qc {station} vs {remote}",
-            [self.state.python_exe, self.state.script("timing_qc.py"), survey_yaml, station, remote],
-        )
-
     def queue_process(self) -> list[str] | None:
         """scripts/process_rr.py: ingest both sites, remote-reference TF, EDI, figure."""
         pair = self._pair()
@@ -329,33 +309,11 @@ class ProcessTab(QWidget):
                     remote=remote, window=shown, options=" ".join(options) or "defaults")
         return argv
 
-    def queue_site_qc(self) -> None:
-        """scripts/site_qc.py then scripts/psd_qc.py --before, for the station."""
-        pair = self._pair()
-        if pair is None:
-            return
-        survey_yaml, station, remote = pair
-        self._queue(
-            f"site_qc {station} (remote {remote})",
-            [self.state.python_exe, self.state.script("site_qc.py"),
-             survey_yaml, station, "--remote", remote],
-        )
-        self._queue(
-            f"psd_qc {station} (remote {remote}, before/after)",
-            [self.state.python_exe, self.state.script("psd_qc.py"),
-             survey_yaml, station, "--remote", remote, "--before"],
-        )
-
     def queue_stack(self, argv) -> None:
         """scripts/build_stack.py, from the StackBuilder; its name is selected when it finishes."""
         name = argv[3]
         index = self._queue(f"build_stack {name} <- {', '.join(argv[6:])}", argv)
         self._stack_jobs[index] = name
-
-    def queue_basemap(self) -> None:
-        """scripts/fetch_basemap.py <survey.yaml> (`site_map.basemap_argv`): the map's background."""
-        if self.state.survey_yaml is not None:
-            self._queue("fetch_basemap (needs internet)", basemap_argv(self.state))
 
     def reset_queue(self) -> None:
         """`JobRunner.reset`: cancel the running job, clear the queue and the log (asked first if one runs)."""

@@ -7,8 +7,12 @@ Usage:
 The extent is every site in `survey.yaml` with a latitude and a longitude,
 padded on each side by --margin of its span (default 0.15), and by at least
 0.1 degree. The tiles come from an xyzservices provider through contextily:
-OpenTopoMap by default, or any dotted xyzservices name (Esri.WorldTopoMap,
-Esri.WorldImagery, OpenStreetMap.Mapnik, ...). They arrive in Web Mercator;
+Esri.WorldImagery by default -- satellite imagery with no place names on it
+(Esri serves its labels as a separate reference layer, which is not fetched),
+so the site names are the only text on the map -- or any dotted xyzservices
+name: Esri.WorldShadedRelief (relief, no labels, zoom 13 at most),
+CartoDB.PositronNoLabels (plain grey), OpenTopoMap (contours and town names),
+OpenStreetMap.Mapnik, ... They arrive in Web Mercator;
 this script warps them, with numpy alone, onto the plain latitude-longitude
 grid the site map draws on -- every output row takes the source row at the
 Mercator y of its latitude, every output column the source column at the
@@ -18,11 +22,17 @@ Mercator x of its longitude, linearly interpolated -- and writes
     <workspace>/basemap.json   lon_min, lon_max, lat_min, lat_max, provider,
                                attribution, zoom, fetched (UTC ISO), width, height
 
-The GUI never goes online: the Process tab's site map draws that image under
-the sites when both files exist, and its "Fetch basemap" button queues this
-script. It needs internet, and says so (exit 1) when the tiles cannot be had.
---zoom auto is contextily's own rule, the coarser of ceil(log2(720 / span))
-over the longitude and latitude spans, kept inside the provider's zoom range.
+The GUI never goes online itself: the Process tab's site map draws that image
+under the sites when both files exist, and opening a survey whose workspace
+has no basemap.json runs this script once (`site_map.fetch_basemap_if_missing`).
+It needs internet, and says so (exit 1) when the tiles cannot be had; every
+tile request gives up after 30 s.
+
+--zoom auto (the default) is three levels finer than contextily's own rule (the
+coarser of ceil(log2(720 / span)) over the longitude and latitude spans), for
+a sharper map, then coarsened one level at a time -- never below contextily's
+level -- until it is inside the provider's zoom range (19 when xyzservices
+gives none) and the image's longer side is at most 8000 px (`pick_zoom`).
 """
 
 from __future__ import annotations
@@ -43,22 +53,29 @@ import xyzservices.providers as xyz  # noqa: E402
 from PIL import Image  # noqa: E402
 from xyzservices import TileProvider  # noqa: E402
 
-from bbmt.survey import Survey  # noqa: E402
+from mtproc.survey import Survey  # noqa: E402
 
 EARTH_RADIUS_M = 6378137.0  # the Web Mercator (EPSG:3857) sphere
+TILE_PX = 256  # a slippy-map tile's side: at zoom z the world is TILE_PX * 2**z pixels round
 MIN_PAD_DEG = 0.1
+DEFAULT_PROVIDER = "Esri.WorldImagery"  # imagery, no place names
+FINER_ZOOM = 3  # --zoom auto: this many levels finer than contextily's rule ...
+MAX_SIDE_PX = 8000  # ... unless the image's longer side would pass this
+DEFAULT_MAX_ZOOM = 19  # a provider xyzservices gives no max_zoom for (Esri.WorldImagery)
 PNG_NAME, JSON_NAME = "basemap.png", "basemap.json"
-USER_AGENT = "bbmt-2026 scripts/fetch_basemap.py (MT survey site map; contextily)"
+USER_AGENT = "mt-processing-2026 scripts/fetch_basemap.py (MT survey site map; contextily)"
 
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="fetch_basemap.py", description=__doc__.split("\n\nUsage:")[0])
     p.add_argument("survey_yaml")
-    p.add_argument("--provider", default="OpenTopoMap",
-                   help="xyzservices name, e.g. OpenTopoMap, Esri.WorldTopoMap, Esri.WorldImagery")
+    p.add_argument("--provider", default=DEFAULT_PROVIDER,
+                   help="xyzservices name, e.g. Esri.WorldImagery (default: no labels), "
+                        "Esri.WorldShadedRelief, CartoDB.PositronNoLabels, OpenTopoMap")
     p.add_argument("--margin", type=float, default=0.15,
                    help="padding on each side as a fraction of the sites' span (at least 0.1 deg)")
-    p.add_argument("--zoom", default="auto", help="tile zoom level N, or auto")
+    p.add_argument("--zoom", default="auto",
+                   help=f"tile zoom level N, or auto (contextily's + {FINER_ZOOM}, longer side <= {MAX_SIDE_PX} px)")
     return p
 
 
@@ -99,10 +116,32 @@ def provider_named(name: str) -> TileProvider:
     return node
 
 
+def zoom_range(provider: TileProvider) -> tuple[int, int]:
+    return int(provider.get("min_zoom", 0)), int(provider.get("max_zoom", DEFAULT_MAX_ZOOM))
+
+
 def auto_zoom(w: float, s: float, e: float, n: float, provider: TileProvider) -> int:
     """contextily's automatic zoom for the extent, inside the provider's zoom range."""
     zoom = int(min(math.ceil(math.log2(720.0 / (e - w))), math.ceil(math.log2(720.0 / (n - s)))))
-    return max(int(provider.get("min_zoom", 0)), min(zoom, int(provider.get("max_zoom", 19))))
+    low, high = zoom_range(provider)
+    return max(low, min(zoom, high))
+
+
+def image_size(w: float, s: float, e: float, n: float, zoom: int) -> tuple[int, int]:
+    """(width, height) in px of the warped image at `zoom`: the extent's Mercator metres over a tile pixel's."""
+    pixel_m = 2.0 * math.pi * EARTH_RADIUS_M / (TILE_PX * 2 ** zoom)
+    return (int(round(float(mercator_x(e) - mercator_x(w)) / pixel_m)),
+            int(round(float(mercator_y(n) - mercator_y(s)) / pixel_m)))
+
+
+def pick_zoom(w: float, s: float, e: float, n: float, provider: TileProvider) -> int:
+    """--zoom auto: contextily's level + FINER_ZOOM, coarsened (not below contextily's) into the
+    provider's range and until the longer side is at most MAX_SIDE_PX."""
+    base = auto_zoom(w, s, e, n, provider)
+    zoom = min(base + FINER_ZOOM, zoom_range(provider)[1])
+    while zoom > base and max(image_size(w, s, e, n, zoom)) > MAX_SIDE_PX:
+        zoom -= 1
+    return zoom
 
 
 def mercator_x(lon):
@@ -154,7 +193,11 @@ def main(argv=None) -> int:
     survey = Survey.from_yaml(Path(args.survey_yaml).resolve())
     w, s, e, n = extent = padded_extent(site_extent(survey), args.margin)
     provider = provider_named(args.provider)
-    zoom = auto_zoom(w, s, e, n, provider) if str(args.zoom) == "auto" else int(args.zoom)
+    zoom = pick_zoom(w, s, e, n, provider) if str(args.zoom) == "auto" else int(args.zoom)
+    width, height = image_size(w, s, e, n, zoom)
+    how = (f"auto: contextily's {auto_zoom(w, s, e, n, provider)} + {FINER_ZOOM}, at most {MAX_SIDE_PX} px"
+           if str(args.zoom) == "auto" else "asked for")
+    print(f"fetching {provider.name} tiles at zoom {zoom} ({how}): about {width}x{height} px ...", flush=True)
     try:
         img, merc_extent = cx.bounds2img(w, s, e, n, ll=True, source=provider, zoom=zoom,
                                          headers={"user-agent": USER_AGENT}, timeout=30)

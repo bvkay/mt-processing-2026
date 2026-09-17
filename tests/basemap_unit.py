@@ -17,12 +17,23 @@ column the source row at the pyproj Mercator y of that latitude (to within
 the 0.5 of the rounding to uint8), or at three longitudes the source column
 at their Mercator x; (2) `basemap.json`'s lon_min, lon_max, lat_min, lat_max
 do not equal (1e-9) the sites' extent computed here from the YAML, padded on
-each side by max(0.15 x span, 0.1 deg) -- for that survey and for a copy of
-the curnamona survey -- or bounds2img was not asked, with ll=True, for exactly
-that extent from OpenTopoMap; its width and height are not the PNG's, the
-PNG is not RGB, or the zoom is not what bounds2img was asked for: with
-`--zoom auto`, min(ceil(log2(720 / span))) over the two spans computed here,
-with `--zoom 9`, 9; (3) a bounds2img that raises (no network) does not make
+each side by max(0.15 x span, 0.1 deg) -- for that survey, a copy of the
+curnamona survey and a one-site survey -- or bounds2img was not asked, with
+ll=True, for exactly that extent from Esri.WorldImagery (the default: imagery,
+no place names) or, when --provider names one, from that provider, with its
+attribution in the JSON; its width and height are not the PNG's or the PNG is
+not RGB; (3) the zoom is not what bounds2img was asked for and the JSON
+records: with `--zoom auto`, three levels finer than min(ceil(log2(720 /
+span))) over the two spans, coarsened one level at a time (never below that
+base) into the provider's zoom range (19 when xyzservices gives none) and
+until the image's longer side -- the extent's Mercator metres from pyproj
+over the tile pixel's 2 pi 6378137 / (256 x 2^zoom) m -- is at most 8000 px,
+all computed here; that rule must give 6 for the wide survey (its base 4 +
+2: 7 would be 8194 px tall), 11 for curnamona (its base 8 + 3: 7222 px
+tall), 6 for a survey from 55 S to 80 S (its base + 1: 7 would be 9714 px
+tall), 15 for a one-site survey (its base 12 + 3) and 13 for that survey
+from Esri.WorldShadedRelief (the provider's max_zoom), so every branch is taken;
+with `--zoom 7`, 7; (4) a bounds2img that raises (no network) does not make
 the script return 1 with "needs internet" on stderr and leave no basemap file
 behind. Everything is written under the scratch directory.
 """
@@ -44,18 +55,22 @@ import yaml
 from PIL import Image
 from pyproj import Transformer
 
+from _scratch import scratch_dir
+
 REPO = Path(__file__).resolve().parents[1]
 SCRIPT = REPO / "scripts" / "fetch_basemap.py"
 CURNAMONA = REPO / "surveys" / "curnamona_cube" / "survey.yaml"
-SCRATCH = Path(
-    r"C:\Users\joint\AppData\Local\Temp\claude\D--BEN-BBMT-Processing-2026"
-    r"\7432a3ce-c47b-448e-8958-b1c946ec7c08\scratchpad\basemap_unit"
-)
+SCRATCH = scratch_dir("basemap_unit")
 SIZE = 256  # the synthetic mosaic's rows and columns: each fits a uint8
 MOSAIC_PAD_DEG = 1.0  # whole tiles cover more than was asked for
 TO_MERCATOR = Transformer.from_crs("EPSG:4326", "EPSG:3857", always_xy=True)
 TO_LONLAT = Transformer.from_crs("EPSG:3857", "EPSG:4326", always_xy=True)
 WIDE_SITES = {"S10": (-10.0, 120.0), "S35": (-35.0, 133.0), "S60": (-60.0, 150.0)}
+ONE_SITE = {"T01": (-31.0, 138.6)}  # padded 0.1 deg each way: a 0.2 x 0.2 deg extent
+POLAR_SITES = {"P55": (-55.0, 140.0), "P80": (-80.0, 141.0)}  # Mercator stretches it tall
+DEFAULT_PROVIDER = "Esri.WorldImagery"
+MAX_ZOOM = {"Esri.WorldImagery": 19, "Esri.WorldShadedRelief": 13}  # xyzservices gives none for the first
+MAX_SIDE_PX, FINER = 8000, 3
 
 CALLS: list[dict] = []
 
@@ -82,7 +97,7 @@ def fake_bounds2img(w, s, e, n, zoom="auto", source=None, ll=False, **kwargs):
 def offline_bounds2img(*args, **kwargs):
     import requests
 
-    raise requests.ConnectionError("no route to tile.opentopomap.org (mocked)")
+    raise requests.ConnectionError("no route to server.arcgisonline.com (mocked)")
 
 
 def write_survey(name: str, sites: dict | None = None) -> Path:
@@ -118,7 +133,8 @@ def run(script, survey_yaml: Path, *options: str) -> tuple[int, str, str]:
     return code, out.getvalue(), err.getvalue()
 
 
-def check_extent_and_meta(survey_yaml: Path, stdout: str, want_zoom: int) -> tuple[dict, np.ndarray]:
+def check_extent_and_meta(survey_yaml: Path, stdout: str, want_zoom: int,
+                          provider: str = DEFAULT_PROVIDER) -> tuple[dict, np.ndarray]:
     work = survey_yaml.parent / "work"
     meta = json.loads((work / "basemap.json").read_text(encoding="utf-8"))
     png = Image.open(work / "basemap.png")
@@ -130,25 +146,41 @@ def check_extent_and_meta(survey_yaml: Path, stdout: str, want_zoom: int) -> tup
     call = CALLS[-1]
     assert call["ll"] is True and np.allclose((call["w"], call["s"], call["e"], call["n"]), (w, s, e, n),
                                               rtol=0, atol=1e-9), call
-    assert call["source"].name == "OpenTopoMap" and meta["provider"] == "OpenTopoMap", (call, meta)
-    assert "OpenTopoMap" in meta["attribution"], meta["attribution"]
+    assert call["source"].name == provider and meta["provider"] == provider, (call["source"].name, meta)
+    assert meta["attribution"].startswith("Tiles (C) Esri"), meta["attribution"]
     assert call["zoom"] == meta["zoom"] == want_zoom, (call["zoom"], meta["zoom"], want_zoom)
     assert (meta["width"], meta["height"]) == png.size, (meta, png.size)
-    assert f"basemap: OpenTopoMap zoom {want_zoom}, {png.size[0]}x{png.size[1]} px" in stdout, stdout
+    assert f"basemap: {provider} zoom {want_zoom}, {png.size[0]}x{png.size[1]} px" in stdout, stdout
     return meta, rgb
 
 
-def auto_zoom_here(survey_yaml: Path) -> int:
-    w, s, e, n = expected_extent(survey_yaml)
-    zoom = min(math.ceil(math.log2(720.0 / (e - w))), math.ceil(math.log2(720.0 / (n - s))))
-    return max(0, min(zoom, 17))  # OpenTopoMap's zoom range
+def longer_side_px(extent, zoom: int) -> float:
+    """The image's longer side at `zoom`: pyproj's Mercator metres over one tile pixel's."""
+    w, s, e, n = extent
+    left, bottom = TO_MERCATOR.transform(w, s)
+    right, top = TO_MERCATOR.transform(e, n)
+    pixel_m = 2 * math.pi * 6378137.0 / (256 * 2 ** zoom)
+    return max(right - left, top - bottom) / pixel_m
+
+
+def auto_zoom_here(survey_yaml: Path, provider: str = DEFAULT_PROVIDER) -> tuple[int, int]:
+    """(base, zoom): contextily's rule, then +3 coarsened into the range and under 8000 px."""
+    extent = w, s, e, n = expected_extent(survey_yaml)
+    base = min(math.ceil(math.log2(720.0 / (e - w))), math.ceil(math.log2(720.0 / (n - s))))
+    base = max(0, min(base, MAX_ZOOM[provider]))
+    zoom = min(base + FINER, MAX_ZOOM[provider])
+    while zoom > base and longer_side_px(extent, zoom) > MAX_SIDE_PX:
+        zoom -= 1
+    return base, zoom
 
 
 def test_rows_follow_mercator(script) -> None:
     survey_yaml = write_survey("wide", WIDE_SITES)
     code, stdout, stderr = run(script, survey_yaml)
     assert code == 0, (code, stdout, stderr)
-    meta, rgb = check_extent_and_meta(survey_yaml, stdout, auto_zoom_here(survey_yaml))
+    base, zoom = auto_zoom_here(survey_yaml)
+    assert (base, zoom) == (4, 6), f"wide: base {base}, zoom {zoom}; expected 4 and 6"
+    meta, rgb = check_extent_and_meta(survey_yaml, stdout, zoom)
     w, s, e, n = expected_extent(survey_yaml)
     left, bottom = TO_MERCATOR.transform(w - MOSAIC_PAD_DEG, s - MOSAIC_PAD_DEG)
     right, top = TO_MERCATOR.transform(e + MOSAIC_PAD_DEG, n + MOSAIC_PAD_DEG)
@@ -173,17 +205,51 @@ def test_rows_follow_mercator(script) -> None:
               f"linear in latitude would be {linear:.2f}); lon {lon:8.3f}: column {c} holds "
               f"source column {got_col[0]:.0f} ({want_col:.2f})")
     print(f"  wide survey: {width}x{height} px, extent {meta['lon_min']:.3f}..{meta['lon_max']:.3f}, "
-          f"{meta['lat_min']:.3f}..{meta['lat_max']:.3f} = the padded site extent, zoom {meta['zoom']} (auto)")
+          f"{meta['lat_min']:.3f}..{meta['lat_max']:.3f} = the padded site extent, zoom {meta['zoom']} "
+          f"(auto: base {base} + 1; {zoom + 1} would be {longer_side_px(expected_extent(survey_yaml), zoom + 1):.0f} px)")
 
 
 def test_curnamona_extent(script) -> None:
     survey_yaml = write_survey("curnamona")
-    code, stdout, stderr = run(script, survey_yaml, "--zoom", "9")
+    code, stdout, stderr = run(script, survey_yaml)
     assert code == 0, (code, stdout, stderr)
-    meta, rgb = check_extent_and_meta(survey_yaml, stdout, 9)
-    print(f"  curnamona copy, --zoom 9: lon {meta['lon_min']:.4f}..{meta['lon_max']:.4f}, "
-          f"lat {meta['lat_min']:.4f}..{meta['lat_max']:.4f} = the padded site extent; "
-          f"{rgb.shape[1]}x{rgb.shape[0]} px RGB")
+    base, zoom = auto_zoom_here(survey_yaml)
+    assert (base, zoom) == (8, 11), f"curnamona: base {base}, zoom {zoom}; expected 8 and 11"
+    meta, rgb = check_extent_and_meta(survey_yaml, stdout, zoom)
+    too_big = longer_side_px(expected_extent(survey_yaml), zoom + 1)
+    print(f"  curnamona copy, auto: zoom {zoom} (base {base} + 1; {zoom + 1} would be {too_big:.0f} px), "
+          f"lon {meta['lon_min']:.4f}..{meta['lon_max']:.4f}, lat {meta['lat_min']:.4f}..{meta['lat_max']:.4f} "
+          f"= the padded site extent; {rgb.shape[1]}x{rgb.shape[0]} px RGB (mocked mosaic)")
+    code, stdout, stderr = run(script, survey_yaml, "--zoom", "7")
+    assert code == 0, (code, stdout, stderr)
+    check_extent_and_meta(survey_yaml, stdout, 7)
+    print("  curnamona copy, --zoom 7: asked for 7, recorded 7")
+
+
+def test_zoom_rule(script) -> None:
+    survey_yaml = write_survey("polar", POLAR_SITES)
+    code, stdout, stderr = run(script, survey_yaml)
+    assert code == 0, (code, stdout, stderr)
+    base, zoom = auto_zoom_here(survey_yaml)
+    assert (base, zoom) == (5, 6), f"55-80 S: base {base}, zoom {zoom}; expected 5 and 6"
+    check_extent_and_meta(survey_yaml, stdout, zoom)
+    too_big = longer_side_px(expected_extent(survey_yaml), zoom + 1)
+    print(f"  55-80 S, auto: zoom {zoom} = its base + 1 ({zoom + 1} would be {too_big:.0f} px)")
+    survey_yaml = write_survey("one_site", ONE_SITE)
+    code, stdout, stderr = run(script, survey_yaml)
+    assert code == 0, (code, stdout, stderr)
+    base, zoom = auto_zoom_here(survey_yaml)
+    assert (base, zoom) == (12, 15), f"one site: base {base}, zoom {zoom}; expected 12 and 15"
+    check_extent_and_meta(survey_yaml, stdout, zoom)
+    side = longer_side_px(expected_extent(survey_yaml), zoom)
+    print(f"  one site, auto: zoom {zoom} = base {base} + 3, longer side {side:.0f} px")
+    relief = "Esri.WorldShadedRelief"
+    code, stdout, stderr = run(script, survey_yaml, "--provider", relief)
+    assert code == 0, (code, stdout, stderr)
+    base, zoom = auto_zoom_here(survey_yaml, relief)
+    assert zoom == 13, f"{relief}: zoom {zoom}, expected its max_zoom 13"
+    check_extent_and_meta(survey_yaml, stdout, zoom, relief)
+    print(f"  one site, --provider {relief}: zoom {zoom}, the provider's max_zoom")
 
 
 def test_offline_says_so(script) -> None:
@@ -206,7 +272,7 @@ if __name__ == "__main__":
     contextily.bounds2img = fake_bounds2img
     try:
         script = load_script()
-        tests = [test_rows_follow_mercator, test_curnamona_extent, test_offline_says_so]
+        tests = [test_rows_follow_mercator, test_curnamona_extent, test_zoom_rule, test_offline_says_so]
         for test in tests:
             test(script)
             print(f"  ok  {test.__name__}")
