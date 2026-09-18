@@ -8,51 +8,118 @@ product. Its `key: value` lines are parsed back here.
 
 **This test fails if** a plain `process_rr.py <survey.yaml> D02 E08 --dry-run`
 does not exit 0 with `local_archive` ending in `D02.h5`, `remote_archive` in
-`E08.h5`, `tag` exactly `D02_rr-E08`, `window` "full overlap",
-`ignore_filters` False and the survey's own band block
-(min_period 0.005, max_period 5000, periods_per_decade 10,
+`E08.h5`, `stem` matching `D02_rr-E08_<YYYYMMDD-HHMM>` (no window in it),
+`tag` empty, `window` "full overlap", `ignore_filters` False and the survey's
+own band block (min_period 0.005, max_period 5000, periods_per_decade 10,
 notch_frequencies "50, 150"); `--min-period 0.01 --max-period 1000
 --per-decade 6 --notch "50,100,150"` do not each replace exactly their own
-value and leave the others alone; `--no-filters` does not turn both archive
-paths into `_unfiltered.h5` and `ignore_filters` True; `--tag try2` does not
-put `_try2` at the end of the tag; a start and an end do not appear in
-`window` and as a `_w<start>-<end>` suffix on the tag; `--notch ""` does not
-clear the list; or any of these runs writes a file under the workspace.
+value and leave the others alone (`started`/`stem` excepted -- each
+subprocess starts at its own instant); `--no-filters` does not leave both
+archive paths (still `<site>.h5`, no more `_unfiltered.h5`) with
+`ignore_filters` True and both "local archive"/"remote archive" status lines
+reading "no filters used (--no-filters)"; `--tag try2` does not put `_try2`
+at the end of the stem and "try2" in `tag`; a start and an end do not appear
+in `window` while leaving the stem exactly `D02_rr-E08_<stamp>_try2` (the
+window nowhere in it); `--notch ""` does not clear the list; on a SCRATCH
+COPY of curnamona_cube's config (workspace pointed at the real one, so D02's
+and E08's real archives are read but never written to, and a throwaway
+filters.yaml only the copy ever sees -- the real curnamona files are never
+touched), D02's declared filters gaining a notch its archive has no variant
+for does not make the "local archive" status line read "raw: ...D02.h5,
+variant: to build (<hash>)", or E08's unchanged status does not stay "none
+declared"; or any of these runs writes a file anywhere (including a variant).
 
 The advanced estimator flags. **This test also fails if** a plain dry run
-does not say "tweaks: none" and print no `tweak.` line; `--taper hann
+does not say "tweaks: none" and print no `tweak.` line; `--taper hamming
 --overlap 50 --no-prewhiten --r0 2.0` does not print exactly `tweak.taper:
-hann`, `tweak.overlap_pct: 50.0`, `tweak.prewhiten: False` and `tweak.r0:
+hamming`, `tweak.overlap_pct: 50.0`, `tweak.prewhiten: False` and `tweak.r0:
 2.0` -- no other tweak, no "tweaks: none" -- with every other line as in the
-plain run; or, building aurora's real config for D02 against E08 with the
-survey's lemimt band scheme (in-process, the archives opened read-only),
-without tweaks any decimation level is not window.type boxcar, overlap
-round(num_samples * 0.25) -- or int(num_samples * 0.75) on a level whose
-window lasts over 600 s, of which there must be at least one, so the boost
-is really exercised -- prewhitening_type "first difference" with
+plain run (`started`/`stem` excepted); or, building aurora's real config for
+D02 against E08 with the survey's lemimt band scheme (in-process, the
+archives opened read-only), without tweaks any decimation level is not
+window.type hann (the in-use default; aurora's own is
+boxcar), overlap round(num_samples * 0.25) -- or int(num_samples * 0.75) on a
+level whose window lasts over 600 s, of which there must be at least one, so
+the boost is really exercised -- prewhitening_type "first difference" with
 recoloring True, min_num_stft_windows 0, and regression max_iterations 10,
 max_redescending_iterations 2, r0 1.5, u0 2.8, tolerance 0.005 (and
-`bbmt.process.ESTIMATOR_DEFAULTS`, which the GUI compares against, does not
+`mtproc.process.ESTIMATOR_DEFAULTS`, which the GUI compares against, does not
 say the same); with the tweaks `resolve()` makes of those four flags, any
-level is not window.type hann with overlap round(num_samples * 0.5) --
+level is not window.type hamming with overlap round(num_samples * 0.5) --
 the long-window boost replaced -- prewhitening_type "" (which mth5's
 `apply_prewhitening` must hand back untouched) with recoloring False and r0
 2.0, or any other value moved from the defaults above; a dpss taper does not
 build a finite taper of num_samples points on every level; or the config
 builds change the modification time of D02.h5 or E08.h5.
+
+The product stem, the sidecar and the quadrant window. **This test also
+fails if** `run_stem` does not give exactly `<local>_rr-<remote>_
+<YYYYMMDD-HHMM>` (the local instant passed in, to the minute) with `_<tag>`
+appended and stripped of surrounding underscores when a suffix is given, put
+any window token in the name, or give two stems a minute apart the same
+value; `build_sidecar`, fed a fake TF's own `phase_quadrants` result, does
+not carry `local`/`remote`, `started`/`finished` as the exact ISO strings
+passed in, `seconds` matching their difference, the band scheme and the full
+effective tweaks (taper "hann" included even though no `--taper` was given),
+the argv, the tag, the edi/figure names and a `versions` dict naming mtproc,
+aurora, mth5, mt_metadata and mt_io -- or is not JSON-serialisable as it
+stands; a phase-quadrant verdict built from a mode 180 deg out of quadrant is
+not "flipped: ..." and one built from too few usable periods is not "not
+judged: ..."; or `quadrant_window` does not pick 0.1-10 s at 100 Hz and above
+and 30-3000 s below that (the false "180 deg out ... declare flip" the
+0.1-10 s window raised on Stuart Shelf's 10 Hz ST19/ST20).
 """
 
 from __future__ import annotations
 
+import datetime as dt
+import importlib.util
+import json
+import re
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
+
+import yaml
 
 REPO = Path(__file__).resolve().parents[1]
 SCRIPT = REPO / "scripts" / "process_rr.py"
-SURVEY = REPO / "surveys" / "curnamona_cube" / "survey.yaml"
+SURVEY_DIR = REPO / "surveys" / "curnamona_cube"
+SURVEY = SURVEY_DIR / "survey.yaml"
 LOCAL, REMOTE = "D02", "E08"
-MTH5_DIR = REPO / "surveys" / "curnamona_cube" / "work" / "mth5"
+MTH5_DIR = SURVEY_DIR / "work" / "mth5"
+# the keys that legitimately differ between two subprocess calls: each one
+# starts at its own instant, so a run's own start/product stem move even
+# with identical flags
+TIME_KEYS = {"started", "stem"}
+STEM_RE = re.compile(r"^D02_rr-E08_\d{8}-\d{4}$")
+
+
+def make_survey_copy(scratch: Path, extra_filters: dict) -> Path:
+    """A scratch copy of curnamona_cube's survey.yaml + filters.yaml, workspace
+    pointed at the real one (the real D02.h5/E08.h5 are read, never copied or
+    written to), `extra_filters` merged into the copy's filters.yaml alone --
+    the real file is never opened for writing."""
+    for name in ("survey.yaml", "filters.yaml"):
+        (scratch / name).write_bytes((SURVEY_DIR / name).read_bytes())
+    copy_yaml = scratch / "survey.yaml"
+    config = yaml.safe_load(copy_yaml.read_text(encoding="utf-8"))
+    config["workspace"] = str(MTH5_DIR.parent)
+    copy_yaml.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+    filters_path = scratch / "filters.yaml"
+    data = yaml.safe_load(filters_path.read_text(encoding="utf-8")) or {}
+    data.update(extra_filters)
+    filters_path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+    return copy_yaml
+
+
+def _load_process_rr():
+    """The script as a module, for the functions --dry-run cannot exercise directly."""
+    spec = importlib.util.spec_from_file_location("process_rr", SCRIPT)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def dry_run(*options: str) -> dict[str, str]:
@@ -72,7 +139,8 @@ def test_defaults_come_from_the_survey() -> None:
     got = dry_run()
     assert got["local_archive"].endswith(f"{LOCAL}.h5"), got["local_archive"]
     assert got["remote_archive"].endswith(f"{REMOTE}.h5"), got["remote_archive"]
-    assert got["tag"] == f"{LOCAL}_rr-{REMOTE}", got["tag"]
+    assert STEM_RE.match(got["stem"]), got["stem"]
+    assert got["tag"] == "", got["tag"]
     assert got["window"] == "full overlap", got["window"]
     assert got["ignore_filters"] == "False", got["ignore_filters"]
     assert got["min_period"] == "0.005", got["min_period"]
@@ -81,7 +149,7 @@ def test_defaults_come_from_the_survey() -> None:
     assert got["notch_frequencies"] == "50, 150", got["notch_frequencies"]
     # fails if hz is asked for on a broadband site (it made a nonsense tipper)
     assert got["output_channels"] == "ex, ey", got["output_channels"]
-    print(f"  defaults: {got['tag']}, archives {Path(got['local_archive']).name} / "
+    print(f"  defaults: stem {got['stem']}, archives {Path(got['local_archive']).name} / "
           f"{Path(got['remote_archive']).name}, bands {got['min_period']}-{got['max_period']} s "
           f"at {got['periods_per_decade']}/decade, notches {got['notch_frequencies']!r}")
 
@@ -96,8 +164,8 @@ def test_each_band_option_overrides_only_itself() -> None:
     ):
         got = dry_run(option, value)
         assert got[key] == expected, f"{option} {value}: {key} {got[key]!r}"
-        others = {k: v for k, v in got.items() if k != key}
-        unchanged = {k: v for k, v in base.items() if k != key}
+        others = {k: v for k, v in got.items() if k != key and k not in TIME_KEYS}
+        unchanged = {k: v for k, v in base.items() if k != key and k not in TIME_KEYS}
         assert others == unchanged, f"{option} changed more than {key}: {others} vs {unchanged}"
         print(f"  {option} {value} -> {key} {got[key]}, nothing else moved")
     cleared = dry_run("--notch", "")
@@ -105,45 +173,76 @@ def test_each_band_option_overrides_only_itself() -> None:
     print("  --notch \"\" -> no notch frequencies at all")
 
 
-def test_no_filters_uses_the_unfiltered_archives() -> None:
+def test_no_filters_uses_the_raw_archive() -> None:
     got = dry_run("--no-filters")
-    assert got["local_archive"].endswith(f"{LOCAL}_unfiltered.h5"), got["local_archive"]
-    assert got["remote_archive"].endswith(f"{REMOTE}_unfiltered.h5"), got["remote_archive"]
+    assert got["local_archive"].endswith(f"{LOCAL}.h5") and "_unfiltered" not in got["local_archive"],         got["local_archive"]
+    assert got["remote_archive"].endswith(f"{REMOTE}.h5") and "_unfiltered" not in got["remote_archive"],         got["remote_archive"]
     assert got["ignore_filters"] == "True", got["ignore_filters"]
-    print(f"  --no-filters: {Path(got['local_archive']).name} / {Path(got['remote_archive']).name}")
+    assert "no filters used (--no-filters)" in got["local archive"], got["local archive"]
+    assert "no filters used (--no-filters)" in got["remote archive"], got["remote archive"]
+    print(f"  --no-filters: {Path(got['local_archive']).name} / {Path(got['remote_archive']).name} "
+          f"(raw, no _unfiltered suffix any more); {got['local archive']}")
 
 
-def test_tag_suffix_and_window() -> None:
+def test_dry_run_reports_archive_status() -> None:
+    """The "local archive"/"remote archive" status lines, on a scratch copy of
+    curnamona_cube whose filters.yaml gains a notch for D02 -- whose real
+    archive has no variant for it."""
+    with tempfile.TemporaryDirectory() as tmp:
+        copy_yaml = make_survey_copy(Path(tmp), {LOCAL: [{"notch": {"f0": 50.0}}]})
+        argv = [sys.executable, str(SCRIPT), str(copy_yaml), LOCAL, REMOTE, "--dry-run"]
+        done = subprocess.run(argv, capture_output=True, text=True, cwd=REPO)
+        assert done.returncode == 0, f"exit {done.returncode}\n{done.stdout}\n{done.stderr}"
+        lines = {}
+        for line in done.stdout.splitlines():
+            if line.startswith("local archive:") or line.startswith("remote archive:"):
+                key, _, value = line.partition(":")
+                lines[key.strip()] = value.strip()
+        assert lines["local archive"].startswith(f"raw: {MTH5_DIR / f'{LOCAL}.h5'}"), lines["local archive"]
+        assert re.search(r"variant: to build \([0-9a-f]{8}\)$", lines["local archive"]), lines["local archive"]
+        assert lines["remote archive"] == f"raw: {MTH5_DIR / f'{REMOTE}.h5'}, variant: none declared",             lines["remote archive"]
+        after = sorted(p.name for p in MTH5_DIR.glob("*.h5"))
+        assert not any(n.startswith(f"{LOCAL}_f") for n in after), f"--dry-run built a variant: {after}"
+    print(f"  archive status: D02 (a notch just declared) -> {lines['local archive']}; "
+          f"E08 (nothing declared) -> {lines['remote archive']}")
+
+
+def test_tag_suffix_and_no_window_in_the_stem() -> None:
     got = dry_run("--tag", "try2")
-    assert got["tag"] == f"{LOCAL}_rr-{REMOTE}_try2", got["tag"]
+    assert got["tag"] == "try2", got["tag"]
+    assert got["stem"] == f"{got['stem'].rsplit('_try2', 1)[0]}_try2" and got["stem"].endswith("_try2"), got["stem"]
+    assert re.match(r"^D02_rr-E08_\d{8}-\d{4}_try2$", got["stem"]), got["stem"]
     start, end = "2021-06-29 12:55", "2021-06-29 14:55"
     got = dry_run(start, end, "--tag", "try2")
     assert got["window"] == f"{start} to {end} UTC", got["window"]
-    assert got["tag"] == f"{LOCAL}_rr-{REMOTE}_w20210629T1255-20210629T1455_try2", got["tag"]
     assert got["start"] == start and got["end"] == end, (got["start"], got["end"])
-    print(f"  --tag try2 with a window: tag {got['tag']}, window {got['window']}")
+    # the point of dropping the window from the name: it must not appear in the stem at all
+    assert re.match(r"^D02_rr-E08_\d{8}-\d{4}_try2$", got["stem"]), got["stem"]
+    assert "_w" not in got["stem"].replace("_rr-", ""), f"a window token leaked into the stem: {got['stem']}"
+    print(f"  --tag try2 with a window: stem {got['stem']}, tag {got['tag']!r}, window {got['window']!r}")
 
 
 def test_tweaks_print_only_what_was_given() -> None:
     base = dry_run()
     assert base.get("tweaks") == "none", base.get("tweaks")
     assert not [k for k in base if k.startswith("tweak.")], base
-    got = dry_run("--taper", "hann", "--overlap", "50", "--no-prewhiten", "--r0", "2.0")
+    got = dry_run("--taper", "hamming", "--overlap", "50", "--no-prewhiten", "--r0", "2.0")
     tweaks = {k: v for k, v in got.items() if k.startswith("tweak.")}
-    assert tweaks == {"tweak.taper": "hann", "tweak.overlap_pct": "50.0",
+    assert tweaks == {"tweak.taper": "hamming", "tweak.overlap_pct": "50.0",
                       "tweak.prewhiten": "False", "tweak.r0": "2.0"}, tweaks
     assert "tweaks" not in got, got["tweaks"]
-    rest = {k: v for k, v in got.items() if not k.startswith("tweak.")}
-    assert rest == {k: v for k, v in base.items() if k != "tweaks"}, "a tweak moved another line"
+    rest = {k: v for k, v in got.items() if not k.startswith("tweak.") and k not in TIME_KEYS}
+    base_rest = {k: v for k, v in base.items() if k != "tweaks" and k not in TIME_KEYS}
+    assert rest == base_rest, "a tweak moved another line"
     print(f"  tweaks: plain run 'tweaks: none'; four flags -> {tweaks}, nothing else moved")
 
 
 # the in-use estimator values, stated here from aurora 0.6.2's ConfigCreator
-# output (not taken from bbmt.process), and what the four flags must make
-IN_USE = {"type": "boxcar", "prewhitening_type": "first difference", "recoloring": True,
+# output (not taken from mtproc.process), and what the four flags must make
+IN_USE = {"type": "hann", "prewhitening_type": "first difference", "recoloring": True,
           "min_num_stft_windows": 0, "max_iterations": 10, "max_redescending_iterations": 2,
           "r0": 1.5, "u0": 2.8, "tolerance": 0.005}
-TWEAKED = {**IN_USE, "type": "hann", "prewhitening_type": "", "recoloring": False, "r0": 2.0}
+TWEAKED = {**IN_USE, "type": "hamming", "prewhitening_type": "", "recoloring": False, "r0": 2.0}
 
 
 def level_values(dec) -> dict:
@@ -158,8 +257,6 @@ def level_values(dec) -> dict:
 
 
 def test_tweaks_reach_every_decimation_level() -> None:
-    import importlib.util
-
     import mth5.mth5
     import mth5.processing.run_summary as run_summary
     import numpy as np
@@ -167,16 +264,15 @@ def test_tweaks_reach_every_decimation_level() -> None:
     from mth5.processing.spectre.prewhitening import apply_prewhitening
 
     sys.path.insert(0, str(REPO / "src"))
-    from bbmt.bands import lemimt_band_scheme
-    from bbmt.process import ESTIMATOR_DEFAULTS, apply_tweaks, build_config, kernel_dataset
+    from mtproc.bands import lemimt_band_scheme
+    from mtproc.process import ESTIMATOR_DEFAULTS, apply_tweaks, build_config, kernel_dataset
 
-    spec = importlib.util.spec_from_file_location("process_rr", SCRIPT)
-    process_rr = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(process_rr)
-    argv = [str(SURVEY), LOCAL, REMOTE, "--taper", "hann", "--overlap", "50", "--no-prewhiten",
+    process_rr = _load_process_rr()
+    started = dt.datetime.now().astimezone()
+    argv = [str(SURVEY), LOCAL, REMOTE, "--taper", "hamming", "--overlap", "50", "--no-prewhiten",
             "--r0", "2.0"]
-    res = process_rr.resolve(process_rr.build_parser().parse_args(argv))
-    assert res["tweaks"] == {"taper": "hann", "overlap_pct": 50.0, "prewhiten": False, "r0": 2.0},         res["tweaks"]
+    res = process_rr.resolve(process_rr.build_parser().parse_args(argv), started)
+    assert res["tweaks"] == {"taper": "hamming", "overlap_pct": 50.0, "prewhiten": False, "r0": 2.0},         res["tweaks"]
     scheme = lemimt_band_scheme(res["survey"].sample_rate, **res["scheme_kwargs"])
 
     # read-only: RunSummary opens through initialize_mth5 (mode "a") and the
@@ -204,7 +300,7 @@ def test_tweaks_reach_every_decimation_level() -> None:
         assert dec.stft.window.overlap == want, (dec.decimation.level, dec.stft.window.overlap, want)
         assert level_values(dec) == IN_USE, (dec.decimation.level, level_values(dec))
     assert long_levels >= 1, "no level has a window over 600 s: the boost is never exercised"
-    assert ESTIMATOR_DEFAULTS == {"taper": "boxcar", "overlap_pct": 25.0, "prewhiten": True,
+    assert ESTIMATOR_DEFAULTS == {"taper": "hann", "overlap_pct": 25.0, "prewhiten": True,
                                   "min_windows": 0, "max_iterations": 10,
                                   "redescending_iterations": 2, "r0": 1.5, "u0": 2.8,
                                   "tolerance": 0.005}, ESTIMATOR_DEFAULTS
@@ -220,7 +316,7 @@ def test_tweaks_reach_every_decimation_level() -> None:
         taper = dec.stft.window.taper()
         assert len(taper) == dec.stft.window.num_samples and np.isfinite(taper).all(), dec.decimation.level
     print(f"  config D02 rr E08, {len(levels)} levels ({long_levels} with windows over 600 s): "
-          f"in use {IN_USE['type']}, overlap 25 %/75 %, r0 {IN_USE['r0']}; tweaked hann, overlap "
+          f"in use {IN_USE['type']}, overlap 25 %/75 %, r0 {IN_USE['r0']}; tweaked hamming, overlap "
           f"50 % on every level, prewhitening off, r0 2.0; dpss builds; archives' mtimes unchanged")
 
 
@@ -229,8 +325,102 @@ def test_dry_run_writes_nothing() -> None:
     dry_run("--no-filters", "--tag", "never")
     after = sorted(p.name for p in MTH5_DIR.glob("*.h5")) if MTH5_DIR.exists() else []
     assert before == after, f"--dry-run changed the archives: {before} -> {after}"
-    assert not any(n.endswith("_unfiltered.h5") for n in after), after
     print(f"  --dry-run wrote nothing: {MTH5_DIR.name}/ still holds {after}")
+
+
+def test_run_stem_format_and_uniqueness() -> None:
+    process_rr = _load_process_rr()
+    t0 = dt.datetime(2026, 9, 23, 21, 15, 30, tzinfo=dt.timezone.utc)
+    stem = process_rr.run_stem(LOCAL, REMOTE, t0)
+    assert stem == f"{LOCAL}_rr-{REMOTE}_20260923-2115", stem
+    tagged = process_rr.run_stem(LOCAL, REMOTE, t0, suffix="try2")
+    assert tagged == f"{LOCAL}_rr-{REMOTE}_20260923-2115_try2", tagged
+    stripped = process_rr.run_stem(LOCAL, REMOTE, t0, suffix="__nofilt__")
+    assert stripped == f"{LOCAL}_rr-{REMOTE}_20260923-2115_nofilt", stripped
+    assert "_w" not in stem.replace("_rr-", ""), f"a window token leaked into run_stem's output: {stem}"
+    t1 = t0 + dt.timedelta(minutes=1)
+    stem1 = process_rr.run_stem(LOCAL, REMOTE, t1)
+    assert stem1 != stem, "two stems a minute apart did not differ"
+    print(f"  run_stem: {stem}, tagged {tagged}, stripped {stripped}, a minute later {stem1} (differs)")
+
+
+def test_quadrant_window_by_sample_rate() -> None:
+    process_rr = _load_process_rr()
+    assert process_rr.quadrant_window(1000.0) == (0.1, 10.0), process_rr.quadrant_window(1000.0)
+    assert process_rr.quadrant_window(100.0) == (0.1, 10.0), process_rr.quadrant_window(100.0)
+    assert process_rr.quadrant_window(99.9) == (30.0, 3000.0), process_rr.quadrant_window(99.9)
+    assert process_rr.quadrant_window(10.0) == (30.0, 3000.0), process_rr.quadrant_window(10.0)
+    print("  quadrant_window: 1000/100 Hz -> 0.1-10 s (broadband); 99.9/10 Hz -> 30-3000 s (long-period)")
+
+
+def _fake_tf(xy_deg: float, yx_deg: float, periods):
+    """A minimal in-memory mt_metadata TF: `periods` s, constant phases (deg), |Z| = 1."""
+    import numpy as np
+    from mt_metadata.transfer_functions.core import TF
+
+    period = np.asarray(periods, dtype=float)
+    z = np.zeros((period.size, 2, 2), dtype=complex)
+    z[:, 0, 1] = np.exp(1j * np.radians(xy_deg))
+    z[:, 1, 0] = np.exp(1j * np.radians(yx_deg))
+    tf = TF()
+    tf.station = "FAKE"
+    tf.survey_metadata.id = "test"
+    tf.period = period
+    tf.impedance = z
+    return tf
+
+
+def test_build_sidecar_with_a_fake_tf() -> None:
+    import numpy as np
+
+    process_rr = _load_process_rr()
+    started = dt.datetime(2026, 9, 23, 21, 15, 0, tzinfo=dt.timezone(dt.timedelta(hours=9, minutes=30)))
+    finished = started + dt.timedelta(seconds=137)
+    args = process_rr.build_parser().parse_args(
+        [str(SURVEY), LOCAL, REMOTE, "2021-06-29 12:55", "2021-06-29 14:55", "--tag", "sidecar-test"])
+    res = process_rr.resolve(args, started)
+    edi_path = res["survey"].workspace / "tf" / f"{res['stem']}.edi"
+    png_path = res["survey"].workspace / "tf" / f"{res['stem']}_vs_lemimt.png"
+
+    # physical: xy in (0, 90), yx in (-180, -90)
+    physical = process_rr.phase_quadrants(_fake_tf(45.0, -135.0, np.geomspace(0.1, 10.0, 8)))
+    sidecar = process_rr.build_sidecar(res, args, started, finished, edi_path, png_path, physical, [])
+    assert sidecar["local"] == LOCAL and sidecar["remote"] == REMOTE, sidecar
+    assert sidecar["started"] == started.isoformat(), sidecar["started"]
+    assert sidecar["finished"] == finished.isoformat(), sidecar["finished"]
+    assert sidecar["seconds"] == 137.0, sidecar["seconds"]
+    assert sidecar["window"] == {"start": "2021-06-29T12:55:00+00:00", "end": "2021-06-29T14:55:00+00:00"},         sidecar["window"]
+    assert sidecar["band_scheme"]["min_period"] == 0.005, sidecar["band_scheme"]
+    assert sidecar["tweaks"] == process_rr.ESTIMATOR_DEFAULTS, "no --taper given: must fall back to the default"
+    assert sidecar["tweaks"]["taper"] == "hann", sidecar["tweaks"]
+    assert sidecar["argv"] == list(sys.argv), sidecar["argv"]
+    assert sidecar["tag"] == "sidecar-test", sidecar["tag"]
+    assert sidecar["edi"] == edi_path.name and sidecar["figure"] == png_path.name, sidecar
+    assert sidecar["quadrant"]["verdict"] == "physical quadrants", sidecar["quadrant"]
+    for lib in ("mtproc", "aurora", "mth5", "mt_metadata", "mt_io"):
+        assert sidecar["versions"].get(lib), sidecar["versions"]
+    json.loads(json.dumps(sidecar, default=str))  # must round-trip as JSON
+    print(f"  build_sidecar (physical): seconds {sidecar['seconds']}, tweaks.taper "
+          f"{sidecar['tweaks']['taper']!r}, versions {sidecar['versions']}")
+
+    # xy 180 deg out of quadrant, 8 usable periods (>= min_periods): "flipped"
+    flipped_q = process_rr.phase_quadrants(_fake_tf(-135.0, -135.0, np.geomspace(0.1, 10.0, 8)))
+    flipped_sidecar = process_rr.build_sidecar(res, args, started, finished, edi_path, png_path,
+                                               flipped_q, ["xy"])
+    assert flipped_sidecar["quadrant"]["verdict"] == "flipped: xy 180 deg out of quadrant",         flipped_sidecar["quadrant"]
+
+    # only 2 usable periods in the window (< min_periods 5): "not judged"
+    sparse_q = process_rr.phase_quadrants(_fake_tf(45.0, -135.0, [0.2, 0.5]))
+    sparse_sidecar = process_rr.build_sidecar(res, args, started, finished, edi_path, png_path,
+                                              sparse_q, [])
+    assert sparse_sidecar["quadrant"]["verdict"].startswith("not judged:"), sparse_sidecar["quadrant"]
+    print(f"  verdicts: physical {sidecar['quadrant']['verdict']!r}, flipped "
+          f"{flipped_sidecar['quadrant']['verdict']!r}, sparse {sparse_sidecar['quadrant']['verdict']!r}")
+
+    lines = process_rr.edi_info_lines(sidecar)
+    assert any(line == "mtproc.taper=hann" for line in lines), lines
+    assert any(line.startswith("mtproc.sidecar=") and line.endswith(".json") for line in lines), lines
+    print(f"  edi_info_lines: {lines}")
 
 
 if __name__ == "__main__":

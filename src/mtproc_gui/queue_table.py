@@ -5,14 +5,23 @@ RR, MR, Freq, Window). This is that table over `state.runner`, the window's
 one `JobRunner`, so every job from every tab is a row: a `process_rr` run
 queued by the Process tab fills Station, Remote, Window and Options (the
 optional `Job` fields it sets), and any other job shows its label under
-Station and "-" in the rest. Under the table is the merged script log,
-"Script output", with Cancel (kill the running script; the queued ones stay
+Station and "-" in the rest. Only processing jobs (process_rr, build_stack)
+appear here: utility jobs (Build MTH5, the basemap fetch, New survey) report
+in the console strip only. Under the table is the processing log,
+"Processing output", with Cancel (kill the running script; the queued ones stay
 queued until Run queue) and Clear log.
 
 `ProductList` is the list under the site map: when a job finishes, the
-`.edi` paths in its output that exist are listed, once each, and "Show in
-View EDIs" asks for the chosen one to be drawn (the Process tab forwards the
-request to the View EDIs tab).
+paths its output reports writing (a "wrote <path>" line -- `process_rr.py`
+logs one for the EDI, the comparison figure and the sidecar JSON in turn,
+`mtproc.process.process_station` for the EDI on its own) that exist and end
+in `.edi` or `.png` are listed, once each, and "Show in View EDIs" asks for
+the chosen one to be drawn (the Process tab forwards the request to the View
+EDIs tab). Reading the actual output line rather than predicting a name from
+the argv is what makes this agnostic to the output naming scheme: a run's
+EDI and figure share a stem built from the local time it started
+(`scripts/process_rr.run_stem`), not from the argv alone, so there is no
+name to predict without re-implementing that.
 
 Nothing here runs or computes anything: the table is redrawn from
 `runner.jobs` on `queue_changed`, the log appends `log_line`, and the
@@ -31,12 +40,15 @@ from PySide6.QtWidgets import (
     QSplitter, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
-from bbmt_gui.jobs import DONE, FAILED, RUNNING, JobRunner
-from bbmt_gui.theme import BAD_COLOUR, OK_COLOUR, WARN_COLOUR
+from mtproc_gui.jobs import DONE, FAILED, RUNNING, JobRunner
+from mtproc_gui.theme import BAD_COLOUR, OK_COLOUR, WARN_COLOUR
 
 COLUMNS = ("#", "Station", "Remote", "Window (UTC)", "Options", "Status")
 STATUS_COLOURS = {RUNNING: WARN_COLOUR, DONE: OK_COLOUR, FAILED: BAD_COLOUR}
-EDI_RE = re.compile(r"[^\s'\"]+\.edi\b", re.IGNORECASE)
+# a script's own "wrote <path>" line (process_rr.py logs one for the EDI, the
+# comparison figure and the sidecar JSON; the sidecar's .json is deliberately
+# not matched here -- it is not a plotted product for View EDIs)
+WROTE_RE = re.compile(r"wrote\s+(\S.*\.(?:edi|png))\s*$", re.IGNORECASE)
 
 
 class QueueTable(QTableWidget):
@@ -57,8 +69,11 @@ class QueueTable(QTableWidget):
         runner.queue_changed.connect(self.refresh)
 
     def refresh(self) -> None:
-        self.setRowCount(len(self.runner.jobs))
-        for row, job in enumerate(self.runner.jobs):
+        # processing jobs only: ingest, basemap and new-survey jobs are utility
+        # jobs and show in the console strip, not here
+        shown = [job for job in self.runner.jobs if job.kind == "processing"]
+        self.setRowCount(len(shown))
+        for row, job in enumerate(shown):
             cells = (str(row + 1), job.station or job.label, job.remote or "-",
                      job.window or "-", job.options or "-", job.status)
             for column, text in enumerate(cells):
@@ -88,7 +103,7 @@ class QueuePanel(QWidget):
         self.clear_button.clicked.connect(self.clear_log)
 
         header = QHBoxLayout()
-        header.addWidget(QLabel("Script output", self))
+        header.addWidget(QLabel("Processing output (ingest, basemap and new-survey jobs report in the console strip)", self))
         header.addStretch(1)
         header.addWidget(self.cancel_button)
         header.addWidget(self.clear_button)
@@ -106,14 +121,20 @@ class QueuePanel(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(splitter)
 
-        runner.log_line.connect(self.log_view.appendPlainText)
+        runner.log_line.connect(self._append_processing_line)
+
+    def _append_processing_line(self, line: str) -> None:
+        """Only a processing job's output belongs in this pane (the console strip has everything)."""
+        job = self.runner.current_job()
+        if job is not None and job.kind == "processing":
+            self.log_view.appendPlainText(line)
 
     def clear_log(self) -> None:
         self.log_view.clear()
 
 
 class ProductList(QWidget):
-    """The EDIs the jobs wrote, read off their output; "Show in View EDIs" asks for one."""
+    """The EDIs and figures the jobs wrote, read off their output; "Show in View EDIs" asks for one."""
 
     show_requested = Signal(object)  # a Path
 
@@ -129,16 +150,18 @@ class ProductList(QWidget):
             lambda row: self.show_button.setEnabled(0 <= row < len(self.products)))
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(QLabel("Products (EDIs written by these jobs)", self))
+        layout.addWidget(QLabel("Products (EDIs and figures written by these jobs)", self))
         layout.addWidget(self.list, 1)
         layout.addWidget(self.show_button)
         runner.job_finished.connect(self._job_finished)
 
     def _job_finished(self, index: int, _ok: bool) -> None:
         for line in self.runner.jobs[index].output:
-            for token in EDI_RE.findall(line):
-                path = Path(token.strip().strip("'\""))
-                self.add(path if path.is_absolute() else self.repo_root / path)
+            match = WROTE_RE.search(line)
+            if not match:
+                continue
+            path = Path(match.group(1).strip().strip("'\""))
+            self.add(path if path.is_absolute() else self.repo_root / path)
 
     def add(self, path: Path) -> None:
         """List an EDI a job wrote, once, if it is really there."""
