@@ -37,21 +37,72 @@ def rho_phi(tf_or_path):
     return period, rho, phi, rho_err, phi_err
 
 
-def phase_quadrants(tf_or_path, pmin: float = 0.01, pmax: float = 0.1) -> dict:
+# Where each mode's physical phases sit (deg): xy in (0, 90), yx in (-180, -90).
+QUADRANTS = {"xy": (0.0, 90.0), "yx": (-180.0, -90.0)}
+
+
+def _median_phase(phi_deg: np.ndarray, lo: float, hi: float) -> float:
+    """Median of `phi_deg` taken on a branch cut 90 deg above the quadrant's
+    centre (the interval [c - 270, c + 90)), returned in (-180, 180].
+
+    The cut sits halfway between the physical quadrant (centre c) and its
+    180-deg flip (centre c - 180), 90 deg from each: a physical mode with
+    phases near a +-180 wrap (yx near -180 whose noise reads +178) and a
+    flipped one are each kept on one side of it, so neither is split into
+    two clusters whose median lands between them. np.angle's own cut at
+    +-180 runs straight through the yx quadrant's edge.
+    """
+    c = 0.5 * (lo + hi)
+    wrapped = np.mod(phi_deg - (c - 270.0), 360.0) + (c - 270.0)
+    m = float(np.mod(np.median(wrapped) + 180.0, 360.0) - 180.0)
+    return 180.0 if m == -180.0 else m
+
+
+def phase_quadrants(tf_or_path, pmin: float = 0.1, pmax: float = 10.0, min_periods: int = 5) -> dict:
     """Median impedance phases over [pmin, pmax] s and whether they sit in the
     physical quadrants: xy in (0, 90) deg, yx in (-180, -90) deg.
 
-    One mode 180 deg out means an E or H channel has the wrong sign — almost
+    One mode 180 deg out means an E or H channel has the wrong sign -- almost
     always a dipole-polarity convention (see SiteConfig.flip_reversed_dipoles).
-    Short periods are used because the signal is strongest there.
+
+    The default window is 0.1-10 s, the band that carried signal at every
+    Line D and Curnamona site so far. At a noisy broadband site the
+    0.01-0.1 s band can be pure noise with random phases, whose median is
+    arbitrary and can trigger a false "180 deg out": Morocco D05 RR D13
+    read xy -90 deg there while its 0.1-10 s phases were a clean 25-49 deg.
+    Pass ``pmin=0.01, pmax=0.1`` for that band instead.
+
+    A mode is judged only on at least `min_periods` periods in the window
+    with a finite, non-zero impedance; with fewer, its ``*_ok`` is False and
+    ``reason`` says why (a TF with almost nothing in 0.1-10 s needs a look
+    either way). No fallback to other periods: judging a band the caller did
+    not ask for is how the false alarm above happened.
+
+    Returns ``{"xy", "yx"}`` (median phase, deg, in (-180, 180]; NaN when not
+    judged), ``{"xy_ok", "yx_ok"}``, ``{"xy_n", "yx_n"}`` (periods used),
+    ``pmin``, ``pmax`` and ``reason`` ("" when both modes were judged).
     """
-    period, _, phi, _, _ = rho_phi(tf_or_path)
-    mask = (period >= pmin) & (period <= pmax)
-    if not mask.any():
-        mask = np.ones_like(period, dtype=bool)
-    xy = float(np.nanmedian(phi[mask, 0, 1]))
-    yx = float(np.nanmedian(phi[mask, 1, 0]))
-    return {"xy": xy, "yx": yx, "xy_ok": 0.0 < xy < 90.0, "yx_ok": -180.0 < yx < -90.0}
+    period, rho, phi, _, _ = rho_phi(tf_or_path)
+    out = {"pmin": float(pmin), "pmax": float(pmax)}
+    reasons = []
+    in_window = (period >= pmin) & (period <= pmax)
+    for mode, (i, j) in (("xy", (0, 1)), ("yx", (1, 0))):
+        vals = phi[:, i, j]
+        # np.angle gives a finite 0 deg for a zero impedance: rho 0 marks it
+        good = in_window & np.isfinite(vals) & np.isfinite(rho[:, i, j]) & (rho[:, i, j] > 0)
+        n = int(good.sum())
+        out[f"{mode}_n"] = n
+        lo, hi = QUADRANTS[mode]
+        if n < min_periods:
+            out[mode] = float("nan")
+            out[f"{mode}_ok"] = False
+            reasons.append(f"{mode}: {n} finite period(s) in {pmin:g}-{pmax:g} s, fewer than {min_periods}")
+            continue
+        med = _median_phase(vals[good], lo, hi)
+        out[mode] = med
+        out[f"{mode}_ok"] = bool(lo < med < hi)
+    out["reason"] = "; ".join(reasons)
+    return out
 
 
 def plot_comparison(
