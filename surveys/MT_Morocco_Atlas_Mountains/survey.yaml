@@ -1,9 +1,11 @@
 name: MT_Morocco_Atlas_Mountains
 instrument: lemi423
 sample_rate: 1000
-data_root: E:/MT_Timeseries_DATA/MT_Morocco_Atlas_Mountains
+data_root: D:\MT_DATA\MT_Morocco_Atlas_Mountains
 # local time of the field area (IANA name), for display only: every
 # timestamp in the YAML, the archives and the scripts is UTC
+# archives, TFs and figures beside the raw data (hundreds of GB for 103 sites)
+workspace: D:\MT_DATA\MT_Morocco_Atlas_Mountains_Workspace
 timezone: Africa/Casablanca
 # written by this script from the B423 headers: re-running it (--force)
 # overwrites every edit made since, the GUI's Metadata tab included
@@ -27,7 +29,7 @@ defaults:
   # no hz sensor on a broadband deployment: the B423 Bz column is an open
   # input, so it is dropped at ingest
   channels: [ex, ey, hx, hy]
-# lemimt-style even log-period band layout (see bbmt.bands.lemimt_band_scheme)
+# lemimt-style even log-period band layout (see mtproc.bands.lemimt_band_scheme)
 processing:
   min_period: 0.005
   max_period: 5000.0
