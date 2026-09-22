@@ -1,0 +1,72 @@
+# Campaign plan for scripts/campaign.py: line C of the Morocco Atlas survey.
+#
+#   python scripts/campaign.py surveys/MT_Morocco_Atlas_Mountains/survey.yaml \
+#       surveys/MT_Morocco_Atlas_Mountains/campaign_lineC.yaml --dry-run
+#
+# Outputs go to <workspace>/campaign/lineC/ (ledger.csv, runs.log, scores.csv,
+# figures/, tf/, summary.md); `--report` rebuilds the figures and summary.
+name: lineC
+description: >
+  Line C, every processing option and remote on a real line: every site rr
+  every concurrent site, leave-one-out stacks (plain and coherence-weighted),
+  and aurora estimator/band options on each site's best remote, after
+  filters were declared for every line C site (filters.yaml).
+  There are no lemimt reference EDIs for line C.
+
+# every site, in order along the line (north to south by latitude: C21new
+# sits between C20 and C22); the pseudosection's x axis
+sites: [C01, C02, C03, C04, C05, C06, C07, C08, C09, C10, C11, C12, C13, C14, C15,
+        C16, C17, C18, C19, C20, C21new, C22, C23]
+
+exclude:
+  C21: >-
+    its raw folder is a byte-for-byte copy of C07's (the same 27 files, logger
+    serial 7, identical start/end); C21new is the real C21
+
+# deployment groups (UTC), processed in this order so group A's complete
+# results (stages 1-3) exist first
+groups:
+  A: [C18, C19, C20, C21new, C22, C23]        # 22-24 Sep
+  B: [C12, C13, C14, C15, C16, C17]           # 23-25 Sep
+  C10_C11: [C10, C11]                         # 24-26/27 Sep, overlapping B's end and C's start
+  C: [C01, C02, C03, C04, C05, C06, C07, C08, C09]   # 25-27 Sep
+
+# a remote is any listed site whose record overlaps the local's by at least
+# min_fraction of the local record, or at least min_hours
+overlap:
+  min_fraction: 0.5
+  min_hours: 12
+
+stages:
+  variants: {}     # stage 0: build each site's filtered variant (mtproc.ingest); raw archives are never touched
+  remotes: {}      # stage 1: estimator defaults (Hann), tag lineC-default
+  # stage 2 dropped after group A: not enough quality gain (the stacks sat within
+  # 0.03 of the best single remote at best, 0.1 below it at worst); group A's
+  # stack runs stay in the ledger; the runner is launched with --stage 0,1,3
+  stacks:          # stage 2: STK_<site>u / STK_<site>w, leave-one-out over the site's group
+    weightings: {u: none, w: coherence}
+  options:         # stage 3: on each site's best stage 1 remote; one --tag per config
+    tie_tolerance: 0.02
+    configs:
+      boxcar: [--taper, boxcar]
+      hamming: [--taper, hamming]
+      overlap50: [--overlap, "50"]
+      noprewhiten: [--no-prewhiten]
+      minwin8: [--min-windows, "8"]
+      r0u0: [--r0, "1.0", --u0, "2.0"]
+      pd8: [--per-decade, "8"]
+      pd12: [--per-decade, "12"]
+      maxp10000: [--max-period, "10000"]
+
+# the period window every product is scored over (mtproc.quality); defaults to
+# survey.yaml's processing min/max period
+scoring:
+  pmin: 0.005
+  pmax: 5000
+
+runner:
+  minutes_per_job: {rr: 8, variant: 1, stack: 1}   # --dry-run estimate only (C09 variant: 0.4 min; first rr runs 9.2-10.3 min incl. a remote variant build)
+  min_available_gb: 40      # a job starts only with this much memory free ...
+  peak_factor: 1.0          # ... and 1.0 x the largest peak RSS the ledger has seen (1.2 idled the second slot: 128 GB RAM, 53 GB peaks)
+  expected_peak_gb: {rr: 35, variant: 20, stack: 8}   # held back for running jobs until measured
+  move_products: true       # EDI/PNG/JSON into <workspace>/campaign/lineC/tf, not the survey's default tf/
