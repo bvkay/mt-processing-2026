@@ -1,0 +1,158 @@
+"""Unit test for scripts/profile_run.py: the log-phase parser and the sampler -- no archive, no aurora run.
+
+    python tests/profile_unit.py
+
+**This test fails if** the parser, given 28 lines cut from a real campaign log
+(s3_C18_rr-C19_boxcar.log, loguru colour codes and a two-line
+message included; only the paths shortened), does not return exactly the 17
+phases below in order, each within 0.01 s of the length worked out by hand
+from the lines' own timestamps (L0 read 46.86 s, L0 STFT 156.01 s, L0 merge
+3.18 s, L0 regression 212.55 s, ...), or the phases leave a gap or overlap;
+or, on synthetic marks, an instant is not given to the innermost P mark
+covering it (a nested "L0 STFT" inside "aurora (other)" must split it in two,
+time before the first mark is "python start + imports", between marks
+"(untracked)", after the last "exit"), or a mark's self time does not exclude
+the mark nested in it; or the sampler, on a child that fills 400 MiB of numpy
+array, sleeps 1.5 s between a pair of PROFMARK lines and exits, takes fewer
+than 4 samples, sees a peak working set under 400 MiB (it missed the
+allocation) or over 2 GiB, or the parsed "hold" phase is not 1.5 +- 0.3 s
+long with a peak RSS of at least 400 MiB in the phase table.
+"""
+
+from __future__ import annotations
+
+import sys
+import tempfile
+from pathlib import Path
+
+REPO = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO / "scripts"))
+sys.path.insert(0, str(REPO / "src"))
+
+import profile_run as pr  # noqa: E402
+
+EXCERPT = "\n".join([
+    '=== 2026-09-24T06:45:08+08:00 python.exe process_rr.py survey.yaml C18 C19 --taper boxcar --tag lineC-boxcar',
+    'started: 2026-09-24T06:45:11.156306+08:00',
+    '\x1b[1m2026-09-24T06:45:12.056381+0800 | INFO | __main__ | main | line: 475 | C18: Ex 55.0 m @ 0.0 deg, Ey 45.0 m @ 90.0 deg, timing None\x1b[0m',
+    '\x1b[1m2026-09-24T06:45:13.928145+0800 | INFO | mtproc.process | process_station | line: 253 | aurora: C18 RR C19\x1b[0m',
+    '\x1b[1m2026-09-24T06:45:14.112994+0800 | INFO | aurora.pipelines.transfer_function_kernel | valid_decimations | line: 413 | After validation there are 10 valid decimation levels\x1b[0m',
+    '\x1b[1m2026-09-24T06:46:00.814290+0800 | INFO | mth5.processing.kernel_dataset | initialize_dataframe_for_processing | line: 1310 | Dataset dataframe initialized successfully, updated metadata.\x1b[0m',
+    '\x1b[1m2026-09-24T06:46:00.974900+0800 | INFO | aurora.pipelines.transfer_function_kernel | update_dataset_df | line: 156 | Dataset Dataframe Updated for decimation level 0 Successfully\x1b[0m',
+    '\x1b[1m2026-09-24T06:46:03.761014+0800 | INFO | aurora.time_series.spectrogram_helpers | save_fourier_coefficients | line: 341 | Skip saving FCs. dec_level_config.save_fc =  False\x1b[0m',
+    '\x1b[1m2026-09-24T06:46:06.686106+0800 | INFO | aurora.time_series.spectrogram_helpers | save_fourier_coefficients | line: 341 | Skip saving FCs. dec_level_config.save_fc =  False\x1b[0m',
+    '\x1b[1m2026-09-24T06:47:22.658011+0800 | INFO | aurora.time_series.spectrogram_helpers | save_fourier_coefficients | line: 341 | Skip saving FCs. dec_level_config.save_fc =  False\x1b[0m',
+    '\x1b[1m2026-09-24T06:48:36.984576+0800 | INFO | aurora.time_series.spectrogram_helpers | save_fourier_coefficients | line: 341 | Skip saving FCs. dec_level_config.save_fc =  False\x1b[0m',
+    '\x1b[1m2026-09-24T06:48:40.164884+0800 | INFO | aurora.pipelines.feature_weights | extract_features | line: 43 | Features could not be accessed from MTH5 -- ',
+    'Calculating features on the fly (development only)\x1b[0m',
+    '\x1b[1m2026-09-24T06:48:40.168581+0800 | INFO | aurora.time_series.frequency_band_helpers | get_band_for_tf_estimate | line: 45 | Accessing band 0.017145s  (58.324839Hz)\x1b[0m',
+    '\x1b[1m2026-09-24T06:52:12.718614+0800 | INFO | aurora.pipelines.transfer_function_kernel | update_dataset_df | line: 137 | DECIMATION LEVEL 1\x1b[0m',
+    '\x1b[1m2026-09-24T06:52:36.875990+0800 | INFO | aurora.pipelines.transfer_function_kernel | update_dataset_df | line: 156 | Dataset Dataframe Updated for decimation level 1 Successfully\x1b[0m',
+    '\x1b[1m2026-09-24T06:52:38.085789+0800 | INFO | aurora.time_series.spectrogram_helpers | save_fourier_coefficients | line: 341 | Skip saving FCs. dec_level_config.save_fc =  False\x1b[0m',
+    '\x1b[1m2026-09-24T06:52:39.101969+0800 | INFO | aurora.time_series.spectrogram_helpers | save_fourier_coefficients | line: 341 | Skip saving FCs. dec_level_config.save_fc =  False\x1b[0m',
+    '\x1b[1m2026-09-24T06:52:56.876571+0800 | INFO | aurora.time_series.spectrogram_helpers | save_fourier_coefficients | line: 341 | Skip saving FCs. dec_level_config.save_fc =  False\x1b[0m',
+    '\x1b[1m2026-09-24T06:53:14.666794+0800 | INFO | aurora.time_series.spectrogram_helpers | save_fourier_coefficients | line: 341 | Skip saving FCs. dec_level_config.save_fc =  False\x1b[0m',
+    '\x1b[1m2026-09-24T06:53:16.580611+0800 | INFO | aurora.pipelines.feature_weights | extract_features | line: 43 | Features could not be accessed from MTH5 -- ',
+    'Calculating features on the fly (development only)\x1b[0m',
+    '\x1b[1m2026-09-24T06:53:58.192049+0800 | INFO | aurora.pipelines.transfer_function_kernel | update_dataset_df | line: 137 | DECIMATION LEVEL 2\x1b[0m',
+    '\x1b[1m2026-09-24T06:54:03.372738+0800 | INFO | aurora.pipelines.transfer_function_kernel | update_dataset_df | line: 156 | Dataset Dataframe Updated for decimation level 2 Successfully\x1b[0m',
+    "\x1b[1m2026-09-24T06:54:49.548037+0800 | INFO | aurora.pipelines.process_mth5 | process_mth5_legacy | line: 230 | type(tf_cls): <class 'mt_metadata.transfer_functions.core.TF'>\x1b[0m",
+    '\x1b[1m2026-09-24T06:54:49.821920+0800 | INFO | mtproc.process | process_station | line: 265 | wrote tf\\C18_rr-C19_20260924-0645_lineC-boxcar.edi\x1b[0m',
+    '\x1b[1m2026-09-24T06:54:50.279523+0800 | INFO | __main__ | main | line: 538 | wrote tf\\C18_rr-C19_20260924-0645_lineC-boxcar_vs_lemimt.png\x1b[0m',
+    '\x1b[1m2026-09-24T06:54:50.347061+0800 | INFO | __main__ | main | line: 546 | wrote tf\\C18_rr-C19_20260924-0645_lineC-boxcar.json\x1b[0m',
+])
+
+# (phase, seconds), by hand from the excerpt's own timestamps
+EXPECTED = [
+    ("python start + imports", 3.156306),  # "=== 06:45:08" header -> "started: 06:45:11.156306"
+    ("survey load + archive status", 0.900075),
+    ("archives + run summary + kernel dataset + config", 1.871764),
+    ("aurora setup", 0.184849),
+    ("L0 read TS", 46.861906),  # valid_decimations 06:45:14.112994 -> level 0 updated 06:46:00.974900
+    ("L0 STFT", 156.009676),  # -> the 4th "Skip saving FCs", 06:48:36.984576
+    ("L0 merge STFTs", 3.180308),  # -> extract_features 06:48:40.164884
+    ("L0 regression", 212.553730),  # -> DECIMATION LEVEL 1, 06:52:12.718614
+    ("L1 decimate", 24.157376),
+    ("L1 STFT", 37.790804),
+    ("L1 merge STFTs", 1.913817),
+    ("L1 regression", 41.611438),
+    ("L2 decimate", 5.180689),
+    ("L2 STFT", 46.175299),  # the excerpt jumps from level 2 straight to type(tf_cls)
+    ("close archives + EDI write", 0.273883),
+    ("quadrants + comparison figure", 0.457603),
+    ("sidecar", 0.067538),
+]
+
+
+def test_rr_log_phases() -> None:
+    phases = pr.phases_from_rr_log(pr.parse_log(EXCERPT), None, None)
+    names = [p["name"] for p in phases]
+    assert names == [n for n, _ in EXPECTED], names
+    for p, (name, secs) in zip(phases, EXPECTED):
+        assert abs((p["t1"] - p["t0"]) - secs) < 0.01, (name, p["t1"] - p["t0"], secs)
+    for a, b in zip(phases[:-1], phases[1:]):
+        assert a["t1"] == b["t0"], ("gap or overlap", a, b)
+    print(f"  {len(phases)} phases from the real excerpt: L0 read {phases[4]['t1'] - phases[4]['t0']:.2f} s, "
+          f"STFT {phases[5]['t1'] - phases[5]['t0']:.2f} s, regression {phases[7]['t1'] - phases[7]['t0']:.2f} s")
+
+
+def _marks(*rows):
+    return [{"type": "mark", "t": t, "flag": f, "kind": k, "name": n} for t, f, k, n in rows]
+
+
+def test_marks_partition_and_self_time() -> None:
+    events = _marks((10.0, "B", "P", "survey load"), (11.0, "E", "P", "survey load"),
+                    (12.0, "B", "P", "aurora (other)"), (13.0, "B", "P", "L0 STFT"),
+                    (13.5, "B", "D", "stft: detrend"), (14.0, "E", "D", "stft: detrend"),
+                    (15.0, "E", "P", "L0 STFT"), (16.0, "E", "P", "aurora (other)"))
+    iv = pr.mark_intervals(events)
+    got = [(p["name"], p["t0"], p["t1"]) for p in pr.phases_from_marks(iv, 9.0, 17.0)]
+    want = [("python start + imports", 9.0, 10.0), ("survey load", 10.0, 11.0), ("(untracked)", 11.0, 12.0),
+            ("aurora (other)", 12.0, 13.0), ("L0 STFT", 13.0, 15.0), ("aurora (other)", 15.0, 16.0),
+            ("exit", 16.0, 17.0)]
+    assert got == want, got
+    det = pr.details_table(iv).set_index("name")
+    assert abs(det.loc["L0 STFT", "total_s"] - 2.0) < 1e-9, det
+    assert abs(det.loc["L0 STFT", "self_s"] - 1.5) < 1e-9, det
+    assert abs(det.loc["aurora (other)", "self_s"] - 2.0) < 1e-9, det
+    print("  nested marks: the innermost wins, gaps are named, self time excludes the nested mark")
+
+
+CHILD = """
+import sys, time
+import numpy as np
+a = np.ones(400 * 2**20 // 8)
+sys.stderr.write(f"PROFMARK {time.time():.6f} B P hold" + chr(10)); sys.stderr.flush()
+time.sleep(1.5)
+sys.stderr.write(f"PROFMARK {time.time():.6f} E P hold" + chr(10)); sys.stderr.flush()
+del a
+time.sleep(0.4)
+"""
+
+
+def test_sampler_on_a_sleeping_child() -> None:
+    with tempfile.TemporaryDirectory() as d:
+        log = Path(d) / "child.log"
+        samples, t0, t1, rc = pr.run_sampled([sys.executable, "-c", CHILD], log, interval=0.2)
+        text = log.read_text()
+    assert rc == 0, text
+    assert len(samples) >= 4, len(samples)
+    peak_mib = samples["rss"].max() / 2**20
+    assert 400 <= peak_mib <= 2048, f"peak working set {peak_mib:.0f} MiB"
+    phases = pr.phases_from_marks(pr.mark_intervals(pr.parse_log(text)), t0, t1)
+    hold = [p for p in phases if p["name"] == "hold"]
+    assert len(hold) == 1 and abs(hold[0]["t1"] - hold[0]["t0"] - 1.5) < 0.3, phases
+    table = pr.phase_table(phases, samples, t0).set_index("phase")
+    assert table.loc["hold", "peak_rss_gib"] * 1024 >= 400, table
+    print(f"  sampler: {len(samples)} samples over {t1 - t0:.1f} s, peak {peak_mib:.0f} MiB; 'hold' "
+          f"{hold[0]['t1'] - hold[0]['t0']:.2f} s at {table.loc['hold', 'peak_rss_gib'] * 1024:.0f} MiB")
+
+
+if __name__ == "__main__":
+    tests = [test_rr_log_phases, test_marks_partition_and_self_time, test_sampler_on_a_sleeping_child]
+    print(__doc__.split("**This test fails if**")[1].strip())
+    print()
+    for test in tests:
+        test()
+        print(f"  ok  {test.__name__}")
+    print(f"\nPASS  profile_unit ({len(tests)} tests)")
