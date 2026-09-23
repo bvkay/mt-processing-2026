@@ -1,0 +1,589 @@
+name: hillside_phase1
+instrument: edl
+sample_rate: 1000
+data_root: E:/MT_Timeseries_DATA/MT_Hillside_2012_Reprocess-2024/Phase_1_DATA
+# archives, transfer functions and figures: beside the raw data by default
+workspace: D:/MT_DATA/MT_Hillside_2012_Workspace
+# local time of the field area (IANA name), for display only: every
+# timestamp in the YAML, the archives and the scripts is UTC
+timezone: Australia/Adelaide
+# written by this script from the raw files' headers: re-running it (--force)
+# overwrites every edit made since, the GUI's Metadata tab included
+generated_by: scripts/new_survey.py
+defaults:
+  dipole_length_ex: 50.0
+  dipole_length_ey: 50.0
+  azimuth_ex: 0.0
+  azimuth_ey: 90.0
+  # LEMI-120 coil response (LEMI-423 sites, and EDL sites with sensor_type lemi120);
+  # a relative path resolves against this folder first
+  calibration_fn: sensors/l120n.rsp
+  # LEMI-423 sites: empirical magnetics correction vs the lemimt convention: pT -> nT + polarity
+  # (validated at Curnamona on D02/E08: constant 1e6 rho offset, exact 180 deg phase)
+  h_scale: -1000.0
+  # how to read a 180/270 deg dipole azimuth on the field sheet. true: the pair
+  # was wired reversed, so its data are sign-flipped at ingest (Curnamona).
+  # false: the azimuth only records the layout direction and the logger's
+  # terminals fix polarity, so nothing is flipped (Burra). Check the impedance
+  # phase quadrants after the first run: a wrong choice puts one mode 180 deg out.
+  flip_reversed_dipoles: true
+  # the columns that had a sensor attached (--channels, mtproc.survey.CHANNEL_PRESETS),
+  # in the survey instrument's names; ingest drops the rest, e.g. the B423 Bz column,
+  # an open input with no hz coil. A site on another instrument has its own channels:
+  channels: [ex, ey, hx, hy]
+  # EDL (PR6-24) magnetic sensors (mtproc.instruments.read_run): lemi120 = LEMI-120
+  # induction coils, the broadband setup, their response calibration_fn above;
+  # bartington = Mag-03 fluxgates, long period. Set from the survey's rate (UoA:
+  # coils at 500/1000 Hz, fluxgates at 10 Hz): check the field sheet
+  sensor_type: lemi120
+# lemimt-style even log-period band layout (see mtproc.bands.lemimt_band_scheme)
+processing:
+  min_period: 0.005
+  max_period: 5000.0
+  periods_per_decade: 10.0
+  # keep bands clear of mains and its first in-range harmonic
+  notch_frequencies: [50.0, 150.0]
+sites:
+  hs005:
+    dipole_length_ex: 49.0
+    dipole_length_ey: 51.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -34.5239
+    longitude: 137.87338333333332
+    elevation: 55.0
+    start: '2012-03-27T05:05:00Z'
+    end: '2012-03-28T00:19:00Z'
+    notes: coils N269 E266 (Mag_Type BB); 30 m to fence, 350 m to fram, 1 km to drill
+      rig, 600 m to powerline + road; Recovered
+  hs006:
+    dipole_length_ex: 47.0
+    dipole_length_ey: 47.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -34.52385
+    longitude: 137.8761
+    elevation: 54.0
+    start: '2012-03-27T04:45:00Z'
+    end: '2012-03-28T00:07:00Z'
+    notes: coils N245 E244 (Mag_Type BB); 50 m to fence (S), 350 m to raod + powerline
+      (E), flat ground, dry short crops, 1 km to drill rig; Recovered
+  hs007:
+    dipole_length_ex: 49.0
+    dipole_length_ey: 50.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -34.5238
+    longitude: 137.87883333333335
+    elevation: 49.0
+    start: '2012-03-27T04:30:00Z'
+    end: '2012-03-28T00:06:00Z'
+    notes: coils N137 E138 (Mag_Type BB); 100 m from highway + powerlines
+  hs015:
+    dipole_length_ex: 48.0
+    dipole_length_ey: 45.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -34.52868333333333
+    longitude: 137.86263333333332
+    elevation: 61.0
+    start: '2012-03-24T05:30:00Z'
+    end: '2012-03-25T00:41:00Z'
+    notes: coils N137 E138 (Mag_Type BB); Powerlines > 1 km away, silty soil; Recovered
+  hs016:
+    dipole_length_ex: 46.0
+    dipole_length_ey: 48.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -34.528616666666665
+    longitude: 137.86536666666666
+    elevation: 53.0
+    start: '2012-03-24T05:45:00Z'
+    end: '2012-03-25T00:59:00Z'
+    notes: coils N269 E266 (Mag_Type BB); 30 m to fence (W), sandy soil, animal den
+      nearby (10 m); Ants in instrument box, Recovered
+  hs017:
+    dipole_length_ex: 45.0
+    dipole_length_ey: 48.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -34.52845
+    longitude: 137.86815
+    elevation: 43.0
+    start: '2012-03-24T06:15:00Z'
+    end: '2012-03-25T01:38:00Z'
+    notes: coils N265 E260 (Mag_Type BB); 600-700 m to drill rig, 100 m to fence (N+E),
+      short crops; Recovered
+  hs018:
+    dipole_length_ex: 49.0
+    dipole_length_ey: 50.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -34.5285
+    longitude: 137.87081666666666
+    elevation: 43.0
+    start: '2012-03-25T02:10:00Z'
+    end: '2012-03-25T23:32:00Z'
+    notes: coils N137 E138 (Mag_Type BB); silty soil, paddock sloping up towards north,
+      400 m to drill rig; Recovered
+  hs019:
+    dipole_length_ex: 50.0
+    dipole_length_ey: 49.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -34.52846666666667
+    longitude: 137.87355
+    elevation: 44.0
+    start: '2012-03-25T03:35:00Z'
+    end: '2012-03-25T23:33:00Z'
+    notes: coils N245 E244 (Mag_Type BB); 600-700 m to drill rig (SW), 100 m to fence
+      (N+E), 300-400 m to farm, low gras; Recovered
+  hs020:
+    dipole_length_ex: 48.0
+    dipole_length_ey: 45.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -34.528416666666665
+    longitude: 137.87628333333333
+    elevation: 29.0
+    start: '2012-03-25T03:12:44Z'
+    end: '2012-03-25T23:51:00Z'
+    notes: coils N261 E262 (Mag_Type BB); 250 m from homestead, 300 m from highway;
+      Recovered
+  hs021:
+    dipole_length_ex: 48.0
+    dipole_length_ey: 48.0
+    azimuth_ex: 180.0
+    azimuth_ey: 270.0
+    latitude: -34.52855
+    longitude: 137.87896666666666
+    elevation: 41.0
+    start: '2012-03-25T04:05:34Z'
+    end: '2012-03-26T00:12:00Z'
+    notes: coils N259 E258 (Mag_Type BB); 40 m from home stead, 100 m from highway,
+      lots of cars, electric fence 100 m away (on or off?); Recovered
+  hs029:
+    dipole_length_ex: 48.0
+    dipole_length_ey: 39.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -34.533166666666666
+    longitude: 137.8628
+    elevation: 61.0
+    start: '2012-03-25T04:19:28Z'
+    end: '2012-03-25T23:58:00Z'
+    notes: coils N265 E260 (Mag_Type BB); 200 m to fence, 600-800 m to drill rig, 500-600
+      m to fram + powerline, ground ascends to NW, sandy soil, low vegitation; Recovered
+  hs030:
+    dipole_length_ex: 49.0
+    dipole_length_ey: 50.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -34.53308333333333
+    longitude: 137.86558333333335
+    elevation: 64.0
+    start: '2012-03-25T05:18:01Z'
+    end: '2012-03-26T00:43:00Z'
+    notes: coils N119 E121 (Mag_Type BB); Flat paddock, electric fence (off) 100 m away,
+      350 m from drill rig; Recovered
+  hs031:
+    dipole_length_ex: 49.0
+    dipole_length_ey: 49.0
+    azimuth_ex: 180.0
+    azimuth_ey: 270.0
+    latitude: -34.53305
+    longitude: 137.86826666666667
+    elevation: 61.0
+    start: '2012-03-25T05:32:19Z'
+    end: '2012-03-26T00:21:00Z'
+    notes: coils N241 E243 (Mag_Type BB); 200-250 m to drill rig (E), 50 m to fence
+      (E), 300 m to watertanks + road (S), sandy soil, low vegitation; Recovered
+  hs033:
+    dipole_length_ex: 48.0
+    dipole_length_ey: 50.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -34.53273333333333
+    longitude: 137.87368333333333
+    elevation: 40.0
+    start: '2012-03-26T01:36:07Z'
+    end: '2012-03-26T22:49:00Z'
+    notes: coils N241 E243 (Mag_Type BB); 300 m to drill rig, next to old drill pad,
+      150 m to fence (E), 400 m to road, 600 m to farm, low vegitation, surface sloping
+      down to north; Recovered
+  hs034:
+    dipole_length_ex: 48.0
+    dipole_length_ey: 48.0
+    azimuth_ex: 0.0
+    azimuth_ey: 270.0
+    latitude: -34.53275
+    longitude: 137.87625
+    elevation: 29.0
+    start: '2012-03-26T01:45:57Z'
+    end: '2012-03-26T22:46:00Z'
+    notes: coils N119 E121 (Mag_Type BB); 50 m of Yorke highway, drill rig 500 m away;
+      Recovered
+  hs035:
+    dipole_length_ex: 49.0
+    dipole_length_ey: 50.0
+    azimuth_ex: 180.0
+    azimuth_ey: 270.0
+    latitude: -34.532833333333336
+    longitude: 137.87911666666668
+    elevation: 29.0
+    start: '2012-03-26T03:00:51Z'
+    end: '2012-03-26T23:14:00Z'
+    notes: coils N245 E244 (Mag_Type BB); 50 m to road (N+E), 40 m to fence, 250 m to
+      powerline + buildings, 700 m to drill rig, surface sloping down in north direction,
+      low vegitation; Recovered
+  hs050:
+    dipole_length_ex: 50.0
+    dipole_length_ey: 48.0
+    azimuth_ex: 180.0
+    azimuth_ey: 270.0
+    latitude: -34.539883333333336
+    longitude: 137.86578333333333
+    elevation: 43.0
+    start: '2012-03-26T02:48:40Z'
+    end: '2012-03-26T23:09:00Z'
+    notes: coils N259 E258 (Mag_Type BB); 250 m from drill rig; Recovered
+  hs051:
+    dipole_length_ex: 49.0
+    dipole_length_ey: 47.0
+    azimuth_ex: 180.0
+    azimuth_ey: 270.0
+    latitude: -34.53978333333333
+    longitude: 137.86848333333333
+    elevation: 48.0
+    start: '2012-03-26T04:02:38Z'
+    end: '2012-03-26T23:33:00Z'
+    notes: coils N137 E138 (Mag_Type BB); 250 m south and 250 m east of drill rigs;
+      Central(?) node almost empty of copper sulphate, recovered
+  hs053:
+    dipole_length_ex: 44.0
+    dipole_length_ey: 49.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -34.539683333333336
+    longitude: 137.87395
+    elevation: 49.0
+    start: '2012-03-26T04:05:30Z'
+    end: '2012-03-26T23:33:00Z'
+    notes: coils N265 E260 (Mag_Type BB); 250 m to drill rig, 700 m to powerline + road,
+      300 m to main drive way, flat ground, low vegitation; Recovered
+  hs054:
+    dipole_length_ex: 48.0
+    dipole_length_ey: 43.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -34.5396
+    longitude: 137.87665
+    elevation: 49.0
+    start: '2012-03-26T04:43:17Z'
+    end: '2012-03-27T00:03:00Z'
+    notes: coils N261 E262 (Mag_Type BB); 400 m south of site office road (and powerline)
+      are 400 m east, drill site 400 m to west; Recovered
+  hs055:
+    dipole_length_ex: 47.0
+    dipole_length_ey: 48.0
+    azimuth_ex: 180.0
+    azimuth_ey: 270.0
+    latitude: -34.539566666666666
+    longitude: 137.8794
+    elevation: 35.0
+    start: '2012-03-26T05:28:45Z'
+    end: '2012-03-26T23:55:00Z'
+    notes: coils N255 E254 (Mag_Type BB); 50 m to road + powerline (E), 750 m to drill
+      rig, 500 m to buildings + powerline (N); West-electrode connector at electrode
+      end broken, recovered
+  hs056:
+    dipole_length_ex: 48.0
+    dipole_length_ey: 49.0
+    azimuth_ex: 180.0
+    azimuth_ey: 270.0
+    latitude: -34.542116666666665
+    longitude: 137.86586666666668
+    elevation: 52.0
+    start: '2012-03-27T03:24:20Z'
+    end: '2012-03-27T23:48:00Z'
+    notes: coils N241 E243 (Mag_Type BB); 500 m to drill rig, 75 m to powerline + fence,
+      60 m to small water tank (got drained on the ground), ground sloping down in north
+      direction, dry short vegitation; Recovered
+  hs057:
+    dipole_length_ex: 48.0
+    dipole_length_ey: 46.0
+    azimuth_ex: 180.0
+    azimuth_ey: 270.0
+    latitude: -34.5421
+    longitude: 137.86855
+    elevation: 41.0
+    start: '2012-03-27T03:20:18Z'
+    end: '2012-03-27T23:40:00Z'
+    notes: coils N118 E117 (Mag_Type BB); pump running 250 m away, 500 m from drill
+      rig; Recovered
+  hs058:
+    dipole_length_ex: 46.0
+    dipole_length_ey: 45.0
+    azimuth_ex: 180.0
+    azimuth_ey: 90.0
+    latitude: -34.542
+    longitude: 137.8713
+    elevation: 38.0
+    start: '2012-03-27T01:48:12Z'
+    end: '2012-03-27T23:27:00Z'
+    notes: coils N265 E260 (Mag_Type BB); 40 m to main drive way (W) (lots of cars),
+      250 m to drill rig, flat ground, dry grass; Redback spider in box, Recovered
+  hs059:
+    dipole_length_ex: 50.0
+    dipole_length_ey: 50.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -34.54195
+    longitude: 137.87403333333333
+    elevation: 34.0
+    start: '2012-03-27T01:52:10Z'
+    end: '2012-03-27T23:21:00Z'
+    notes: coils N119 E121 (Mag_Type BB); 250 m from drill rig, 500 m from highway and
+      powerlines; Recovered
+  hs060:
+    dipole_length_ex: 46.0
+    dipole_length_ey: 44.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -34.54183333333334
+    longitude: 137.87671666666665
+    elevation: 37.0
+    start: '2012-03-27T01:02:47Z'
+    end: '2012-03-27T23:02:00Z'
+    notes: coils N261 E262 (Mag_Type BB); 300 m to highway and powerlines, 500 m to
+      drill rig; Recovered
+  hs061:
+    dipole_length_ex: 49.0
+    dipole_length_ey: 47.0
+    azimuth_ex: 0.0
+    azimuth_ey: 270.0
+    latitude: -34.5418
+    longitude: 137.87945
+    elevation: 39.0
+    start: '2012-03-27T01:12:00Z'
+    end: '2012-03-27T23:03:00Z'
+    notes: coils N255 E254 (Mag_Type BB); 750 m to drill rig, 30-40 m to raod + powerline,
+      15 m to fence, dry grass, surface sloping down to south; Check copper-sulfide
+      levels in electrdes during recovery!, recovered
+  hs068:
+    dipole_length_ex: 48.0
+    dipole_length_ey: 48.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -34.5464
+    longitude: 137.86605
+    elevation: 56.0
+    start: '2012-03-23T01:28:12Z'
+    end: '2012-03-23T23:35:00Z'
+    notes: coils N117 E118 (Mag_Type BB); Power line 150 m away, silty soil with calcrete
+      underneath, drill rig 1 km away, bloddy hard digging; Recovered
+  hs069:
+    dipole_length_ex: 42.0
+    dipole_length_ey: 48.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -34.54643333333333
+    longitude: 137.8687
+    elevation: 53.0
+    start: '2012-03-23T02:31:04Z'
+    end: '2012-03-23T23:47:00Z'
+    notes: coils N259 E258 (Mag_Type BB); Dirt road 5 m south, power line 400 m away,
+      water pond (20 m x 20 m) 100 m east, flat, dead grass, water truck occasionally
+      comes and fill-up from dam 50 m away; Recovered
+  hs070:
+    dipole_length_ex: 40.0
+    dipole_length_ey: 44.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -34.54633333333334
+    longitude: 137.87136666666666
+    elevation: 49.0
+    start: '2012-03-23T04:25:30Z'
+    end: '2012-03-24T00:02:00Z'
+    notes: coils N137 E138 (Mag_Type BB); 50 m from dam, occasional water truck, site
+      is at a t-junction, sandy soil, east el. Is close to wet soil, water was coming
+      from tank; Recovered
+  hs071:
+    dipole_length_ex: 48.0
+    dipole_length_ey: 50.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -34.54645
+    longitude: 137.87415
+    elevation: 43.0
+    start: '2012-03-23T05:28:39Z'
+    end: '2012-03-24T00:36:00Z'
+    notes: coils N261 E262 (Mag_Type BB); Clay soil, 300 m to power lines; Recovered
+  hs072:
+    dipole_length_ex: 50.0
+    dipole_length_ey: 49.0
+    azimuth_ex: 0.0
+    azimuth_ey: 270.0
+    latitude: -34.54631666666667
+    longitude: 137.87668333333335
+    elevation: 37.0
+    start: '2012-03-24T01:29:47Z'
+    end: '2012-03-24T23:52:00Z'
+    notes: coils N261 E262 (Mag_Type BB); 50 m from highway and powerlines; GPS missing
+      tape but still on top of box, recovered
+  hs073:
+    dipole_length_ex: 47.0
+    dipole_length_ey: 49.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -34.5463
+    longitude: 137.8796
+    elevation: 28.0
+    start: '2012-03-24T02:44:50Z'
+    end: '2012-03-25T00:13:00Z'
+    notes: coils N259 E258 (Mag_Type BB); ighway and powerlines 250 m away, silty paddock;
+      Recovered
+  hs074:
+    dipole_length_ex: 50.0
+    dipole_length_ey: 44.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -34.54886666666667
+    longitude: 137.86606666666663
+    elevation: 55.0
+    start: '2012-03-22T00:11:53Z'
+    end: '2012-03-22T23:38:00Z'
+    notes: coils N137 E138 (Mag_Type BB); 250 m from powerline + fence, small ondulation,
+      calcrete; Recovered
+  hs075:
+    dipole_length_ex: 48.0
+    dipole_length_ey: 46.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -34.54873333333333
+    longitude: 137.86883333333333
+    elevation: 51.0
+    start: '2012-03-21T06:31:50Z'
+    end: '2012-03-22T23:04:00Z'
+    notes: coils N245 E244 (Mag_Type BB); 800 m to powerlines, 1.2 km to drill rig,
+      flat, sandy soil with clay 10 cm down; Recovered
+  hs076:
+    dipole_length_ex: 50.0
+    dipole_length_ey: 34.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -34.54872
+    longitude: 137.87151
+    elevation: 47.0
+    start: '2012-03-22T01:50:09Z'
+    end: '2012-03-22T23:33:00Z'
+    notes: coils N265 E260 (Mag_Type BB); 100 m to fence, 500 m to road + powerline;
+      Recovered
+  hs077:
+    dipole_length_ex: 44.0
+    dipole_length_ey: 45.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -34.548716666666664
+    longitude: 137.8742
+    elevation: 45.0
+    start: '2012-03-22T01:36:30Z'
+    end: '2012-03-23T00:02:00Z'
+    notes: coils N259 E256 (Mag_Type BB); 300 m from the road and power line, flat,
+      dead grass; Recovered
+  hs078:
+    dipole_length_ex: 45.0
+    dipole_length_ey: 44.0
+    azimuth_ex: 180.0
+    azimuth_ey: 270.0
+    latitude: -34.54873333333333
+    longitude: 137.87661666666668
+    elevation: 49.0
+    start: '2012-03-22T04:40:17Z'
+    end: '2012-03-23T00:23:00Z'
+    notes: coils N117 E118 (Mag_Type BB); The road is 30 m from site, traffic every
+      5 min, powerlines 40 m away; Recovered
+  hs079:
+    dipole_length_ex: 49.0
+    dipole_length_ey: 45.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -34.54855
+    longitude: 137.8797
+    elevation: 39.0
+    start: '2012-03-24T02:39:36Z'
+    end: '2012-03-25T00:22:00Z'
+    notes: coils N241 E243 (Mag_Type BB); 200 m to powerline + road (W), 500 m to sea,
+      surface dips slightly to the south; Recovered
+  hs080:
+    dipole_length_ex: 47.0
+    dipole_length_ey: 45.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -34.55113333333333
+    longitude: 137.86611666666667
+    elevation: 47.0
+    start: '2012-03-23T05:40:25Z'
+    end: '2012-03-24T00:11:00Z'
+    notes: coils N245 E244 (Mag_Type BB); 100 m to powerline + fence(W), 300 m to powerline
+      (S), Beeping during set up (hard drive faulty), HD changed; Recovered
+  hs081:
+    dipole_length_ex: 47.0
+    dipole_length_ey: 45.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -34.551050000000004
+    longitude: 137.86895
+    elevation: 48.0
+    start: '2012-03-23T04:27:33Z'
+    end: '2012-03-23T23:47:00Z'
+    notes: coils N255 E254 (Mag_Type BB); 270 m to fence, 800 m to powerline + road
+      €, 300 m to powerline (S), 700 m to drill rig; Recovered
+  hs082:
+    dipole_length_ex: 49.0
+    dipole_length_ey: 45.0
+    azimuth_ex: 0.0
+    azimuth_ey: 270.0
+    latitude: -34.550983333333335
+    longitude: 137.87161666666665
+    elevation: 49.0
+    start: '2012-03-23T01:33:59Z'
+    end: '2012-03-23T23:23:00Z'
+    notes: coils N269 E266 (Mag_Type BB); 30 m to fence, 300 m to powerline (S), 550
+      m to road + powerline, 750 m to drill rig, flat ground, low vegitation; Recovered
+  hs083:
+    dipole_length_ex: 46.0
+    dipole_length_ey: 40.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -34.55095
+    longitude: 137.8743
+    elevation: 47.0
+    start: '2012-03-22T05:14:20Z'
+    end: '2012-03-23T00:31:00Z'
+    notes: coils N269 E266 (Mag_Type BB); 300 m to road + powerline, 400 m to other
+      powerline (S); Recovered
+  hs084:
+    dipole_length_ex: 45.0
+    dipole_length_ey: 45.0
+    azimuth_ex: 180.0
+    azimuth_ey: 270.0
+    latitude: -34.550866666666664
+    longitude: 137.8766
+    elevation: 46.0
+    start: '2012-03-22T04:21:51Z'
+    end: '2012-03-23T00:02:00Z'
+    notes: coils N255 E254 (Mag_Type BB); 20-30 m to road + powerline, 400 m to powerline
+      (S); Connection of N-coil cable loose (at coil end), Recovered
+  hs085:
+    dipole_length_ex: 47.0
+    dipole_length_ey: 47.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -34.55076666666667
+    longitude: 137.87978333333334
+    elevation: 43.0
+    start: '2012-03-24T01:46:43Z'
+    end: '2012-03-25T00:00:00Z'
+    notes: coils N255 E254 (Mag_Type BB); 200 m to powerline + road (W), 400-500 m to
+      sea, short crops, flat ground; Recovered

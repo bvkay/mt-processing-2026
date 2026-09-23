@@ -1,0 +1,18 @@
+hs005:
+- notch:
+    f0: 50.0
+    harmonics: 9
+    q: 30.0
+    passes: 2
+hs006:
+- notch:
+    f0: 50.0
+    harmonics: 9
+    q: 30.0
+    passes: 2
+hs058:
+- notch:
+    f0: 50.0
+    harmonics: 9
+    q: 30.0
+    passes: 2
