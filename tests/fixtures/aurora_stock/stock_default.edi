@@ -1,0 +1,328 @@
+>HEAD
+	ACQBY=
+	ACQDATE=2023-09-22T00:00:00+00:00
+	COORDINATE_SYSTEM=geographic
+	DATAID=L
+	DATUM=WGS 84
+	ELEV=0.000
+	EMPTY=1e+32
+	ENDDATE=2023-09-22T01:58:19.990000+00:00
+	FILEBY=
+	FILEDATE=2026-09-24T01:35:01.201354+00:00
+	LAT=0:00:0.000000
+	LOC=
+	LON=0:00:0.000000
+	PROGDATE=2021-12-01T00:00:00+00:00
+	PROGNAME=mt_metadata
+	PROGVERS=1.0.10
+	PROJECT=
+	STDVERS=SEG 1.0
+	SURVEY=SYNTH
+	UNITS=milliVolt per kilometer per nanoTesla
+
+>INFO
+	survey.summary = 
+	original_program.version=0.1.6
+	original_file.date=2026-09-24T09:35:00.987279+00:00
+    survey.datum=WGS 84
+    survey.id=SYNTH
+    survey.release_license=CC-BY-4.0
+    transfer_function.coordinate_system=geographic
+    transfer_function.processed_date=2026-09-24T09:35:00.987279+00:00
+    transfer_function.remote_references=[]
+    transfer_function.runs_processed=[sr100_0001, sr100_0002]
+    transfer_function.sign_convention=+
+    transfer_function.software.author=K. Kappler
+    transfer_function.software.name=Aurora
+    transfer_function.software.version=0.6.2
+    transfer_function.units=milliVolt per kilometer per nanoTesla
+    provenance.creation_time=2026-09-24T09:35:00.987279+00:00
+    sr100_0001.channels_recorded_auxiliary=[]
+    sr100_0001.channels_recorded_electric=[ex, ey]
+    sr100_0001.channels_recorded_magnetic=[hx, hy]
+    sr100_0001.data_logger.power_source.voltage.end=0.0
+    sr100_0001.data_logger.power_source.voltage.start=0.0
+    sr100_0001.data_logger.timing_system.drift=0.0
+    sr100_0001.data_logger.timing_system.type=GPS
+    sr100_0001.data_logger.timing_system.uncertainty=0.0
+    sr100_0001.data_type=BBMT
+    sr100_0001.id=sr100_0001
+    sr100_0001.sample_rate=100.0
+    sr100_0001.time_period.end=2023-09-22T00:58:19.990000+00:00
+    sr100_0001.time_period.start=2023-09-22T00:00:00+00:00
+    sr100_0001.ex.ac.end=0.0
+    sr100_0001.ex.ac.start=0.0
+    sr100_0001.ex.channel_number=0
+    sr100_0001.ex.component=ex
+    sr100_0001.ex.contact_resistance.end=0.0
+    sr100_0001.ex.contact_resistance.start=0.0
+    sr100_0001.ex.dc.end=0.0
+    sr100_0001.ex.dc.start=0.0
+    sr100_0001.ex.dipole_length=0.0
+    sr100_0001.ex.filters=[]
+    sr100_0001.ex.measurement_azimuth=0.0
+    sr100_0001.ex.measurement_tilt=0.0
+    sr100_0001.ex.negative.datum=WGS 84
+    sr100_0001.ex.negative.elevation_uncertainty=0.0
+    sr100_0001.ex.negative.latitude_uncertainty=0.0
+    sr100_0001.ex.negative.longitude_uncertainty=0.0
+    sr100_0001.ex.negative.x_uncertainty=0.0
+    sr100_0001.ex.negative.y_uncertainty=0.0
+    sr100_0001.ex.negative.z_uncertainty=0.0
+    sr100_0001.ex.positive.datum=WGS 84
+    sr100_0001.ex.positive.elevation_uncertainty=0.0
+    sr100_0001.ex.positive.latitude_uncertainty=0.0
+    sr100_0001.ex.positive.longitude_uncertainty=0.0
+    sr100_0001.ex.positive.x_uncertainty=0.0
+    sr100_0001.ex.positive.y_uncertainty=0.0
+    sr100_0001.ex.positive.z_uncertainty=0.0
+    sr100_0001.ex.type=electric
+    sr100_0001.ey.ac.end=0.0
+    sr100_0001.ey.ac.start=0.0
+    sr100_0001.ey.channel_number=0
+    sr100_0001.ey.component=ey
+    sr100_0001.ey.contact_resistance.end=0.0
+    sr100_0001.ey.contact_resistance.start=0.0
+    sr100_0001.ey.dc.end=0.0
+    sr100_0001.ey.dc.start=0.0
+    sr100_0001.ey.dipole_length=0.0
+    sr100_0001.ey.filters=[]
+    sr100_0001.ey.measurement_azimuth=0.0
+    sr100_0001.ey.measurement_tilt=0.0
+    sr100_0001.ey.negative.datum=WGS 84
+    sr100_0001.ey.negative.elevation_uncertainty=0.0
+    sr100_0001.ey.negative.latitude_uncertainty=0.0
+    sr100_0001.ey.negative.longitude_uncertainty=0.0
+    sr100_0001.ey.negative.x_uncertainty=0.0
+    sr100_0001.ey.negative.y_uncertainty=0.0
+    sr100_0001.ey.negative.z_uncertainty=0.0
+    sr100_0001.ey.positive.datum=WGS 84
+    sr100_0001.ey.positive.elevation_uncertainty=0.0
+    sr100_0001.ey.positive.latitude_uncertainty=0.0
+    sr100_0001.ey.positive.longitude_uncertainty=0.0
+    sr100_0001.ey.positive.x_uncertainty=0.0
+    sr100_0001.ey.positive.y_uncertainty=0.0
+    sr100_0001.ey.positive.z_uncertainty=0.0
+    sr100_0001.ey.type=electric
+    sr100_0001.hx.channel_number=0
+    sr100_0001.hx.component=hx
+    sr100_0001.hx.filters=[]
+    sr100_0001.hx.h_field_max.end=0.0
+    sr100_0001.hx.h_field_max.start=0.0
+    sr100_0001.hx.h_field_min.end=0.0
+    sr100_0001.hx.h_field_min.start=0.0
+    sr100_0001.hx.location.datum=WGS 84
+    sr100_0001.hx.measurement_azimuth=0.0
+    sr100_0001.hx.measurement_tilt=0.0
+    sr100_0001.hx.type=magnetic
+    sr100_0001.hy.channel_number=0
+    sr100_0001.hy.component=hy
+    sr100_0001.hy.filters=[]
+    sr100_0001.hy.h_field_max.end=0.0
+    sr100_0001.hy.h_field_max.start=0.0
+    sr100_0001.hy.h_field_min.end=0.0
+    sr100_0001.hy.h_field_min.start=0.0
+    sr100_0001.hy.location.datum=WGS 84
+    sr100_0001.hy.measurement_azimuth=0.0
+    sr100_0001.hy.measurement_tilt=0.0
+    sr100_0001.hy.type=magnetic
+    sr100_0002.channels_recorded_auxiliary=[]
+    sr100_0002.channels_recorded_electric=[ex, ey]
+    sr100_0002.channels_recorded_magnetic=[hx, hy]
+    sr100_0002.data_logger.power_source.voltage.end=0.0
+    sr100_0002.data_logger.power_source.voltage.start=0.0
+    sr100_0002.data_logger.timing_system.drift=0.0
+    sr100_0002.data_logger.timing_system.type=GPS
+    sr100_0002.data_logger.timing_system.uncertainty=0.0
+    sr100_0002.data_type=BBMT
+    sr100_0002.id=sr100_0002
+    sr100_0002.sample_rate=100.0
+    sr100_0002.time_period.end=2023-09-22T01:58:19.990000+00:00
+    sr100_0002.time_period.start=2023-09-22T01:00:00+00:00
+    sr100_0002.ex.ac.end=0.0
+    sr100_0002.ex.ac.start=0.0
+    sr100_0002.ex.channel_number=0
+    sr100_0002.ex.component=ex
+    sr100_0002.ex.contact_resistance.end=0.0
+    sr100_0002.ex.contact_resistance.start=0.0
+    sr100_0002.ex.dc.end=0.0
+    sr100_0002.ex.dc.start=0.0
+    sr100_0002.ex.dipole_length=0.0
+    sr100_0002.ex.filters=[]
+    sr100_0002.ex.measurement_azimuth=0.0
+    sr100_0002.ex.measurement_tilt=0.0
+    sr100_0002.ex.negative.datum=WGS 84
+    sr100_0002.ex.negative.elevation_uncertainty=0.0
+    sr100_0002.ex.negative.latitude_uncertainty=0.0
+    sr100_0002.ex.negative.longitude_uncertainty=0.0
+    sr100_0002.ex.negative.x_uncertainty=0.0
+    sr100_0002.ex.negative.y_uncertainty=0.0
+    sr100_0002.ex.negative.z_uncertainty=0.0
+    sr100_0002.ex.positive.datum=WGS 84
+    sr100_0002.ex.positive.elevation_uncertainty=0.0
+    sr100_0002.ex.positive.latitude_uncertainty=0.0
+    sr100_0002.ex.positive.longitude_uncertainty=0.0
+    sr100_0002.ex.positive.x_uncertainty=0.0
+    sr100_0002.ex.positive.y_uncertainty=0.0
+    sr100_0002.ex.positive.z_uncertainty=0.0
+    sr100_0002.ex.type=electric
+    sr100_0002.ey.ac.end=0.0
+    sr100_0002.ey.ac.start=0.0
+    sr100_0002.ey.channel_number=0
+    sr100_0002.ey.component=ey
+    sr100_0002.ey.contact_resistance.end=0.0
+    sr100_0002.ey.contact_resistance.start=0.0
+    sr100_0002.ey.dc.end=0.0
+    sr100_0002.ey.dc.start=0.0
+    sr100_0002.ey.dipole_length=0.0
+    sr100_0002.ey.filters=[]
+    sr100_0002.ey.measurement_azimuth=0.0
+    sr100_0002.ey.measurement_tilt=0.0
+    sr100_0002.ey.negative.datum=WGS 84
+    sr100_0002.ey.negative.elevation_uncertainty=0.0
+    sr100_0002.ey.negative.latitude_uncertainty=0.0
+    sr100_0002.ey.negative.longitude_uncertainty=0.0
+    sr100_0002.ey.negative.x_uncertainty=0.0
+    sr100_0002.ey.negative.y_uncertainty=0.0
+    sr100_0002.ey.negative.z_uncertainty=0.0
+    sr100_0002.ey.positive.datum=WGS 84
+    sr100_0002.ey.positive.elevation_uncertainty=0.0
+    sr100_0002.ey.positive.latitude_uncertainty=0.0
+    sr100_0002.ey.positive.longitude_uncertainty=0.0
+    sr100_0002.ey.positive.x_uncertainty=0.0
+    sr100_0002.ey.positive.y_uncertainty=0.0
+    sr100_0002.ey.positive.z_uncertainty=0.0
+    sr100_0002.ey.type=electric
+    sr100_0002.hx.channel_number=0
+    sr100_0002.hx.component=hx
+    sr100_0002.hx.filters=[]
+    sr100_0002.hx.h_field_max.end=0.0
+    sr100_0002.hx.h_field_max.start=0.0
+    sr100_0002.hx.h_field_min.end=0.0
+    sr100_0002.hx.h_field_min.start=0.0
+    sr100_0002.hx.location.datum=WGS 84
+    sr100_0002.hx.measurement_azimuth=0.0
+    sr100_0002.hx.measurement_tilt=0.0
+    sr100_0002.hx.type=magnetic
+    sr100_0002.hy.channel_number=0
+    sr100_0002.hy.component=hy
+    sr100_0002.hy.filters=[]
+    sr100_0002.hy.h_field_max.end=0.0
+    sr100_0002.hy.h_field_max.start=0.0
+    sr100_0002.hy.h_field_min.end=0.0
+    sr100_0002.hy.h_field_min.start=0.0
+    sr100_0002.hy.location.datum=WGS 84
+    sr100_0002.hy.measurement_azimuth=0.0
+    sr100_0002.hy.measurement_tilt=0.0
+    sr100_0002.hy.type=magnetic
+
+>=DEFINEMEAS
+    MAXCHAN=4
+    MAXRUN=999
+    MAXMEAS=7
+    REFLOC=L
+    REFLAT=0:00:0.000000
+    REFLON=0:00:0.000000
+    REFELEV=0.0
+    REFTYPE=cartesian
+    UNITS=meter
+
+>EMEAS ID=1.0 CHTYPE=ex X=0.00 Y=0.00 Z=0.00 X2=0.00 Y2=0.00 Z2=0.00 AZM=0.00 ACQCHAN=1.0
+>EMEAS ID=2.0 CHTYPE=ey X=0.00 Y=0.00 Z=0.00 X2=0.00 Y2=0.00 Z2=0.00 AZM=0.00 ACQCHAN=2.0
+>HMEAS ID=3.0 CHTYPE=hx X=0.00 Y=0.00 Z=0.00 AZM=0.00 DIP=0.00 ACQCHAN=3.0
+>HMEAS ID=4.0 CHTYPE=hy X=0.00 Y=0.00 Z=0.00 AZM=0.00 DIP=0.00 ACQCHAN=4.0
+
+>=MTSECT
+    NFREQ=24
+    SECTID=L
+    NCHAN=4
+    MAXBLOCKS=999
+
+>!****FREQUENCIES****!
+>FREQ // 24
+   2.227247e+01   1.767767e+01   1.403078e+01   1.113623e+01   8.838835e+00   7.015388e+00
+   5.568117e+00   4.419417e+00   3.507694e+00   2.784058e+00   2.209709e+00   1.753847e+00
+   1.392029e+00   1.104854e+00   8.769235e-01   6.960146e-01   5.524272e-01   4.384617e-01
+   3.486958e-01   2.778562e-01   2.214080e-01   1.764277e-01   1.405853e-01   1.120246e-01
+
+>!****IMPEDANCE ROTATION ANGLES****!
+>ZROT // 24
+   0.000000e+00   0.000000e+00   0.000000e+00   0.000000e+00   0.000000e+00   0.000000e+00
+   0.000000e+00   0.000000e+00   0.000000e+00   0.000000e+00   0.000000e+00   0.000000e+00
+   0.000000e+00   0.000000e+00   0.000000e+00   0.000000e+00   0.000000e+00   0.000000e+00
+   0.000000e+00   0.000000e+00   0.000000e+00   0.000000e+00   0.000000e+00   0.000000e+00
+
+>!****IMPEDANCES****!
+>ZXXR ROT=ZROT // 24
+   3.045878e-01   2.936780e-01   3.002453e-01   3.191921e-01   2.977702e-01   2.948900e-01
+   3.054517e-01   2.934260e-01   3.454251e-01   2.888408e-01   2.849325e-01   2.977998e-01
+   2.748621e-01   2.916843e-01   3.070201e-01   2.770413e-01   2.610110e-01   2.530607e-01
+   1.953275e-01   2.638343e-01   2.037648e-01   3.463956e-01   4.737159e-01   3.062802e-01
+
+>ZXXI ROT=ZROT // 24
+  -1.084251e-03  -3.084258e-03  -8.533829e-03  -2.065507e-02  -1.751319e-03   2.825374e-03
+   1.352212e-02   1.261606e-02  -3.275138e-02  -6.193619e-03   4.115471e-03  -1.384504e-02
+  -1.752949e-02  -2.088064e-04  -7.038590e-02   1.375032e-02   5.359880e-02   1.591443e-02
+  -3.685604e-02  -1.798299e-02  -4.718827e-02   1.672046e-02  -2.037938e-01   1.801074e-02
+
+>ZXX.VAR ROT=ZROT // 24
+   3.147889e-05   4.276513e-05   3.066293e-05   4.158353e-04   1.068598e-04   6.869506e-05
+   1.225787e-04   1.675463e-04   1.409246e-03   2.156063e-04   3.117091e-03   2.717442e-04
+   3.703525e-03   6.260280e-04   4.811657e-03   8.680749e-04   1.144186e-02   1.133527e-03
+   1.860474e-02   3.419058e-03   4.207166e-02   4.279265e-03   5.804417e-02   7.070250e-03
+
+>ZXYR ROT=ZROT // 24
+   3.119735e-01   8.552987e-01   1.271019e+00   1.486809e+00   1.689243e+00   1.796357e+00
+   1.861401e+00   1.933127e+00   1.944797e+00   1.965446e+00   1.969838e+00   1.983939e+00
+   1.984386e+00   1.981079e+00   2.034390e+00   2.002512e+00   2.003575e+00   1.999594e+00
+   1.878534e+00   2.031007e+00   1.941893e+00   2.038713e+00   2.078060e+00   2.019506e+00
+
+>ZXYI ROT=ZROT // 24
+  -1.965105e+00  -1.804445e+00  -1.541531e+00  -1.317192e+00  -1.072842e+00  -8.621712e-01
+  -6.873109e-01  -5.644749e-01  -4.424513e-01  -3.720334e-01  -3.005529e-01  -2.251038e-01
+  -2.195554e-01  -1.169256e-01  -1.243540e-01  -7.446193e-02   6.039636e-03  -7.381035e-02
+  -2.800410e-01   1.022873e-02   1.108558e-02  -2.321837e-02   2.255079e-01  -4.407634e-02
+
+>ZXY.VAR ROT=ZROT // 24
+   3.139688e-05   4.219582e-05   3.122291e-05   4.164855e-04   1.054391e-04   6.891252e-05
+   1.210438e-04   1.630040e-04   1.416567e-03   2.142922e-04   3.078333e-03   2.676808e-04
+   3.794630e-03   6.417642e-04   5.128464e-03   9.124561e-04   1.141866e-02   1.137495e-03
+   1.905868e-02   3.053708e-03   3.892969e-02   3.849536e-03   5.581041e-02   6.324841e-03
+
+>ZYXR ROT=ZROT // 24
+  -1.500893e+00  -1.496786e+00  -1.501206e+00  -1.503564e+00  -1.492361e+00  -1.498171e+00
+  -1.500868e+00  -1.490809e+00  -1.493513e+00  -1.501092e+00  -1.487961e+00  -1.494827e+00
+  -1.502994e+00  -1.501205e+00  -1.493300e+00  -1.500684e+00  -1.484137e+00  -1.478733e+00
+  -1.486042e+00  -1.459792e+00  -1.465076e+00  -1.510548e+00  -1.503895e+00  -1.505585e+00
+
+>ZYXI ROT=ZROT // 24
+   1.565792e-03  -1.986220e-03  -3.149380e-03   2.506103e-03   3.473742e-03   2.253764e-03
+  -1.017042e-02  -1.312107e-02   2.081113e-03   5.480787e-03  -7.862437e-03   7.267851e-03
+  -2.005850e-02   2.478357e-03   5.397945e-03   5.055620e-03  -1.322885e-03  -2.652851e-02
+  -3.097457e-02   2.541910e-02  -3.567794e-02  -5.250479e-02  -3.274286e-02  -5.105661e-02
+
+>ZYX.VAR ROT=ZROT // 24
+   6.004938e-06   8.269932e-06   8.360705e-06   1.034048e-05   2.058103e-05   1.375139e-05
+   2.461698e-05   3.395564e-05   3.344214e-05   4.221201e-05   8.618676e-05   5.530423e-05
+   8.937352e-05   1.279981e-04   1.254340e-04   1.703825e-04   3.289664e-04   2.205792e-04
+   4.039308e-04   6.188282e-04   6.726697e-04   7.201965e-04   1.326494e-03   1.475682e-03
+
+>ZYYR ROT=ZROT // 24
+  -1.974392e-01  -1.972449e-01  -1.995494e-01  -1.944767e-01  -1.984906e-01  -2.021669e-01
+  -2.014490e-01  -2.054444e-01  -1.991498e-01  -1.999428e-01  -2.122216e-01  -2.040549e-01
+  -2.039845e-01  -1.790417e-01  -1.996550e-01  -2.055868e-01  -2.050303e-01  -1.899142e-01
+  -2.063835e-01  -2.049744e-01  -1.888464e-01  -1.892074e-01  -1.571387e-01  -2.456886e-01
+
+>ZYYI ROT=ZROT // 24
+   8.454813e-04   7.425629e-04  -3.297455e-03   3.403099e-03   2.450153e-04  -4.231334e-04
+  -1.933741e-03  -4.775275e-03  -3.567212e-04   2.313014e-03   5.610252e-03  -2.367502e-03
+  -8.713120e-03  -3.365608e-03  -7.797378e-03  -7.832192e-03   1.161839e-02  -9.878403e-03
+  -1.768683e-02   4.401228e-03  -2.285575e-02  -7.241663e-02  -6.369108e-02  -9.957882e-03
+
+>ZYY.VAR ROT=ZROT // 24
+   5.989294e-06   8.159839e-06   8.513392e-06   1.035665e-05   2.030742e-05   1.379493e-05
+   2.430875e-05   3.303507e-05   3.361589e-05   4.195474e-05   8.511512e-05   5.447728e-05
+   9.157208e-05   1.312156e-04   1.336927e-04   1.790935e-04   3.282993e-04   2.213515e-04
+   4.137865e-04   5.527021e-04   6.224336e-04   6.478733e-04   1.275446e-03   1.320103e-03
+
+>END
