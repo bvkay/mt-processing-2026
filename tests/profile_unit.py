@@ -16,7 +16,23 @@ the mark nested in it; or the sampler, on a child that fills 400 MiB of numpy
 array, sleeps 1.5 s between a pair of PROFMARK lines and exits, takes fewer
 than 4 samples, sees a peak working set under 400 MiB (it missed the
 allocation) or over 2 GiB, or the parsed "hold" phase is not 1.5 +- 0.3 s
-long with a peak RSS of at least 400 MiB in the phase table.
+long with a peak RSS of at least 400 MiB in the phase table; or, for the
+trace stage, the marker wrapper installed on a stub pipeline (two levels,
+each "read/decimate", "STFT" with a nested detrend, "regression" over two
+bands for ex then ey) does not emit exactly the six phase spans L0 read TS,
+L0 STFT, L0 regression, L1 decimate TS, L1 STFT, L1 regression in that
+order, the eight band spans "L<n> band <T> s <ch>" in aurora's loop order
+(channels outside bands), each band span holding its extraction, estimate
+and set_tf and lying inside its level's regression, each detrend inside its
+level's STFT; or the PROFMARK lines of the same run do not partition into
+those phases; or, with viztracer installed, the spans do not reach the
+trace on the "mtproc phases + counters" track with the stub's `stft` call
+(MainThread) inside the "L0 STFT" span; or the tracemalloc diff table, on
+two snapshots around a retained 16 MiB bytearray, a retained 1 MiB one and
+a freed 32 MiB one, does not put the 16 MiB one first (+16 MiB to 1 kiB in
+two blocks -- the bytearray object and its separate buffer -- at the
+allocating line of `_stub_retained`, its caller in the chain) and the 1 MiB
+one (`_stub_small`) second, or lists the freed one at all.
 """
 
 from __future__ import annotations
@@ -148,8 +164,184 @@ def test_sampler_on_a_sleeping_child() -> None:
           f"{hold[0]['t1'] - hold[0]['t0']:.2f} s at {table.loc['hold', 'peak_rss_gib'] * 1024:.0f} MiB")
 
 
+STUB = "profile_unit_stub_pipeline"
+
+
+def _stub_module():
+    import time
+    import types
+
+    mod = types.ModuleType(STUB)
+
+    def update_dataset_df(i_dec_level):
+        time.sleep(0.002)
+
+    def detrend():
+        time.sleep(0.002)
+
+    def stft(tfk, i_dec_level):
+        time.sleep(0.001)
+        mod.detrend()
+        time.sleep(0.001)
+
+    def get_band(band, dec_level_config=None):
+        return band
+
+    def estimate():
+        time.sleep(0.001)
+
+    def set_tf():
+        pass
+
+    def regression(i_dec_level, bands):
+        for _ch in ("ex", "ey"):  # aurora: channels outside, bands inside
+            for band in bands:
+                mod.get_band(band)
+                mod.estimate()
+                mod.set_tf()
+
+    def pipeline(bands):
+        for level in (0, 1):
+            mod.update_dataset_df(i_dec_level=level)
+            mod.stft(None, level)
+            mod.regression(level, bands)
+
+    for f in (update_dataset_df, detrend, stft, get_band, estimate, set_tf, regression, pipeline):
+        setattr(mod, f.__name__, f)
+    sys.modules[STUB] = mod
+    pr.TARGETS["stubtest"] = [(STUB, "update_dataset_df", pr._read_or_decimate, "P"),
+                              (STUB, "stft", "L{L} STFT", "P"), (STUB, "detrend", "stft: detrend", "D"),
+                              (STUB, "regression", "L{L} regression", "P"),
+                              (STUB, "get_band", "band: extraction", "D"),
+                              (STUB, "estimate", "band: RME_RR.estimate", "D"), (STUB, "set_tf", "band: set_tf", "D")]
+    return mod
+
+
+def _stub_retained():
+    return bytearray(16 * 2**20)
+
+
+def _stub_small():
+    return bytearray(2**20)
+
+
+def _stub_freed():
+    buf = bytearray(32 * 2**20)
+    return len(buf)
+
+
+def _inside(inner, outer):
+    return outer["t0"] <= inner["t0"] and inner["t1"] <= outer["t1"]
+
+
+def test_trace_markers_and_tm_diff() -> None:
+    import inspect
+    import io
+    import json
+    import re
+    import types
+    import tracemalloc
+
+    mod = _stub_module()
+    missing = pr.install_markers("stubtest")
+    assert not [m for m in missing if STUB in m], missing
+    bands = [types.SimpleNamespace(center_period=0.5), types.SimpleNamespace(center_period=2.0)]
+    spans: list = []
+    tracker = pr.PhaseTracker()
+    real_stderr = sys.__stderr__
+    sys.__stderr__ = buf = io.StringIO()
+    try:
+        pr._SINKS[:] = [pr.SpanSink(spans.append), tracker]
+        t0 = __import__("time").time()
+        mod.pipeline(bands)
+        t1 = __import__("time").time()
+    finally:
+        pr._SINKS[:] = []
+        sys.__stderr__ = real_stderr
+    phases = [sp for sp in spans if sp["kind"] == "P"]
+    want = ["L0 read TS", "L0 STFT", "L0 regression", "L1 decimate TS", "L1 STFT", "L1 regression"]
+    assert [sp["name"] for sp in phases] == want, [sp["name"] for sp in phases]
+    band_spans = [sp for sp in spans if sp["kind"] == "band"]
+    want_bands = [f"L{lv} band {p:g} s {ch}" for lv in (0, 1) for ch in ("ex", "ey") for p in (0.5, 2.0)]
+    assert [sp["name"] for sp in band_spans] == want_bands, [sp["name"] for sp in band_spans]
+    details = [sp for sp in spans if sp["kind"] == "D"]
+    for bs in band_spans:
+        inner = [d["name"] for d in details if d["name"].startswith("band:") and _inside(d, bs)]
+        assert inner == ["band: extraction", "band: RME_RR.estimate", "band: set_tf"], (bs["name"], inner)
+        assert all(d["band"] == bs["band"] for d in details if d["name"].startswith("band:") and _inside(d, bs))
+        reg = next(sp for sp in phases if sp["name"] == f"L{bs['level']} regression")
+        assert _inside(bs, reg), bs
+    for d in (d for d in details if d["name"] == "stft: detrend"):
+        assert _inside(d, next(sp for sp in phases if sp["name"] == f"L{d['level']} STFT")), d
+    marked = pr.phases_from_marks(pr.mark_intervals(pr.parse_log(buf.getvalue())), t0, t1, min_s=0.0)
+    got = [pc["name"] for pc in marked if pc["name"] not in ("python start + imports", "(untracked)", "exit")]
+    assert got == want, got
+    print(f"  stub: {len(phases)} phase spans, {len(band_spans)} band spans, {len(details)} details; "
+          f"PROFMARK lines partition into the same phases")
+
+    try:
+        from viztracer import VizTracer
+    except ImportError:
+        print("  viztracer not installed: the trace round trip is not checked")
+    else:
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as d:
+            out = Path(d) / "stub.json"
+            tr = VizTracer(tracer_entries=200000, ignore_c_function=False, min_duration=0, dump_raw=True,
+                           verbose=0, output_file=str(out))
+            pump = pr.VizPump(tr, interval=0.05)
+            sys.__stderr__ = io.StringIO()
+            try:
+                pr._SINKS[:] = [pr.SpanSink(pump.emit, clock=tr.getts), pr.PhaseTracker()]
+                pump.start()
+                tr.start()
+                mod.pipeline(bands)
+            finally:
+                pr._SINKS[:] = []
+                sys.__stderr__ = real_stderr
+                pump.halt.set()
+                pump.join()
+                tr.stop()
+                tr.save()
+            events = json.loads(out.read_text(encoding="utf-8"))["traceEvents"]
+        names = {e["tid"]: e["args"]["name"] for e in events if e.get("ph") == "M" and e.get("name") == "thread_name"}
+        track = [e for e in events if e.get("ph") == "X" and names.get(e.get("tid")) == pr.SPAN_TRACK]
+        assert [e["name"] for e in track if e["cat"] == "P"] == want, [e["name"] for e in track]
+        l0 = next(e for e in track if e["name"] == "L0 STFT")
+        calls = [e for e in events if e.get("cat") == "fee" and names.get(e.get("tid")) == "MainThread"
+                 and re.match(r"^(\S+\.)?stft \(", e["name"])]
+        assert len(calls) == 2 and any(l0["ts"] <= c["ts"] and c["ts"] + c["dur"] <= l0["ts"] + l0["dur"]
+                                       for c in calls), (l0, calls)
+        assert any(e.get("ph") == "C" and e["name"] == "memory (GiB)" for e in events), "no RSS counter"
+        print(f"  viztracer: {len(track)} spans on '{pr.SPAN_TRACK}', the stub's stft call inside 'L0 STFT'")
+
+    tracemalloc.start(10)
+    try:
+        s0 = tracemalloc.take_snapshot()
+        kept = _stub_retained()
+        small = _stub_small()
+        _stub_freed()
+        s1 = tracemalloc.take_snapshot()
+    finally:
+        tracemalloc.stop()
+    lines, first = inspect.getsourcelines(_stub_retained)
+    line = first + next(i for i, ln in enumerate(lines) if "bytearray" in ln)
+    for table in (pr.tm_diff_table(s1, s0, "stub", 15), pr.tm_diff_table(pr.tm_group(s1), pr.tm_group(s0), "stub", 15)):
+        top = table.iloc[0]
+        assert top["site"] == f"profile_unit.py:{line}" and top["function"] == "_stub_retained", top.to_dict()
+        assert 16.0 <= top["plus_mib"] <= 16.0 + 1 / 1024 and top["blocks"] == 2, top.to_dict()
+        assert "test_trace_markers_and_tm_diff" in top["chain"], top["chain"]
+        assert table.iloc[1]["function"] == "_stub_small" and 1.0 <= table.iloc[1]["plus_mib"] <= 1.0 + 1 / 1024, table
+        assert "_stub_freed" not in set(table["function"]), table
+    print(f"  tracemalloc diff: +{top['plus_mib']:.4f} MiB at {top['site']} ({top['function']}), "
+          f"called from {top['chain'].split('  <-  ')[0]}; the 1 MiB one second; the freed 32 MiB absent")
+    del kept, small
+
+
 if __name__ == "__main__":
-    tests = [test_rr_log_phases, test_marks_partition_and_self_time, test_sampler_on_a_sleeping_child]
+    tests = [test_rr_log_phases, test_marks_partition_and_self_time, test_sampler_on_a_sleeping_child,
+             test_trace_markers_and_tm_diff]
     print(__doc__.split("**This test fails if**")[1].strip())
     print()
     for test in tests:
