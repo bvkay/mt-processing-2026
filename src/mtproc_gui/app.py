@@ -26,7 +26,7 @@ is asked for the selection with the current remote and ladder.
 
 `MainWindow` is a QTabWidget over the nine tabs in the MATLAB app's order (QC
 first: Metadata, Time Series, Spectra, Spectrogram, Coherence; then Filter Data,
-Process, Cross-powers, View EDIs), a status bar, a File menu and, under the tabs in a vertical
+Cross-powers, Process, View EDIs), a status bar, a File menu and, under the tabs in a vertical
 `QSplitter`, the `console.ConsoleStrip` (the runner's log, loguru, `qc_started`).
 """
 
@@ -282,8 +282,8 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.spectrogram_tab, "Spectrogram")
         self.tabs.addTab(self.coherence_tab, "Coherence")
         self.tabs.addTab(self.filters_tab, "Filter Data")
-        self.tabs.addTab(self.process_tab, "Process")
         self.tabs.addTab(self.crosspower_tab, "Cross-powers")
+        self.tabs.addTab(self.process_tab, "Process")
         self.tabs.addTab(self.edis_tab, "View EDIs")
 
         self.metadata_tab.open_requested.connect(self.choose_survey)

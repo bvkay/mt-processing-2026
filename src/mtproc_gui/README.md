@@ -288,10 +288,10 @@ src/mtproc_gui/
         coherence.py   CoherenceTab   band lines per pair, two aligned columns
         filters.py     FiltersTab     previews the site's filter list on a loaded
                                       window; drives <survey>/filters.yaml
-        process.py     ProcessTab     the MATLAB Process Data tab's rows; drives
-                                      process_rr / build_stack
         crosspower.py  CrossPowerTab  one site's chunk impedances (time panel,
                                       polar plane); drives <survey>/masks.yaml
+        process.py     ProcessTab     the MATLAB Process Data tab's rows; drives
+                                      process_rr / build_stack
         edis.py        EdiTab         mtpy-v2 draws <workspace>/tf/*.edi +
                                       reference_edis.yaml on one live canvas
 ```
@@ -957,30 +957,48 @@ so its criteria can be read top to bottom.)
   processing window while one is set there for this site; then the site's
   2 h QC windows, the tree's loaded one followed while a QC window is the
   choice), Band
-  (every band of the survey's lemimt scheme by period, "longer than a chunk"
-  on the levels whose 128-point window does not fit a chunk four times),
-  Chunk (1, 2, 5 or 10 min, 10 by default) and Compute: `mtproc.crosspower.
+  (every band of the survey's lemimt scheme by period, "(m chunks a spot)"
+  on a level shown on groups of m chunks, "(no spot: m chunks exceed the
+  window)" on a level with no group in the computed window),
+  Chunk (1, 2, 5 or 10 min, 10 by default; a change re-bins the result
+  without reading anything) and Compute: `mtproc.crosspower.
   chunk_impedances` in a `ReadThread` under `State.archive_lock`, 4 threads,
   on the archives processing reads -- the filtered variant when
   `mtproc.ingest.variant_ready` says it is built, else the raw archive with
   "raw archive (filtered variant not built)" on the status line
   (`processing_source`; never `State.processing_archive`, which builds a
-  missing variant: a view writes no product). Per chunk and band: Z = <E R*>
-  <H R*>^-1 from Hann STFTs of the band's level (50 % overlap, every window
-  in the chunk, calibrated by the filter chain aurora removes), the
-  coherence of E with the E that Z predicts, the STFT window count and the
-  chunk's |H| and |E|; the archive is streamed chunk by chunk (a chunk plus
-  64 s either side is all that is held). Views: the time panel -- log10 |Z|,
-  phase, coherence, log10 |H| and |E| against chunk start, xy blue and yx
-  red as mtpy draws them -- and the polar plane (log10 |Z|, phase) for xy over
-  yx; the time axis is UTC dates (hours, or days over a record of days);
-  past 300 chunks the spots shrink; a masked chunk is drawn hollow, a
+  missing variant: a view writes no product). **Windows once, chunks as
+  bins**: `compute_windows` reads the record once in 10 min blocks (a block
+  plus 64 s either side is all that is held) and keeps every STFT window's
+  band sums -- per 60 s atom for the levels whose window is at most 60 s,
+  per window for the deeper ones, which are decimated from a stitched
+  level-K stream rather than re-read -- and `bin_windows` groups them into
+  chunks (numpy sums: 23 ms at 10 min, 52 ms at 1 min for 44 h). Every
+  window sits on one grid per level counted from the UTC epoch, so a new
+  chunk length changes the grouping and never the windows. Per group and
+  band: Z = <E R*> <H R*>^-1 from Hann STFTs of the band's level (50 %
+  overlap, calibrated by the filter chain aurora removes), the coherence of
+  E with the E that Z predicts, the STFT window count and the group's |H|
+  and |E|. A level is shown on groups of m chunks, m the smallest giving
+  every band of the level 32 degrees of freedom and 4 windows: at 1000 Hz
+  and 10 min chunks levels 0-4 one chunk, level 5 two, 6 seven, 7 28, 8 112
+  and 9 448 (so on a 2-day record level 9 has no spot); at 1 min, level 3
+  two chunks and level 4 five. Views (`mtproc.crosspower.band_view`, the
+  band's own grid): the time panel -- log10 |Z|, phase, coherence, log10
+  |H| and |E|, each spot at its group's centre with, for groups of more
+  than one chunk, a bar over the group's span, xy blue and yx red as mtpy
+  draws them -- and the polar plane (log10 |Z|, phase) for xy over yx; the
+  time axis is UTC dates (hours, or days over a record of days); past 300
+  spots they shrink; a group with any kept window under a mask applying to
+  the band is drawn hollow (`masked_chunks`: 1 partly, 2 fully; the count
+  above the list says "3 of 124 groups of 2 chunks masked (1 partly)"), a
   selected one ringed in amber. A
   left-drag on any panel draws a rubber band (`SelectBox`) and selects the
-  chunks inside it; "Mask selected" adds one mask per run of consecutive
-  chunks (`bands: all` from the time panel with "all bands" ticked, the
-  band's [pmin, pmax] from the polar plane), "Unmask selected" cuts the
-  selected chunks out of the masks that apply to the band, the list's reason
+  groups inside it (a band on another grid clears it); "Mask selected" adds
+  one mask per run of consecutive groups over their span (`bands: all` from
+  the time panel with "all bands" ticked, the band's [pmin, pmax] from the
+  polar plane), "Unmask selected" cuts the selected groups' spans out of
+  the masks that apply to the band, the list's reason
   cell is editable, Remove drops rows and Save masks writes
   `<survey>/masks.yaml` (`mtproc.masks.save_masks`: only this site's block
   changes). **What processing does with it** (the status line says it:
@@ -1001,16 +1019,20 @@ so its criteria can be read top to bottom.)
   later bands of the same decimation level, on stock aurora only -- the
   fork resets it per regression). It also acts in
   `mtproc.crosspower.stack_impedance(result, masks)`, the classical
-  cross-power editor's estimate: per band, the kept chunks' <E R*> summed
-  times the inverse of their <H R*> summed, with a delete-one-chunk
-  jackknife error -- a library function, not in the GUI and not yet written
-  as an EDI (tests/crosspower_unit.py 7: within 2 % of the known Z on the
-  synthetic archive at levels 0-1 once the burst chunk is masked, 5.5 %
+  cross-power editor's estimate: per band, every kept STFT window no mask
+  covering the band overlaps (per 60 s atom at the atom levels, per window
+  below), <E R*> summed times the inverse of <H R*> summed -- the same for
+  every chunk length, and including the windows of a level with no display
+  group -- with a delete-one-group jackknife error over the band's display
+  groups, weighted by their window counts and reported from 5 groups on --
+  a library function, not in the GUI and not yet written as an EDI
+  (tests/crosspower_unit.py 12a-b: within 1.7 % of the known Z on the
+  synthetic archive at levels 0-1 once the burst chunk is masked, 5.1 %
   median off with it in). Timings on this machine, 4 threads, with the
   remote: the whole overlap of Morocco C18 rr C19 (filtered variants,
-  43.8 h, two aurora jobs running alongside) 31-37 s in 263 chunks of
-  10 min (peak process RSS 0.52-0.65 GB) and 45-56 s in 2629 chunks of 1 min
-  (0.33-0.50 GB); Curnamona D02 rr E08's 41.3 h in 31.5 s (smoke (34)); 2 h windows
+  43.8 h, two aurora jobs running alongside) 31-37 s (peak process RSS
+  0.52-0.65 GB), any chunk length, re-binned in 23-52 ms; Curnamona D02 rr
+  E08's 41.3 h in 31.5 s (smoke (34)); 2 h windows
   at 1000 Hz: Curnamona D02 rr E08 2.0-3.0 s (4.5 s on one thread), Morocco
   C23 rr C22 2.1 s in 10 min chunks, 2.9 s in 1 min chunks. Checked against
   the processed EDI: on D02's fourth window the
