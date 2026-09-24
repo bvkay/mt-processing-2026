@@ -470,3 +470,11 @@ samples staying the stored words.
 **Effect:** about 2 s of align/copy and 7.3 s in `compute_weights` (34 % of the level-0 regression) per 6 h estimate on the fork.
 
 **Ask upstream:** extract each band once and reuse it for both outputs; compute the weights with a single einsum over a boolean mask.
+
+## 30. mt-io 0.0.5: a blank B423 header fails with an IndexError deep in the parser (2026-09-25)
+
+**Where:** `mt_io/lemi/lemi423.py` `Read_Lemi_Header.read` hands the header lines to `_extract_instrument_number` and `_extract_deployment_time` without checking there are any. A file whose first 1024 bytes are zero (a LEMI-423 writes one when its card fails mid-record: Morocco B27, `1678734241.B423`, 162 MB) or the few-second files of a full card (R05: 265 files of about 5 s) give `IndexError: list index out of range` with no file name.
+
+**Effect:** one bad file aborts the site's ingest.
+
+**Ask upstream:** raise a ValueError naming the file when the header block has no `%LEMI` line (the mt-io fork branch does). mtproc skips such files with a warning and refuses a site whose files hold under one percent of their nominal length.

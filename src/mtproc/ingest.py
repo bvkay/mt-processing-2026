@@ -787,6 +787,64 @@ def _edl_runs_by_samples(files: list[Path], stamps: list[int], drop: set[int], r
     return runs
 
 
+B423_HEADER_BYTES = 1024
+B423_MIN_FILL = 0.01   # a site whose files hold under 1 % of their nominal length was written with no card space
+B423_MIN_FILES_FOR_FILL = 10
+
+
+def readable_b423(files: list[Path]) -> tuple[list[Path], list[str]]:
+    """Split B423 files into the readable ones and reasons for the rest.
+
+    A logger that loses its card mid-record writes a file of the right
+    length whose 1024-byte header block is all zero, and one whose card is
+    already full writes files of a few seconds. Neither can be used, and
+    one such file must not abort the site: it is left out here, with a
+    reason, and the run splits at the gap it leaves.
+
+    Args:
+        files (list[Path]): The site's B423 files in name order.
+
+    Returns:
+        tuple[list[Path], list[str]]: The files to read, and one line per
+        file left out naming it and the reason.
+
+    Raises:
+        ValueError: If, over ten or more files, the median file holds under
+            one percent of the interval between file names (at the nominal
+            1000 records a second), which means the logger had no card
+            space and there is no recording to ingest.
+    """
+    from mt_io.lemi.lemi423 import Read_Lemi_Data, Read_Lemi_Header
+
+    record = int(Read_Lemi_Data.binary_format.itemsize)
+    keep, skipped = [], []
+    for f in files:
+        size = f.stat().st_size
+        if size < B423_HEADER_BYTES + record:
+            skipped.append(f"{f.name}: {size} bytes, no data")
+            continue
+        try:
+            Read_Lemi_Header(f).read()
+        except (ValueError, IndexError) as exc:
+            skipped.append(f"{f.name}: header unreadable ({str(exc).split(': ', 1)[-1]})")
+            continue
+        keep.append(f)
+    if len(keep) >= B423_MIN_FILES_FOR_FILL:
+        epochs = sorted(int(f.stem) for f in keep if f.stem.isdigit())
+        spacing = sorted(b - a for a, b in zip(epochs, epochs[1:]))
+        if spacing:
+            nominal = spacing[len(spacing) // 2]
+            seconds = sorted((f.stat().st_size - B423_HEADER_BYTES) / record / 1000.0 for f in keep)
+            fill = seconds[len(seconds) // 2] / nominal if nominal > 0 else 1.0
+            if fill < B423_MIN_FILL:
+                raise ValueError(
+                    f"the B423 files are nearly empty (a median of {seconds[len(seconds) // 2]:.0f} s of data "
+                    f"per file, {nominal} s apart, over {len(keep)} files): the logger had no card space; "
+                    f"there is no recording to ingest"
+                )
+    return keep, skipped
+
+
 def _group_contiguous(files: list[Path], max_run_files: int | None = None,
                       instrument: str = "lemi423", rate: float | None = None) -> list[list[Path]]:
     """Group data files into contiguous runs using the starts their names carry.
@@ -909,6 +967,17 @@ def ingest_site(
     instrument = survey.instrument_of(site_name)
     electric_gain = _electric_gain(survey, site, instrument, site_dir)
     files = select_files(site_dir, start, end, instrument)
+    skipped: list[str] = []
+    if instrument == "lemi423":
+        try:
+            files, skipped = readable_b423(files)
+        except ValueError as exc:
+            raise ValueError(f"{site_name}: {exc}") from None
+        for line in skipped:
+            logger.warning(f"{site_name}: skipping {line}")
+        if not files:
+            raise ValueError(f"{site_name}: none of the {len(skipped)} B423 files can be read: "
+                             + "; ".join(skipped))
 
     out_path = Path(out_path) if out_path else default_archive_path(survey, site_name)
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -966,6 +1035,10 @@ def ingest_site(
             else:
                 run = read_run(instrument, group, site, site_dir, calibration=coil)
             _keep_channels(run, site)
+            if skipped and i == 1:
+                prior = run.run_metadata.comments.value
+                note = "skipped unreadable file(s): " + "; ".join(skipped)
+                run.run_metadata.comments.value = f"{prior}; {note}" if prior else note
             carried = [c for c in ("ex", "ey") if electric_gain != 1.0 and c in run.dataset]
             if carried:  # the filter is in their chains (read_run); the comment records it in text
                 note = f"electric gain {electric_gain:g} on {carried} (declared from the field notes)"

@@ -116,11 +116,18 @@ comment must carry "electric gain 10 on ['ex', 'ey'] (declared from the field
 notes)" and the default-gain archive's no such line. The key in the own entry
 of a site that is not an EDL must raise before the existing archive is
 touched.
+
+It also fails if `readable_b423` does not leave out a B423 file whose
+1024-byte header block is all zero (naming it, with the reason) or a
+file with no records while keeping the readable files, or does not refuse
+a folder of ten or more files whose median file holds under one percent of
+the interval between file names, with a message about card space.
 """
 
 from __future__ import annotations
 
 import sys
+import tempfile
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
@@ -239,8 +246,9 @@ def run_ingest(filters, ignore_filters: bool):
     """Run `ingest_site` with every side effect recorded instead of performed.
 
     The recorders stand in for `read_lemi423` (its calls), `MTH5` (the files
-    it opens), and `_keep_channels`, `_standardise_e_orientation` and
-    `_apply_h_scale` (call counts); `read_run` fails the test if reached.
+    it opens), `readable_b423` (the empty stand-in file passes), and
+    `_keep_channels`, `_standardise_e_orientation` and `_apply_h_scale`
+    (call counts); `read_run` fails the test if reached.
     None concerns the declared filters: `ingest_site` applies none of them
     (`mtproc.ingest.build_variant` applies them all through
     `mtproc.noise.apply_filters_arrays`, `replace` by `_replace_from_donors`),
@@ -268,10 +276,11 @@ def run_ingest(filters, ignore_filters: bool):
         raise AssertionError("the LEMI-423 path called read_run (the LEMI-424/EDL reader)")
 
     original = {name: getattr(ingest, name) for name in
-                ("read_lemi423", "read_run", "MTH5", "_keep_channels", "_standardise_e_orientation",
-                 "_apply_h_scale")}
+                ("read_lemi423", "read_run", "MTH5", "readable_b423", "_keep_channels",
+                 "_standardise_e_orientation", "_apply_h_scale")}
     try:
         ingest.read_lemi423 = read
+        ingest.readable_b423 = lambda files: (files, [])
         ingest.read_run = not_this_reader
         ingest.MTH5 = _MTH5
         ingest._keep_channels = bump("keep")
@@ -328,10 +337,12 @@ def test_run_comment_carries_no_filters() -> None:
         survey = make_survey(FILTERS)
         run = _Run()
         original = {name: getattr(ingest, name) for name in
-                    ("read_lemi423", "MTH5", "_keep_channels", "_standardise_e_orientation", "_apply_h_scale")}
+                    ("read_lemi423", "MTH5", "readable_b423", "_keep_channels",
+                     "_standardise_e_orientation", "_apply_h_scale")}
         try:
             ingest.read_lemi423 = lambda *_a, **_k: run
             ingest.MTH5 = _MTH5
+            ingest.readable_b423 = lambda files: (files, [])
             ingest._keep_channels = lambda *_a, **_k: None
             ingest._standardise_e_orientation = lambda *_a, **_k: None
             ingest._apply_h_scale = lambda *_a, **_k: None
@@ -1045,6 +1056,35 @@ def test_glued_altitude_header_line() -> None:
     assert abs(reader.elevation - 125.2) < 1e-9, reader.elevation
     print("  glued '%Alt1060.0' parses to 1060.0 m; spaced form unchanged")
 
+
+
+def test_readable_b423() -> None:
+    from mtio_fork_unit import _write_b423
+
+    from mtproc.ingest import readable_b423
+
+    with tempfile.TemporaryDirectory() as tmp:
+        folder = Path(tmp)
+        good = [_write_b423(folder / f"{1678728841 + 5400 * k}.B423", epoch=1678728841 + 5400 * k, n=4000) for k in (0, 2)]
+        blank = folder / "1678734241.B423"
+        blank.write_bytes(bytes(1024) + bytes(200_000))          # a full-length file, header block all zero
+        tiny = folder / "1678745041.B423"
+        tiny.write_bytes(bytes(100))
+        keep, skipped = readable_b423(sorted(folder.glob("*.B423")))
+        assert keep == sorted(good), keep
+        assert len(skipped) == 2 and "1678734241.B423" in skipped[0] and "header unreadable" in skipped[0], skipped
+        assert "1678745041.B423" in skipped[1] and "no data" in skipped[1], skipped
+        print(f"  a blank-header file and a 100-byte file are left out with reasons: {skipped}")
+        # a logger with no card space: every file a few kilobytes
+        empty = Path(tmp) / "empty"; empty.mkdir()
+        files = [_write_b423(empty / f"{1690274004 + 5400 * k}.B423", epoch=1690274004 + 5400 * k, n=6000) for k in range(12)]
+        try:
+            readable_b423(files)
+        except ValueError as exc:
+            assert "nearly empty" in str(exc) and "card space" in str(exc), exc
+        else:
+            raise AssertionError("a folder of nearly empty files was not refused")
+        print("  twelve files holding six seconds each, 5400 s apart, are refused as nearly empty")
 
 if __name__ == "__main__":
     SCRATCH.mkdir(parents=True, exist_ok=True)
