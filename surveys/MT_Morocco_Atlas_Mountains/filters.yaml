@@ -470,3 +470,32 @@ B05:
     harmonics: 9
     q: 30.0
     passes: 2
+R01:
+- notch:
+    f0: 50.0
+    harmonics: 9
+    q: 50.0
+    passes: 2
+R02:
+- notch:
+    f0: 50.0
+    harmonics: 9
+    q: 50.0
+    passes: 2
+R03:
+- notch:
+    f0: 50.0
+    harmonics: 9
+    q: 50.0
+    passes: 2
+- notch:
+    f0: 60.0
+    harmonics: 1
+    q: 275.0
+    passes: 1
+R04:
+- notch:
+    f0: 50.0
+    harmonics: 9
+    q: 50.0
+    passes: 2
