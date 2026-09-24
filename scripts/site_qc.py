@@ -1,8 +1,10 @@
-"""Per-site time-resolved QC: four figures per site, one command.
+# -*- coding: utf-8 -*-
+"""
+Per-site time-resolved QC: four figures per site, one command
 
-The AusLAMP per-site QC pages, ported to broadband. One run per site gives a
-student everything needed to decide whether a site is worth processing and
-which stretches of it to mask:
+The AusLAMP per-site QC pages, ported to broadband. One run per site gives
+what is needed to decide whether a site is worth processing and which
+stretches of it to mask:
 
   <site>_01_overview.png        the whole record as laid, one panel per
                                 channel, 1-second means over the 1-second
@@ -15,20 +17,16 @@ which stretches of it to mask:
   <site>_04_spectrogram.png     power density in dB per channel, period (log)
                                 against time
 
-All four read the site's MTH5 in <workspace>/mth5/<site>.h5, every run
+All four read the site's MTH5 in <workspace>/mth5/<site>.h5, with every run
 concatenated onto one sample grid (NaN in the gaps) so the whole deployment
-appears, not just the longest run. A remote is placed on the *local* sample
-grid, so all four figures share one time axis and the coherogram can be read
-straight off the overview. Magnetics carry the scalar part of the MTH5 filter
-chain only (LEMI linear coefficient x `lemi423_b_scale`); the coil response
-is a shape, and a DC-ish overview does not need it. Electrics are fully
-calibrated -- their chain is two coefficient filters, dipole length included.
+appears. A remote is placed on the local sample grid, so all four figures
+share one time axis and the coherogram lines up with the overview. Magnetics
+carry the scalar part of the MTH5 filter chain only (LEMI linear coefficient
+x `lemi423_b_scale`); the coil response is a shape, which a near-DC overview
+does not need. Electrics are fully calibrated: their chain is two
+coefficient filters, dipole length included.
 
-Usage:
-    python scripts/site_qc.py <survey.yaml> <site> [--remote NAME] [--win MIN]
-                              [--step MIN] [--smooth HOURS] [--out-dir DIR]
-
-Tests, run at the bottom of every invocation and printed as CHECK lines.
+Checks run at the end of every invocation and are printed as CHECK lines.
 **They fail if**
 
 (a) *calibration and placement*: for any channel, a sample read back
@@ -44,27 +42,33 @@ Tests, run at the bottom of every invocation and printed as CHECK lines.
     partly-empty block still counts once).
 (c) *the dead band*: the median Bx-Ey and By-Ex coherence over 2-10 s is not
     at least 0.15 below the median over both 0.1-1 s and 30-300 s, i.e. the
-    figures do not reproduce a dead band known to be there (Curnamona,
-    HANDOVER.md fact 7). Reported for every site, asserted only with
-    --assert-dead-band, since a clean site legitimately has none.
+    figures do not reproduce a dead band known to be there.
+    Reported for every site and asserted with --assert-dead-band, since a
+    clean site has none.
 
-Two things the checks deliberately do **not** assert, both established on D02
-rather than assumed:
+Two quantities are reported rather than asserted:
 
-- *the median of the 1-second means is not the median of the samples*. The
-  original criterion ("within 1%") fails on D02 by 1-5% of a standard
-  deviation. It is not a bug: the two means agree to 3e-16 of a standard
-  deviation, so the reduction is exact, and the medians differ because block
-  averaging changes the distribution's shape -- the median of the means
-  tracks the mean, the sample median tracks the raw distribution, which the
-  high-frequency content skews. The difference is printed in units of the
-  channel's standard deviation and flagged above 0.1 sigma as worth a look.
-- *the 50 Hz mains does not appear as a line in figure 04*, and cannot. At
-  D02 it stands only ~2 dB above the broadband floor in a 1 Hz resolution
-  bandwidth, and a log-period bin at 8 per decade is ~15 Hz wide at 50 Hz, so
-  the line is diluted to ~0.2 dB whatever the colour limits. The excess is
-  therefore measured on the level-0 spectra and printed per channel, which is
-  the number a student actually needs.
+- The median of the 1-second means differs from the median of the samples, by
+  a few % of a standard deviation. The two means agree to rounding error, so
+  the reduction is exact; the medians differ because block averaging changes
+  the distribution's shape. The median of the means tracks the mean, while the
+  sample median tracks the raw distribution, which the high-frequency content
+  skews. The difference is printed in units of the channel's standard
+  deviation and flagged above 0.1 sigma.
+- The 50 Hz mains line is invisible in figure 04. A line a few dB above the
+  broadband floor in a 1 Hz resolution bandwidth is diluted to a fraction of a
+  dB by a log-period bin at 8 per decade, about 15 Hz wide at 50 Hz, whatever
+  the colour limits. The excess is measured on the level-0 spectra instead and
+  printed per channel.
+
+Usage:
+    python scripts/site_qc.py <survey.yaml> <site> [--remote NAME] [--win MIN]
+                              [--step MIN] [--smooth HOURS] [--out-dir DIR]
+                              [--assert-dead-band]
+
+@author: ben kay (ben@auscope.org.au)
+
+:license: MIT
 """
 
 import argparse
@@ -122,7 +126,8 @@ MEDIAN_NOTE = 0.1   # sigma, above which the two medians are worth a look
 
 
 def parse_args(argv=None) -> argparse.Namespace:
-    p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    """Parse the command line of site_qc.py."""
+    p = argparse.ArgumentParser(description=next(line for line in __doc__.strip().splitlines() if line.strip()))
     p.add_argument("survey_yaml", help="path to the survey's survey.yaml")
     p.add_argument("site", help="site name (MTH5 in <workspace>/mth5/<site>.h5)")
     p.add_argument("--remote", metavar="NAME", help="remote site: adds four local-remote pairs")
@@ -138,12 +143,17 @@ def parse_args(argv=None) -> argparse.Namespace:
     p.add_argument(
         "--assert-dead-band",
         action="store_true",
-        help="treat a missing 2-10 s dead band in Bx-Ey/By-Ex as a failure (Curnamona)",
+        help="treat a missing 2-10 s dead band in Bx-Ey/By-Ex as a failure (for a survey known to have one)",
     )
     return p.parse_args(argv)
 
 
 def station_h5(survey: Survey, station: str) -> Path:
+    """Return <workspace>/mth5/<station>.h5.
+
+    Raises:
+        FileNotFoundError: When the station has no MTH5.
+    """
     h5 = survey.workspace / "mth5" / f"{station}.h5"
     if not h5.exists():
         raise FileNotFoundError(f"no MTH5 for station {station!r}: {h5}")
@@ -154,13 +164,24 @@ def station_h5(survey: Survey, station: str) -> Path:
 
 
 def overview(record: Record, out: Path, survey_name: str, figsize=(15, 11), dpi=DPI):
-    """Figure 01: the whole record as laid, one panel per channel.
+    """Draw figure 01: the whole record as laid, one panel per channel.
 
-    Each panel is the 1-second mean drawn over the 1-second range, its y
-    limits the 1st to 99th percentile of the channel with a 5 per cent pad,
-    its median a dotted line and printed with the channel's spread. What it
-    is read for: a dead channel, a rail, a step, a reversed axis, and the
-    moment an electrode fails. Returns (figure, {channel: stats}).
+    Each panel is the 1-second mean drawn over the 1-second range, with y
+    limits at the 1st to 99th percentile of the 1-second means plus a 5 per
+    cent pad, and the median as a dotted line printed with the channel's
+    spread. The figure shows a dead channel, a rail, a step, a reversed axis
+    and the moment an electrode fails.
+
+    Args:
+        record (Record): The site's record.
+        out (Path): Output figure.
+        survey_name (str): Survey name for the title.
+        figsize (tuple): Figure size in inches.
+        dpi (int): Figure resolution.
+
+    Returns:
+        dict: Per channel: median, mean, std, min, max, second_median and
+        second_mean.
     """
     m = int(round(record.sample_rate))
     ticks, labels = day_axis(record.t0, record.duration_s)
@@ -183,12 +204,12 @@ def overview(record: Record, out: Path, survey_name: str, figsize=(15, 11), dpi=
         rmin, rmax = float(np.nanmin(x)) + off, float(np.nanmax(x)) + off
         # the AusLAMP panel took its limits from the 1st-99th percentile of the
         # full-rate channel. At 1000 Hz the per-second mean has 1/sqrt(1000) of
-        # the raw scatter, so those limits flatten the very curve the panel is
-        # read for: the limits here are the 1st-99th percentile of the 1-second
-        # means and the 1-second range is left to clip against them.
+        # the raw scatter, so those limits would flatten the mean curve: the
+        # limits here are the 1st-99th percentile of the 1-second means, and
+        # the 1-second range clips against them.
         p_lo, p_hi = np.nanpercentile(mid, (1, 99))
         if p_hi <= p_lo:
-            # a railed or dead channel is flat (Burra hz sits on the int32 rail
+            # a railed or dead channel is flat (a coil sitting on the int32 rail
             # for the whole record); give it a readable axis rather than
             # matplotlib's 1e-14 offset notation
             span = max(abs(med) * 0.02, 1e-9)
@@ -247,7 +268,20 @@ def overview(record: Record, out: Path, survey_name: str, figsize=(15, 11), dpi=
 def band_coherence_figure(
     record: Record, coh_levels, out: Path, survey_name: str, smooth_h: float, step_s: float, dpi=DPI
 ):
-    """Figure 02: squared coherence per window against time, one line per band group."""
+    """Draw figure 02: squared coherence per window against time, one line per band group.
+
+    Args:
+        record (Record): The site's record.
+        coh_levels (dict): Coherence levels per pair from `cascade`.
+        out (Path): Output figure.
+        survey_name (str): Survey name for the title.
+        smooth_h (float): Running-median length in hours.
+        step_s (float): Window step in seconds.
+        dpi (int): Figure resolution.
+
+    Returns:
+        dict: Median coherence per band label, keyed by pair label.
+    """
     pairs = list(coh_levels)
     fig, axes = plt.subplots(
         len(pairs), 1, figsize=(14, 2.1 * len(pairs) + 1.2), sharex=True, layout="constrained"
@@ -289,7 +323,7 @@ def band_coherence_figure(
 def coherogram_figure(
     record: Record, coh_levels, out: Path, survey_name: str, smooth_h: float, step_s: float, dpi=DPI
 ):
-    """Figure 03: squared coherence as an image, period (log) against time, one panel per pair."""
+    """Draw figure 03: squared coherence as an image, period (log) against time, one panel per pair."""
     pairs = list(coh_levels)
     fig = plt.figure(figsize=(14, 2.3 * len(pairs) + 1.2), layout="constrained")
     gs = fig.add_gridspec(len(pairs), 2, width_ratios=[70, 1])
@@ -332,7 +366,7 @@ def coherogram_figure(
 def spectrogram_figure(
     record: Record, pow_levels, out: Path, survey_name: str, smooth_h: float, step_s: float, dpi=DPI
 ):
-    """Figure 04: power density in dB per channel, colour limits at the 2nd/98th percentile."""
+    """Draw figure 04: power density in dB per channel, colour limits at the 2nd/98th percentile."""
     chans = [c for c in CHANNELS if c in pow_levels]
     fig, axes = plt.subplots(
         len(chans), 1, figsize=(14, 2.3 * len(chans) + 1.2), sharex=True, layout="constrained"
@@ -374,7 +408,11 @@ def spectrogram_figure(
 
 
 def check_calibration(record: Record, survey: Survey, site: str, remote: str | None) -> bool:
-    """(a) Independently re-read samples from the MTH5 and compare with what was drawn."""
+    """Run check (a): re-read samples independently from the MTH5 and compare with figure 01.
+
+    Returns:
+        bool: True when every channel is within CAL_TOL sigma.
+    """
     worst = spot_check_calibration(station_h5(survey, site), survey.name, site, record)
     if remote:
         worst.update(
@@ -392,7 +430,11 @@ def check_calibration(record: Record, survey: Survey, site: str, remote: str | N
 
 
 def check_second_means(record: Record, stats: dict) -> bool:
-    """(b) The 1-second reduction is exact; and report how far the two medians sit apart."""
+    """Run check (b): the 1-second reduction is exact; also report how far the medians differ.
+
+    Returns:
+        bool: True when every channel's mean of means is within tolerance.
+    """
     ok = True
     # a block falling partly in a gap still counts once, so the mean of the
     # block means is only the record's mean where there are no gaps
@@ -413,10 +455,10 @@ def check_second_means(record: Record, stats: dict) -> bool:
 
 
 def check_lines(base_psd: dict, lines=(50.0, 100.0, 150.0)) -> None:
-    """Narrow-line report: how far each mains line stands above its own local floor.
+    """Print how far each mains line stands above its local floor, per channel.
 
     Printed rather than drawn: an 8-per-decade log-period bin at 50 Hz is
-    ~15 Hz wide and dilutes any narrow line out of figure 04 entirely.
+    about 15 Hz wide and dilutes a narrow line out of figure 04.
     """
     for comp in CHANNELS:
         if comp not in base_psd:
@@ -427,7 +469,15 @@ def check_lines(base_psd: dict, lines=(50.0, 100.0, 150.0)) -> None:
 
 
 def check_dead_band(coh_levels, assert_it: bool) -> bool:
-    """(c) Median coherence over the 2-10 s dead band against two reference bands, per pair."""
+    """Run check (c): median coherence over the 2-10 s dead band against two reference bands.
+
+    Args:
+        coh_levels (dict): Coherence levels per pair from `cascade`.
+        assert_it (bool): Whether the Bx-Ey and By-Ex drops are asserted.
+
+    Returns:
+        bool: False when an asserted pair drops by less than DEAD_BAND_DROP.
+    """
     ok = True
     for pair, levels in coh_levels.items():
         t = levels[0][0]
@@ -452,6 +502,11 @@ def check_dead_band(coh_levels, assert_it: bool) -> bool:
 
 
 def main(argv=None) -> None:
+    """Load the record, draw the four figures and run the checks.
+
+    Args:
+        argv (list[str] | None): Command-line arguments; sys.argv when None.
+    """
     args = parse_args(argv)
     survey = Survey.from_yaml(args.survey_yaml)
     out_dir = Path(args.out_dir) if args.out_dir else survey.workspace / "qc"
@@ -487,7 +542,7 @@ def main(argv=None) -> None:
     logger.info(f"figure 01: {t_fig1:.1f} s -> {fig01}")
 
     # before the cascade: it replaces record.arrays with each level's decimated
-    # copy, so the full-rate samples are only there to be re-read now
+    # copy, so the full-rate samples are available for the re-read only now
     print()
     ok = check_calibration(record, survey, args.site, args.remote)
     ok &= check_second_means(record, stats)

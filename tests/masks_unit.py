@@ -1,6 +1,17 @@
-"""Unit test for `mtproc.masks` -- masks.yaml and cutting masks out of a kernel dataset; no archive.
+# -*- coding: utf-8 -*-
+"""
+Unit test for mtproc.masks
 
+Checks masks.yaml (round trip, byte-stable blocks of other sites, duplicate
+handling) and the cutting of time masks out of an mth5 `KernelDataset`
+built from a synthetic frame. Runs without an archive.
+
+Usage:
     python tests/masks_unit.py
+
+@author: ben kay (ben@auscope.org.au)
+
+:license: MIT
 
 **This test fails if**
 
@@ -9,9 +20,9 @@
    back equal to what was saved (normalised: UTC 'Z' times, earliest first,
    bands 'all' or [pmin, pmax] sorted), the file must keep its leading
    comment, and re-saving C23 with a different list must leave C10's block
-   (and the header) byte-identical in the file's text; saving C23 empty must
+   (and the header) unchanged in the file's text; saving C23 empty must
    remove its key and leave C10's bytes again; a hand-made C10 block with a
-   comment line must survive a C23 save byte for byte;
+   comment line must survive a C23 save unchanged;
 2. `apply_time_masks`, on a real mth5 `KernelDataset` built from a synthetic
    frame (local L, remote R, each one run 00:00-06:00 UTC), does not:
    split a run around a mask inside it into two rows per station with the
@@ -54,11 +65,22 @@ T0 = pd.Timestamp("2023-09-22T00:00:00", tz="UTC")
 
 
 def at(hours: float) -> pd.Timestamp:
+    """Return T0 plus a number of hours."""
     return T0 + pd.Timedelta(hours=hours)
 
 
 def block_of(text: str, site: str) -> str:
-    """The raw text of `site`'s block: its key line to the next unindented key line."""
+    """Return the raw text of a site's block in masks.yaml.
+
+    The block runs from the site's key line to the next unindented key line.
+
+    Args:
+        text (str): Text of masks.yaml.
+        site (str): Site key.
+
+    Returns:
+        str: The block, or "" when the site has none.
+    """
     lines = text.splitlines(keepends=True)
     out, inside = [], False
     for line in lines:
@@ -108,7 +130,7 @@ def test_round_trip() -> None:
         text3 = path.read_text(encoding="utf-8")
         assert "C23" not in (yaml.safe_load(text3) or {}), text3
         assert block_of(text3, "C10") == c10_bytes
-        print("  two sites round-trip; re-saving and emptying C23 leaves C10's block and the header byte-identical")
+        print("  two sites round-trip; re-saving and emptying C23 leaves C10's block and the header unchanged")
 
         # a hand-edited block (a comment line inside, odd quoting) survives a save of another site
         hand = ("C10:\n# found by eye on the time series\n- {start: '2023-09-22T03:00:00Z', "
@@ -118,7 +140,7 @@ def test_round_trip() -> None:
         text4 = path.read_text(encoding="utf-8")
         assert text4.startswith(HEADER + hand), text4
         assert len(load_masks(survey_yaml, "C23")) == 2
-        print("  a hand-edited C10 block with a comment survives a C23 save byte for byte")
+        print("  a hand-edited C10 block with a comment survives a C23 save unchanged")
 
 
 def test_duplicates() -> None:
@@ -141,6 +163,15 @@ def test_duplicates() -> None:
 
 
 def kernel(rows, remote: str | None = "R") -> KernelDataset:
+    """Build a KernelDataset from (station, run, start, end) rows at 1000 Hz.
+
+    Args:
+        rows (list[tuple]): (station, run, start, end) per run.
+        remote (str | None): Remote station id; local is "L".
+
+    Returns:
+        KernelDataset: Dataset with the frame set directly.
+    """
     df = pd.DataFrame([{"survey": "S", "station": st, "run": run, "start": a, "end": b,
                         "sample_rate": 1000.0} for st, run, a, b in rows])
     kd = KernelDataset()
@@ -151,11 +182,13 @@ def kernel(rows, remote: str | None = "R") -> KernelDataset:
 
 
 def intervals(kd, station: str) -> list[tuple[pd.Timestamp, pd.Timestamp]]:
+    """Return a station's (start, end) rows of a KernelDataset, earliest first."""
     df = kd.df[kd.df.station == station].sort_values("start")
     return [(pd.Timestamp(a), pd.Timestamp(b)) for a, b in zip(df.start, df.end)]
 
 
 def mask(a: float, b: float, bands="all") -> dict:
+    """Build a time mask from hour a to hour b after T0."""
     return {"start": at(a), "end": at(b), "bands": bands, "reason": "", "found_by": "time"}
 
 

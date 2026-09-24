@@ -1,14 +1,23 @@
-"""Unit test for scripts/new_survey.py (no Qt).
+# -*- coding: utf-8 -*-
+"""
+Unit test for scripts/new_survey.py
 
+Runs without Qt, in three parts. Part 1 builds a scratch data root by hand:
+two site folders of synthetic LEMI-423 files plus a folder with no B423
+file. Each file is a 1024-byte ASCII header laid out as mt-io's
+`Read_Lemi_Header` documents it (serial, firmware, date, time, DDMM.MMMMM
+latitude and longitude, altitude, calibration coefficients) followed by 2000
+records of 30 bytes (the documented little-endian layout, the tick counter
+running 0-999 twice, i.e. 2 s at 1000 Hz). S02's files sit one folder down.
+
+Usage:
     python tests/new_survey_unit.py
 
-Part 1 builds a scratch data root by hand: two site folders of synthetic
-LEMI-423 files -- a 1024-byte ASCII header laid out as mt-io's
-`Read_Lemi_Header` documents it (serial, firmware, date, time, DDMM.MMMMM
-latitude and longitude, altitude, calibration coefficients) followed by
-2000 records of 30 bytes (the documented little-endian layout, the tick
-counter running 0-999 twice, i.e. 2 s at 1000 Hz) -- plus a folder with no
-B423 file. S02's files sit one folder down. **This test fails if**
+@author: ben kay (ben@auscope.org.au)
+
+:license: MIT
+
+**This test fails if**
 
 (1) the script exits non-zero, or the YAML does not list exactly S01 and S02
     (the folder without B423 files is not a site);
@@ -28,13 +37,13 @@ B423 file. S02's files sit one folder down. **This test fails if**
     the processing block differs; a site carries a dipole length or azimuth of
     its own (the defaults must apply until edited), or its notes are not the
     "set them from the field sheet" line; the coil response copied into
-    sensors/ is not byte-identical to surveys/burra/sensors/l120n.rsp; or
+    sensors/ is not identical to surveys/burra/sensors/l120n.rsp; or
     `Survey.site()` does not read serial/firmware/start/end back as strings
     and the dipole lengths as the defaults; or the `workspace:` key (and
     `Survey.workspace`) is not `<data_root>/work`, or the script made that
     folder (it only writes the key: on a real survey it is the data drive);
 (5) a second run without --force does not refuse (exit 2) and leave the file
-    byte-identical;
+    unchanged;
 (6) --site-table with a CSV naming S01 (dipole_length_ex 48.5, azimuth_ex
     180) and a site that does not exist (X99) does not set exactly those two
     values on S01, leave S02 as it was, and print "1 of 2 sites matched";
@@ -67,7 +76,7 @@ an EDL, EGFLP02, cut into the scratch folder). **This test fails if**
 (11) MBJ21's serial and firmware are not "160" and "1.4" (the `.inf` says
      "%LEMI424 #0160", "%FIRMWARE Ver.1.4"), its latitude and longitude are
      more than 1e-4 degree (11 m: GPS jitter over the hour) from its first data line's DDMM.MMMMM fields
-     decoded HERE (2800.28816 S, 12054.72277 E), or its span is not
+     decoded here (2800.28816 S, 12054.72277 E), or its span is not
      2024-10-25T00:00:00Z to 01:00:00Z (the last line, 00:59:59, plus one
      second); EGFLP02's span is not 2019-01-10T00:00:00Z to 01:00:00Z (the
      stamp plus 36000 samples at recorder.ini's 10 Hz), it has a latitude,
@@ -80,7 +89,7 @@ an EDL, EGFLP02, cut into the scratch folder). **This test fails if**
      hy] and MBJ21 its LEMI-424 set, EGFLP02 none of its own, with
      `defaults: sensor_type: bartington` (fluxgates at 10 Hz); or the default
      (lemi423) survey does not give EGFLP02 its own `sensor_type: bartington`;
-(13) an EDL root whose recorder.ini says 1000 Hz (Hillside's LEMI-120
+(13) an EDL root whose recorder.ini says 1000 Hz (broadband LEMI-120
      coils) does not get `defaults: sensor_type: lemi120` (read back by
      `Survey.site`), or `--channels "Bx By Ex Ey"` there is not [ex, ey, hx, hy].
 (14) the electric chain gain: over three EDL
@@ -160,7 +169,7 @@ EXPECTED_PROCESSING = {"min_period": 0.005, "max_period": 5000.0, "periods_per_d
 
 
 def ddmm(value: float, width: int, hemispheres: str) -> str:
-    """Decimal degrees -> the header's DDMM.MMMMM,H (DDDMM for longitude)."""
+    """Format decimal degrees as the header's DDMM.MMMMM,H (DDDMM for longitude)."""
     a = abs(value)
     degrees = int(a)
     return f"{degrees:0{width}d}{(a - degrees) * 60:08.5f},{hemispheres[value < 0]}"
@@ -168,6 +177,18 @@ def ddmm(value: float, width: int, hemispheres: str) -> str:
 
 def write_b423(path: Path, serial: int, firmware: str, lat: float, lon: float, alt: float,
                epoch: int, n: int = 2000) -> None:
+    """Write a synthetic B423 file at 1000 Hz.
+
+    Args:
+        path (Path): File to write; its folders are created.
+        serial (int): Logger serial number.
+        firmware (str): Firmware version, e.g. "2.1".
+        lat (float): Latitude in decimal degrees.
+        lon (float): Longitude in decimal degrees.
+        alt (float): Altitude in m.
+        epoch (int): Start epoch in seconds.
+        n (int): Number of records.
+    """
     when = pd.Timestamp(epoch, unit="s", tz="UTC")
     lines = [f"%LEMI423 #{serial:04d}", f"%FIRMWARE Ver.{firmware}", "%MADE in UKRAINE", " ",
              f"%Date {when:%Y/%m/%d}", f"%Time {when:%H:%M:%S}", "%Ubat 13.16V", "%Current 101.7mA",
@@ -187,6 +208,7 @@ def write_b423(path: Path, serial: int, firmware: str, lat: float, lon: float, a
 
 
 def build_data_root(root: Path) -> None:
+    """Rebuild part 1's data root: the SITES folders and a folder without B423 files."""
     if root.exists():
         shutil.rmtree(root)
     for folder, sub, serial, fw, lat, lon, alt, epoch, spacing, n in SITES:
@@ -198,23 +220,26 @@ def build_data_root(root: Path) -> None:
 
 
 def run(*args) -> subprocess.CompletedProcess:
+    """Run scripts/new_survey.py with `args`, output captured."""
     return subprocess.run([sys.executable, str(SCRIPT), *map(str, args)], cwd=REPO,
                           capture_output=True, text=True)
 
 
 def iso(epoch: int) -> str:
+    """Format an epoch as ISO UTC text."""
     return pd.Timestamp(epoch, unit="s", tz="UTC").strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def part1() -> None:
+    """Run part 1's checks (1)-(9) on the synthetic data root."""
     root, out = SCRATCH / "raw", SCRATCH / "synthetic" / "survey.yaml"
     build_data_root(root)
 
     # This test fails if fast_sample_rate does not read back exactly 1000.0
-    # (the rate write_b423 wrote S01's records at above): a direct call, not
-    # just the subprocess's sample_rate: 1000 line, so a bug that only shows
-    # up when the scan runs in-process (as the GUI's dialog will, criterion
-    # 22 of tests/gui_smoke.py) is still caught here.
+    # (the rate write_b423 wrote S01's records at above). The direct call
+    # complements the subprocess's sample_rate: 1000 line, so a bug that shows
+    # up when the scan runs in-process (as in the GUI's dialog, criterion 22
+    # of tests/gui_smoke.py) is caught here too.
     s01_first = sorted((root / "S01").glob("*.B423"), key=lambda p: int(p.stem))[0]
     derived = new_survey.fast_sample_rate(s01_first)
     assert derived == 1000.0, f"fast_sample_rate({s01_first.name}) = {derived}, wanted 1000.0"
@@ -264,8 +289,8 @@ def part1() -> None:
     print(f"(5) a second run without --force refused: {again.stdout.strip()}")
 
     table = SCRATCH / "two_rows.csv"
-    # the table's elevation is 1000 m low on purpose (the Morocco CSV really
-    # was): the header's GPS fix must win and the disagreement be printed
+    # the table's elevation is 1000 m low on purpose (as a hand-typed table can
+    # be): the header's GPS fix must win and the disagreement be printed
     low = float(sites["S01"]["elevation"]) - 1000.0
     table.write_text(f"site,dipole_length_ex,azimuth_ex,elevation\nS01,48.5,180,{low}\nX99,10,0,\n", encoding="utf-8")
     merged = run(root, "--name", "synthetic", "--out", out, "--site-table", table, "--force")
@@ -308,10 +333,13 @@ def part1() -> None:
 
 
 def test_one_hertz_file_is_one_hertz() -> None:
-    """Fails if a faulty B423 file with one record per second and the millisecond
-    tick always 0 (Morocco R05; the LEMI-423 has no 1 Hz mode) is snapped to a
-    known rate instead of being reported as measured (1.0), or if a file at
-    3 records per second is snapped instead of kept as 3.0."""
+    """Check that fast_sample_rate reports an unknown rate as measured.
+
+    Fails if a faulty B423 file with one record per second and the
+    millisecond tick always 0 (the LEMI-423 has no 1 Hz mode)
+    is snapped to a known rate instead of being reported as measured (1.0),
+    or if a file at 3 records per second is snapped instead of kept as 3.0.
+    """
     import importlib.util, tempfile
     import numpy as np
     spec = importlib.util.spec_from_file_location("new_survey", REPO / "scripts" / "new_survey.py")
@@ -332,13 +360,14 @@ def test_one_hertz_file_is_one_hertz() -> None:
 
 
 def dd(ddmm: str, hemisphere: str) -> float:
-    """DDDMM.MMMMM + hemisphere -> signed decimal degrees, decoded here, not by mt-io."""
+    """Decode DDDMM.MMMMM + hemisphere to signed decimal degrees, independently of mt-io."""
     value = float(ddmm)
     degrees = int(value // 100)
     return (degrees + (value - 100 * degrees) / 60.0) * (-1 if hemisphere in "SW" else 1)
 
 
 def part3() -> None:
+    """Run part 3's checks (10)-(12) on the mixed data root of tests/instrument_samples.py."""
     sys.path.insert(0, str(REPO / "tests"))
     import instrument_samples as samples
 
@@ -393,9 +422,14 @@ def part3() -> None:
 
 
 def test_edl_broadband_sensor_type() -> None:
-    """(13) Fails if an EDL data root whose recorder.ini says 1000 Hz (Hillside: LEMI-120 coils on the
-    PR6-24) does not get `defaults: sensor_type: lemi120` -- or `Survey.site(...).sensor_type` does
-    not read it back -- so that ingest reads the coils with their response, not the fluxgate gain."""
+    """Run check (13): an EDL root at 1000 Hz gets the LEMI-120 coils.
+
+    Fails if an EDL data root whose recorder.ini says 1000 Hz (LEMI-120
+    coils on the PR6-24) does not get `defaults: sensor_type:
+    lemi120`, or `Survey.site(...).sensor_type` does not read it back, so
+    that ingest reads the coils with their response rather than the fluxgate
+    gain.
+    """
     root = SCRATCH / "edl_broadband"
     shutil.rmtree(root, ignore_errors=True)
     site = root / "raw" / "hs999"
@@ -418,9 +452,13 @@ def test_edl_broadband_sensor_type() -> None:
 
 
 def test_edl_electric_gain() -> None:
-    """(14) Fails if new_survey.py does not write the declared electric chain gain as asked
-    (`--electric-gain`), leave it unwritten and only note recorder.ini's own flags informationally
-    when it is not given, or accepts a non-numeric value or a root with no EDL site."""
+    """Run check (14): the declared electric chain gain.
+
+    Fails if new_survey.py does not write the declared electric chain gain as
+    asked (`--electric-gain`), leave it unwritten and note recorder.ini's own
+    flags for information when it is not given, or accepts a non-numeric
+    value or a root with no EDL site.
+    """
     root = SCRATCH / "edl_electric_gain"
     shutil.rmtree(root, ignore_errors=True)
     # channels 0 and 1 are EX and EY here: the flags are read through the long ids, not an assumed order
@@ -464,6 +502,7 @@ def test_edl_electric_gain() -> None:
 
 
 def part2() -> None:
+    """Run part 2, the real-data check on the Curnamona Cube raw data; skipped when E: is not mounted."""
     if not CURNAMONA_RAW.is_dir():
         print(f"real-data check SKIPPED: {CURNAMONA_RAW} is not mounted")
         return
@@ -486,6 +525,7 @@ def part2() -> None:
 
 
 def main() -> int:
+    """Run parts 1, 3 and 2 in that order and return 0."""
     print(__doc__.split("**This test fails if**")[1].strip())
     print()
     part1()

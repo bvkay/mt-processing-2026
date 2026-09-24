@@ -1,11 +1,18 @@
-"""Unit test for `mtproc.timefreq.narrow_lines` and `scripts/line_scan.py`'s archive scan.
+# -*- coding: utf-8 -*-
+"""
+Unit test for mtproc.timefreq.narrow_lines and the archive scan of scripts/line_scan.py
 
+The synthetic record is 1000 Hz and 20 minutes long: pink-ish noise plus a
+stable 50 Hz line (+40 dB, calibrated as described under CALIBRATION
+below), stable 37.4 and 62.55 Hz lines (+10 dB each), and a line that
+wanders linearly from 44.0 to 46.0 Hz over the whole record.
+
+Usage:
     python tests/line_scan_unit.py
 
-A synthetic 1000 Hz, 20-minute record: pink-ish noise plus a stable 50 Hz
-line (+40 dB, calibrated -- see CALIBRATION below), stable 37.4 and 62.55 Hz
-lines (+10 dB each), and a line that wanders linearly 44.0 -> 46.0 Hz over
-the whole record.
+@author: ben kay (ben@auscope.org.au)
+
+:license: MIT
 
 **This test fails if** `narrow_lines` misses 37.4 or 62.55 Hz (within 0.1 Hz);
 reports the wandering line as a single narrow line above 6 dB (checked as:
@@ -18,38 +25,31 @@ on a quiet noise-only stretch, see NO-FALSE-POSITIVE STRETCH LENGTH below).
 It also fails if the archive-scan round trip (`scripts/line_scan.py`'s
 `scan_archive` on a tiny fake MTH5 built with mth5's own API) does not
 recover the injected 50 Hz line with the right site/run/channel/mains-flag
-labels, byte-for-byte through a CSV round trip.
+labels, unchanged through a CSV round trip.
 
-CALIBRATION. "+40 dB" / "+10 dB" are targets for what `narrow_lines` itself
-measures, not for the sinusoid's amplitude relative to the noise's
-time-domain variance (those are different units: `narrow_lines` measures a
-spectral-density excess in dB, the noise's total variance is spread very
-unevenly across a 0.05 Hz-resolution 5-500 Hz band). AMP_* below were
-derived once with a one-off calibration script (inject a unit-amplitude
-tone, read back the measured excess dB from `narrow_lines` with
-`min_db=-1e9` so nothing is filtered, then scale by the exact
-`20*log10(amp)` the excess must move by) against this file's exact NOISE_SEED
-pink-noise draw, then hardcoded here so the test itself makes no extra
+CALIBRATION. "+40 dB" and "+10 dB" are targets for the excess that
+`narrow_lines` measures, which is a spectral-density excess in dB. They are
+not the sinusoid's amplitude relative to the noise's time-domain variance,
+since that variance is spread very unevenly across a 0.05 Hz-resolution
+5-500 Hz band. The AMP_* constants were derived with a calibration script:
+inject a unit-amplitude tone, read back the excess from `narrow_lines` with
+`min_db=-1e9` so nothing is filtered, then scale by the `20*log10(amp)` the
+excess must move by. They were derived against the NOISE_SEED pink-noise
+draw of this file and are hardcoded, so the test makes no extra
 `narrow_lines` calls and stays fast and deterministic.
 
-NO-FALSE-POSITIVE STRETCH LENGTH. The task this test was written against
-asked for "a 20-s band of pure noise: no line above 6 dB". At the default
-resolution (`nperseg = round(fs / 0.05) = 20000` samples = 20 s at 1000 Hz),
-a literal 20 s array is exactly **one** Welch segment -- a plain periodogram,
-not an average of several -- so every bin is a 2-degree-of-freedom
-chi-squared draw with no variance reduction at all. Measured directly: 30
-independent 20 s pink-noise draws gave a spurious line on site
-****30/30**** of them, ~300 spurious lines each. That is not a bug in
-`narrow_lines` (its floor and threshold logic is doing exactly what it is
-told); it is a property of calling it on too short a stretch, i.e. this is a
-real, useful limit on how it must be used, not a reason to weaken the check
--- `scripts/line_scan.py`'s real per-hour calls have ~360x this many samples
-per call (3600 s of data => ~359 segments) and see nothing like this rate.
-Measuring the duration actually needed: 0/20 false positives at 120 s
-(11 segments) and longer, still ~1/20 at 90 s (8 segments), 14/20 at 60 s (5
-segments). So the no-false-positive check below uses a 120 s quiet stretch
--- long enough for the check to be meaningful, short enough to stay fast --
-and this paragraph is the record of why 20 s literally could not be used.
+NO-FALSE-POSITIVE STRETCH LENGTH. At the default resolution
+(`nperseg = round(fs / 0.05) = 20000` samples = 20 s at 1000 Hz), a 20 s
+array is exactly one Welch segment, a plain periodogram, so every bin is a
+2-degree-of-freedom chi-squared draw with no variance reduction. Measured
+directly, 30 independent 20 s pink-noise draws gave spurious lines on 30 of
+30, about 300 each. This is a property of calling `narrow_lines` on too
+short a stretch, and a limit on its use: the per-hour calls of
+`scripts/line_scan.py` have about 360 times as many samples per call (3600 s
+of data, about 359 segments). Measured false-positive rates: 0/20 at 120 s
+(11 segments) and longer, about 1/20 at 90 s (8 segments), 14/20 at 60 s
+(5 segments). The no-false-positive check therefore uses a 120 s quiet
+stretch, long enough to be meaningful and short enough to stay fast.
 """
 
 from __future__ import annotations
@@ -74,19 +74,30 @@ QUIET_SECONDS = 120.0  # see NO-FALSE-POSITIVE STRETCH LENGTH above
 MIN_DB = 6.0
 
 # calibrated so narrow_lines(..., min_db=-1e9) measures ~40 / ~10 / ~10 dB
-# excess for these three lines against this file's NOISE_SEED draw -- see
+# excess for these three lines against this file's NOISE_SEED draw; see
 # CALIBRATION above
 AMP_50 = 1.496302
 AMP_37_4 = 0.054976
 AMP_62_55 = 0.042265
 # calibrated the same way against a stationary 45 Hz tone (~24 dB target);
-# actually wandering, its measured excess at any one bin comes out lower
-# (smeared) -- that smearing is exactly what this test checks for
+# wandering, its measured excess at any one bin comes out lower (smeared),
+# which is what test_wandering_line_not_reported_as_a_single_line checks
 AMP_WANDER = 0.252532
 
 
 def pink_noise(n: int, seed: int, exponent: float = 1.0) -> np.ndarray:
-    """Unit-std ~1/f noise: white noise shaped by 1/f**(exponent/2) in the FFT domain."""
+    """Generate unit-std ~1/f noise at FS.
+
+    White noise is shaped by 1/f**(exponent/2) in the FFT domain.
+
+    Args:
+        n (int): Number of samples.
+        seed (int): Seed of the random generator.
+        exponent (float): Spectral exponent of the power spectrum.
+
+    Returns:
+        np.ndarray: The noise, scaled to unit standard deviation.
+    """
     rng = np.random.default_rng(seed)
     white = rng.standard_normal(n)
     spec = np.fft.rfft(white)
@@ -99,6 +110,15 @@ def pink_noise(n: int, seed: int, exponent: float = 1.0) -> np.ndarray:
 
 
 def make_signal(minutes: float, seed: int) -> np.ndarray:
+    """Build the synthetic record described in the module docstring.
+
+    Args:
+        minutes (float): Record length in minutes.
+        seed (int): Seed of the pink noise.
+
+    Returns:
+        np.ndarray: The record at FS.
+    """
     n = int(minutes * 60 * FS)
     t = np.arange(n) / FS
     x = pink_noise(n, seed)
@@ -115,6 +135,7 @@ SIGNAL = make_signal(RECORD_MINUTES, NOISE_SEED)
 
 
 def _near(lines: list[tuple[float, float, bool]], f0: float, tol: float = 0.1):
+    """Return the first (f, dB, mains) line within `tol` Hz of f0, or None."""
     hits = [line for line in lines if abs(line[0] - f0) <= tol]
     return hits[0] if hits else None
 
@@ -152,7 +173,11 @@ def test_wandering_line_not_reported_as_a_single_line() -> None:
 
 
 def test_no_false_positive_on_quiet_noise() -> None:
-    """See NO-FALSE-POSITIVE STRETCH LENGTH in the module docstring for why 120 s, not 20 s."""
+    """Check a 120 s pure-noise stretch reports no line.
+
+    NO-FALSE-POSITIVE STRETCH LENGTH in the module docstring explains the
+    choice of 120 s.
+    """
     quiet = pink_noise(int(QUIET_SECONDS * FS), QUIET_SEED)
     lines = narrow_lines(quiet, FS, 5.0, 500.0, min_db=MIN_DB)
     assert lines == [], f"line(s) reported in a {QUIET_SECONDS:g} s pure-noise stretch: {lines}"
@@ -160,14 +185,11 @@ def test_no_false_positive_on_quiet_noise() -> None:
 
 
 def test_narrow_lines_falsifies_with_min_db_30() -> None:
-    """A sanity check that the min_db=6 checks above are not vacuous.
+    """Check that `min_db` filters, so the min_db=6 checks can fail.
 
-    At min_db=30, the 37.4 Hz line (~+10 dB by calibration) must NOT survive
-    -- if it did, `min_db` would not be doing anything and the earlier
-    tests could not actually fail. This is the same falsification the task
-    asked to be demonstrated by hand (raise min_db to 30, show the 37.4 Hz
-    check fails, then restore); it is kept here, permanently, as a passing
-    test in its own right -- it fails if 37.4 Hz survives raising min_db to 30.
+    At min_db=30 the 37.4 Hz line (about +10 dB by calibration) is dropped
+    and the 50 Hz line (+40 dB) survives. Fails if 37.4 Hz survives raising
+    min_db to 30.
     """
     lines = narrow_lines(SIGNAL, FS, 5.0, 500.0, min_db=30.0)
     hit_374 = _near(lines, 37.4)
@@ -181,20 +203,20 @@ def test_narrow_lines_falsifies_with_min_db_30() -> None:
 
 
 def test_scan_archive_csv_round_trip() -> None:
-    """`scripts/line_scan.py`'s `scan_archive` on a two-channel, one-run fake MTH5.
+    """Run `scan_archive` of scripts/line_scan.py on a two-channel, one-run fake MTH5.
 
-    Built with mth5's own ChannelTS/RunTS API (the same pattern
-    `tests/virtual_unit.py` uses), 12 minutes at 1000 Hz -- long enough to
-    clear the 10-minute trailing-block floor as the record's only (partial)
-    hour block, short enough to build and scan in well under a second.
-    hx carries a +40ish dB 50 Hz line; hy carries none. Fails if the written
-    CSV does not round-trip site/run/channel/hour/frequency/mains-flag for
-    that line back out, on the right channel only.
+    The MTH5 is built with mth5's ChannelTS/RunTS API, as in
+    `tests/virtual_unit.py`: 12 minutes at 1000 Hz, which clears the
+    10-minute trailing-block floor as the record's only (partial) hour block
+    and builds and scans in well under a second. hx carries a 50 Hz line of
+    about +40 dB; hy carries none. Fails if the written CSV does not
+    round-trip site/run/channel/hour/frequency/mains-flag for that line, on
+    hx only.
     """
     try:
         from mth5.mth5 import MTH5
         from mth5.timeseries import ChannelTS, RunTS
-    except Exception as exc:  # pragma: no cover -- mth5 not importable
+    except Exception as exc:  # pragma: no cover  (mth5 not importable)
         print(f"  SKIP: mth5 API not available ({exc!r})")
         return
 

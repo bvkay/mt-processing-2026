@@ -1,68 +1,67 @@
-"""Resumable, parallel processing campaign over a line of sites: every remote, stacks, estimator options.
+# -*- coding: utf-8 -*-
+"""
+Resumable, parallel processing campaign over a line of sites
 
-Usage:
-    python scripts/campaign.py <survey.yaml> <plan.yaml> [--stage 0,1,2,3] [--sites S ...]
-        [--parallel N] [--max-runs N] [--allow-raw] [--dry-run] [--report]
-
-The plan (e.g. surveys/MT_Morocco_Atlas_Mountains/campaign_lineC.yaml) names
+Runs every remote, the stacks and the estimator options for each site of a
+line, in parallel and resumably. The plan (e.g. surveys/MT_Morocco_Atlas_Mountains/campaign_lineC.yaml) names
 the campaign, its sites in order along the line, the exclusions with their
 reasons, the deployment groups in processing order, the remote overlap rule,
 the stack weightings, the stage 3 configs and the runner's limits.
 
-Archives: <workspace>/mth5/<site>.h5 is the RAW recording and is never
-rebuilt, moved or deleted here. Processing reads a filtered variant
+Archives: <workspace>/mth5/<site>.h5 is the raw recording, which the
+campaign leaves in place unchanged. Processing reads a filtered variant
 <site>_f<hash>.h5 that `mtproc.ingest.processing_archive(survey, site)` (or
 `build_variant`) builds on demand from the raw archive and filters.yaml;
 process_rr.py calls it before every run. Stages:
 
-0 variants -- per site, a child process calls processing_archive (else
-  build_variant) so every variant exists before two parallel runs could both
-  try to build the same one; the variant's recorded filters (its runs'
-  "ingest filters (in order): ..." comments, mtproc.ingest's wording) are
+0 variants: per site, a child process calls processing_archive (else
+  build_variant), so every variant exists before two parallel runs could
+  both try to build the same one. The variant's recorded filters (its runs'
+  "ingest filters (in order): ..." comments, in mtproc.ingest's wording) are
   then compared with filters.yaml and the verdict goes into the ledger's
-  `check` column (a `mains` filter's step_fraction is not recorded, so it
-  cannot be compared). It never blocks a run.
-1 remotes -- every site rr every eligible remote with the defaults (Hann). A
+  `check` column; a `mains` filter's step_fraction is not recorded and is
+  not compared. The check is informational and does not block a run.
+1 remotes: every site rr every eligible remote with the defaults (Hann). A
   remote is any plan site whose record overlaps the local's (survey.yaml
   start/end) by >= `overlap.min_fraction` of the local record or
   >= `overlap.min_hours`; nearest first.
-2 stacks -- per site, the leave-one-out stack of the other members of its
+2 stacks: per site, the leave-one-out stack of the other members of its
   group that are eligible remotes, over the site's record (the builder
   intersects the members' runs), one per weighting (STK_<site>u: none,
   STK_<site>w: coherence) with scripts/build_stack.py; then the site rr each
-  stack. A group with fewer than two such members (C10/C11) borrows the other
+  stack. A group with fewer than two such members borrows the other
   group whose eligible members share the longest common span with the site.
-3 options -- per site, on its best stage 1 remote (highest mtproc.quality
+3 options: per site, on its best stage 1 remote (highest mtproc.quality
   score over the scoring window; among remotes within `tie_tolerance` of the
   top, the one agreeing best with the others, lowest median |dlog10 rho|),
   one process_rr.py run per plan config. The choice is kept in
-  best_remote.json so a resume does not change it.
+  best_remote.json so a resume keeps it.
 
 Readiness: before each stage the runner checks, in a fresh child process,
 that mtproc.ingest has processing_archive or build_variant (stage 0), that
 scripts/process_rr.py calls it (stages 1 and 3) and that the stack builder
 (mtproc/virtual.py or scripts/build_stack.py) does (stage 2). Stages 0, 1 and
 3 wait for it, polling every 5 minutes; a stage 2 whose builder is not ready
-is deferred to the end of the campaign and waits there. --allow-raw (smoke
-checks only) runs anyway: its rows are marked `provisional` and redone by the
-next run without the flag.
+is deferred to the end of the campaign and waits there. --allow-raw (for
+smoke checks) runs anyway: its rows are marked `provisional` and redone by
+the next run without the flag.
 
-Order: stage 0 for every selected site first (a site's remotes cross groups),
-then per group in plan order stages 1, 2 and 3, so the first group's results
-are complete before the next group starts. Every rr run is tagged
-`--tag <name>-<config>` ("default" in stages 1 and 2); its EDI path is taken
-from the child's `wrote <path>.edi` line (never predicted), and the EDI, the
-comparison PNG and the .json sidecar are moved into <campaign>/tf/ (plan
-`runner.move_products`) so <workspace>/tf keeps only this campaign's own outputs.
+Order: stage 0 for every selected site first (a site's remotes cross
+groups), then per group in plan order stages 1, 2 and 3, so the first
+group's results are complete before the next group starts. Every rr run is
+tagged `--tag <name>-<config>` ("default" in stages 1 and 2). Its EDI path is
+read from the child's `wrote <path>.edi` line, and the EDI, the comparison
+PNG and the .json sidecar are moved into <campaign>/tf/ (plan
+`runner.move_products`), so <workspace>/tf holds other outputs alone.
 
 Runner: up to --parallel jobs at once within a stage (variant and stack
-builds too). A job starts only when psutil's available memory, less what the
+builds too). A job starts when psutil's available memory, less what the
 running jobs are still expected to grow by (the `peak_percentile` of the
 `peak_recent` most recently finished peaks of their kind, else the plan's
 `expected_peak_gb`), is at least `min_available_gb` and `peak_factor` x that
-percentile over every kind; waiting slots log every 5 min. Children run at below-normal priority, each
-with its own log in <campaign>/logs/<run_id>.log; RSS (with children) is
-polled every 2 s.
+percentile over every kind; waiting slots log every 5 min. Children run at
+below-normal priority, each with its own log in <campaign>/logs/<run_id>.log;
+RSS (with children) is polled every 2 s.
 
 Outputs in <workspace>/campaign/<name>/: ledger.csv (one row per run id:
 stage, kind, local, remote, config, tag, status, exit code, start, seconds,
@@ -73,12 +72,20 @@ every block), figures/<site>_remotes.png, <site>_stacks.png,
 <site>_options.png, <name>_best_pseudosection.png, <name>_scores.png, and
 summary.md. A run is skipped when the ledger has it done with the same
 inputs: per site the hash of its filters.yaml entry and its raw archive's
-mtime, per stack the stack archive's mtime (a filter edited since means a
-re-run). Ctrl+C kills the running children and marks them interrupted; a
+mtime, per stack the stack archive's mtime, so an edited filter causes a
+re-run. Ctrl+C kills the running children and marks them interrupted. A
 killed runner leaves "running" rows that the next start cleans up (orphaned
 children killed, partial stack archives removed). --report rebuilds scores,
-figures and summary from the ledger, running nothing; --dry-run prints the
-whole matrix with counts and hours.
+figures and summary from the ledger without running jobs; --dry-run prints
+the whole matrix with counts and hours.
+
+Usage:
+    python scripts/campaign.py <survey.yaml> <plan.yaml> [--stage 0,1,2,3] [--sites S ...]
+        [--parallel N] [--max-runs N] [--allow-raw] [--dry-run] [--report]
+
+@author: ben kay (ben@auscope.org.au)
+
+:license: MIT
 """
 
 from __future__ import annotations
@@ -110,7 +117,7 @@ sys.path.insert(0, str(REPO / "src"))
 from mtproc.ingest import default_archive_path  # noqa: E402
 from mtproc.masks import is_stack, load_masks  # noqa: E402
 
-try:  # optional: the variant API may not be present yet; the campaign still runs, waiting for it
+try:  # optional: without the variant API the campaign runs and waits for it
     from mtproc.ingest import filters_hash as _api_filters_hash  # noqa: E402
     from mtproc.ingest import variant_path as _api_variant_path  # noqa: E402
 except ImportError:
@@ -160,10 +167,12 @@ print(json.dumps(out))
 
 
 def now() -> dt.datetime:
+    """Return the current local time, timezone-aware."""
     return dt.datetime.now().astimezone()
 
 
 def stamp() -> str:
+    """Return the current local time as YYYYMMDD-HHMMSS."""
     return now().strftime("%Y%m%d-%H%M%S")
 
 
@@ -172,6 +181,8 @@ def stamp() -> str:
 
 @dataclass
 class Plan:
+    """A campaign plan read from its YAML by `load_plan`."""
+
     path: Path
     name: str
     description: str
@@ -195,19 +206,31 @@ class Plan:
     masks: bool = False       # rr runs apply the local's and the remote's masks.yaml (else --no-masks: every remote and option on the same data)
 
     def group_of(self, site: str) -> str:
+        """Return the name of the group that holds `site`."""
         return next(g for g, members in self.groups.items() if site in members)
 
     def tag(self, config: str) -> str:
+        """Return the process_rr.py tag of a config: <name>-<config>."""
         return f"{self.name}-{config}"
 
     def ordered(self, sites) -> list[str]:
-        """`sites` in processing order: by group in plan order, then as listed in the group."""
+        """Return `sites` in processing order: by group in plan order, then as listed in the group."""
         wanted = set(sites)
         return [s for members in self.groups.values() for s in members if s in wanted]
 
 
 def load_plan(path) -> Plan:
-    """Read and check a plan YAML; raises ValueError naming everything that is wrong."""
+    """Read and check a plan YAML.
+
+    Args:
+        path (str | Path): The plan YAML.
+
+    Returns:
+        Plan: The plan, with defaults for the keys it leaves out.
+
+    Raises:
+        ValueError: Naming every problem found in the plan.
+    """
     path = Path(path)
     raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     errors = []
@@ -285,7 +308,14 @@ def load_plan(path) -> Plan:
 
 
 def site_spans(survey: Survey, sites) -> dict[str, tuple[pd.Timestamp, pd.Timestamp]]:
-    """{site: (start, end)} UTC from survey.yaml's start/end (the recorded span)."""
+    """Return each site's recorded span from survey.yaml.
+
+    Returns:
+        dict: {site: (start, end)} in UTC.
+
+    Raises:
+        ValueError: When a site has no start/end in survey.yaml.
+    """
     out = {}
     for s in sites:
         cfg = survey.site(s)
@@ -296,11 +326,12 @@ def site_spans(survey: Survey, sites) -> dict[str, tuple[pd.Timestamp, pd.Timest
 
 
 def overlap_hours(a, b) -> float:
+    """Return the overlap in hours of two (start, end) spans; 0 when disjoint."""
     return max(0.0, (min(a[1], b[1]) - max(a[0], b[0])).total_seconds() / 3600.0)
 
 
 def is_eligible(plan: Plan, spans: dict, local: str, remote: str) -> bool:
-    """The plan's rule: overlap >= min_fraction of the local record, or >= min_hours."""
+    """Apply the plan's remote rule: overlap >= min_fraction of the local record, or >= min_hours."""
     if remote == local:
         return False
     ov = overlap_hours(spans[local], spans[remote])
@@ -309,6 +340,7 @@ def is_eligible(plan: Plan, spans: dict, local: str, remote: str) -> bool:
 
 
 def _km(survey: Survey, a: str, b: str) -> float:
+    """Return the distance in km between two sites, inf when a position is missing."""
     ca, cb = survey.site(a), survey.site(b)
     if None in (ca.latitude, ca.longitude, cb.latitude, cb.longitude):
         return float("inf")
@@ -316,24 +348,30 @@ def _km(survey: Survey, a: str, b: str) -> float:
 
 
 def eligible_remotes(plan: Plan, survey: Survey, spans: dict, local: str) -> list[str]:
-    """Every eligible remote of `local`, nearest first (then by name)."""
+    """Return every eligible remote of `local`, nearest first (then by name)."""
     rs = [r for r in plan.sites if is_eligible(plan, spans, local, r)]
     return sorted(rs, key=lambda r: (_km(survey, local, r), r))
 
 
 def common_span(spans: dict, sites) -> tuple[pd.Timestamp, pd.Timestamp, float]:
+    """Return the (start, end, hours) span shared by all `sites`."""
     lo = max(spans[s][0] for s in sites)
     hi = min(spans[s][1] for s in sites)
     return lo, hi, max(0.0, (hi - lo).total_seconds() / 3600.0)
 
 
 def stack_plan(plan: Plan, spans: dict, local: str) -> dict | None:
-    """The leave-one-out stack for `local`: {members, group, borrowed, span_h, span, start, end}, or None.
+    """Plan the leave-one-out stack for `local`.
 
     Members are the other members of `local`'s group that are eligible
-    remotes of it; with fewer than two, the other group whose eligible
-    members (at least two) share the longest common span with `local` (at
-    least `min_hours`). start/end passed to the builder are `local`'s record.
+    remotes of it. With fewer than two, the members come from the other group
+    whose eligible members (at least two) share the longest common span with
+    `local` (at least `min_hours`). The start/end passed to the builder are
+    `local`'s record.
+
+    Returns:
+        dict | None: {members, group, borrowed, span_h, span, start, end},
+        or None when no stack is possible.
     """
     own = plan.group_of(local)
     members = [s for s in plan.groups[own] if s != local and is_eligible(plan, spans, local, s)]
@@ -358,8 +396,11 @@ def stack_plan(plan: Plan, spans: dict, local: str) -> dict | None:
 
 
 def filters_hash(filters) -> str:
-    """8 hex digits of a site's filters.yaml entry: mtproc.ingest.filters_hash (its variant's
-    ``_f<hash>``) when the API is there, else the same sha1 of the canonical JSON."""
+    """Hash a site's filters.yaml entry to 8 hex digits.
+
+    Uses mtproc.ingest.filters_hash (the variant's ``_f<hash>``) when the API
+    is present, else the same sha1 of the canonical JSON.
+    """
     if _api_filters_hash is not None:
         return _api_filters_hash(filters)
     text = json.dumps(list(filters or []), sort_keys=True)
@@ -370,6 +411,7 @@ def filters_hash(filters) -> str:
 
 
 def _attr_text(value) -> str:
+    """Return an HDF5 attribute as text ("" for None, bytes decoded as UTF-8)."""
     if value is None:
         return ""
     if isinstance(value, bytes):
@@ -378,7 +420,13 @@ def _attr_text(value) -> str:
 
 
 def read_run_comments(path: Path, site: str) -> list[dict]:
-    """[{run, comment, channels, sample_rate}] for every Run group of `site` in an archive (h5py, read-only)."""
+    """Read the comment, channels and sample rate of every Run group of a site.
+
+    Opens the archive read-only with h5py.
+
+    Returns:
+        list[dict]: [{run, comment, channels, sample_rate}].
+    """
     import h5py
 
     out = []
@@ -399,11 +447,25 @@ def read_run_comments(path: Path, site: str) -> list[dict]:
 
 
 def _num(a, b) -> bool:
+    """Compare two numbers (or numeric strings) to a relative 1e-9."""
     return abs(float(a) - float(b)) <= 1e-9 * max(1.0, abs(float(a)), abs(float(b)))
 
 
 def filter_line_matches(spec: dict, line: str, run_channels, fs: float) -> tuple[bool, str]:
-    """Does one recorded provenance line (mtproc.noise / mtproc.ingest wording) say `spec` was applied?"""
+    """Check whether one recorded provenance line says `spec` was applied.
+
+    The line is in the wording of mtproc.noise / mtproc.ingest.
+
+    Args:
+        spec (dict): One declared filter, {kind: options}.
+        line (str): One recorded filter line.
+        run_channels (list[str]): The run's channels, used when the spec
+            names none.
+        fs (float): The run's sample rate.
+
+    Returns:
+        tuple[bool, str]: (match, explanation).
+    """
     if len(spec) != 1:
         return False, f"filter spec {spec} is not a single-key dict"
     kind, opts = next(iter(spec.items()))
@@ -461,7 +523,11 @@ def filter_line_matches(spec: dict, line: str, run_channels, fs: float) -> tuple
 
 
 def recorded_matches(comment: str, declared: list, run_channels, fs: float) -> tuple[bool, str]:
-    """(match, why): does one run's comment record exactly the declared filter list, in ingest's order?"""
+    """Check whether one run's comment records exactly the declared filters, in ingest's order.
+
+    Returns:
+        tuple[bool, str]: (match, explanation).
+    """
     comment = (comment or "").strip()
     declared = [s for s in (declared or []) if s]
     if comment.startswith(VARIANT_HASH_PREFIX):  # a build_variant archive: "filters hash <h>; ingest filters ..."
@@ -488,7 +554,11 @@ def recorded_matches(comment: str, declared: list, run_channels, fs: float) -> t
 
 
 def archive_filters_check(path: Path, site: str, declared, fs_default: float) -> tuple[bool, str]:
-    """Does every run of `site` in the archive at `path` record exactly `declared`? (verdict, detail)"""
+    """Check whether every run of `site` in an archive records exactly `declared`.
+
+    Returns:
+        tuple[bool, str]: (verdict, detail).
+    """
     try:
         runs = read_run_comments(Path(path), site)
     except (OSError, KeyError) as exc:
@@ -506,7 +576,7 @@ def archive_filters_check(path: Path, site: str, declared, fs_default: float) ->
 
 
 class Ledger:
-    """One row per run id, rewritten atomically (temp file + os.replace) at every change."""
+    """The campaign ledger: one row per run id, rewritten atomically (temp file + os.replace) at every change."""
 
     def __init__(self, path: Path, log=print):
         self.path = Path(path)
@@ -518,12 +588,19 @@ class Ledger:
                     self.rows[row["run_id"]] = {c: row.get(c, "") or "" for c in LEDGER_COLUMNS}
 
     def upsert(self, row: dict) -> None:
+        """Insert or update a row, stored as the CSV reads back, and save."""
         old = self.rows.get(row["run_id"], {c: "" for c in LEDGER_COLUMNS})
         old.update({k: ("" if v is None else str(v)) for k, v in row.items() if k in LEDGER_COLUMNS})  # as the CSV reads back
         self.rows[row["run_id"]] = old
         self.save()
 
     def save(self) -> bool:
+        """Write the ledger atomically.
+
+        Returns:
+            bool: False when the file stayed locked (e.g. open in Excel);
+            the rows are kept in memory and written at the next change.
+        """
         tmp = self.path.with_name(self.path.name + ".tmp")
         with open(tmp, "w", newline="", encoding="utf-8") as fh:
             w = csv.DictWriter(fh, LEDGER_COLUMNS, extrasaction="ignore")
@@ -543,16 +620,22 @@ class Ledger:
         return False
 
     def peak_mb(self, kind: str | None = None, percentile: float = 90.0, recent: int = 0) -> float:
-        """The `percentile` of the peak RSS of finished jobs (of `kind`), MB; 0 with none.
+        """Return a percentile of the peak RSS of finished jobs, in MB.
 
-        The maximum ever seen (an overlap-50 run at 70 GB) kept the campaign's
-        second slot idle 91 % of the time while pairs of 53 GB jobs ran side by
-        side without trouble on 128 GB: the gate keys on a percentile,
-        `runner.peak_percentile` in the plan (default 90).
+        The gate keys on a percentile (`runner.peak_percentile` in the plan,
+        default 90) rather than the maximum: a single outlying job (a larger
+        window overlap, say) would otherwise hold the gate at its own peak and
+        keep a slot idle while typical jobs would fit side by side. With
+        `recent` > 0 the `recent` most recently finished jobs count, so a
+        change of estimator that changes the peaks moves the gate with it.
 
-        With `recent` > 0 only the `recent` most recently finished jobs count:
-        a change of estimator (the aurora fork halved the peaks) should move the
-        gate with it rather than sit under the old peaks for hundreds of runs.
+        Args:
+            kind (str | None): Job kind, or None for all kinds.
+            percentile (float): Percentile of the peaks.
+            recent (int): Number of most recent jobs to use; 0 for all.
+
+        Returns:
+            float: The peak in MB, 0 when no job has finished.
         """
         rows = [r for r in self.rows.values()
                 if r["peak_rss_mb"] and (kind is None or r["kind"] == kind)]
@@ -570,6 +653,8 @@ class Ledger:
 
 @dataclass
 class Job:
+    """One campaign job: an rr run, a variant build or a stack build."""
+
     run_id: str
     stage: int
     kind: str
@@ -587,6 +672,8 @@ class Job:
 
 @dataclass
 class Running:
+    """A started job with its process, log and memory samples."""
+
     job: Job
     popen: subprocess.Popen
     ps: psutil.Process | None
@@ -600,6 +687,7 @@ class Running:
 
 
 def kill_tree(pid: int) -> None:
+    """Kill a process and all its children, then wait up to 30 s for them."""
     try:
         p = psutil.Process(pid)
         procs = p.children(recursive=True) + [p]
@@ -619,7 +707,12 @@ ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 
 
 def parse_products(text: str) -> dict:
-    """{"edi", "sidecar", "figure"} from a process_rr.py log: the last `wrote <path>` of each kind."""
+    """Read the product paths from a process_rr.py log.
+
+    Returns:
+        dict: {"edi", "sidecar", "figure"}: the last `wrote <path>` of each
+        kind, "" when absent.
+    """
     out = {"edi": "", "sidecar": "", "figure": ""}
     for line in ANSI_RE.sub("", text).splitlines():
         m = WROTE_RE.search(line)
@@ -637,6 +730,7 @@ def parse_products(text: str) -> dict:
 
 
 def last_error(text: str) -> str:
+    """Return the last error-looking line of a log, else its last line (300 characters at most)."""
     lines = [ln.strip() for ln in ANSI_RE.sub("", text).splitlines() if ln.strip()]
     for ln in reversed(lines):
         if re.search(r"(Error|Exception|ERROR|Traceback|Killed)", ln):
@@ -645,13 +739,16 @@ def last_error(text: str) -> str:
 
 
 def api_state() -> dict:
-    """The variant API as a fresh process sees it (this one imported mtproc.ingest when it started).
+    """Probe the variant API as a fresh process sees it.
 
-    Imports, not text search: mtproc.ingest must have processing_archive (or
-    build_variant) for stage 0, scripts/process_rr.py must import one for
-    stages 1 and 3, and mtproc.virtual (the stack builder) for stage 2 -- a
-    half-edited module that fails to import counts as not ready.
-    Returns {"func", "variant", "rr", "stack", "why"}.
+    This process imported mtproc.ingest when it started, so the probe runs
+    in a child and imports the modules. Stage 0 needs processing_archive (or
+    build_variant) in mtproc.ingest, stages 1 and 3 need scripts/process_rr.py
+    to import one, and stage 2 needs mtproc.virtual (the stack builder) to. A
+    module that fails to import counts as not ready.
+
+    Returns:
+        dict: {"func", "variant", "rr", "stack", "why"}.
     """
     try:
         out = subprocess.run([PY, "-c", API_PROBE, str(REPO / "src"), str(SCRIPTS), *VARIANT_FUNCS],
@@ -687,6 +784,18 @@ NEEDS = {0: "variant", 1: "rr", 2: "stack", 3: "rr"}
 
 
 class Campaign:
+    """The campaign runner: builds the jobs of each stage, runs them and writes the reports.
+
+    Args:
+        survey_yaml (str | Path): The survey.yaml.
+        plan (Plan): The campaign plan.
+        parallel (int): Jobs at once.
+        max_runs (int | None): Start at most this many jobs.
+        allow_raw (bool): Run without the variant API, marking rows
+            provisional.
+        create (bool): Create the campaign folders; False for a dry run.
+    """
+
     def __init__(self, survey_yaml, plan: Plan, parallel: int = 2, max_runs: int | None = None,
                  allow_raw: bool = False, create: bool = True):
         self.survey_yaml = str(Path(survey_yaml).resolve())
@@ -710,6 +819,7 @@ class Campaign:
     # ---------------------------------------------------------------- helpers
 
     def log(self, msg: str) -> None:
+        """Print a time-stamped line and append it to runs.log."""
         line = f"{now().strftime('%Y-%m-%d %H:%M:%S')} {msg}"
         print(line, flush=True)
         try:
@@ -723,13 +833,15 @@ class Campaign:
         self.survey = Survey.from_yaml(self.survey_yaml)
 
     def raw_archive(self, site: str) -> Path:
+        """Return the site's raw archive path."""
         return default_archive_path(self.survey, site)
 
     def stack_archive(self, name: str) -> Path:
+        """Return <workspace>/mth5/<name>.h5."""
         return self.survey.workspace / "mth5" / f"{name}.h5"
 
     def signature(self, site: str) -> str:
-        """A site: its filters.yaml hash and raw archive mtime; a stack: its archive's mtime."""
+        """Return the input signature of a site (filters.yaml hash and raw archive mtime) or a stack (archive mtime)."""
         if site.startswith("STK_"):
             p = self.stack_archive(site)
             return f"{site}@{int(p.stat().st_mtime) if p.exists() else 'missing'}"
@@ -738,11 +850,12 @@ class Campaign:
                 f"@{int(p.stat().st_mtime) if p.exists() else 'missing'}")
 
     def inputs(self, job: Job) -> str:
+        """Return the input signature of a job; a change means the job is re-run."""
         sig = ";".join(self.signature(s) for s in job.input_sites)
         if self.plan.masks and job.kind == "rr":
             # process_rr applies the local's and the remote's masks.yaml entries (a stack
-            # has none of its own: the name rule process_rr uses, mtproc.masks.is_stack):
-            # either edited means stale
+            # has none of its own, by the name rule of mtproc.masks.is_stack); an edit
+            # to either makes the product stale
             for site in (job.local, job.remote):
                 if not site or is_stack(site):
                     continue
@@ -752,12 +865,14 @@ class Campaign:
         return sig
 
     def rr_cmd(self, local: str, remote: str, config: str) -> list[str]:
+        """Build the process_rr.py command line of one rr run."""
         extra = self.plan.configs.get(config, []) if config != "default" else []
         masks = [] if self.plan.masks else ["--no-masks"]
         return [PY, str(SCRIPTS / "process_rr.py"), self.survey_yaml, local, remote, *extra, *masks,
                 "--tag", self.plan.tag(config)]
 
     def rr_job(self, stage: int, local: str, remote: str, config: str, run_id: str, deps=()) -> Job:
+        """Build one rr job."""
         return Job(run_id=run_id, stage=stage, kind="rr", group=self.plan.group_of(local), local=local,
                    remote=remote, config=config, tag=self.plan.tag(config), cmd=self.rr_cmd(local, remote, config),
                    deps=list(deps), input_sites=[local, remote])
@@ -765,6 +880,7 @@ class Campaign:
     # ------------------------------------------------------------ job builders
 
     def stage0_jobs(self, sites) -> list[Job]:
+        """Build the variant jobs of stage 0, one per site."""
         func = self.api.get("func") or VARIANT_FUNCS[0]
         jobs = []
         for s in sites:
@@ -776,10 +892,12 @@ class Campaign:
         return jobs
 
     def stage1_jobs(self, sites) -> list[Job]:
+        """Build the stage 1 rr jobs: every site against every eligible remote."""
         return [self.rr_job(1, s, r, "default", f"s1_{s}_rr-{r}")
                 for s in sites for r in eligible_remotes(self.plan, self.survey, self.spans, s)]
 
     def stage2_jobs(self, sites) -> list[Job]:
+        """Build the stage 2 jobs: per site, one stack build and one rr run per weighting."""
         jobs = []
         for s in sites:
             sp = stack_plan(self.plan, self.spans, s)
@@ -805,6 +923,7 @@ class Campaign:
         return sorted(jobs, key=lambda j: (order[j.local], j.kind != "stack"))
 
     def stage3_jobs(self, sites, dry: bool = False) -> list[Job]:
+        """Build the stage 3 jobs: one rr run per plan config on each site's best remote."""
         jobs = []
         chosen = self.best_remotes(sites, persist=not dry)
         for s in sites:
@@ -822,9 +941,14 @@ class Campaign:
     # --------------------------------------------------------------- choices
 
     def best_remotes(self, sites, persist: bool = True, df: pd.DataFrame | None = None) -> dict:
-        """{site: {"remote", "score", "why"}}: best_remote.json's choice, else chosen now from stage 1 scores.
+        """Return each site's best stage 1 remote.
 
-        Provisional products (--allow-raw) never make a choice that is kept.
+        The choice stored in best_remote.json is used when present; otherwise
+        it is made now from the stage 1 scores and stored. A choice made from
+        provisional products (--allow-raw) is not stored.
+
+        Returns:
+            dict: {site: {"remote", "score", "why"}}.
         """
         path = self.dir / "best_remote.json"
         stored = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
@@ -849,7 +973,7 @@ class Campaign:
     # ------------------------------------------------------------------ blocks
 
     def blocks(self, stages, sites, dry: bool = False):
-        """(label, stage, group, sites, jobs) in run order; each block's jobs are built when it is reached."""
+        """Yield (label, stage, group, sites, jobs) in run order; each block's jobs are built when it is reached."""
         sites = self.plan.ordered(sites)
         if 0 in stages:
             self.refresh()
@@ -867,6 +991,7 @@ class Campaign:
                 yield f"stage {st} {STAGES[st]} group {g}", st, g, gs, builder(gs)
 
     def already_done(self, job: Job) -> bool:
+        """Check whether the ledger has the job done, with the same inputs and its product present."""
         row = self.ledger.rows.get(job.run_id)
         if not row or row["status"] != "done" or str(row["exit_code"]) != "0":
             return False
@@ -883,13 +1008,16 @@ class Campaign:
     # --------------------------------------------------------------- readiness
 
     def check_api(self) -> dict:
+        """Probe the variant API (`api_state`) and keep the result."""
         self.api = api_state()
         return self.api
 
     def wait_ready(self, need: str, label: str) -> bool:
-        """Block until the variant API serves `need` ("variant", "rr", "stack"); True when ready.
+        """Wait until the variant API serves `need` ("variant", "rr", "stack").
 
-        With --allow-raw it does not wait: False, and the caller runs provisional.
+        Returns:
+            bool: True when ready; False at once with --allow-raw, and the
+            caller runs provisional.
         """
         t0, waited = time.time(), False
         while True:
@@ -910,10 +1038,16 @@ class Campaign:
     # ------------------------------------------------------------------ memory
 
     def expected_peak_mb(self, kind: str) -> float:
+        """Return the expected peak RSS of a job kind in MB, from the ledger or the plan."""
         return (self.ledger.peak_mb(kind, self.plan.peak_percentile, self.plan.peak_recent)
                 or self.plan.expected_peak_gb.get(kind, 35.0) * 1024.0)
 
     def gate(self) -> tuple[bool, str]:
+        """Check the memory gate for starting another job.
+
+        Returns:
+            tuple[bool, str]: (enough memory, explanation).
+        """
         avail = psutil.virtual_memory().available / MB
         reserve = sum(max(0.0, self.expected_peak_mb(r.job.kind) - r.rss_mb) for r in self._running.values())
         need = max(self.plan.min_available_gb * 1024.0, self.plan.peak_factor * self.ledger.peak_mb(None, self.plan.peak_percentile, self.plan.peak_recent))
@@ -922,6 +1056,7 @@ class Campaign:
                     f"{len(self._running)} running job(s), need {need / 1024:.1f} GB")
 
     def sample(self, r: Running) -> None:
+        """Update a running job's RSS and peak, children included."""
         if r.ps is None:
             return
         try:
@@ -941,17 +1076,19 @@ class Campaign:
     # ------------------------------------------------------------- start/finish
 
     def _row(self, job: Job, **kw) -> dict:
+        """Build a ledger row for a job with extra fields."""
         row = {"run_id": job.run_id, "stage": job.stage, "kind": job.kind, "group": job.group, "local": job.local,
                "remote": job.remote, "config": job.config, "tag": job.tag}
         row.update(kw)
         return row
 
     def _skip(self, job: Job, why: str) -> None:
+        """Log and record a skipped job."""
         self.log(f"SKIP {job.run_id}: {why}")
         self.ledger.upsert(self._row(job, status="skipped", error=why, exit_code="", runner_pid=os.getpid()))
 
     def provisional_reason(self, job: Job) -> str:
-        """Why this job's product would not be the real one, or ""."""
+        """Return why the job's product would be provisional, or ""."""
         why = []
         if job.kind == "rr" and not self.api["rr"]:
             why.append("process_rr.py read the raw archives (variant API not ready)")
@@ -965,7 +1102,11 @@ class Campaign:
         return "; ".join(why)
 
     def start(self, job: Job) -> str:
-        """"started" or "skipped"."""
+        """Start a job in a child process with its own log.
+
+        Returns:
+            str: "started" or "skipped".
+        """
         aside = None
         if job.kind == "stack" and job.output is not None and job.output.exists():
             # an earlier (stale or partial) stack of ours: build_synthetic_remote would reuse it
@@ -1017,6 +1158,7 @@ class Campaign:
         return "started"
 
     def _read_log(self, r: Running) -> str:
+        """Return the part of a job's log written by this run."""
         try:
             with open(r.log_path, "rb") as fh:
                 fh.seek(r.log_offset)
@@ -1025,6 +1167,16 @@ class Campaign:
             return ""
 
     def finish(self, r: Running, rc: int, interrupted: bool = False) -> bool:
+        """Record a finished job in the ledger and check its product.
+
+        Args:
+            r (Running): The job.
+            rc (int): Exit code.
+            interrupted (bool): Whether the runner killed it.
+
+        Returns:
+            bool: True when the job succeeded.
+        """
         job = r.job
         text = self._read_log(r)
         secs = time.monotonic() - r.t0
@@ -1063,7 +1215,7 @@ class Campaign:
             else:
                 ok = False
                 if out.exists():
-                    out.unlink()  # a partial stack must not be reused by the next build
+                    out.unlink()  # removed so the next build starts afresh
         if not ok and not err:
             err = "interrupted" if interrupted else last_error(text) or f"exit code {rc}"
         row["status"] = "done" if ok else ("interrupted" if interrupted else "failed")
@@ -1083,6 +1235,11 @@ class Campaign:
         return ok
 
     def move_products(self, job: Job, prod: dict) -> dict:
+        """Move an rr run's EDI, sidecar and figure into <campaign>/tf/.
+
+        Returns:
+            dict: The product paths after the move.
+        """
         tf_dir = (self.survey.workspace / "tf").resolve()
         dest_dir = self.dir / "tf"
         out = dict(prod)
@@ -1104,6 +1261,7 @@ class Campaign:
     # ------------------------------------------------------------------ blocks
 
     def run_block(self, label: str, jobs: list[Job]) -> None:
+        """Run one block of jobs in parallel, respecting dependencies and the memory gate."""
         done, failed = set(), set()
         pending = []
         for job in jobs:
@@ -1111,7 +1269,7 @@ class Campaign:
                 done.add(job.run_id)
             else:
                 pending.append(job)
-        # a dependency outside this block counts as the ledger has it: done, or never coming
+        # a dependency outside this block counts as the ledger records it: done, or failed for good
         ids = {j.run_id for j in jobs}
         for d in {d for j in pending for d in j.deps if d not in ids}:
             row = self.ledger.rows.get(d)
@@ -1140,7 +1298,7 @@ class Campaign:
                     if time.time() - self._last_wait_log >= WAIT_LOG_S:
                         self.log(f"slot waiting for memory before {job.run_id}: {msg}")
                         self._last_wait_log = time.time()
-                elif not self._running:  # nothing running and nothing startable: it never will be
+                elif not self._running:  # nothing running and nothing startable: the rest is skipped
                     for j in list(pending):
                         pending.remove(j)
                         failed.add(j.run_id)
@@ -1148,6 +1306,7 @@ class Campaign:
             time.sleep(POLL_S)
 
     def _next(self, pending: list[Job], done: set, failed: set) -> Job | None:
+        """Return the next job whose dependencies are done, skipping jobs whose dependencies failed."""
         for job in list(pending):
             bad = [d for d in job.deps if d in failed]
             if bad:
@@ -1160,6 +1319,7 @@ class Campaign:
         return None
 
     def interrupt(self) -> None:
+        """Kill the running jobs, record them as interrupted and drop partial variants."""
         self.log(f"interrupted: stopping {len(self._running)} running job(s)")
         for rid, r in list(self._running.items()):
             kill_tree(r.popen.pid)
@@ -1174,8 +1334,11 @@ class Campaign:
         self.ledger.save()
 
     def drop_partial_variant(self, site: str, t0: float, rid: str) -> None:
-        """Delete the variant a killed stage 0 job was writing: build_variant writes in place, and a
-        partial file whose first run is complete would pass mtproc.ingest.variant_ready."""
+        """Delete the variant a killed stage 0 job was writing.
+
+        build_variant writes in place, and a partial file whose first run is
+        complete would pass mtproc.ingest.variant_ready.
+        """
         if _api_variant_path is None:
             self.log(f"{rid}: the variant build of {site} was killed; no variant API to locate its file")
             return
@@ -1185,7 +1348,11 @@ class Campaign:
             self.log(f"{rid}: deleted {path.name}, written by the killed variant build")
 
     def cleanup_orphans(self) -> None:
-        """Rows left "running" by a runner that died: kill its children, drop partial stack archives."""
+        """Clean up rows left "running" by a runner that died: kill its children, drop partial archives.
+
+        Raises:
+            SystemExit: When another campaign runner is still running a row.
+        """
         for rid, row in list(self.ledger.rows.items()):
             if row["status"] != "running":
                 continue
@@ -1219,7 +1386,14 @@ class Campaign:
     # ------------------------------------------------------------------ reports
 
     def scores(self, write: bool = True) -> pd.DataFrame:
-        """scores.csv's frame, recomputed for products whose EDI changed; written back atomically."""
+        """Build the scores.csv frame, rescoring products whose EDI changed, and write it atomically.
+
+        Args:
+            write (bool): Whether to write scores.csv.
+
+        Returns:
+            pd.DataFrame: One row per scored rr product.
+        """
         path = self.dir / "scores.csv"
         cache = {}
         if path.exists():
@@ -1268,13 +1442,18 @@ class Campaign:
         return df
 
     def report(self, sites=None) -> None:
-        """scores.csv, the per-site figures for `sites` (all plan sites when None), the line figures, summary.md."""
+        """Write scores.csv, the per-site figures for `sites` (all plan sites when None), the line figures and summary.md."""
         df = self.scores()
         write_report(self, df, self.plan.ordered(sites or self.plan.sites))
 
     # ------------------------------------------------------------------ dry run
 
     def dry_run(self, stages, sites) -> dict:
+        """Print the job matrix with counts and estimated hours, running nothing.
+
+        Returns:
+            dict: {"counts", "total", "hours"}.
+        """
         api = self.check_api()
         print(f"variant API: {api['func'] or 'not in mtproc.ingest yet'}; process_rr.py uses it: {api['rr']}; "
               f"stack builder uses it: {api['stack']}" + (f"  ({api['why']})" if api["why"] else ""))
@@ -1321,8 +1500,21 @@ class Campaign:
 
 
 def choose_best(s1: pd.DataFrame, tie_tolerance: float, pmin=None, pmax=None) -> dict | None:
-    """The best stage 1 remote from a site's scores: highest score; within `tie_tolerance` of it,
-    the lowest median |dlog10 rho| against the site's other stage 1 products."""
+    """Choose the best stage 1 remote from a site's scores.
+
+    The highest score wins; among remotes within `tie_tolerance` of it, the
+    one with the lowest median |dlog10 rho| against the site's other stage 1
+    products is chosen.
+
+    Args:
+        s1 (pd.DataFrame): The site's stage 1 scores.
+        tie_tolerance (float): Score margin counted as a tie.
+        pmin (float | None): Shortest period of the agreement window.
+        pmax (float | None): Longest period of the agreement window.
+
+    Returns:
+        dict | None: {"remote", "score", "why"}, or None without scores.
+    """
     if s1 is None or len(s1) == 0:
         return None
     s1 = s1.sort_values("score", ascending=False)
@@ -1361,6 +1553,7 @@ BEST_COLOUR = "#ffffff"
 
 
 def _plt():
+    """Import matplotlib.pyplot on the Agg backend."""
     import matplotlib
 
     matplotlib.use("Agg")
@@ -1370,12 +1563,13 @@ def _plt():
 
 
 def _phase_display(phi: np.ndarray, mode: str) -> np.ndarray:
-    """Phase as the MT plots show it: xy as is, yx + 180, both wrapped to [-180, 180)."""
+    """Return a phase as the MT plots show it: xy as is, yx + 180, both wrapped to [-180, 180)."""
     f = np.asarray(phi, dtype=float) + (180.0 if mode == "yx" else 0.0)
     return (f + 180.0) % 360.0 - 180.0
 
 
 def _draw(ax_rho, ax_phi, edi, colour, label, bold=False, errors=False) -> None:
+    """Draw an EDI's apparent resistivity and phase of both modes."""
     p, rho, phi, rerr, perr = curves(edi)
     kw = dict(color=colour, lw=2.0 if bold else 0.9, ms=3.2 if bold else 2.0, alpha=1.0 if bold else 0.85,
               zorder=5 if bold else 2)
@@ -1393,6 +1587,7 @@ def _draw(ax_rho, ax_phi, edi, colour, label, bold=False, errors=False) -> None:
 
 
 def _style(ax_rho, ax_phi, xlabel: bool = True) -> None:
+    """Set scales, limits, grids and labels of the rho and phase axes."""
     for col, mode in enumerate(MODES):
         a, b = ax_rho[col], ax_phi[col]
         a.set_xscale("log")
@@ -1410,22 +1605,38 @@ def _style(ax_rho, ax_phi, xlabel: bool = True) -> None:
 
 
 def _legend(fig, ax, title: str) -> None:
+    """Place the figure legend outside the axes, top right."""
     handles, labels = ax.get_legend_handles_labels()
     if handles:
         fig.legend(handles, labels, loc="outside right upper", fontsize=8, title=title, title_fontsize=8)
 
 
 def _window_text(c: "Campaign") -> str:
+    """Describe the scoring window, e.g. "0.01-1000 s"."""
     return f"{c.pmin:g}-{c.pmax:g} s" if c.pmin is not None and c.pmax is not None else "all periods"
 
 
 def _is_provisional(r) -> bool:
+    """Check whether a scores row is provisional."""
     v = r.get("provisional")
     return isinstance(v, str) and bool(v.strip())
 
 
 def fig_remotes(c: "Campaign", df: pd.DataFrame, site: str, best: str | None, out: Path) -> bool:
-    """Every stage 1 remote of `site` over each other, scores in the legend, and where they agree."""
+    """Draw every stage 1 remote of `site` together, with scores in the legend and where they agree.
+
+    Args:
+        c (Campaign): The campaign; its scoring window is named in the title.
+        df (pd.DataFrame): The scored products (`Campaign.scores`).
+        site (str): Local site.
+        best (str | None): The site's best stage 1 remote
+            (`Campaign.best_remotes`), or None; drawn bold, with
+            error bars.
+        out (Path): Path of the PNG.
+
+    Returns:
+        bool: False when the site has no stage 1 product.
+    """
     s1 = df[(df["stage"] == 1) & (df["local"] == site)].sort_values("score", ascending=False) if len(df) else df
     if len(s1) == 0:
         return False
@@ -1475,7 +1686,21 @@ def fig_remotes(c: "Campaign", df: pd.DataFrame, site: str, best: str | None, ou
 
 
 def fig_stacks(c: "Campaign", df: pd.DataFrame, site: str, best: str | None, out: Path) -> bool:
-    """The best single remote against the stacks (stage 2)."""
+    """Draw the best single remote against the stacks (stage 2).
+
+    Args:
+        c (Campaign): The campaign; its plan gives the stack weightings
+            and members.
+        df (pd.DataFrame): The scored products (`Campaign.scores`).
+        site (str): Local site.
+        best (str | None): The site's best stage 1 remote
+            (`Campaign.best_remotes`), or None; drawn bold, with
+            error bars.
+        out (Path): Path of the PNG.
+
+    Returns:
+        bool: False when the site has no stage 2 product.
+    """
     if len(df) == 0:
         return False
     s2 = df[(df["stage"] == 2) & (df["local"] == site)].sort_values("remote")
@@ -1504,7 +1729,19 @@ def fig_stacks(c: "Campaign", df: pd.DataFrame, site: str, best: str | None, out
 
 
 def fig_options(c: "Campaign", df: pd.DataFrame, site: str, best: str | None, out: Path) -> bool:
-    """The best remote's stage 3 configs over its stage 1 default."""
+    """Draw the best remote's stage 3 configs over its stage 1 default.
+
+    Args:
+        c (Campaign): The campaign; its plan's configs set the order.
+        df (pd.DataFrame): The scored products (`Campaign.scores`).
+        site (str): Local site.
+        best (str | None): The site's best stage 1 remote
+            (`Campaign.best_remotes`), or None (no figure).
+        out (Path): Path of the PNG.
+
+    Returns:
+        bool: False when the site has no stage 3 product.
+    """
     if len(df) == 0 or not best:
         return False
     base = df[(df["stage"] == 1) & (df["local"] == site) & (df["remote"] == best)]
@@ -1531,18 +1768,23 @@ def fig_options(c: "Campaign", df: pd.DataFrame, site: str, best: str | None, ou
 
 
 def best_products(df: pd.DataFrame) -> dict:
-    """{site: the scores row of its highest-scoring product, any stage}."""
+    """Return each site's highest-scoring product row, any stage: {site: row}."""
     if len(df) == 0:
         return {}
     return {s: g.sort_values("score", ascending=False).iloc[0] for s, g in df.groupby("local")}
 
 
 def _label(r) -> str:
+    """Label a product as <remote> or <remote>/<config>."""
     return r["remote"] + ("" if r["config"] in ("default", "") else f"/{r['config']}")
 
 
 def fig_pseudosection(c: "Campaign", df: pd.DataFrame, out: Path) -> bool:
-    """rho_xy, rho_yx and both phases of each site's best product, sites along the line, log period down."""
+    """Draw rho_xy, rho_yx and both phases of each site's best product along the line, log period down.
+
+    Returns:
+        bool: False when no product is scored.
+    """
     best = best_products(df)
     if not best:
         return False
@@ -1598,7 +1840,11 @@ def fig_pseudosection(c: "Campaign", df: pd.DataFrame, out: Path) -> bool:
 
 
 def fig_scores(c: "Campaign", df: pd.DataFrame, bests: dict, out: Path) -> bool:
-    """Sites x remotes (stage 1, and the stacks) and sites x configs (stage 3), coloured by score."""
+    """Draw sites x remotes (stage 1 and the stacks) and sites x configs (stage 3), coloured by score.
+
+    Returns:
+        bool: False when no product is scored.
+    """
     if len(df) == 0:
         return False
     sites = list(c.plan.sites)
@@ -1652,6 +1898,7 @@ def fig_scores(c: "Campaign", df: pd.DataFrame, bests: dict, out: Path) -> bool:
 
 
 def _fmt(v, spec=".3f") -> str:
+    """Format a number, "-" for None or non-finite values."""
     try:
         return "-" if v is None or not np.isfinite(float(v)) else format(float(v), spec)
     except (TypeError, ValueError):
@@ -1659,7 +1906,16 @@ def _fmt(v, spec=".3f") -> str:
 
 
 def write_summary(c: "Campaign", df: pd.DataFrame, bests: dict, out: Path) -> None:
-    """summary.md: the exclusions, stage 0's variants, per site the best remote/stack/options, line-wide options."""
+    """Write summary.md: the exclusions, stage 0's variants, the best remote/stack/options per site, and line-wide options.
+
+    Args:
+        c (Campaign): The campaign: its plan, ledger, spans and scoring
+            window.
+        df (pd.DataFrame): The scored products (`Campaign.scores`).
+        bests (dict): Each site's best stage 1 remote,
+            ``{site: {"remote", "score", "why"}}`` (`Campaign.best_remotes`).
+        out (Path): Path of summary.md, written through a temporary file.
+    """
     plan, rows = c.plan, list(c.ledger.rows.values())
     by_status: dict[str, int] = {}
     for r in rows:
@@ -1754,7 +2010,7 @@ def write_summary(c: "Campaign", df: pd.DataFrame, bests: dict, out: Path) -> No
 
 
 def write_report(c: "Campaign", df: pd.DataFrame, sites) -> None:
-    """The per-site figures for `sites`, the two line figures and summary.md."""
+    """Write the per-site figures for `sites`, the two line figures and summary.md."""
     figs = c.dir / "figures"
     bests = c.best_remotes(c.plan.sites, persist=False, df=df)
     n = 0
@@ -1763,7 +2019,7 @@ def write_report(c: "Campaign", df: pd.DataFrame, sites) -> None:
         for fn, suffix in ((fig_remotes, "remotes"), (fig_stacks, "stacks"), (fig_options, "options")):
             try:
                 n += bool(fn(c, df, s, b, figs / f"{s}_{suffix}.png"))
-            except Exception as exc:  # one broken product must not take the report down
+            except Exception as exc:  # a broken product is logged and the report continues
                 c.log(f"report: {s}_{suffix}.png failed: {type(exc).__name__}: {exc}")
     try:
         n += bool(fig_pseudosection(c, df, figs / f"{c.plan.name}_best_pseudosection.png"))
@@ -1781,6 +2037,11 @@ def write_report(c: "Campaign", df: pd.DataFrame, sites) -> None:
 
 
 def parse_stages(text: str) -> list[int]:
+    """Parse --stage, e.g. "0,1,2,3".
+
+    Raises:
+        argparse.ArgumentTypeError: On an unknown stage.
+    """
     out = sorted({int(x) for x in re.split(r"[,\s]+", text.strip()) if x})
     bad = [s for s in out if s not in STAGES]
     if bad:
@@ -1789,7 +2050,9 @@ def parse_stages(text: str) -> list[int]:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="campaign.py", description=__doc__.split("\n\nUsage:")[0],
+    """Build the command-line parser of campaign.py."""
+    p = argparse.ArgumentParser(prog="campaign.py",
+                                description=next(line for line in __doc__.strip().splitlines() if line.strip()),
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("survey_yaml")
     p.add_argument("plan_yaml")
@@ -1806,7 +2069,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def run_campaign(c: Campaign, stages, sites) -> None:
-    """Every block in order; a stage 2 whose stack builder is not on the variant API waits at the end."""
+    """Run every block in order; a stage 2 whose stack builder is not on the variant API waits at the end."""
     deferred = []
     for label, st, g, gs, jobs in c.blocks(stages, sites):
         if c.max_runs is not None and c.n_started >= c.max_runs:
@@ -1825,7 +2088,7 @@ def run_campaign(c: Campaign, stages, sites) -> None:
         c.run_block(label, jobs)
         try:
             c.report(gs if st else None)
-        except Exception as exc:  # a figure must never stop the campaign
+        except Exception as exc:  # a failed figure is logged and the campaign continues
             c.log(f"report after {label} failed: {type(exc).__name__}: {exc}")
     for label, gs in deferred:
         if c.max_runs is not None and c.n_started >= c.max_runs:
@@ -1840,6 +2103,15 @@ def run_campaign(c: Campaign, stages, sites) -> None:
 
 
 def main(argv=None) -> int:
+    """Run, dry-run or report a campaign.
+
+    Args:
+        argv (list[str] | None): Command-line arguments; sys.argv when None.
+
+    Returns:
+        int: 0 on success, 2 for sites not in the plan, 3 when another
+        runner holds the lock, 130 when interrupted.
+    """
     try:
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     except (AttributeError, ValueError):

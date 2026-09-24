@@ -1,15 +1,23 @@
-"""Unit test for `mtproc.ingest`: the raw/variant split, the LEMI-423 path, and one real hour of LEMI-424 and EDL.
+# -*- coding: utf-8 -*-
+"""
+Unit test for mtproc.ingest
 
+Checks the raw/variant split, the LEMI-423 path, one real hour of LEMI-424
+and EDL, and the EDL and LEMI-423 calibration chains. `ingest_site` is
+driven with its reader, its MTH5 class and its per-run helpers replaced by
+recorders, over one empty stand-in .B423 file in the scratch directory, so
+the raw/variant decision is tested without opening or writing a real
+archive. `filters_hash`, `build_variant`, `variant_ready` and
+`archive_filter_kinds` are driven over small real MTH5 archives written
+directly with the mth5 API (`_write_raw_archive`), since they read an
+archive's run comments back from disk.
+
+Usage:
     python tests/ingest_unit.py
 
-`ingest_site` is driven here with its reader, its MTH5 class and its
-per-run helpers replaced by recorders, over one empty stand-in .B423 file in
-the scratch directory: no real archive is opened or written, and what is left
-under test is exactly the decision this change added. `filters_hash`,
-`build_variant`, `variant_ready` and `archive_filter_kinds` are driven over
-small REAL MTH5 archives written directly with the mth5 API
-(`_write_raw_archive`), since they read an archive's run comments back off
-disk -- there is nothing to fake there.
+@author: ben kay (ben@auscope.org.au)
+
+:license: MIT
 
 **This test fails if** `default_archive_path` gives anything but
 ``<workspace>/mth5/<site>.h5`` (`ignore_filters` is accepted and ignored, kept
@@ -63,18 +71,18 @@ e1 (LEMI-424) or ex (EDL) samples differ from an INDEPENDENT read of the
 sample file with numpy (the 12th column of the text lines; the EX file's
 values) -- the archive must hold what the recorder wrote.
 
-**An EDL stamp missing one channel's file** (Hillside hs058): on
+**An EDL stamp missing one channel's file**: on
 seven synthetic 300 s stamps at 10 Hz, the second with no EX file, the fourth
-with a second BX file under old/ (hs061's test recording) and the fifth only
-15 s long (Hillside's startup files),
+with a second BX file under old/ (a test recording) and the fifth only
+15 s long (a startup file),
 `_group_contiguous` (with the rate) must give the runs [1], [3], [5], [6, 7] and leave
 the second and fourth out, and every file's stretch of every archived channel must
 equal the file stamped at that stretch's own time (h5py and numpy only) --
 the old grouping made one run in which mt-io's reader put the third EX file
 at the second stamp's time, and the spacing rule alone ran the 15 s file on into the next.
 
-**EDL files named for another station** than the site's recorder.ini (Hillside
-HSSL09: another survey's PLB03 a month earlier; hs058: "XX_" inside its own
+**EDL files named for another station** than the site's recorder.ini (here
+PLB03_ stamps a month earlier and an "XX_" stamp inside the site's own
 record) must not reach `record_files`, the span or the archive, which must be
 exactly the own files; a recorder.ini naming no file's station keeps them all.
 
@@ -87,7 +95,7 @@ reader's linear stage (nanoTesla -> digital counts, gain 1/K) -- then
 previous stage's units_out, and ex with neither the coil nor the b_scale
 stage. Stock mt-io raises there instead (its coil table's "millivolts").
 
-**An EDL site declared `sensor_type: lemi120`** (Hillside's LEMI-120 coils)
+**An EDL site declared `sensor_type: lemi120`** (LEMI-120 coils on the PR6-24)
 must be archived with, on hx and hy, the .rsp table (amplitudes
 and phases equal to the file read with numpy) then mt-io's 400000 uV/nT
 flat-band gain, its electric chain and its samples unchanged; lemi120 without
@@ -96,14 +104,14 @@ a `calibration_fn`, or an unknown sensor_type, must raise instead of ingesting.
 **An EDL site declared `electric_gain: 10.0`** (the electric chain's gain
 declared from the field notes: a field-notes fact, not a PR6-24 setting), ingested
 from the same synthetic files as the same site with no key (1.0, no filter),
-must be archived with every channel's stored samples bit-identical to the
+must be archived with every channel's stored samples identical to the
 other archive's and to the files (the words stay as stored); ex's AND ey's
 chain the other's plus one filter, `uoa_electric_gain`, a CoefficientFilter of
 gain 10.0 microVolt -> microVolt whose comment (the archive's HDF5 attribute)
 names "the field notes" and which the default-gain archive lacks, so that
 each's calibrated series (mth5's `remove_instrument_response`, what the chain
 means) is exactly 0.1 x the default-gain archive's own (to 1e-12); hx, not an
-electric channel, calibrated bit-identical to the other archive's. The run
+electric channel, calibrated identically to the other archive's. The run
 comment must carry "electric gain 10 on ['ex', 'ey'] (declared from the field
 notes)" and the default-gain archive's no such line. The key in the own entry
 of a site that is not an EDL must raise before the existing archive is
@@ -128,9 +136,8 @@ from _scratch import scratch_dir  # noqa: E402
 
 SCRATCH = scratch_dir("ingest_unit")
 SITE = "D02"
-# a `replace` and a `notch`: proof that `ingest_site` never touches either,
-# not that either is applied (that is `mtproc.noise.apply_filters_arrays` and
-# `build_variant`'s job now)
+# a `replace` and a `notch`, declared to show that `ingest_site` leaves both alone;
+# they are applied by `mtproc.noise.apply_filters_arrays` through `build_variant`
 FILTERS = [{"replace": {"hx": "A06"}},
            {"notch": {"f0": 50.0, "harmonics": 9, "q": 30.0, "passes": 2}}]
 
@@ -139,18 +146,22 @@ FILTERS = [{"replace": {"hx": "A06"}},
 
 
 class _Comments:
+    """Stand-in for a metadata comment with a `value`."""
+
     def __init__(self):
         self.value = ""
 
 
 class _RunMeta:
+    """Stand-in for run metadata: an id and a comment."""
+
     def __init__(self):
         self.id = ""
         self.comments = _Comments()
 
 
 class _Run:
-    """What `ingest_site` touches on a RunTS once the helpers are recorders."""
+    """Stand-in for the parts of a RunTS that `ingest_site` touches once the helpers are recorders."""
 
     def __init__(self):
         self.dataset = {}
@@ -161,11 +172,15 @@ class _Run:
 
 
 class _RunGroup:
+    """Stand-in for an mth5 run group; writes nothing."""
+
     def from_runts(self, run):
         pass
 
 
 class _StationGroup:
+    """Stand-in for an mth5 station group; writes nothing."""
+
     class _Meta:
         def update(self, other):
             pass
@@ -181,7 +196,7 @@ class _StationGroup:
 
 
 class _MTH5:
-    """Records that a file would have been written, and writes nothing."""
+    """Stand-in for MTH5 that records the files it would open and writes nothing."""
 
     opened: list[Path] = []
 
@@ -202,11 +217,11 @@ class _MTH5:
 
 
 class Calls(dict):
-    """What each recorder saw, per run."""
+    """The calls each recorder saw, per run."""
 
 
 def make_survey(filters) -> Survey:
-    """A one-site survey over a scratch data_root holding one empty .B423."""
+    """Build a one-site survey over a scratch data_root holding one empty .B423."""
     data_root = SCRATCH / "raw"
     (data_root / SITE).mkdir(parents=True, exist_ok=True)
     stamp = data_root / SITE / "1624510579.B423"
@@ -221,24 +236,35 @@ def make_survey(filters) -> Survey:
 
 
 def run_ingest(filters, ignore_filters: bool):
-    """`ingest_site` with every side effect recorded instead of performed.
+    """Run `ingest_site` with every side effect recorded instead of performed.
 
-    No `_replace_channels`/`apply_filters` recorders any more: `ingest_site`
-    must never reach either, whatever `filters` declares.
+    The recorders stand in for `read_lemi423` (its calls), `MTH5` (the files
+    it opens), and `_keep_channels`, `_standardise_e_orientation` and
+    `_apply_h_scale` (call counts); `read_run` fails the test if reached.
+    None concerns the declared filters: `ingest_site` applies none of them
+    (`mtproc.ingest.build_variant` applies them all through
+    `mtproc.noise.apply_filters_arrays`, `replace` by `_replace_from_donors`),
+    whatever `filters` declares.
+
+    Returns:
+        tuple: (survey, the archive path returned, the Calls recorded).
     """
     survey = make_survey(filters)
     calls = Calls(keep=0, orientation=0, h_scale=0, runs=[], read=[])
 
     def bump(key):
+        """Return a recorder that counts its calls under `key`."""
         def _fn(*_args, **_kwargs):
             calls[key] += 1
         return _fn
 
     def read(*args, **kwargs):
+        """Record a reader call and return a stand-in run."""
         calls["read"].append((args, kwargs))
         return _Run()
 
     def not_this_reader(*_args, **_kwargs):
+        """Fail the test: the LEMI-423 path reached the LEMI-424/EDL reader."""
         raise AssertionError("the LEMI-423 path called read_run (the LEMI-424/EDL reader)")
 
     original = {name: getattr(ingest, name) for name in
@@ -275,10 +301,12 @@ def test_default_archive_path() -> None:
 
 
 def test_ingest_site_never_touches_filters() -> None:
-    """`ingest_site` must write the raw archive whatever `site.filters` declares
-    (a `replace` included) and whatever `ignore_filters` is: the calibration
-    steps (channel keep, dipole polarity, coil/h_scale) still run once a run,
-    but nothing filter-related is ever reached."""
+    """Check that `ingest_site` writes the raw archive without applying declared filters.
+
+    Holds whatever `site.filters` declares (a `replace` included) and
+    whatever `ignore_filters` is: the calibration steps (channel keep, dipole
+    polarity, coil/h_scale) run once a run, and no filter step is reached.
+    """
     for ignore in (False, True):
         survey, out, calls = run_ingest(FILTERS, ignore_filters=ignore)
         assert out.name == f"{SITE}.h5", (ignore, out)
@@ -288,12 +316,15 @@ def test_ingest_site_never_touches_filters() -> None:
 
 
 def test_run_comment_carries_no_filters() -> None:
-    """The comment the run carries in each case: empty. `ingest_site` no
-    longer writes anything about `filters.yaml` into it, whatever
-    `ignore_filters` is -- that is `build_variant`'s run comment now."""
+    """Check that the raw run's comment is empty whatever `ignore_filters` is.
+
+    The filter provenance is written by `build_variant` into the variant's
+    run comment.
+    """
     seen = {}
 
     def capture(ignore: bool):
+        """Run ingest_site with stand-ins and return the run comment it set."""
         survey = make_survey(FILTERS)
         run = _Run()
         original = {name: getattr(ingest, name) for name in
@@ -320,10 +351,18 @@ def test_run_comment_carries_no_filters() -> None:
 
 def _write_raw_archive(path: Path, site: str, survey_name: str, data: dict, fs: float, t0: str,
                        comment: str = "") -> None:
-    """A minimal real raw MTH5 at `path`: one run named ``sr<fs>_0001``, one
-    channel per `data` entry ({comp: 1-D array}), the given `comment` on the
-    run (empty for a genuine raw archive; a filter-provenance string to
-    fabricate an "old layout" one)."""
+    """Write a minimal real raw MTH5.
+
+    Args:
+        path (Path): Archive to write, replacing any existing file.
+        site (str): Station name.
+        survey_name (str): Survey id.
+        data (dict): One 1-D array per channel ({comp: array}).
+        fs (float): Sample rate in Hz; the run is ``sr<fs>_0001``.
+        t0 (str): Start time.
+        comment (str): Run comment: empty for a genuine raw archive, a
+            filter-provenance string to fabricate an "old layout" one.
+    """
     import pandas as pd
     from mth5.mth5 import MTH5
 
@@ -368,6 +407,7 @@ NOTCH_B = [{"notch": {"f0": 5.0, "harmonics": 2, "q": 8.0, "passes": 1}}]  # dif
 
 
 def _variant_survey(site: str, filters) -> Survey:
+    """Build a one-site survey at VARIANT_FS declaring `filters`."""
     config = {
         "name": VARIANT_SURVEY_NAME, "instrument": "lemi423", "sample_rate": VARIANT_FS,
         "data_root": str(SCRATCH / "variant_raw"), "workspace": str(SCRATCH / "variant_work"),
@@ -390,8 +430,12 @@ def test_filters_hash() -> None:
 
 
 def test_build_variant_bit_for_bit_and_lifecycle() -> None:
-    """`build_variant` on a small real raw archive: bit-for-bit == `apply_filters_arrays`,
-    `variant_ready` true/false correctly, one variant kept after a declared-filter change."""
+    """Check `build_variant` on a small real raw archive.
+
+    The variant is bit-for-bit `apply_filters_arrays`, `variant_ready` is
+    correct before and after, and one variant is kept after a
+    declared-filter change.
+    """
     import numpy as np
     from mth5.mth5 import MTH5
     from mtproc.ingest import archive_filter_kinds, build_variant, default_archive_path, variant_path, variant_ready
@@ -440,9 +484,12 @@ def test_build_variant_bit_for_bit_and_lifecycle() -> None:
 
 
 def test_old_layout_refused() -> None:
-    """A `<site>.h5` whose run comment already carries a filter provenance
-    line -- as a pre-split `ingest_site` would have left -- must refuse
-    `build_variant` and `processing_archive`, naming "old layout"."""
+    """Check that an old-layout archive is refused.
+
+    A `<site>.h5` whose run comment already carries a filter provenance line,
+    as a pre-split `ingest_site` left it, must make `build_variant` and
+    `processing_archive` raise, naming "old layout".
+    """
     import numpy as np
     from mtproc.ingest import build_variant, default_archive_path, processing_archive
 
@@ -465,9 +512,12 @@ def test_old_layout_refused() -> None:
 
 
 def test_variant_ready_rejects_a_partial_file() -> None:
-    """A `.part` temp name (`build_variant` writing) or a finished-name
-    archive whose later run lacks the recorded hash (what an interrupted,
-    non-atomic write could otherwise leave) must not read `variant_ready`."""
+    """Check that `variant_ready` refuses partial files.
+
+    A `.part` temp name (`build_variant` writing) or a finished-name archive
+    whose later run lacks the recorded hash (what an interrupted, non-atomic
+    write could leave) must not read as ready.
+    """
     import numpy as np
     import pandas as pd
     from mth5.mth5 import MTH5
@@ -482,7 +532,7 @@ def test_variant_ready_rejects_a_partial_file() -> None:
     good_comment = "filters hash {}; ingest filters (in order): notch f0=5 Hz harmonics=2 q=10 passes=1 zero-phase on [hx]".format(h)
     out_path = variant_path(survey, site)
 
-    # a .part file (build_variant mid-write) must never read as the finished variant
+    # a .part file (build_variant mid-write) must not read as the finished variant
     part_path = out_path.with_name(out_path.name + ".part")
     _write_raw_archive(part_path, site, VARIANT_SURVEY_NAME, {"hx": hx}, VARIANT_FS, "2020-01-01T00:00:00+00:00",
                        comment=good_comment)
@@ -491,9 +541,9 @@ def test_variant_ready_rejects_a_partial_file() -> None:
     part_path.unlink()
     assert not variant_ready(survey, site), "no finished variant at all must not read ready either"
 
-    # two runs under the FINISHED name, only the first carrying the recorded
-    # hash -- what an old, non-atomic build_variant could leave after a
-    # mid-write crash between the first run and the second
+    # two runs under the finished name, only the first carrying the recorded
+    # hash: what a non-atomic build_variant could leave after a crash between
+    # the first run and the second
     m = MTH5(file_version="0.2.0")
     m.open_mth5(out_path, mode="w")
     try:
@@ -523,6 +573,7 @@ def test_variant_ready_rejects_a_partial_file() -> None:
 
 
 def test_lemi423_reader_call_unchanged() -> None:
+    """Check that a LEMI-423 site reaches read_lemi423 with the file and the three keyword arguments."""
     survey, out, calls = run_ingest(FILTERS, ignore_filters=False)
     stamp = survey.data_root / SITE / "1624510579.B423"
     assert len(calls["read"]) == 1, calls["read"]
@@ -534,12 +585,17 @@ def test_lemi423_reader_call_unchanged() -> None:
 
 
 def _independent_column(path: Path, column: int | None) -> "np.ndarray":
+    """Read one column of a text sample file (or the whole file) with numpy."""
     import numpy as np
     return np.loadtxt(path, usecols=column) if column is not None else np.loadtxt(path)
 
 
 def _check_archive(path: Path, site: str, run_id: str, comps: list[str], rate: float, n: int, start: str):
-    """(channel -> samples, channel -> filter chain) of the one run, asserting its shape."""
+    """Read the one run of an archive, asserting its shape.
+
+    Returns:
+        tuple[dict, dict]: (channel -> samples, channel -> filter chain).
+    """
     from mth5.mth5 import MTH5
     m = MTH5()
     m.open_mth5(path, mode="r")
@@ -563,6 +619,7 @@ def _check_archive(path: Path, site: str, run_id: str, comps: list[str], rate: f
 
 
 def test_new_instruments_one_hour() -> None:
+    """Check the ingest of one real hour of LEMI-424 (MBJ21) and EDL (EGFLP02)."""
     import time
     import numpy as np
     done = instrument_samples.mixed_survey()
@@ -592,11 +649,15 @@ def test_new_instruments_one_hour() -> None:
 
 
 def test_edl_lemi120_sensor_chain() -> None:
-    """Fails if an EDL site declared `sensor_type: lemi120` (Hillside: LEMI-120 coils on the PR6-24)
-    is archived with anything but the coil chain on hx and hy -- the .rsp table, amplitudes and phases
-    equal to the file read HERE with numpy, then mt-io's 400000 uV/nT flat-band gain -- or with its
-    samples or electric chain changed; or if lemi120 without a `calibration_fn`, or an unknown
-    sensor_type, ingests at all instead of raising."""
+    """Check the coil chain of an EDL site declared `sensor_type: lemi120`.
+
+    Fails if the site (LEMI-120 coils on the PR6-24) is archived
+    with anything but the coil chain on hx and hy (the .rsp table, amplitudes
+    and phases equal to the file read here with numpy, then mt-io's
+    400000 uV/nT flat-band gain), or with its samples or electric chain
+    changed; or if lemi120 without a `calibration_fn`, or an unknown
+    sensor_type, ingests instead of raising.
+    """
     import shutil
     import h5py
     import numpy as np
@@ -616,6 +677,7 @@ def test_edl_lemi120_sensor_chain() -> None:
             truth.setdefault(suffix, []).append(values.astype(float))
 
     def survey(**defaults):
+        """Build the one-site EDL survey with extra defaults."""
         base = {"dipole_length_ex": 49.0, "dipole_length_ey": 51.0, "channels": ["ex", "ey", "hx", "hy"]}
         return Survey({"name": "t", "instrument": "edl", "data_root": str(root / "raw"),
                        "workspace": str(root / "work"), "defaults": {**base, **defaults},
@@ -651,10 +713,14 @@ def test_edl_lemi120_sensor_chain() -> None:
 
 
 def test_edl_electric_gain() -> None:
-    """Fails if an EDL site's `electric_gain: 10.0` does not make BOTH ex and ey come out exactly 10x
-    smaller than the same files read at the default gain (1.0) -- through the archive's own chain,
-    the samples staying the stored words -- or touches hx; if the run comment does not say so; or if
-    the key on a non-EDL site ingests."""
+    """Check the declared electric chain gain of an EDL site.
+
+    Fails if `electric_gain: 10.0` does not make both ex and ey come out
+    exactly 10x smaller than the same files read at the default gain (1.0),
+    through the archive's own chain with the samples kept as the stored
+    words, or touches hx; if the run comment does not say so; or if the key
+    on a non-EDL site ingests.
+    """
     import shutil
     import h5py
     import numpy as np
@@ -674,6 +740,7 @@ def test_edl_electric_gain() -> None:
             words.setdefault(suffix, []).append(values.astype(float))
 
     def survey(own=None, **defaults):
+        """Build the one-site EDL survey with the site's own entry and extra defaults."""
         base = {"dipole_length_ex": 49.0, "dipole_length_ey": 51.0, "channels": ["ex", "ey", "hx", "hy"]}
         return Survey({"name": "t", "instrument": "edl", "data_root": str(root / "raw"),
                        "workspace": str(root / "work"), "defaults": {**base, **defaults},
@@ -715,8 +782,8 @@ def test_edl_electric_gain() -> None:
         gain = hi[comp]["filters"]["uoa_electric_gain"]
         assert (type(gain).__name__, float(gain.gain), gain.units_in, gain.units_out) == (
             "CoefficientFilter", 10.0, "microVolt", "microVolt"), (comp, gain.gain, gain.units_in, gain.units_out)
-        # the declared-gain response is exactly 10x the default's, at every test frequency -- not
-        # hardcoded (the dipole length differs between ex and ey), but read off the default archive
+        # the declared-gain response is exactly 10x the default's at every test frequency; the
+        # reference is read off the default archive, since the dipole length differs between ex and ey
         assert np.allclose(hi[comp]["complex"], 10.0 * lo[comp]["complex"], rtol=1e-12, atol=0), \
             (comp, hi[comp]["complex"][:3], lo[comp]["complex"][:3])
         ratio = hi[comp]["calibrated"] / lo[comp]["calibrated"]
@@ -739,16 +806,21 @@ def test_edl_electric_gain() -> None:
     print(f"  electric_gain 10.0: samples == the files in both archives; ex chain {hi['ex']['chain']}, "
           f"ey chain {hi['ey']['chain']}; calibrated ex/default {np.nanmin(ratios['ex']):.15f} .. "
           f"{np.nanmax(ratios['ex']):.15f}, ey/default {np.nanmin(ratios['ey']):.15f} .. "
-          f"{np.nanmax(ratios['ey']):.15f}; hx calibrated bit-identical; comment {note!r}; "
+          f"{np.nanmax(ratios['ey']):.15f}; hx calibrated identically; comment {note!r}; "
           f"the key on a lemi424 site refused, the archive untouched")
 
 
 def test_edl_files_of_another_station_left_out() -> None:
-    """Fails if an EDL site folder's files named for another station than its recorder.ini's
-    (Hillside HSSL09: 115 stamps of another survey's PLB03 a month earlier; hs058: an "XX_"
-    stamp inside its own record) reach `record_files`, the span or the archive -- the archive
-    must be exactly the own files, read here with numpy and h5py -- or if a recorder.ini naming
-    a station no file carries makes the site lose its files instead of keeping them all."""
+    """Check that EDL files named for another station are left out.
+
+    Fails if an EDL site folder's files named for another station than its
+    recorder.ini's (here PLB03_ stamps a month earlier and an "XX_" stamp
+    inside the site's own record) reach
+    `record_files`, the span or the archive, which must be exactly the own
+    files, read here with numpy and h5py; or if a recorder.ini naming a
+    station no file carries makes the site lose its files instead of keeping
+    them all.
+    """
     import shutil
     import h5py
     import numpy as np
@@ -789,15 +861,19 @@ def test_edl_files_of_another_station_left_out() -> None:
 
 
 def test_edl_stamp_missing_a_channel_splits_the_run() -> None:
-    """Fails if an EDL stamp that lacks one channel's file (Hillside hs058: no EX
-    at 15:35), or has two for one channel (hs061: a test recording under old/ with
-    the real files' stamps), is grouped into a run; if a file shorter than the time
-    to the next stamp (Hillside's 15 s startup files, 300 s apart) does not end its
-    run; or if any archived sample differs from the file stamped at its own time,
-    read here with numpy and h5py alone: mt-io's reader joins each channel's files
-    end to end, so the old grouping put the third EX file at the second stamp's
-    time (ex 300 s early for the rest of the run) and every sample after a short
-    file 285 s early."""
+    """Check that an EDL stamp missing a channel's file splits the run.
+
+    Fails if an EDL stamp that lacks one channel's file (no EX), or has two
+    for one channel (a test recording under old/ with the real files'
+    stamps), is grouped into a run; if a file shorter than the time to the
+    next stamp (15 s startup files, 300 s apart) does not end its run; or
+    if any archived sample differs from
+    the file stamped at its own time, read here with numpy and h5py alone.
+    mt-io's reader joins each channel's files end to end, so grouping across
+    such a stamp would put the third EX file at the second stamp's time (ex
+    300 s early for the rest of the run) and every sample after a short file
+    285 s early.
+    """
     import shutil
     import h5py
     import numpy as np
@@ -824,7 +900,7 @@ def test_edl_stamp_missing_a_channel_splits_the_run() -> None:
             values = (c + 1) * 1_000_000 + k * 10_000 + np.arange(n)
             np.savetxt(site / f"EDLX_{stamp}.{suffix}", values, fmt="%d")
             truth[(stamp, suffix)] = values.astype(float)
-    # hs061's old/ test recording: a second BX file with a stamp the real files have
+    # a test recording kept under old/: a second BX file with a stamp the real files have
     np.savetxt(site / "old" / f"EDLtest_{stamps[3]}.BX", -np.arange(per_file), fmt="%d")
     files = record_files(site, "edl")
     got = [sorted({p.stem.split("_")[1] for p in g}) for g in _group_contiguous(files, None, "edl", rate=fs)]
@@ -860,8 +936,12 @@ def test_edl_stamp_missing_a_channel_splits_the_run() -> None:
 
 
 def test_apple_double_twins_are_skipped() -> None:
-    """Fails if `select_files` or `Survey.site_dirs` counts a `._<epoch>.B423`
-    AppleDouble twin (a Mac copy artefact) as a record, or drops the real file."""
+    """Check that AppleDouble twins are skipped.
+
+    Fails if `select_files` or `Survey.site_dirs` counts a `._<epoch>.B423`
+    AppleDouble twin (a Mac copy artefact) as a record, or drops the real
+    file.
+    """
     import tempfile
     from mtproc.ingest import b423_files, select_files
     from mtproc.survey import Survey
@@ -881,15 +961,21 @@ def test_apple_double_twins_are_skipped() -> None:
 
 
 def test_lemi423_coil_chain() -> None:
-    """Fails if a LEMI-423 site with a `calibration_fn` (the LEMI-120 .rsp) and `h_scale: -1000`, ingested
-    from one synthetic B423 file, is not archived with hx's and hy's chain exactly, physical to recorded:
-    the coil table (FrequencyResponseTableFilter nanoTesla -> nanoTesla, amplitudes and phases equal to
-    the .rsp read HERE with numpy), the reader's linear stage (CoefficientFilter `lemi423_linear_<comp>`,
-    nanoTesla -> digital counts, gain 1/K from the header), then `lemi423_b_scale` (gain -1000, digital
-    counts -> digital counts); or if each stage's units_in is not the previous stage's units_out; or if
-    ex carries a coil or b_scale stage. That is the mt-io fork's chain with mtproc's one stage appended;
-    stock mt-io raises before writing anything (its coil table's "millivolts" is not a unit mt_metadata
-    knows), which mtproc no longer patches."""
+    """Check the coil chain of a LEMI-423 site with a `calibration_fn` and `h_scale`.
+
+    Fails if a LEMI-423 site with a `calibration_fn` (the LEMI-120 .rsp) and
+    `h_scale: -1000`, ingested from one synthetic B423 file, is not archived
+    with hx's and hy's chain exactly, physical to recorded: the coil table
+    (FrequencyResponseTableFilter nanoTesla -> nanoTesla, amplitudes and
+    phases equal to the .rsp read here with numpy), the reader's linear stage
+    (CoefficientFilter `lemi423_linear_<comp>`, nanoTesla -> digital counts,
+    gain 1/K from the header), then `lemi423_b_scale` (gain -1000, digital
+    counts -> digital counts); or if each stage's units_in is not the
+    previous stage's units_out; or if ex carries a coil or b_scale stage.
+    This is the mt-io fork's chain with mtproc's one stage appended; stock
+    mt-io raises before writing anything, since its coil table's "millivolts"
+    is not a unit mt_metadata knows.
+    """
     import shutil
     import numpy as np
     from mth5.mth5 import MTH5
@@ -939,10 +1025,13 @@ def test_lemi423_coil_chain() -> None:
 
 
 def test_glued_altitude_header_line() -> None:
-    """Fails if a B423 header whose altitude line reads `%Alt1060.0,m 12 1`
-    (firmware 2.1, four-digit altitudes, 47 Morocco sites) raises in mt-io's
-    own coordinate parser (the mt-io fork parses it; mtproc patches nothing),
-    or if the ordinary `%Alt 125.2,m 12 1` form parses differently than before."""
+    """Check that mt-io parses a glued four-digit altitude line.
+
+    Fails if a B423 header whose altitude line reads `%Alt1060.0,m 12 1`
+    (firmware 2.1 with a four-digit altitude) raises in mt-io's
+    own coordinate parser (the mt-io fork parses it), or if the ordinary
+    `%Alt 125.2,m 12 1` form parses to anything but 125.2 m.
+    """
     from mt_io.lemi.lemi423 import Read_Lemi_Header
     base = ["%LEMI423 #0011", "%FIRMWARE Ver.2.1", "%MADE in UKRAINE", " ", "%Date 2023/09/19",
             "%Time 16:32:57", "%Ubat 12.57V", "%Current 108.5mA", "%Free 30132MB",

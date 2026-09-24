@@ -1,12 +1,23 @@
-"""Unit test for `mtproc.bands.lemimt_band_scheme`'s band widths -- no archive, no aurora run.
+# -*- coding: utf-8 -*-
+"""
+Unit test for the band widths of mtproc.bands.build_band_scheme
 
+Checks that `build_band_scheme` refuses a band layout with a band narrower
+than one FFT harmonic spacing and leaves working layouts unchanged. Runs on
+the band scheme alone, without an archive or an aurora run.
+
+Usage:
     python tests/bands_unit.py
+
+@author: ben kay (ben@auscope.org.au)
+
+:license: MIT
 
 **This test fails if** a layout with a band narrower than one FFT harmonic
 spacing is accepted: at 10 Hz with a 128-point window, `min_period` 2 s and
-`max_period` 10,000 s (Stuart Shelf trip 2: with the survey's
-notch list 4 of every level's 6 bands were dropped silently and 13 of 41
-periods came out; with none aurora stopped with a bare IndexError) must
+`max_period` 10,000 s (unchecked, such a layout loses bands silently at
+every level with a notch list, and without one aurora stops with a bare
+IndexError) must
 raise ValueError naming the level, the band and "harmonic", with notches and
 without; or a layout that works is refused or changed: the 10 Hz survey
 defaults (min 0.005 s, max 5000 s, notches 50 and 150 Hz; 41 bands on 7
@@ -30,11 +41,26 @@ import numpy as np
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "src"))
 
-from mtproc.bands import lemimt_band_scheme  # noqa: E402
+from mtproc.bands import build_band_scheme  # noqa: E402
 
 
 def harmonics_per_band(fs: float, scheme: dict, window: int = 128, factor: int = 4) -> list[int]:
-    """Each band's harmonic count, through mt_metadata's Band (IndexError on an empty band)."""
+    """Count the FFT harmonics in each band of a scheme using mt_metadata's Band.
+
+    Args:
+        fs (float): Sample rate of decimation level 0 in Hz.
+        scheme (dict): Band scheme with a "band_edges" mapping of level to
+            (low, high) frequency pairs.
+        window (int): FFT window length in samples.
+        factor (int): Decimation factor between levels.
+
+    Returns:
+        list[int]: Harmonic count of every band, level by level.
+
+    Raises:
+        IndexError: From `Band.set_indices_from_frequencies` when a band
+            holds no harmonic.
+    """
     from mt_metadata.common.band import Band
 
     counts = []
@@ -50,7 +76,7 @@ def harmonics_per_band(fs: float, scheme: dict, window: int = 128, factor: int =
 def test_too_narrow_is_refused() -> None:
     for notches in ((), (50.0, 150.0)):
         try:
-            lemimt_band_scheme(10.0, min_period=2.0, max_period=10000.0, notch_frequencies=notches)
+            build_band_scheme(10.0, min_period=2.0, max_period=10000.0, notch_frequencies=notches)
         except ValueError as exc:
             text = str(exc)
             assert "level 0" in text and "harmonic" in text and "0.125-0.1575 Hz" in text, text
@@ -64,7 +90,7 @@ def test_working_layouts_unchanged() -> None:
              (10.0, dict(min_period=0.4, max_period=6553.6), 42, 7),
              (1000.0, dict(min_period=0.005, max_period=5000.0, notch_frequencies=(50.0, 150.0)), 60, 10)]
     for fs, kw, n_bands, n_levels in cases:
-        scheme = lemimt_band_scheme(fs, **kw)
+        scheme = build_band_scheme(fs, **kw)
         got = sum(len(b) for b in scheme["band_edges"].values())
         assert got == n_bands and len(scheme["band_edges"]) == n_levels, (fs, kw, got, len(scheme["band_edges"]))
         counts = harmonics_per_band(fs, scheme)
@@ -77,7 +103,7 @@ def test_working_layouts_unchanged() -> None:
 
 def test_old_guard_still_raises() -> None:
     try:
-        lemimt_band_scheme(10.0, min_period=2.0, max_period=10000.0, window=32)
+        build_band_scheme(10.0, min_period=2.0, max_period=10000.0, window=32)
     except ValueError as exc:
         assert "lowest band edge" in str(exc), exc
     else:

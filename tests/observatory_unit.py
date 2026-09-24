@@ -1,16 +1,26 @@
-"""Offline unit test for `mtproc.observatory` and `scripts/fetch_observatory.py`: the GIN is mocked.
+# -*- coding: utf-8 -*-
+"""
+Offline unit test for mtproc.observatory and scripts/fetch_observatory.py
 
+The GIN is mocked. The IAGA-2002 day files are written by the test in the
+format's fixed layout (70-character header lines ending in "|", a comment
+line, the DATE column line, then one row per second) for a synthetic
+observatory SFS at 36.665 N, 354.058 E, 111 m. On each day rows exist for the
+seconds k = 0..599 and 1800..2399 after midnight UTC (the 20 minutes between
+are absent), with X = 27000 + k/100, Y = -500 + k/50, Z = 30000 - k/100 nT
+(exact to the format's two decimals), F = 88888.00 (not recorded)
+throughout, and X, Y, Z = 99999.00 (missing) for k = 300..329: a 30 s gap.
+The network call, `mtproc.observatory._http_get`, is replaced by a function
+that records every URL it is asked for and serves that day's text, or,
+offline, raises what urllib raises when a name does not resolve. Everything
+is written under a temporary directory, removed at the end.
+
+Usage:
     python tests/observatory_unit.py
 
-The IAGA-2002 day files are written here, in the format's fixed layout (70-character header lines
-ending in "|", a comment line, the DATE column line, then one row per second), for a synthetic
-observatory SFS at 36.665 N, 354.058 E, 111 m: on each day rows exist for the seconds k = 0..599 and
-1800..2399 after midnight UTC (the 20 minutes between are absent), with X = 27000 + k/100,
-Y = -500 + k/50, Z = 30000 - k/100 nT (exact to the format's two decimals), F = 88888.00 (not
-recorded) throughout, and X, Y, Z = 99999.00 (missing) for k = 300..329: a 30 s gap. The one
-network call, `mtproc.observatory._http_get`, is replaced by a function that records every URL it
-is asked for and serves that day's text (or, offline, raises what urllib raises when a name does
-not resolve). Everything is written under a temporary directory, removed at the end.
+@author: ben kay (ben@auscope.org.au)
+
+:license: MIT
 
 **This test fails if**
 (a) `parse_iaga2002` of the 2023-09-20 text does not give exactly 1200 rows whose unix times are
@@ -40,13 +50,13 @@ not resolve). Everything is written under a temporary directory, removed at the 
     cache (every file's bytes compared) or writes an archive;
 (e) after `fetch_observatory.py <survey.yaml> sfs` on a survey written the way new_survey.py writes
     one (three sites dated 2023-09-20T05:00Z to 2023-09-21T03:00Z, so the default span is those
-    two days), survey.yaml's text above `sites:` or any other site's lines are not byte-identical
+    two days), survey.yaml's text above `sites:` or any other site's lines are not identical
     to before; the SFS entry is not {instrument: intermagnet, channels: [hx, hy, hz], latitude
     36.665, longitude -5.942, elevation 111.0, start 2023-09-20T00:00:00Z, end
     2023-09-21T00:40:00Z, notes "INTERMAGNET observatory, 1 s, fetched <UTC>"} in that key order;
     the archive is not <workspace>/mth5/SFS.h5 with four runs; running it again asks the GIN
     anything or changes a byte of survey.yaml; or a survey whose SFS is a recorded site does not
-    make the script return 2 and leave that file byte-identical.
+    make the script return 2 and leave that file unchanged.
 """
 
 from __future__ import annotations
@@ -91,12 +101,13 @@ HEADER = [("Format", "IAGA-2002"), ("Source of Data", "synthetic, tests/observat
 
 
 def xyz(k) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Return the synthetic X, Y, Z in nT at second(s) k of the day."""
     k = np.asarray(k, float)
     return 27000.0 + k / 100.0, -500.0 + k / 50.0, 30000.0 - k / 100.0
 
 
 def iaga_day(day: str) -> bytes:
-    """One synthetic IAGA-2002 day (see the module docstring)."""
+    """Return one synthetic IAGA-2002 day, as described in the module docstring."""
     lines = [f" {label:<23}{value:<45}|" for label, value in HEADER]
     lines.append(f" # {'synthetic: X Y Z linear in the second of the day':<66}|")
     lines.append(f"DATE       TIME         DOY     {CODE}X      {CODE}Y      {CODE}Z      {CODE}F   |")
@@ -111,6 +122,8 @@ def iaga_day(day: str) -> bytes:
 
 
 class FakeGIN:
+    """Stand-in for `mtproc.observatory._http_get` that records URLs and serves synthetic days."""
+
     def __init__(self):
         self.urls: list[str] = []
         self.offline = False
@@ -122,6 +135,7 @@ class FakeGIN:
         return iaga_day(re.search(r"dataStartDate=([0-9-]+)", url).group(1))
 
     def days(self) -> list[str]:
+        """Return the days requested so far, in order."""
         return [re.search(r"dataStartDate=([0-9-]+)", u).group(1) for u in self.urls]
 
 
@@ -129,6 +143,7 @@ GIN = FakeGIN()
 
 
 def load_script():
+    """Import scripts/fetch_observatory.py as a module."""
     spec = importlib.util.spec_from_file_location("fetch_observatory", SCRIPT)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -136,6 +151,7 @@ def load_script():
 
 
 def run(script, *args) -> tuple[int, str, str]:
+    """Run the script's main and return (exit code, stdout, stderr)."""
     out, err = io.StringIO(), io.StringIO()
     with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
         try:
@@ -146,10 +162,12 @@ def run(script, *args) -> tuple[int, str, str]:
 
 
 def snapshot(root: Path) -> dict[str, bytes]:
+    """Return the bytes of every file under root, keyed by relative path."""
     return {str(p.relative_to(root)): p.read_bytes() for p in sorted(root.rglob("*")) if p.is_file()}
 
 
 def station(f: h5py.File):
+    """Return the archive's one station group, asserting it is SFS in a single survey."""
     surveys = f["Experiment/Surveys"]
     assert len(surveys) == 1, list(surveys)
     stations = surveys[next(iter(surveys))]["Stations"]
@@ -158,10 +176,12 @@ def station(f: h5py.File):
 
 
 def runs_of(st) -> list[str]:
+    """Return the station's run groups (sr*), sorted."""
     return sorted(k for k in st if k.startswith("sr"))
 
 
 def utc(text: str) -> float:
+    """Convert an ISO time to epoch seconds."""
     return pd.Timestamp(text).timestamp()
 
 
@@ -313,7 +333,7 @@ processing:
 
 
 def write_survey(folder: Path, sites: dict) -> Path:
-    """A survey.yaml written as scripts/new_survey.py writes one: HEAD, then the safe_dump sites block."""
+    """Write a survey.yaml as scripts/new_survey.py writes one: HEAD, then the safe_dump sites block."""
     folder.mkdir(parents=True, exist_ok=True)
     head = HEAD.format(data_root=(folder / "raw").as_posix(), workspace=(folder / "work").as_posix())
     body = yaml.safe_dump(sites, sort_keys=False, allow_unicode=True, default_flow_style=False)
@@ -324,7 +344,7 @@ def write_survey(folder: Path, sites: dict) -> Path:
 
 
 def site_blocks(text: str) -> tuple[str, dict[str, str]]:
-    """(the text above `sites:`, {site: its lines}) cut from the file's own text."""
+    """Cut a survey.yaml's text into (the text above `sites:`, {site: its lines})."""
     head, _, block = text.partition("\nsites:\n")
     out, name = {}, None
     for line in block.splitlines(keepends=True):
@@ -362,14 +382,14 @@ def test_e_survey_yaml(tmp: Path, script) -> None:
     archive = tmp / "survey_e" / "work" / "mth5" / "SFS.h5"
     with h5py.File(archive, "r") as f:
         assert runs_of(station(f)) == ["sr1_0001", "sr1_0002", "sr1_0003", "sr1_0004"], runs_of(station(f))
-    print(f"  (e) SFS added after R05, the head and A01 A02 R05 byte-identical; {archive.name} with 4 runs")
+    print(f"  (e) SFS added after R05, the head and A01 A02 R05 unchanged; {archive.name} with 4 runs")
     print("      " + "\n      ".join(blocks1["SFS"].rstrip().splitlines()))
 
     GIN.urls.clear()
     code, stdout, stderr = run(script, survey_yaml, "SFS")
     assert code == 0 and GIN.urls == [], (code, GIN.days(), stderr)
     assert survey_yaml.read_bytes().decode("utf-8") == text1, "a refresh from the cache changed survey.yaml"
-    print("  (e) run again: 0 requests, survey.yaml byte-identical (refreshed from the cache)")
+    print("  (e) run again: 0 requests, survey.yaml unchanged (refreshed from the cache)")
 
     clash = write_survey(tmp / "survey_clash", dict(SITES, SFS={"latitude": 31.0, "longitude": -8.0,
                                                                "start": "2023-09-20T00:00:00Z",

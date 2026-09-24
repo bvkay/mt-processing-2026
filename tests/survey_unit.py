@@ -1,6 +1,17 @@
-"""Unit test for `mtproc.survey`: distance_km, Survey.timezone, the channel presets -- no Qt, no archive.
+# -*- coding: utf-8 -*-
+"""
+Unit test for mtproc.survey
 
+Checks `distance_km`, `Survey.timezone`, the field-sheet survey CSV reader,
+the channel presets, instrument detection and the electric chain gain key.
+Runs without Qt or an archive.
+
+Usage:
     python tests/survey_unit.py
+
+@author: ben kay (ben@auscope.org.au)
+
+:license: MIT
 
 **This test fails if** one degree of latitude on the equator, and again at
 -30 deg (D02's latitude), is not 111.2 km to within 0.5 km; the same distance
@@ -12,7 +23,7 @@ with no top-level `timezone:` does not report "UTC"; a survey that declares
 one does not report exactly it; or the two real survey configs do not both
 declare `Australia/Adelaide` **above** their `sites:` block, where
 `scripts/burra_notes_to_yaml.py`'s `write_sites_block` keeps the head of the
-file byte-for-byte; or the channel presets (`CHANNEL_PRESETS`, `preset_label`,
+file unchanged; or the channel presets (`CHANNEL_PRESETS`, `preset_label`,
 `channels_from_label`) break: a preset of either instrument does not round
 trip label -> list -> label; the LEMI-423 default (the first preset) is not
 "Ex Ey Bx By" = [ex, ey, hx, hy]; the same set in another order or case does
@@ -25,8 +36,9 @@ LEMI-423: hx hy hz ex ey, as `LEMI423Reader.read` stores Bx By Bz Ex Ey; EDL:
 mt-io's own `UoACollection.CHANNEL_MAP`), the presets' instruments are not
 exactly `INSTRUMENTS` (lemi423, lemi424, edl) or the EDL default is not
 "Ex Ey Bx By Bz" = [ex, ey, hx, hy, hz]; or a preset's words in another
-order, with commas or in another case ("Bx By Ex Ey", Hillside's
-`--channels`) are not that preset ([ex, ey, hx, hy] on an EDL or LEMI-423,
+order, with commas or in another case ("Bx By Ex Ey", as typed for an
+EDL survey's `--channels`) are not that preset ([ex, ey, hx, hy] on an
+EDL or LEMI-423,
 not [bx, by, ex, ey], which drops both coils at ingest), or a typed list
 that is no preset's words is not kept as typed.
 
@@ -116,11 +128,14 @@ def test_real_surveys_declare_adelaide_above_sites() -> None:
         print(f"  {path.parent.name}: timezone {survey.timezone}, declared above the sites: block")
 
 
-def test_matlab_survey_csv_columns() -> None:
-    """Fails if a MATLAB field-app survey CSV (SiteName, ExDipole, ExAzimuth,
+def test_field_survey_csv_columns() -> None:
+    """Check that a field-sheet survey CSV is read into the site table.
+
+    Fails if a field-sheet survey CSV (SiteName, ExDipole, ExAzimuth,
     EyDipole, EyAzimuth, Latitude, Longitude, Elevation, Deployment_Notes,
-    Pickup_Notes, TimeZone, ...) is not read into our site-table columns, or
-    its two note columns are not joined into `notes`."""
+    Pickup_Notes, TimeZone, ...) is not read into the site-table columns, or
+    its two note columns are not joined into `notes`.
+    """
     import tempfile
     from mtproc.survey import read_site_table
     lines = [
@@ -137,7 +152,7 @@ def test_matlab_survey_csv_columns() -> None:
     assert rows["A01"]["notes"] == "Surrounded by houses", rows["A01"].get("notes")
     assert rows["A02"]["notes"] == "electrode dug up", rows["A02"].get("notes")
     assert "resistance_ng" in ignored and "timezone" in ignored, ignored
-    print(f"  MATLAB CSV read: A01 {rows['A01']}, ignored {ignored}")
+    print(f"  field-sheet survey CSV read: A01 {rows['A01']}, ignored {ignored}")
 
 
 def test_channel_presets() -> None:
@@ -174,8 +189,9 @@ def test_channel_presets() -> None:
 
 
 def test_preset_words_in_any_order() -> None:
-    # Hillside (EDL broadband): `new_survey.py --channels "Bx By Ex Ey"` declared
-    # [bx, by, ex, ey], and ingest kept only ex, ey -- the EDL reader names its coils hx hy
+    # an EDL broadband survey declared with `new_survey.py --channels "Bx By Ex Ey"` must not
+    # get [bx, by, ex, ey], of which ingest would keep only ex, ey; the EDL reader names its
+    # coils hx hy
     for typed in ("Bx By Ex Ey", "bx, by, ex, ey", "  EY EX BY BX "):
         for instrument in ("edl", "lemi423"):
             got = channels_from_label(typed, instrument)

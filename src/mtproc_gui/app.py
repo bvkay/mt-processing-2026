@@ -1,33 +1,44 @@
-"""The main window and the state every tab shares.
+# -*- coding: utf-8 -*-
+"""
+Main window and shared application state
 
-`State` holds the one survey the window is looking at (the `survey.yaml` path,
-the `mtproc.survey.Survey` built from it, the selected site) plus the two things
-the job runner needs: the repo root (working directory for every subprocess)
-and the Python executable that runs the scripts. Everything a tab needs to
-know about the survey it asks `State` for, so opening a different survey is
-one signal and one `reload()` per tab.
+`State` holds the survey the window is showing (the `survey.yaml` path, the
+`mtproc.survey.Survey` built from it and the selected site), the repo root
+used as the working directory of every subprocess, and the Python executable
+that runs the scripts. Tabs ask `State` for everything they need about the
+survey, so opening a different survey is one signal and one `reload()` per
+tab.
 
-`State` also owns the window's **one** `JobRunner`: every tab queues on
-`state.runner`, so the GUI runs one job at a time (an MTH5 must never be open
-in two processes); the Process tab's `queue_table.QueuePanel` shows every job.
-Opening a survey with no basemap fetches one (`site_map.fetch_basemap_if_missing`).
+`State` owns the window's single `JobRunner`. Every tab queues on
+`state.runner`, so the GUI runs one job at a time and an MTH5 file is open in
+one process at a time; the Process tab's `queue_table.QueuePanel` lists every
+job. Opening a survey with no basemap fetches one through
+`site_map.fetch_basemap_if_missing`.
 
-`State` also carries what the Time Series tab and the QC tabs share: the
-**selection** (`selection` = (station, start, end) UTC, the window clicked in
-the Time Series tab's tree, or None; `selection_changed`), the **remote**
-the QC is computed against (`remote`, the Coherence tab's choice, None by
-default on every new station; `remote_changed`), the `SegmentStore`
-that loads the selected window and computes its QC off the GUI thread
-(`segment_store`, `mtproc_gui.segment_store`), the `ArchiveLock` that keeps
-the store's worker and the tree's archive reads from having a file open at
-the same time (`archive_lock`), and `goto_time`, which any tab emits to put
-the Time Series view on a moment. `request_qc()` is the one place the store
-is asked for the selection with the current remote and ladder.
+`State` also carries what the Time Series tab and the QC tabs share:
 
-`MainWindow` is a QTabWidget over the nine tabs in the MATLAB app's order (QC
-first: Metadata, Time Series, Spectra, Spectrogram, Coherence; then Filter Data,
-Cross-powers, Process, View EDIs), a status bar, a File menu and, under the tabs in a vertical
-`QSplitter`, the `console.ConsoleStrip` (the runner's log, loguru, `qc_started`).
+* `selection`: the (station, start, end) UTC window clicked in the Time Series
+  tree, or None; emitted on `selection_changed`.
+* `remote`: the remote the QC is computed against, chosen on the Coherence
+  tab and reset to None on every new station; emitted on `remote_changed`.
+* `segment_store`: the `mtproc_gui.segment_store.SegmentStore` that loads the
+  selected window and computes its QC off the GUI thread.
+* `archive_lock`: the `ArchiveLock` that keeps the store's worker and the
+  tree's archive reads from opening a file at the same time.
+* `goto_time`: emitted by any tab to put the Time Series view on a moment.
+
+`request_qc()` asks the store for the selection with the current remote and
+window ladder.
+
+`MainWindow` is a QTabWidget over nine tabs in this order (QC
+first: Metadata, Time Series, Spectra, Spectrogram, Coherence; then Filter
+Data, Cross-powers, Process, View EDIs), with a status bar, a File menu and,
+below the tabs in a vertical `QSplitter`, the `console.ConsoleStrip` showing
+the runner's log, loguru output and `qc_started` messages.
+
+@author: ben kay (ben@auscope.org.au)
+
+:license: MIT
 """
 
 from __future__ import annotations
@@ -52,14 +63,23 @@ from mtproc_gui.site_map import fetch_basemap_if_missing
 
 # src/mtproc_gui/app.py -> repo root
 REPO_ROOT = Path(__file__).resolve().parents[2]
-# a filtered variant's own file stem (`<site>_f<hash>.h5`, `mtproc.ingest.variant_path`):
-# never a site or a stacked remote of its own, just another archive of the
-# name before the `_f<hash>`
+# stem of a filtered variant (`<site>_f<hash>.h5`, `mtproc.ingest.variant_path`);
+# such a file is another archive of the site named before the `_f<hash>`
 _VARIANT_SUFFIX = re.compile(r"_f[0-9a-f]{8}$")
 
 
 class State(QObject):
-    """The survey and site every tab reads; emits when either changes."""
+    """Survey, site, selection and job queue shared by every tab.
+
+    Emits `survey_changed` and `site_changed` when either changes, and
+    `selection_changed`, `remote_changed`, `goto_time` and `archive_changed`
+    for the QC tabs.
+
+    Args:
+        repo_root (Path | str): Repository root, the working directory of
+            every script run. Defaults to the root above this package.
+        parent (QObject | None): Qt parent.
+    """
 
     survey_changed = Signal()
     site_changed = Signal(str)
@@ -72,14 +92,14 @@ class State(QObject):
         super().__init__(parent)
         self.repo_root = Path(repo_root)
         self.python_exe = sys.executable
-        # the one queue the whole window shares: one job at a time, ever
+        # the queue the whole window shares: one job at a time
         self.runner = JobRunner(self.repo_root, self)
         self.survey_yaml: Path | None = None
         self.survey: Survey | None = None
         self.site: str | None = None
         self._raw_sites: dict[str, Path] | None = None
-        # the selected window, its remote, and the one in-process worker that
-        # reads and QCs it; the lock keeps that worker and the tree's reads apart
+        # the selected window, its remote, and the in-process worker that reads
+        # and QCs it; the lock keeps that worker and the tree's reads apart
         self.selection: tuple[str, pd.Timestamp, pd.Timestamp] | None = None
         self.remote: str | None = None
         self.archive_lock = ArchiveLock(self)
@@ -88,7 +108,14 @@ class State(QObject):
     # ------------------------------------------------------------ survey
 
     def open_survey(self, path: str | Path) -> None:
-        """Load a survey.yaml and tell every tab to reload."""
+        """Load a survey.yaml and tell every tab to reload.
+
+        Clears the site, the selection, the remote and the segment store, then
+        fetches a basemap if the workspace has none.
+
+        Args:
+            path (str | Path): The survey YAML to open.
+        """
         self.survey_yaml = Path(path).resolve()
         self.survey = Survey.from_yaml(self.survey_yaml)
         self.site = None
@@ -100,6 +127,7 @@ class State(QObject):
         fetch_basemap_if_missing(self)  # no <workspace>/basemap.json: run fetch_basemap.py now
 
     def set_site(self, name: str | None) -> None:
+        """Set the selected site and emit `site_changed` if it differs."""
         if name != self.site:
             self.site = name or None
             self.site_changed.emit(self.site or "")
@@ -107,19 +135,24 @@ class State(QObject):
     # --------------------------------------------------------- selection
 
     def set_selection(self, station: str, start, end) -> None:
-        """A window was clicked in the tree: it becomes the selection and its QC is requested.
+        """Make a window clicked in the tree the selection and request its QC.
 
-        On a change of station the remote goes back to the station's declared
-        `remote:`; while the station stays, a remote picked by hand is kept.
-        The station also becomes `site`, so the Process and Filter Data tabs
-        follow the tree.
+        On a change of station the remote is reset to None, so the segment QC
+        runs on the local pairs; while the station stays the same, a remote
+        picked on the Coherence tab is kept. The station also becomes `site`,
+        so the Process and Filter Data tabs follow the tree.
+
+        Args:
+            station (str): Station name.
+            start: Window start, anything `pd.Timestamp` accepts (UTC).
+            end: Window end, anything `pd.Timestamp` accepts (UTC).
         """
         start, end = pd.Timestamp(start), pd.Timestamp(end)
         if self.selection is None or station != self.selection[0]:
-            # the segment QC runs on the local pairs by default: the remote
-            # pairs answer one narrower question (dead coil or quiet field?)
-            # and are switched on from the Coherence tab when needed. The
-            # Process tab still presets the station's declared remote.
+            # the segment QC runs on the local pairs by default; the remote
+            # pairs, which separate a dead coil from a quiet field, are
+            # switched on from the Coherence tab. The Process tab presets the
+            # station's declared remote.
             self.remote = None
         self.selection = (station, start, end)
         self.set_site(station)
@@ -127,7 +160,11 @@ class State(QObject):
         self.request_qc()
 
     def set_remote(self, remote: str | None) -> None:
-        """The Coherence tab picked a remote: the selection's QC is requested against it."""
+        """Set the remote chosen on the Coherence tab and request the QC against it.
+
+        Args:
+            remote (str | None): Remote station name, or None for local pairs.
+        """
         remote = remote or None
         if remote != self.remote:
             self.remote = remote
@@ -135,7 +172,12 @@ class State(QObject):
             self.request_qc()
 
     def request_qc(self) -> bool:
-        """Ask the store for the selection with the current remote and ladder; False if nothing to do."""
+        """Request the selection's QC with the current remote and window ladder.
+
+        Returns:
+            bool: The store's answer to the request; False when there is no
+            selection.
+        """
         if self.selection is None:
             return False
         station, start, end = self.selection
@@ -145,7 +187,15 @@ class State(QObject):
     # ------------------------------------------------------- survey facts
 
     def raw_sites(self) -> dict[str, Path]:
-        """site -> raw data folder, from `Survey.site_dirs()` (cached per survey)."""
+        """Map each site to its raw data folder.
+
+        Uses `Survey.site_dirs()` and caches the result per survey. An
+        unreachable `data_root` (for example an unplugged external drive)
+        gives an empty mapping.
+
+        Returns:
+            dict[str, Path]: Site name to raw data folder.
+        """
         if self.survey is None:
             return {}
         if self._raw_sites is None:
@@ -167,27 +217,37 @@ class State(QObject):
         return sorted(set(self.configured_sites()) | set(self.raw_sites()))
 
     def archive_dir(self) -> Path | None:
+        """`<workspace>/mth5`, or None with no survey open."""
         return None if self.survey is None else self.survey.workspace / "mth5"
 
     def archive_path(self, site: str) -> Path | None:
+        """`<workspace>/mth5/<site>.h5`, or None with no survey open."""
         d = self.archive_dir()
         return None if d is None else d / f"{site}.h5"
 
     def has_archive(self, site: str) -> bool:
+        """True if the site's raw archive exists."""
         p = self.archive_path(site)
         return bool(p and p.exists())
 
     def processing_archive(self, site: str, use_filters: bool = True) -> tuple[Path | None, bool]:
-        """Read-only: (path, is_filtered_variant) for `site` in the open survey.
+        """Return the archive processing would read for `site`.
 
-        The filtered variant (`mtproc.ingest.variant_path`) when `use_filters`
-        and it is ready (`mtproc.ingest.variant_ready` -- already built, and
-        current for what `filters.yaml` now declares), else the raw archive
-        (`archive_path`), flagged False. **Never builds one**: a view that
-        only wants to know what it would read (the Cross-powers tab's
-        candidate list, this) must not pay a build's cost or side effects --
-        only `mtproc.ingest.build_variant`, through `scripts/process_rr.py`
-        or the stack builder, does that.
+        Returns the filtered variant (`mtproc.ingest.variant_path`) when
+        `use_filters` is set and the variant is ready
+        (`mtproc.ingest.variant_ready`: built and current for the filters
+        `filters.yaml` declares), otherwise the raw archive (`archive_path`).
+        The lookup has no side effects; variants are built by
+        `mtproc.ingest.build_variant`, called from `scripts/process_rr.py` and
+        the stack builder.
+
+        Args:
+            site (str): Site name.
+            use_filters (bool): Prefer the filtered variant when it is ready.
+
+        Returns:
+            tuple[Path | None, bool]: The archive path and whether it is the
+            filtered variant.
         """
         raw = self.archive_path(site)
         if use_filters and self.survey is not None and variant_ready(self.survey, site):
@@ -195,25 +255,35 @@ class State(QObject):
         return raw, False
 
     def archived_sites(self) -> list[str]:
-        """Every `<workspace>/mth5/*.h5` stem, whether or not it is a raw site --
-        a filtered variant's own stem (``<site>_f<hash>.h5``) is left out: it
-        is not a site, just another archive of the one named before the
-        `_f<hash>`."""
+        """List every `<workspace>/mth5/*.h5` stem, raw site or not.
+
+        Filtered variants (``<site>_f<hash>.h5``) are left out, since each is
+        another archive of the site named before the `_f<hash>`.
+
+        Returns:
+            list[str]: Sorted archive stems.
+        """
         d = self.archive_dir()
         if d is None or not d.exists():
             return []
         return sorted(p.stem for p in d.glob("*.h5") if not _VARIANT_SUFFIX.search(p.stem))
 
     def stacked_remotes(self) -> list[str]:
-        """Archives with no raw folder: synthetic remotes from scripts/build_stack.py."""
+        """Archives with no raw folder, i.e. synthetic remotes from scripts/build_stack.py."""
         raw = self.raw_sites()
         return [s for s in self.archived_sites() if s not in raw]
 
     def remote_choices(self, site: str | None) -> list[tuple[str, str]]:
-        """(display, name) remotes for `site`: raw sites plus stacked archives.
+        """List the remotes available to `site`: raw sites plus stacked archives.
 
-        The same list on every tab that takes a remote. There is no
-        single-station option anywhere in this GUI.
+        Every tab that takes a remote uses this list. It has no single-station
+        entry; the GUI processes remote reference only.
+
+        Args:
+            site (str | None): The local site, left out of the list.
+
+        Returns:
+            list[tuple[str, str]]: (display label, remote name) pairs.
         """
         out = [(n, n) for n in sorted(self.raw_sites()) if n != site]
         out += [(f"{n}  (stack)", n) for n in self.stacked_remotes() if n != site]
@@ -233,12 +303,15 @@ class State(QObject):
         return None if self.survey_yaml is None else self.survey_yaml.parent / "filters.yaml"
 
     def reference_edis_yaml(self) -> Path | None:
+        """`<survey>/reference_edis.yaml`, whether or not it exists yet."""
         return None if self.survey_yaml is None else self.survey_yaml.parent / "reference_edis.yaml"
 
     def qc_dir(self) -> Path | None:
+        """`<workspace>/qc`, or None with no survey open."""
         return None if self.survey is None else self.survey.workspace / "qc"
 
     def tf_dir(self) -> Path | None:
+        """`<workspace>/tf`, or None with no survey open."""
         return None if self.survey is None else self.survey.workspace / "tf"
 
     def script(self, name: str) -> str:
@@ -247,7 +320,12 @@ class State(QObject):
 
 
 class MainWindow(QMainWindow):
-    """Tabbed launcher-and-viewer window over one survey and one job queue."""
+    """Tabbed launcher and viewer window over one survey and one job queue.
+
+    Args:
+        survey_yaml (str | Path | None): Survey to open on start.
+        parent (QWidget | None): Qt parent.
+    """
 
     def __init__(self, survey_yaml: str | Path | None = None, parent=None):
         super().__init__(parent)
@@ -275,7 +353,7 @@ class MainWindow(QMainWindow):
         self.filters_tab = FiltersTab(self.state, self)
         self.edis_tab = EdiTab(self.state, self)
         self.crosspower_tab = CrossPowerTab(self.state, self)
-        # the MATLAB app's order: QC tabs, then filters, then processing, then EDIs
+        # tab order: QC tabs, then filters, then processing, then EDIs
         self.tabs.addTab(self.metadata_tab, "Metadata")
         self.tabs.addTab(self.timeseries_tab, "Time Series")
         self.tabs.addTab(self.spectra_tab, "Spectra")
@@ -332,6 +410,7 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------- slots
 
     def choose_survey(self) -> None:
+        """Ask for a survey.yaml with a file dialog and open it."""
         start_dir = str(self.state.survey_yaml.parent if self.state.survey_yaml
                         else self.state.repo_root / "surveys")
         path, _ = QFileDialog.getOpenFileName(
@@ -341,6 +420,7 @@ class MainWindow(QMainWindow):
             self.open_survey(path)
 
     def open_survey(self, path: str | Path) -> None:
+        """Open a survey, reporting a load error in a message box and the status bar."""
         try:
             self.state.open_survey(path)
         except Exception as exc:  # a bad YAML should not kill the window
@@ -354,18 +434,27 @@ class MainWindow(QMainWindow):
         )
 
     def reload_tabs(self) -> None:
+        """Call `reload()` on every tab."""
         for tab in (self.metadata_tab, self.timeseries_tab, self.spectra_tab, self.spectrogram_tab,
                     self.coherence_tab, self.filters_tab, self.process_tab, self.crosspower_tab, self.edis_tab):
             tab.reload()
 
     def use_processing_window(self, start: str, end: str) -> None:
-        """Time Series -> Process: push the selected window onto the Process tab."""
+        """Set the window chosen on the Time Series tab on the Process tab and show it."""
         self.process_tab.set_window(start, end)
         self.tabs.setCurrentWidget(self.process_tab)
         self.statusBar().showMessage(f"processing window set: {start} to {end} UTC")
 
     def show_edi(self, path: Path) -> None:
-        """Process -> View EDIs: tick the EDI a job wrote, and its lemimt reference, and front the tab."""
+        """Show an EDI written by a Process job on the View EDIs tab.
+
+        Ticks the EDI and the station's lemimt reference, then brings the tab
+        to the front.
+
+        Args:
+            path (Path): The EDI, named
+                ``<station>_rr-<remote>_<started>[_<tag>].edi``.
+        """
         path = Path(path)
         self.edis_tab.reload()
         self.edis_tab.check(path.name)
@@ -375,11 +464,13 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(f"showing {path.name} against {station}'s lemimt reference")
 
     def closeEvent(self, event) -> None:
-        """Let an archive read in flight finish: Qt aborts the process if a
-        running QThread is destroyed with its parent window (a tree read is
-        under a second; a segment QC up to a minute). The console strip and
-        the loguru sink come off first, so a line arriving mid-teardown is
-        dropped, not raised, and the sink outlives neither."""
+        """Wait for archive reads in flight, then close.
+
+        Qt aborts the process if a running QThread is destroyed with its
+        parent window. A tree read takes under a second and a segment QC up
+        to a minute. The console strip and the loguru sink are detached
+        first, so a log line arriving during teardown is dropped.
+        """
         self.console.begin_shutdown()
         logger.remove(self._log_sink_id)
         self.timeseries_tab.wait_for_read()

@@ -1,10 +1,20 @@
-"""Welch PSD of a site's raw B423 data — quick look for mains lines etc.
+# -*- coding: utf-8 -*-
+"""
+Welch PSD of a site's raw B423 data
+
+A quick look at the spectrum of one site for mains lines and other spectral
+lines. One mid-deployment file (90 min) is read in raw counts; the data are
+uncalibrated, which is sufficient for locating lines. The figure has a full
+log-log PSD of ex, ey, hx and hy and a 30-170 Hz zoom marked at 50, 100 and
+150 Hz. It is written to <workspace>/qc/<site>_noise_psd.png unless an output
+path is given.
 
 Usage:
     python scripts/noise_psd.py <survey.yaml> <site> [out.png]
 
-Uses one mid-deployment file (90 min) in raw counts; fine for locating
-spectral lines even though uncalibrated.
+@author: ben kay (ben@auscope.org.au)
+
+:license: MIT
 """
 
 import sys
@@ -25,6 +35,14 @@ from mtproc.survey import Survey
 
 
 def main(survey_yaml: str, site: str, out_png: str | None = None) -> None:
+    """Plot the raw Welch PSD of one mid-deployment file of a site.
+
+    Args:
+        survey_yaml (str): Path to the survey.yaml.
+        site (str): Site name as listed in the survey.
+        out_png (str | None): Output figure path. Defaults to
+            <workspace>/qc/<site>_noise_psd.png.
+    """
     survey = Survey.from_yaml(survey_yaml)
     files = select_files(survey.site_dirs()[site])
     fn = files[len(files) // 2]  # mid-deployment

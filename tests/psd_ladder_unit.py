@@ -1,9 +1,20 @@
-"""Unit test for `mtproc.timefreq.psd_ladder` -- the whole-spectrum PSD ladder.
+# -*- coding: utf-8 -*-
+"""
+Unit test for mtproc.timefreq.psd_ladder
 
+Checks the whole-spectrum PSD ladder on random 1000 Hz arrays with gaps:
+stage 0 against a direct `scipy.signal.welch` call, the early-stop rule, and
+the gap zeroing and consumption of the input arrays.
+
+Usage:
     python tests/psd_ladder_unit.py
 
+@author: ben kay (ben@auscope.org.au)
+
+:license: MIT
+
 **This test fails if** stage 0 of the ladder on random 1000 Hz arrays (three
-channels, 30 min, two gaps) is not bit-identical (`numpy.array_equal`, freqs
+channels, 30 min, two gaps) is not identical (`numpy.array_equal`, freqs
 and every channel's psd) to a direct `scipy.signal.welch` call with the same
 parameters on the same gap-zeroed float64 samples -- which is what the moved
 `scripts/psd_qc.py` code did; or the early stop does not follow the rule "a
@@ -35,6 +46,15 @@ GAPS = [(200_000, 210_000), (1_500_000, 1_503_000)]
 
 
 def arrays_for(minutes: float, seed: int = 7) -> dict[str, np.ndarray]:
+    """Build random float32 arrays at FS for CHANNELS with NaN in the GAPS.
+
+    Args:
+        minutes (float): Length of each array in minutes.
+        seed (int): Seed of the random generator.
+
+    Returns:
+        dict[str, np.ndarray]: One array per channel name.
+    """
     rng = np.random.default_rng(seed)
     n = int(minutes * 60 * FS)
     out = {}

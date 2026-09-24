@@ -1,18 +1,25 @@
-"""WindowChooser: the Filter Data tab's site and window combos -- choosing a window loads it.
+# -*- coding: utf-8 -*-
+"""
+Site and window chooser of the Filter Data tab
 
-The Filter Data tab must not need a trip to the Time Series tab to change
-windows. The site combo lists every site with an MTH5
-archive; the window combo lists that site's windows exactly as the Time
-Series tree does (`mtproc_gui.windows.window_list` over
-`mtproc_gui.archive.load_grid`, labelled by `window_label`), read in a
-`ReadThread` under `State.archive_lock` -- one read at a time, as
-`site_tree.py` reads -- with "reading the archive..." meanwhile. Choosing a
-window is loading it: `State.set_selection(station, start, end)`, the same
-call a click in the tree makes, so the segment store loads it and the Time
-Series and QC tabs follow. The combos follow `selection_changed` and
-`site_changed` in turn, so they always show what is loaded (or, for a site
-picked elsewhere, its windows, nothing loaded until one is chosen). Windows
-are only read while the chooser is on screen.
+`WindowChooser` lets the Filter Data tab change windows directly. The site
+combo lists every site with an MTH5 archive; the window combo lists that
+site's windows as the Time Series tree does (`mtproc_gui.windows.window_list`
+over `mtproc_gui.archive.load_grid`, labelled by `window_label`). Windows are
+read in a `ReadThread` under `State.archive_lock`, one read at a time as in
+`site_tree.py`, with "reading the archive..." shown meanwhile, and only while
+the chooser is visible.
+
+Choosing a window loads it through `State.set_selection(station, start,
+end)`, the same call a click in the tree makes, so the segment store loads
+it and the Time Series and QC tabs follow. The combos follow
+`selection_changed` and `site_changed`, so they show the loaded window, or,
+for a site chosen elsewhere, its windows with none loaded until one is
+picked.
+
+@author: ben kay (ben@auscope.org.au)
+
+:license: MIT
 """
 
 from __future__ import annotations
@@ -32,11 +39,17 @@ LOADED_SUFFIX = "   (loaded)"
 
 
 def _windows_for(path, survey_name: str, station: str):
+    """Return the station's windows from its run grid; run in the read thread."""
     return window_list(load_grid(path, survey_name, station))
 
 
 class WindowChooser(QWidget):
-    """Site combo (archived sites) and window combo (that site's windows); choosing loads."""
+    """Site combo of archived sites and window combo of that site's windows; choosing a window loads it.
+
+    Args:
+        state: The shared `mtproc_gui.app.State`.
+        parent (QWidget | None): Qt parent.
+    """
 
     def __init__(self, state, parent=None):
         super().__init__(parent)
@@ -62,10 +75,11 @@ class WindowChooser(QWidget):
         state.archive_lock.changed.connect(self._kick)
 
     def site(self) -> str | None:
+        """Return the site in the site combo, or None."""
         return self.site_combo.currentText() or None
 
     def reload(self) -> None:
-        """The survey (or a site's archive) changed: list the archived sites again."""
+        """List the archived sites again after a survey or archive change."""
         self._windows.clear()
         self._shown = None
         keep = self.state.selection[0] if self.state.selection else self.state.site
@@ -77,16 +91,17 @@ class WindowChooser(QWidget):
         self._select_site(keep)
 
     def follow(self, selection) -> None:
-        """The loaded window changed (here, in the tree, anywhere): show it."""
+        """Show the loaded window after a selection change from any source."""
         if selection is not None:
             self._select_site(selection[0])
 
     def _site_picked(self, _index: int) -> None:
-        """A site chosen here loads its first window on its own."""
+        """Show a site chosen here and load its first window."""
         self._auto_first = True
         self._show_windows(self.site())
 
     def _select_site(self, site: str | None) -> None:
+        """Select a site chosen elsewhere without loading a window."""
         self._auto_first = False  # following a selection made elsewhere: nothing to load
         index = self.site_combo.findText(site or "")
         self.site_combo.blockSignals(True)
@@ -95,19 +110,17 @@ class WindowChooser(QWidget):
         self._show_windows(self.site())
 
     def _show_windows(self, site: str | None) -> None:
-        """Fill the window combo with `site`'s windows, the loaded one current; read them first if needed.
+        """Fill the window combo with `site`'s windows, the loaded one current, reading them first if needed.
 
         When the combo already lists `site`'s windows only the current row
-        moves: this runs inside the combo's own signal when a choice here
-        loads a window, and the combo is not emptied under its own handler.
+        moves, since this runs inside the combo's own signal when a choice
+        here loads a window.
 
-        The loaded row (only) is marked every time this runs, so the mark
-        follows a change of window from anywhere -- this combo, the Time
-        Series tree, or a different site's windows replacing the list: which
-        window is open is visible without a trip to the combo's popup. The
-        row's data (`itemData(k)`, the (start, end) tuple
-        `_window_chosen` reads) is never touched here, only its text and the
-        FontRole/ForegroundRole the popup's delegate paints it with.
+        The loaded row is marked (bold, accent colour, "(loaded)") on every
+        call, so the mark follows a window change from this combo, the Time
+        Series tree or a different site's list. Only the row's text and its
+        FontRole and ForegroundRole change; its data (`itemData(k)`, the
+        (start, end) tuple `_window_chosen` reads) is left as is.
         """
         combo, windows = self.window_combo, self._windows.get(site)
         combo.blockSignals(True)
@@ -140,6 +153,7 @@ class WindowChooser(QWidget):
             self._kick()
 
     def _window_chosen(self, index: int) -> None:
+        """Load the chosen window through `State.set_selection` unless it is already loaded."""
         site, window = self.site(), self.window_combo.itemData(index)
         if site and window is not None and self.state.selection != (site, *window):
             self.state.set_selection(site, *window)
@@ -147,20 +161,22 @@ class WindowChooser(QWidget):
     # ------------------------------------------------------------ reads
 
     def showEvent(self, event) -> None:
+        """Start a read wanted while the tab was hidden."""
         super().showEvent(event)
         self._kick()  # a site chosen elsewhere while the tab was hidden
 
     def _kick(self) -> None:
-        """Read the wanted site's windows if on screen, no read runs and the archive lock is free.
+        """Read the wanted site's windows when visible, idle and the archive lock is free.
 
-        Only on screen: a window clicked in the Time Series tree also sets the
-        site, and the segment store must get the lock first, not this read.
+        Reads wait until the chooser is visible because a window clicked in
+        the Time Series tree also sets the site, and the segment store takes
+        the lock first.
         """
         site, lock = self._wanted, self.state.archive_lock
         if self._thread is not None or site is None or self.state.survey is None or not self.isVisible():
             return
         if lock.busy and lock.holder is not self:
-            return  # `changed` brings us back here
+            return  # `changed` calls this again
         self._wanted = None
         path = self.state.archive_path(site)
         thread = ReadThread(_windows_for, (site, path), path, self.state.survey.name, site, parent=self)
@@ -169,15 +185,17 @@ class WindowChooser(QWidget):
             f"could not read the archive: {message}"))
         thread.finished.connect(self._read_done)
         thread.finished.connect(thread.deleteLater)
-        self._thread = thread  # before acquire: its `changed` re-enters _kick, which must see it
+        self._thread = thread  # set before acquire, since its `changed` re-enters _kick
         lock.acquire(self)
         thread.start()
 
     def _read_done(self) -> None:
+        """Release the archive lock after a read."""
         self._thread = None
         self.state.archive_lock.release(self)  # its `changed` runs _kick for a site wanted meanwhile
 
     def _on_windows(self, tag, windows) -> None:
+        """Cache a site's windows and show them if the site is still selected."""
         site, path = tag
         if path != self.state.archive_path(site):
             return  # the survey changed under the read
@@ -186,7 +204,7 @@ class WindowChooser(QWidget):
             self._show_windows(site)
 
     def wait_for_read(self) -> None:
-        """Block until the read in flight returns and start no other (the window is closing)."""
+        """Block until the read in flight returns, dropping the wanted read; used on window close."""
         self._wanted = None
         if self._thread is not None:
             self._thread.wait()

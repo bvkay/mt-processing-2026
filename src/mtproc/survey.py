@@ -1,14 +1,24 @@
-"""Survey configuration: one YAML per survey, sites discovered from folders.
+# -*- coding: utf-8 -*-
+"""
+Survey configuration: one YAML per survey, sites discovered from folders
 
-A survey is a folder of raw site directories plus a small YAML config.
-Site name = folder name; any directory under ``data_root`` that holds raw
-files of an instrument mtproc reads (`INSTRUMENTS`: LEMI-423, LEMI-424, Earth
-Data PR6-24) is a site, and its instrument is detected from those files
-(`detect_instrument`); the YAML's top-level `instrument:` is the survey's
-default and a site's own `instrument:` overrides both (`Survey.instrument_of`).
-Per-site settings (dipole lengths, azimuths, positions) are optional overrides
-in the YAML — typically generated once from the field spreadsheet (see
-``scripts/site_table_to_yaml.py``).
+A survey is a folder of raw site directories plus a small YAML config. The
+site name is the folder name. Any directory under ``data_root`` that holds
+raw files of an instrument mtproc reads (`INSTRUMENTS`: LEMI-423, LEMI-424,
+Earth Data PR6-24) is a site, and its instrument is detected from those
+files (`detect_instrument`). The top-level `instrument:` of the YAML is the
+survey default, and a site's own `instrument:` overrides both
+(`Survey.instrument_of`). Per-site settings (dipole lengths, azimuths,
+positions) are optional overrides in the YAML, usually generated once from
+the field spreadsheet (see ``scripts/site_table_to_yaml.py``).
+
+`Survey.from_yaml` loads a survey and `Survey.site` returns the merged
+`SiteConfig` of one site. `read_site_table` reads a CSV or XLSX site table,
+and `CHANNEL_PRESETS` lists the channel sets a survey may declare.
+
+@author: ben kay (ben@auscope.org.au)
+
+:license: MIT
 """
 
 from __future__ import annotations
@@ -29,11 +39,19 @@ EARTH_RADIUS_KM = 6371.0088  # IUGG mean radius
 def distance_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     """Great-circle distance between two WGS84 positions, in kilometres.
 
-    Plain haversine on a sphere of `EARTH_RADIUS_KM`: good to ~0.5 % against
-    the ellipsoid, which is far tighter than a remote-pairing gut check needs
-    (one degree of latitude comes out 111.2 km). Pure function, no I/O -- the
-    GUI's site map and the Process tab's "remote E08 at 148.6 km" line call
-    it, and so can any script.
+    Uses the haversine formula on a sphere of `EARTH_RADIUS_KM`, accurate to
+    about 0.5 % against the ellipsoid; one degree of latitude comes out as
+    111.2 km. The GUI site map and the remote distance shown on the Process
+    tab use it.
+
+    Args:
+        lat1 (float): Latitude of the first position in degrees.
+        lon1 (float): Longitude of the first position in degrees.
+        lat2 (float): Latitude of the second position in degrees.
+        lon2 (float): Longitude of the second position in degrees.
+
+    Returns:
+        float: Distance in km.
     """
     phi1, phi2 = math.radians(float(lat1)), math.radians(float(lat2))
     d_phi = phi2 - phi1
@@ -42,9 +60,9 @@ def distance_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     return 2.0 * EARTH_RADIUS_KM * math.asin(math.sqrt(h))
 
 
-# The per-site keys a site table may set, and their types: one row per site,
-# a `site` column, any of these columns (docs/site_table_template.csv). The
-# GUI's Metadata tab edits the same keys and imports the same tables;
+# Per-site keys a site table may set, and their types. A table has one row per
+# site, a `site` column and any of these columns.
+# The GUI Metadata tab edits the same keys and imports the same tables;
 # scripts/new_survey.py --site-table merges one before writing.
 SITE_TABLE_COLUMNS = {
     "latitude": float,
@@ -60,10 +78,10 @@ SITE_TABLE_COLUMNS = {
 }
 
 
-# the MATLAB field app's survey CSV (SiteName, ExDipole, ExAzimuth, ...): the
-# students already have one per survey, so its headers map onto ours. The
-# two note columns are joined into `notes`; TimeZone is read by new_survey.py.
-MATLAB_CSV_ALIASES = {
+# Header aliases for the field-sheet survey CSV (SiteName, ExDipole, ExAzimuth,
+# ...), so that file reads as a site table. Its two note columns are joined
+# into `notes`; TimeZone is read by scripts/new_survey.py.
+FIELD_CSV_ALIASES = {
     "sitename": "site",
     "exdipole": "dipole_length_ex",
     "eydipole": "dipole_length_ey",
@@ -74,14 +92,23 @@ MATLAB_CSV_ALIASES = {
 
 
 def read_site_table(path: str | Path) -> tuple[dict[str, dict], list[str]]:
-    """A site table -> ({site: {column: value}}, [ignored column names]).
+    """Read a site table.
 
-    CSV, or XLSX (its first sheet), with a `site` column plus any of
-    `SITE_TABLE_COLUMNS`; headers match after stripping and lower-casing, and
-    any other column is returned as ignored rather than guessed at. An empty
-    cell is left out, so a row carries only the values it gives. Raises
-    ValueError without a `site` column, or naming the site and column of a
-    number that does not parse.
+    The table is a CSV, or an XLSX read from its first sheet, with a `site`
+    column plus any of `SITE_TABLE_COLUMNS`. Headers match after stripping
+    and lower-casing, and the field-sheet survey CSV headers are mapped
+    through `FIELD_CSV_ALIASES`. Any other column is returned as ignored. An empty
+    cell is left out, so a row carries only the values it gives.
+
+    Args:
+        path (str or Path): CSV, XLSX or XLS file.
+
+    Returns:
+        tuple: ``({site: {column: value}}, [ignored column names])``.
+
+    Raises:
+        ValueError: If there is no `site` column, or a numeric cell does not
+            parse; the message names the site and column.
     """
     import pandas as pd
 
@@ -91,8 +118,8 @@ def read_site_table(path: str | Path) -> tuple[dict[str, dict], list[str]]:
     else:
         df = pd.read_csv(path, dtype=object)
     df.columns = [str(c).strip().lstrip("﻿").lower() for c in df.columns]
-    df.columns = [MATLAB_CSV_ALIASES.get(c, c) for c in df.columns]
-    if "pickup_notes" in df.columns:  # the MATLAB CSV's second note column
+    df.columns = [FIELD_CSV_ALIASES.get(c, c) for c in df.columns]
+    if "pickup_notes" in df.columns:  # the field-sheet CSV's second note column
         pick = df["pickup_notes"].fillna("").astype(str).str.strip()
         base = df["notes"].fillna("").astype(str).str.strip() if "notes" in df.columns else ""
         df["notes"] = [" | ".join(t for t in (a, b) if t) for a, b in zip(base, pick)] if "notes" in df.columns else pick
@@ -117,16 +144,16 @@ def read_site_table(path: str | Path) -> tuple[dict[str, dict], list[str]]:
         rows[site] = values
     return rows, ignored
 
-# The channel sets a survey may declare, per instrument, in the names the
-# mt-io reader stores: mt_io.lemi.lemi423 reads the B423 columns Bx By Bz Ex Ey
-# as hx hy hz ex ey; mt_io.lemi.lemi424 keeps e1 e2 e3 e4 bx by bz;
-# mt_io.uoa.pr624 reads the EDL files BX BY BZ EX EY as hx hy hz ex ey. Which
-# columns a file carries is the reader's business; which of them had a sensor
-# attached is a per-survey logistics decision (a LEMI-423 site normally Ex Ey
-# Bx By with the Bz column an open input, some deployments with a Bz coil, a
-# dedicated remote magnetics only), declared as `channels:` and applied at
-# ingest (mtproc.ingest._keep_channels). An instrument's first preset is its
-# default. scripts/new_survey.py --channels and the GUI's Metadata tab use them.
+# Channel sets a survey may declare, per instrument, in the names the mt-io
+# reader stores: mt_io.lemi.lemi423 reads the B423 columns Bx By Bz Ex Ey as
+# hx hy hz ex ey; mt_io.lemi.lemi424 keeps e1 e2 e3 e4 bx by bz; mt_io.uoa.pr624
+# reads the EDL files BX BY BZ EX EY as hx hy hz ex ey. The reader determines
+# which columns a file carries; the survey declares which of them had a sensor
+# attached (a LEMI-423 site normally Ex Ey Bx By with the Bz column an open
+# input, some deployments with a Bz coil, a dedicated remote magnetics only) as
+# `channels:`, applied at ingest (mtproc.ingest._keep_channels). An
+# instrument's first preset is its default. scripts/new_survey.py --channels
+# and the GUI Metadata tab use them.
 CHANNEL_PRESETS: dict[str, dict[str, list[str]]] = {
     "lemi423": {
         "Ex Ey Bx By": ["ex", "ey", "hx", "hy"],
@@ -145,20 +172,28 @@ CHANNEL_PRESETS: dict[str, dict[str, list[str]]] = {
         "Bx By Bz": ["hx", "hy", "hz"],
     },
 }
-# the label of no `channels:` at all (None): ingest keeps every column the reader returns
+# Label for `channels:` unset (None): ingest keeps every column the reader returns.
 ALL_CHANNELS = "all columns"
 
 
 def default_preset(instrument: str) -> str:
-    """The label of `instrument`'s default channel set (its first preset)."""
+    """Return the label of the default channel set (first preset) of an instrument."""
     return next(iter(CHANNEL_PRESETS[instrument]))
 
 
 def preset_label(channels: list[str] | None, instrument: str) -> str:
-    """A `channels:` list -> its preset's label for `instrument`, else the list as "a, b, c".
+    """Return the preset label of a `channels:` list.
 
-    The match ignores order and case, since ingest keeps a set; None is
-    `ALL_CHANNELS`. `channels_from_label` is the inverse.
+    The match ignores order and case, since ingest keeps a set.
+    `channels_from_label` is the inverse.
+
+    Args:
+        channels (list of str or None): Channel names; None means all.
+        instrument (str): Instrument key of `CHANNEL_PRESETS`.
+
+    Returns:
+        str: The matching preset label, `ALL_CHANNELS` for None, or else the
+        names joined as ``"a, b, c"``.
     """
     if channels is None:
         return ALL_CHANNELS
@@ -170,15 +205,24 @@ def preset_label(channels: list[str] | None, instrument: str) -> str:
 
 
 def channels_from_label(label: str, instrument: str) -> list[str] | None:
-    """A preset label (any case) or a typed list ("hx, hy" or "hx hy") -> channel names, lower case.
+    """Convert a preset label or a typed list to channel names.
 
-    `ALL_CHANNELS` gives None. A preset's label gives a copy of its list; the
-    same words mean different names on different instruments ("Bx By Bz" is
-    hx hy hz on a LEMI-423, bx by bz on a LEMI-424). A preset's words in
-    another order or with commas are that preset too: "Bx By Ex Ey" is the
-    "Ex Ey Bx By" preset, [ex, ey, hx, hy] on an EDL or LEMI-423 -- read as a
-    typed list it named bx and by, which those readers never produce, so
-    ingest dropped both coils (Hillside).
+    A preset label gives a copy of its list. The same words map to different
+    names on different instruments: "Bx By Bz" is hx hy hz on a LEMI-423 and
+    bx by bz on a LEMI-424. A preset's words in another order or with commas
+    match that preset too, so "Bx By Ex Ey" gives the "Ex Ey Bx By" preset,
+    [ex, ey, hx, hy] on an EDL or LEMI-423. Read as a typed list it would
+    name bx and by, which those readers do not produce, and ingest would
+    drop both coils.
+
+    Args:
+        label (str): Preset label in any case, `ALL_CHANNELS`, or a typed
+            list such as ``"hx, hy"`` or ``"hx hy"``.
+        instrument (str): Instrument key of `CHANNEL_PRESETS`.
+
+    Returns:
+        list of str or None: Lower-case channel names, or None for
+        `ALL_CHANNELS`.
     """
     text = str(label).strip()
     if text.lower() == ALL_CHANNELS:
@@ -192,11 +236,87 @@ def channels_from_label(label: str, instrument: str) -> list[str] | None:
 
 @dataclass
 class SiteConfig:
+    """Settings of one site, merged from the survey defaults and the site entry.
+
+    Attributes:
+        name (str): Site name, the raw folder name.
+        instrument (str or None): Recorder named by the site's own
+            `instrument:` (a key of INSTRUMENTS). None means the instrument
+            its files are detected as, else the survey's;
+            `Survey.instrument_of` resolves it. scripts/new_survey.py writes
+            it for a site whose recorder differs from the survey's.
+        dipole_length_ex (float): Ex dipole length in m.
+        dipole_length_ey (float): Ey dipole length in m.
+        azimuth_ex (float): Ex azimuth in degrees.
+        azimuth_ey (float): Ey azimuth in degrees.
+        latitude (float or None): Latitude in degrees.
+        longitude (float or None): Longitude in degrees.
+        elevation (float or None): Elevation in m.
+        calibration_fn (str or None): Coil response file, for example a
+            LEMI-120 .rsp. Relative paths resolve against the survey folder,
+            then data_root. Used by LEMI-423 sites and by EDL sites whose
+            `sensor_type` is lemi120.
+        sensor_type (str or None): EDL (Earth Data PR6-24) sites: the
+            magnetic sensors in mt-io's names
+            (mtproc.instruments.EDL_SENSORS). "bartington" is Mag-03
+            fluxgates, the long-period setup (UoA: 10 Hz), and is what None
+            means. "lemi120" is LEMI-120 induction coils, the broadband setup
+            (UoA: 500/1000 Hz), whose response is `calibration_fn`.
+            scripts/new_survey.py writes it for an EDL survey.
+        electric_gain (float): EDL sites: extra gain of the electric chain
+            between the dipoles and the recorded values, beyond what the
+            reader models (for the PR6-24 the reader's x10 terminal box). The
+            electrical gain is hardwired at the electrical terminal junction
+            box; the other gains are set on the PR6-24 during operation, and
+            where those configs are lost the value is declared from the
+            field notes (e.g. 10.0). Default 1.0.
+            Applied to every electric channel of the site (ex, ey) at ingest
+            (mtproc.instruments.read_run). A `defaults:` value applies to the
+            survey's EDL sites; a non-EDL site with its own key stops ingest
+            with an error. Set with scripts/new_survey.py --electric-gain.
+        h_scale (float): LEMI-423 sites: extra gain folded into the magnetic
+            channel filter chain. The LEMI-423 counts-to-field calibration
+            comes out in pT with polarity inverted relative to the lemimt
+            convention, hence -1000 (pT to nT plus sign), established against
+            merged lemimt EDIs (without it, rho is offset by a constant 1e6
+            and both phase modes by exactly 180 deg).
+        flip_reversed_dipoles (bool): How to read a 180 or 270 deg dipole
+            azimuth on the field sheet. True: the pair was wired
+            reversed, so the data are sign-flipped at ingest. False:
+            the azimuth records the layout direction, the logger's N/S/E/W
+            terminals fix polarity, and nothing is flipped. Set per survey
+            from the impedance phase quadrants
+            (mtproc.compare.phase_quadrants); a wrong choice puts one mode
+            180 deg out.
+        channels (list of str or None): Channels kept at ingest; None keeps
+            every column the reader returns. Broadband deployments carried
+            no hz sensor (the B423 Bz column is an open input, constant
+            -2^31), so those surveys set [ex, ey, hx, hy] and aurora
+            estimates no tipper from a dead channel. The usual sets are in
+            CHANNEL_PRESETS; a site whose set differs from `defaults:` has
+            its own.
+        filters (list of dict or None): Declared time-domain filters applied
+            at ingest, in order (see mtproc.noise), from
+            <survey>/filters.yaml.
+        timing (str or None): Logger clock status from the field timing
+            sheets ("Correct", "Behind", "No data"); None when the site is
+            not listed.
+        notes (str or None): Free-form field-sheet remarks (noise sources,
+            chewed cables, ...).
+        remote (str or None): Usual remote-reference partner (dedicated
+            remote, adjacent site or a stacked remote's name). It is the
+            default of the GUI remote dropdown; scripts take the remote as
+            an explicit argument.
+        serial (str or None): Logger serial number as mt-io reads it from the
+            site's first B423 header. This and `firmware`, `start` and `end`
+            are written by scripts/new_survey.py and shown in the GUI.
+        firmware (str or None): Logger firmware from the same header.
+        start (str or None): First instant of the recorded span, UTC ISO
+            ("2021-06-29T06:55:44Z").
+        end (str or None): Last instant of the recorded span, UTC ISO.
+    """
+
     name: str
-    # the recorder, when the site's own `instrument:` names one (a key of
-    # INSTRUMENTS); None = what its files are detected as, else the survey's
-    # (`Survey.instrument_of` resolves it). scripts/new_survey.py writes it
-    # only for a site whose recorder is not the survey's.
     instrument: str | None = None
     dipole_length_ex: float = 0.0
     dipole_length_ey: float = 0.0
@@ -205,63 +325,16 @@ class SiteConfig:
     latitude: float | None = None
     longitude: float | None = None
     elevation: float | None = None
-    # coil response file (e.g. LEMI-120 .rsp); relative paths resolve against
-    # the survey folder, then data_root. LEMI-423 sites, and EDL sites whose
-    # `sensor_type` is lemi120; `h_scale` is LEMI-423 only
     calibration_fn: str | None = None
-    # EDL (Earth Data PR6-24) sites only: the magnetic sensors, in mt-io's
-    # names (mtproc.instruments.EDL_SENSORS). "bartington": Mag-03 fluxgates,
-    # the long-period setup (UoA: 10 Hz), and what None means. "lemi120":
-    # LEMI-120 induction coils, the broadband setup (UoA: 500/1000 Hz), whose
-    # response is `calibration_fn`. scripts/new_survey.py writes it for an EDL survey.
     sensor_type: str | None = None
-    # EDL sites only: the extra gain of the electric chain between the dipoles
-    # and the recorded values, beyond what the reader already models (for the
-    # PR6-24 the reader's x10 terminal box). The electrical gain is hardwired
-    # at the electrical terminal junction box; the other gains would be set on
-    # the PR6-24 during operation, but for Stuart Shelf 2009 those configs are
-    # gone, so the value is declared from the field notes (10.0 there). Default
-    # 1.0 (no filter). Applied to every electric channel of the site (ex, ey)
-    # at ingest (mtproc.instruments.read_run). A `defaults:` value applies to
-    # the survey's EDL sites only; a non-EDL site's own key stops ingest.
-    # scripts/new_survey.py --electric-gain.
     electric_gain: float = 1.0
-    # extra gain folded into the magnetic channel filter chain. For LEMI-423
-    # the counts->field calibration comes out in pT with inverted polarity
-    # relative to the lemimt convention, hence -1000 (pT -> nT + sign).
-    # Established empirically against merged lemimt EDIs on Curnamona Cube
-    # (constant 1e6 rho offset, exact 180 deg on both phase modes).
     h_scale: float = 1.0
-    # How to read a 180/270 deg dipole azimuth on the field sheet. True
-    # (Curnamona): the pair was wired reversed, so the data are sign-flipped at
-    # ingest. False (Burra): the azimuth records layout direction only, the
-    # logger's N/S/E/W terminals fix polarity, and nothing is flipped. Decide
-    # per survey from the impedance phase quadrants (mtproc.compare.phase_quadrants);
-    # a wrong choice puts one mode 180 deg out.
     flip_reversed_dipoles: bool = True
-    # channels to keep at ingest; None keeps everything the reader returns.
-    # Broadband deployments carried no hz sensor (the B423 Bz column is an
-    # open input, constant -2^31), so those surveys set [ex, ey, hx, hy] and
-    # aurora never estimates a tipper from a dead channel. The usual sets are
-    # CHANNEL_PRESETS; a site whose set differs from `defaults:` has its own.
     channels: list[str] | None = None
-    # declared time-domain filters applied at ingest, in order (see
-    # mtproc.noise); from <survey>/filters.yaml, never auto-detected.
     filters: list[dict] | None = None
-    # logger clock status from the field timing sheets ("Correct"/"Behind"/
-    # "No data"); None when the site is not listed on one.
     timing: str | None = None
-    # free-form field-sheet remarks (noise sources, chewed cables, ...).
     notes: str | None = None
-    # the usual remote-reference partner (dedicated remote, adjacent site or a
-    # stacked remote's name). Only a default for the GUI's remote dropdown and
-    # a note for the reader; every script still takes the remote explicitly.
     remote: str | None = None
-    # recorder facts from the site's first B423 header and its file names,
-    # written by scripts/new_survey.py and read-only everywhere else (the GUI
-    # shows them, nothing computes with them): the logger's serial number and
-    # firmware as mt-io reads them, and the recorded span's first and last
-    # instant as UTC ISO strings ("2021-06-29T06:55:44Z").
     serial: str | None = None
     firmware: str | None = None
     start: str | None = None
@@ -269,6 +342,19 @@ class SiteConfig:
 
 
 class Survey:
+    """One survey: its YAML config, its raw site folders and its per-site files.
+
+    Args:
+        config (dict): Parsed survey.yaml. ``name`` and ``data_root`` are
+            required; ``instrument`` defaults to lemi423 and
+            ``sample_rate`` to 1000 Hz.
+        config_dir (Path): Folder holding survey.yaml, filters.yaml and
+            masks.yaml.
+
+    Raises:
+        ValueError: If the survey instrument is unknown.
+    """
+
     RAW_PATTERNS = {name: spec["pattern"] for name, spec in INSTRUMENTS.items()}
 
     def __init__(self, config: dict, config_dir: Path):
@@ -280,15 +366,15 @@ class Survey:
             raise ValueError(f"unknown instrument {self.instrument!r}")
         self.sample_rate = float(config.get("sample_rate", 1000))
         self.data_root = Path(config["data_root"])
-        # the script that wrote the `sites:` block (top-level `generated_by:`),
-        # None for a hand-written file: re-running it overwrites hand edits
+        # script that wrote the `sites:` block (top-level `generated_by:`), None
+        # for a hand-written file; re-running that script overwrites hand edits
         self.generated_by: str | None = config.get("generated_by") or None
         self._defaults: dict = config.get("defaults") or {}
         self._sites: dict = config.get("sites") or {}
         # site -> the instrument its folder was detected as, filled by site_dirs()
         self._detected: dict[str, str] = {}
-        # per-site noise decisions live in their own file so regenerating the
-        # sites block from the field sheet never wipes them
+        # per-site filters live in filters.yaml, so regenerating the sites
+        # block from the field sheet leaves them in place
         self._filters: dict = {}
         filters_yaml = self.config_dir / "filters.yaml"
         if filters_yaml.exists():
@@ -297,6 +383,7 @@ class Survey:
 
     @classmethod
     def from_yaml(cls, path: str | Path) -> "Survey":
+        """Load a survey from its survey.yaml path."""
         path = Path(path)
         with open(path, encoding="utf-8") as f:
             config = yaml.safe_load(f)
@@ -306,16 +393,16 @@ class Survey:
     def timezone(self) -> str:
         """IANA name of the survey area's local time (top-level `timezone:`), default UTC.
 
-        Only ever a *display* convenience: every timestamp in this package,
-        in the YAML and in the archives is UTC. Students read field sheets in
-        local time, so the GUI labels the processing-window fields with the
-        local equivalent (the MATLAB app's "(ACST)" suffix).
+        Used for display: every timestamp in this package, in the YAML and in
+        the archives is UTC. Field sheets are kept in local time, so the GUI
+        labels the processing-window fields with the local equivalent, such as
+        "18:25 ACST".
         """
         return str(self.config.get("timezone") or "UTC")
 
     @property
     def defaults(self) -> dict:
-        """The `defaults:` block (a copy): what a site without a key of its own gets."""
+        """Copy of the `defaults:` block, applied to every key a site does not set."""
         return dict(self._defaults)
 
     @property
@@ -330,20 +417,22 @@ class Survey:
         return Path(ws) if ws else self.config_dir / "work"
 
     def site_names(self) -> list[str]:
-        """Sites declared in survey.yaml's `sites:` block (raw folders may add more)."""
+        """Sites declared in the `sites:` block of survey.yaml; raw folders may add more."""
         return list(self._sites)
 
     def site_dirs(self) -> dict[str, Path]:
-        """Map site name -> raw-data folder, discovered from data_root.
+        """Map site names to raw-data folders discovered under data_root.
 
-        A folder is a site when it holds any instrument's data files
-        (`detect_instrument`, the survey's instrument preferred: a LEMI-423
-        survey finds exactly the folders it always did -- a B423 file named by
-        its epoch, not an AppleDouble `._<epoch>.B423` twin); which instrument
-        is recorded for `instrument_of`. The folder is the site's data, all
-        of it: a site's raw recordings go in its folder and nothing else
-        does (no processing copies beside them; Stuart Shelf 2009 was
-        copied out of its archive zips into that layout).
+        A folder is a site when it holds data files of any instrument
+        (`detect_instrument`, preferring the survey's instrument). A LEMI-423
+        folder is recognised by a B423 file named by its epoch; an
+        AppleDouble ``._<epoch>.B423`` twin does not count. The detected
+        instrument is recorded for `instrument_of`. A site folder holds that
+        site's raw recordings; processing products are written to the
+        workspace.
+
+        Returns:
+            dict: Site name to folder Path, sorted by name.
         """
         out = {}
         for d in sorted(self.data_root.iterdir()):
@@ -356,11 +445,22 @@ class Survey:
         return out
 
     def instrument_of(self, site: str) -> str:
-        """The site's recorder: its own `instrument:`, else what its folder holds, else the survey's.
+        """Return the recorder of a site.
 
-        The folder is `data_root/<site>` (site = folder name), detected on
-        first ask unless `site_dirs()` already did; a missing folder (a drive
-        not plugged in) falls back to the survey's instrument.
+        The site's own `instrument:` wins, then the instrument detected in
+        ``data_root/<site>``, then the survey's. Detection runs on the first
+        call unless `site_dirs()` has already done it. A missing folder, for
+        example on a drive that is not connected, falls back to the survey's
+        instrument.
+
+        Args:
+            site (str): Site name.
+
+        Returns:
+            str: Instrument key of INSTRUMENTS.
+
+        Raises:
+            ValueError: If the site declares an unknown instrument.
         """
         declared = (self._sites.get(site) or {}).get("instrument")
         if declared:
@@ -374,6 +474,19 @@ class Survey:
         return self._detected[site]
 
     def site(self, name: str) -> SiteConfig:
+        """Return the settings of one site.
+
+        The `defaults:` block is merged with the site's entry, the entry
+        winning, and the site's filters.yaml entry is added unless the merged
+        settings already carry ``filters``. A site without an entry gets the
+        defaults and a logged warning.
+
+        Args:
+            name (str): Site name.
+
+        Returns:
+            SiteConfig: The merged settings.
+        """
         overrides = self._sites.get(name)
         if overrides is None:
             logger.warning(

@@ -1,27 +1,33 @@
-"""SiteMap and PairSummary: the Process tab's map and the summary beside the pair.
+# -*- coding: utf-8 -*-
+"""
+Site map and pair summary of the Process tab
 
-`SiteMap` is borrowed from the MATLAB app's `UpdateMap`; `PairSummary`, below,
-is its Process Data tab's summary text (distance, overlap, window length,
-recommended remote), the map's kilometres beside the window bar's hours.
+`SiteMap` is the map of the sites, and `PairSummary` the Process tab's
+summary text (distance, overlap, window length, recommended remote),
+combining the map's kilometres with the window bar's hours.
 
-`docs/matlab_app_borrowing.md` says what the map is: an offline lat/lon
-scatter of every site with a position in `survey.yaml` (station green, remote
-blue, a stack's members orange, the rest grey, each dot outlined dark, each
-name on a translucent dark box) over `<workspace>/basemap.png`, which
-`scripts/fetch_basemap.py` fetched once already warped onto this grid
-(`fetch_basemap_if_missing` runs it on a survey open with no `basemap.json`;
-the map draws it as a `pg.ImageItem` over the JSON's extent and reloads it
-when a fetch finishes). The provider and attribution the tile terms require
-are the map's tooltip, not a line under it; a grey
-line shows only when there is no basemap. The view never zooms or pans out
-past the basemap (without one, the sites' extent padded as the script pads
-it); zooming in is free. Under the map, "remote E08 at 148.6 km".
+The map is an offline lat/lon scatter of every site with a position in
+`survey.yaml`: station green, remote blue, stack members orange, the rest
+grey, each dot outlined dark and each name on a translucent dark box. It is
+drawn over `<workspace>/basemap.png`, which `scripts/fetch_basemap.py` fetches
+once, already warped onto this grid; `fetch_basemap_if_missing` runs the
+script when a survey is opened without a `basemap.json`. The map draws the PNG
+as a `pg.ImageItem` over the JSON's extent and reloads it when a fetch
+finishes. The provider and attribution required by the tile terms are shown in
+the map's tooltip; a grey line below the map appears only when there is no
+basemap. The view cannot zoom or pan out past the basemap, or, without one,
+past the sites' extent padded as the script pads it; zooming in is
+unrestricted. Below the map a label reads, e.g., "remote S02 at 148.6 km".
 
-Nothing here computes a product: the geometry is a haversine and a scatter.
-Real longitude is x and real latitude y; the ViewBox's aspect is locked to
-cos(mean latitude) (`setAspectLocked(True, ratio=r)` gives one x unit r
-pixels for each y unit's pixel, pyqtgraph 0.14), so the map is at true
-relative scale without pre-scaling the coordinates.
+Distances are haversine distances (`mtproc.survey.distance_km`). Longitude
+is x and latitude y, and the ViewBox aspect is locked to cos(mean latitude)
+(`setAspectLocked(True, ratio=r)` gives one x unit r pixels for each y
+unit's pixel in pyqtgraph 0.14), so the map is at true relative scale
+without rescaling the coordinates.
+
+@author: ben kay (ben@auscope.org.au)
+
+:license: MIT
 """
 
 from __future__ import annotations
@@ -51,19 +57,25 @@ MARGIN, MIN_PAD_DEG = 0.15, 0.1  # scripts/fetch_basemap.py's padding of the sit
 
 
 def attribution_text(info: dict) -> str:
-    """The map's tooltip for a basemap.json: its provider, then its attribution, (C) as the sign."""
+    """Return the map's tooltip for a basemap.json: provider, then attribution, with "(C)" as the sign."""
     return f"Basemap: {info.get('provider', '')} - " + str(info.get("attribution", "")).replace(
         "(C)", "\N{COPYRIGHT SIGN}")
 
 
 def fetch_basemap_if_missing(state) -> int | None:
-    """On a survey open: no `<workspace>/basemap.json`, so run scripts/fetch_basemap.py now.
+    """Run scripts/fetch_basemap.py when the open survey has no `<workspace>/basemap.json`.
 
-    Not a processing job (it never opens an archive), so like New survey it is
-    started at once (`JobRunner.run_now`), not left for Run queue. Offline it
-    fails inside its 30 s tile timeout and the console strip says why; the
-    next try is the next survey open. Returns the job's index, or None when
-    there is a basemap or a fetch for this survey is already waiting or running.
+    The job opens no archive, so like New survey it starts immediately
+    through `JobRunner.run_now`. Offline it fails within its 30 s tile
+    timeout and the console strip shows why; the next attempt is at the next
+    survey open.
+
+    Args:
+        state: The shared `mtproc_gui.app.State`.
+
+    Returns:
+        int | None: The job's index, or None when a basemap exists or a
+        fetch for this survey is already queued or running.
     """
     survey = state.survey
     if survey is None or (survey.workspace / "basemap.json").exists():
@@ -75,7 +87,12 @@ def fetch_basemap_if_missing(state) -> int | None:
 
 
 class SiteMap(QWidget):
-    """Every positioned site as a dot, the station/remote/members coloured, over the basemap if fetched."""
+    """Map of every positioned site, with the station, remote and stack members coloured.
+
+    Args:
+        state: The shared `mtproc_gui.app.State`.
+        parent (QWidget | None): Qt parent.
+    """
 
     # the role colours, from `theme` (the window bar draws its two spans in the same two)
     GREY, STATION, REMOTE, MEMBER = IDLE_COLOUR, OK_COLOUR, PAIR_REMOTE_COLOUR, WARN_COLOUR
@@ -114,7 +131,7 @@ class SiteMap(QWidget):
         state.runner.job_finished.connect(self._job_finished)
 
     def reload(self) -> None:
-        """Rebuild from `survey.yaml`: every site that declares a latitude and a longitude."""
+        """Rebuild from `survey.yaml`, plotting every site that declares a latitude and a longitude."""
         for text in self.texts:
             self.plot.removeItem(text)
         self.texts.clear()
@@ -147,14 +164,14 @@ class SiteMap(QWidget):
             text = pg.TextItem(name, color=FOREGROUND, anchor=(0.0, 1.0), fill=pg.mkBrush(box))
             text.setFont(font)
             text.setPos(x, y)
-            text.setZValue(-10)  # over the basemap, under the dots: a name never hides a site
+            text.setZValue(-10)  # over the basemap, under the dots, so a name does not hide a site
             self.plot.addItem(text)
             self.texts.append(text)
         self.set_roles(*self.roles)
         self.lock_extent()
 
     def extent(self) -> tuple[float, float, float, float] | None:
-        """(west, east, south, north): the basemap's, else the sites' padded as fetch_basemap.py pads."""
+        """Return (west, east, south, north): the basemap's extent, else the sites' padded as fetch_basemap.py pads."""
         if self.basemap_info is not None:
             return tuple(float(self.basemap_info[k]) for k in ("lon_min", "lon_max", "lat_min", "lat_max"))
         if not self.positions:
@@ -164,7 +181,7 @@ class SiteMap(QWidget):
         return w - pad_x, e + pad_x, s - pad_y, n + pad_y
 
     def lock_extent(self) -> None:
-        """Start on the whole extent and never zoom or pan out past it (the aspect lock stays)."""
+        """Show the whole extent and prevent zooming or panning out past it; the aspect lock stays."""
         extent, box = self.extent(), self.plot.getViewBox()
         if extent is None:  # nothing to show: no limits left over from the last survey
             box.setLimits(xMin=None, xMax=None, yMin=None, yMax=None, maxXRange=None, maxYRange=None)
@@ -194,6 +211,7 @@ class SiteMap(QWidget):
         self._set_distance(station, remote)
 
     def _set_distance(self, station, remote) -> None:
+        """Show the station-remote distance below the map."""
         if not remote:
             self.distance_label.setText("no remote selected")
             return
@@ -207,7 +225,7 @@ class SiteMap(QWidget):
     # ------------------------------------------------------------ the basemap
 
     def load_basemap(self) -> None:
-        """Draw `<workspace>/basemap.png` under the dots over `basemap.json`'s extent, or say so."""
+        """Draw `<workspace>/basemap.png` under the dots over `basemap.json`'s extent, or show why not."""
         if self.basemap_item is not None:
             self.plot.removeItem(self.basemap_item)
         self.basemap_item = self.basemap_info = None
@@ -235,18 +253,18 @@ class SiteMap(QWidget):
         item.setZValue(-100)  # under the dots and their names
         self.plot.addItem(item)
         self.basemap_item, self.basemap_info = item, info
-        self.plot.setToolTip(attribution_text(info))  # the tile terms' credit, off the map's face
+        self.plot.setToolTip(attribution_text(info))  # the credit the tile terms require
         self.basemap_label.setVisible(False)
         self.lock_extent()
 
     def _job_finished(self, index: int, ok: bool) -> None:
-        """A fetch_basemap job that succeeded: draw what it wrote."""
+        """Load the basemap after a successful fetch_basemap job."""
         job = self.state.runner.jobs[index]
         if ok and any(Path(arg).name == BASEMAP_SCRIPT for arg in job.argv):
             self.load_basemap()
 
     def distance_km(self, station, remote) -> float | None:
-        """The separation the label reports, or None when either site has no position."""
+        """Return the distance in km between two sites, or None when either has no position."""
         if station not in self.latlon or remote not in self.latlon:
             return None
         return distance_km(*self.latlon[station], *self.latlon[remote])
@@ -256,20 +274,26 @@ class SiteMap(QWidget):
 
 
 def hours_text(hours: float) -> str:
-    """'41.3 h (1.72 days)': the days from one day up, as the MATLAB summary reads."""
+    """Format hours as '41.3 h', adding days from one day up, e.g. '41.3 h (1.72 days)'."""
     return f"{hours:.1f} h" + (f" ({hours / 24:.2f} days)" if hours >= 24 else "")
 
 
 class PairSummary(QWidget):
-    """Row 1 of the Process tab: distance, overlap, window length and the recommended remote.
+    """Summary in row 1 of the Process tab: distance, overlap, window length and recommended remote.
 
-    The kilometres are the map's (`SiteMap.distance_km`, None for a site with
-    no position, such as a stack), every hour the window bar's recorded spans
-    (`WindowBar.span`). The recommendation is the station's declared `remote:`,
-    else the raw site overlapping the station longest, with the **tie-break
-    rule** of `recommendation`; picking another remote never
-    changes it. The spans are only asked for while the summary is on screen,
-    so a hidden Process tab never delays the tree or the segment store.
+    Distances come from the map (`SiteMap.distance_km`; None for a site with
+    no position, such as a stack) and hours from the window bar's recorded
+    spans (`WindowBar.span`). The recommended remote is the station's
+    declared `remote:`, else a raw site chosen by `recommendation`; it does
+    not change when another remote is picked. Spans are requested only while
+    the summary is visible, so a hidden Process tab does not delay the tree
+    or the segment store.
+
+    Args:
+        state: The shared `mtproc_gui.app.State`.
+        site_map (SiteMap): The Process tab's map.
+        bar (WindowBar): The Process tab's window bar.
+        parent (QWidget | None): Qt parent.
     """
 
     def __init__(self, state, site_map: SiteMap, bar: WindowBar, parent=None):
@@ -287,7 +311,7 @@ class PairSummary(QWidget):
         bar.window_changed.connect(lambda _start, _end: self.refresh())
 
     def hours(self, a, b) -> float | None:
-        """Hours two sites' recorded spans share: None until both are read, 0.0 if they never meet."""
+        """Return the hours two sites' recorded spans share; None until both are read, 0.0 if they do not meet."""
         span_a, span_b = self.bar.span(a), self.bar.span(b)
         if span_a is None or span_b is None:
             return None
@@ -295,37 +319,44 @@ class PairSummary(QWidget):
         return 0.0 if common is None else (common[1] - common[0]).total_seconds() / 3600.0
 
     def km(self, a, b) -> str:
+        """Return the distance between two sites as text, "-" or "no position"."""
         if not a or not b:
             return "-"
         km = self.site_map.distance_km(a, b)
         return "no position" if km is None else f"{km:.1f} km"
 
     def showEvent(self, event) -> None:
+        """Refresh on show, when the spans may be read."""
         super().showEvent(event)
-        self.refresh()  # now the spans it needs may be read
+        self.refresh()
 
     # a candidate whose overlap covers at least this fraction of the station's own
-    # record has enough; the NEAREST such site is recommended: a
-    # 450 km dedicated remote had no coherent signal at broadband periods, while
-    # the adjacent site lemimt used reproduced its result. With no such site the
-    # longest overlap wins, nearest among those within TIE_HOURS of it.
+    # record qualifies, and the nearest qualifying site is recommended; a distant
+    # remote (hundreds of km away) can lack coherent signal at broadband periods
+    # where an adjacent site does not. With no qualifying site the longest overlap
+    # wins, nearest among those within TIE_HOURS of it.
     ENOUGH_FRACTION = 0.5
     TIE_HOURS = 1.0
 
     def recommendation(self) -> tuple[str | None, str]:
-        """(site or None, why) for the bar's station; asks the bar for the spans it needs.
+        """Recommend a remote for the bar's station, requesting the spans it needs.
 
-        No remote declared: the nearest raw site (by `SiteMap.distance_km`; no
-        position sorts last, then by name) among those whose overlap covers at
-        least `ENOUGH_FRACTION` of the station's own record; failing that, the
-        nearest among those within `TIE_HOURS` of the longest overlap.
+        The station's declared remote is used when there is one. Otherwise
+        the recommendation is the nearest raw site (by `SiteMap.distance_km`;
+        sites without a position sort last, then by name) among those whose
+        overlap covers at least `ENOUGH_FRACTION` of the station's own record,
+        or, failing that, the nearest among those within `TIE_HOURS` of the
+        longest overlap.
+
+        Returns:
+            tuple[str | None, str]: The site, or None, and the reason.
         """
         station = self.bar.station
         if not station:
             return None, ""
         declared = self.state.default_remote(station)
         candidates = [declared] if declared else sorted(s for s in self.state.raw_sites() if s != station)
-        if self.isVisible():  # a hidden summary never holds the archive lock up for its spans
+        if self.isVisible():  # spans are read only while the summary is visible
             self.bar.read_spans(candidates)
         if declared:
             return declared, "the station's declared remote: in survey.yaml"
@@ -356,7 +387,7 @@ class PairSummary(QWidget):
         return best, why
 
     def refresh(self) -> None:
-        """Every line again, from the bar's pair, spans and window."""
+        """Redraw every line from the bar's pair, spans and window."""
         station, remote = self.bar.station, self.bar.remote
         self.distance.setText(f"Distance to remote: {self.km(station, remote)}")
         hours = self.hours(station, remote)

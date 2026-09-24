@@ -1,21 +1,28 @@
-"""The Filter Data tab's two preview views and the row that steers them.
+# -*- coding: utf-8 -*-
+"""
+Filter preview views of the Filter Data tab
 
-They draw a `mtproc_gui.filter_preview.PreviewResult` and compute nothing:
+Draws a `mtproc_gui.filter_preview.PreviewResult`; the computation is done in
+`mtproc_gui.filter_preview`.
 
-- `SeriesPreview`: Bx, By, Ex, Ey stacked on one x axis (`plots.stack_plots`:
-  no gaps, peak decimation), the raw light grey behind the filtered in the
-  channel colour, the zoom locked to the window as on the Time Series tab
-  (x only, never past the window's ends, y following what is visible).
-  With no filters the raw is drawn alone, in the channel colour. The time
-  series is offset-removed (the segment's convention): a high-pass removes
-  the offset, and raw and filtered would otherwise sit apart.
-- `PsdPreview`: the Spectra tab's two pair panels ("By-Ex (Zxy)", "Bx-Ey
-  (Zyx)"; `spectra.panel` names them for the window's recorder), raw dashed
-  light grey under the filtered (`qc_plots.draw_psd`'s `before`), the
-  Schumann and mains lines, the view locked to the data.
-- `PreviewPane`: "Time series: Before / After / Both", "Show: Bx By Ex Ey"
-  (both views; the loaded window's channels), the status line, and the two
-  views in a vertical splitter.
+* `SeriesPreview`: Bx, By, Ex, Ey stacked on one x axis
+  (`plots.stack_plots`, gaps as holes, peak decimation), the raw trace light
+  grey behind the filtered one in the channel colour. Zoom is locked to the
+  window as on the Time Series tab: x only, clamped to the window's ends, y
+  following the visible data. With no filters the raw trace is drawn alone
+  in the channel colour. The series are offset-removed, the segment's
+  convention, so raw and filtered traces line up after a high-pass.
+* `PsdPreview`: the Spectra tab's two pair panels, "By-Ex (Zxy)" and "Bx-Ey
+  (Zyx)", named for the window's recorder by `spectra.panel`. The raw PSD is
+  dashed light grey under the filtered one (`qc_plots.draw_psd`'s `before`),
+  with the Schumann and mains lines, and the view locked to the data.
+* `PreviewPane`: a "Time series: Before / After / Both / Removed" choice, a
+  "Show: Bx By Ex Ey" row for the loaded window's channels (applied to both
+  views), the status line, and the two views in a vertical splitter.
+
+@author: ben kay (ben@auscope.org.au)
+
+:license: MIT
 """
 
 from __future__ import annotations
@@ -39,7 +46,7 @@ MODES = ("Before", "After", "Both", "Removed")  # Removed = raw minus filtered: 
 
 
 def _faint(pen):
-    """The raw trace behind a filtered one: the same grey at 45 per cent opacity."""
+    """Return the raw pen at 45 per cent opacity, for the raw trace behind a filtered one."""
     colour = pen.color()
     colour.setAlpha(115)
     pen.setColor(colour)
@@ -47,7 +54,7 @@ def _faint(pen):
 
 
 def _with_gaps(a: np.ndarray, gaps) -> np.ndarray:
-    """What a curve shows: the array, or a float32 copy with NaN in the gaps (holes)."""
+    """Return the array, or a float32 copy with NaN over the gaps so they draw as holes."""
     if not gaps:
         return a
     a = np.array(a, dtype="float32")
@@ -57,7 +64,11 @@ def _with_gaps(a: np.ndarray, gaps) -> np.ndarray:
 
 
 class SeriesPreview(QWidget):
-    """Bx, By, Ex, Ey stacked on one locked x axis: raw light grey behind filtered in colour."""
+    """Bx, By, Ex, Ey stacked on one locked x axis, raw light grey behind filtered in colour.
+
+    `mode` is "Before", "After", "Both" or "Removed"; `hidden` holds the
+    channels switched off under "Show".
+    """
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -67,11 +78,13 @@ class SeriesPreview(QWidget):
         self.clear()
 
     def clear(self) -> None:
+        """Remove the plots and forget the segment."""
         clear_layout(self.layout())
         self.segment, self.filtered, self._x = None, False, None
         self.plots, self.raw_items, self.filtered_items, self.removed_items = {}, {}, {}, {}
 
     def show_result(self, result: PreviewResult) -> None:
+        """Draw a preview, rebuilding the plots when the window changed."""
         if result.segment is not self.segment:
             self._build(result.segment)
         for comp, item in self.filtered_items.items():
@@ -88,6 +101,7 @@ class SeriesPreview(QWidget):
         self.restyle()
 
     def _build(self, seg) -> None:
+        """Build one plot per channel of the window, with raw, filtered and removed curves."""
         self.clear()
         self.segment = seg
         comps = theme.channel_order(seg.arrays)
@@ -106,12 +120,12 @@ class SeriesPreview(QWidget):
                           minXRange=MIN_SPAN_SAMPLES / seg.sample_rate)
             follow_visible_y(plot)
             plot.setLabel("bottom", x_label)
-            plot.setMinimumHeight(55)  # the stack shares the tab with the spectra: the splitter decides
+            plot.setMinimumHeight(55)  # the splitter shares the height with the spectra
         plots[0].setXRange(0.0, duration, padding=0)
         self.plots = dict(zip(comps, plots))
 
     def restyle(self) -> None:
-        """Pens and visibility from the filters, the Before/After/Both mode and the hidden channels."""
+        """Set pens and visibility from the filters, the mode and the hidden channels."""
         for comp, plot in self.plots.items():
             raw, filtered, removed = self.raw_items[comp], self.filtered_items[comp], self.removed_items[comp]
             raw.setPen(_faint(theme.raw_pen()) if self.filtered else theme.pen(comp))
@@ -119,9 +133,9 @@ class SeriesPreview(QWidget):
             raw.setVisible(not self.filtered or self.mode in ("Before", "Both"))
             filtered.setVisible(self.filtered and self.mode in ("After", "Both"))
             removed.setVisible(self.filtered and self.mode == "Removed")
-            # the y range follows the trace the student is reading: the filtered one in
-            # After and Both (a large removed component, C02's mains, then runs off the
-            # panel instead of setting the scale), the raw in Before, the removed in Removed
+            # the y range follows the trace on show: the filtered one in After and
+            # Both (so a large removed component such as mains runs off the panel
+            # instead of setting the scale), the raw in Before, the removed in Removed
             box = plot.getViewBox()
             for item, follow in ((raw, not self.filtered or self.mode == "Before"),
                                  (filtered, self.mode in ("After", "Both")),
@@ -144,7 +158,11 @@ class SeriesPreview(QWidget):
 
 
 class PsdPreview(QWidget):
-    """The two pair panels, raw dashed light grey under the filtered, locked to the data."""
+    """The two pair PSD panels, raw dashed light grey under the filtered, locked to the data.
+
+    A hover cursor on every panel reads out the frequency, period and the
+    visible channels' values below the panels.
+    """
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -175,6 +193,7 @@ class PsdPreview(QWidget):
         layout.addWidget(self.readout)
 
     def clear(self) -> None:
+        """Clear the panels, keeping the hover cursors."""
         for title, plot in self.plots.items():
             plot.clear()
             plot.addItem(self.cursors[title], ignoreBounds=True)  # clear() took the cursor off too
@@ -182,7 +201,7 @@ class PsdPreview(QWidget):
         self.items = {}
 
     def _hover(self, title: str, pos) -> None:
-        """The pointer over panel `title`: cursors on every panel, values under them."""
+        """Move the cursors to the pointer's frequency and show the values under them."""
         plot = self.plots[title]
         if not plot.sceneBoundingRect().contains(pos):
             return
@@ -208,6 +227,7 @@ class PsdPreview(QWidget):
         self.readout.setText("   ".join(parts))
 
     def show_result(self, result: PreviewResult) -> None:
+        """Draw the raw and filtered ladders on the two pair panels."""
         names = SimpleNamespace(remote=None, scalar_only=result.segment.scalar_only)
         local = channels.roles(result.segment.arrays)
         for k, (title, _pair) in enumerate(PANELS):
@@ -223,6 +243,7 @@ class PsdPreview(QWidget):
         self.restyle()
 
     def restyle(self) -> None:
+        """Hide the hidden channels and any panel left with none shown."""
         shown = [self.plots[t] for t, _p in PANELS if any(c not in self.hidden for c in self.comps.get(t, ()))]
         for title, _pair in PANELS:
             self.plots[title].setVisible(self.plots[title] in shown)
@@ -273,7 +294,7 @@ class PreviewPane(QWidget):
         layout.addWidget(self.splitter)
 
     def set_channels(self, comps) -> None:
-        """One "Show" box per channel of the loaded window, in the stack order."""
+        """Build one "Show" box per channel of the loaded window, in stack order."""
         comps = theme.channel_order(comps)
         if list(self.channel_boxes) == comps:
             return
@@ -286,6 +307,7 @@ class PreviewPane(QWidget):
             self.box_row.addWidget(box)
 
     def show_result(self, result) -> None:
+        """Draw a preview in both views and show its provenance and compute time."""
         self.set_channels(result.segment.arrays)
         self.series.show_result(result)
         self.spectra.show_result(result)
@@ -293,17 +315,18 @@ class PreviewPane(QWidget):
         self.status_label.setText(f"{done}  ({result.elapsed_s:.1f} s)")
 
     def clear(self) -> None:
+        """Clear both views and the status line."""
         self.series.clear()
         self.spectra.clear()
         self.status_label.setText("")
 
     def set_mode(self, mode: str) -> None:
-        """Before (raw only), After (filtered only), Both, or Removed (raw minus filtered)."""
+        """Set the time-series mode: Before (raw), After (filtered), Both, or Removed (raw minus filtered)."""
         self.series.mode = mode
         self.series.restyle()
 
     def show_channel(self, comp: str, on: bool) -> None:
-        """A channel ticked or unticked under "Show", in both views."""
+        """Show or hide a channel in both views."""
         for view in (self.series, self.spectra):
             (view.hidden.discard if on else view.hidden.add)(comp)
             view.restyle()

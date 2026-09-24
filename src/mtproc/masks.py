@@ -1,7 +1,9 @@
-"""Time masks: `<survey>/masks.yaml`, the intervals a student declares processing should leave out.
+# -*- coding: utf-8 -*-
+"""
+Time masks declared per site in `<survey>/masks.yaml`
 
-A declaration, like `filters.yaml`: the Cross-powers tab writes it when the
-student presses "Save masks" and nothing else ever does. Per site, a list:
+A mask is an interval that processing leaves out. The file is written by the
+"Save masks" button on the GUI Cross-powers tab and holds, per site, a list:
 
     C23:
     - start: '2023-09-22T12:05:49Z'   # UTC, ISO
@@ -11,29 +13,26 @@ student presses "Save masks" and nothing else ever does. Per site, a list:
       found_by: time                  # time | polar: the panel it was picked on
 
 `load_masks(survey, site)` and `save_masks(survey, site, masks)` read and
-write one site's block; saving rewrites **only that site's block** of the
-file's text, so every other site's block (and the leading comment) stays
-byte-identical. `apply_time_masks(kd, masks)` cuts the masked intervals out
-of an aurora KernelDataset; `applies(mask, period_s)` is the one rule for
-which bands a mask covers (the tab's hollow spots, `mtproc.crosspower.
-masked_chunks` and `stack_impedance` all ask it).
+write one site's block. Saving rewrites that site's block of the file's text
+and carries the other blocks and the leading comment over unchanged.
+`apply_time_masks(kd, masks)` cuts the masked intervals out of an aurora
+KernelDataset. `applies(mask, period_s)` decides which bands a mask covers;
+the Cross-powers tab, `mtproc.crosspower.masked_chunks` and
+`mtproc.crosspower.stack_impedance` all use it.
 
-**What reaches processing.** scripts/process_rr.py loads the local site's
-masks and the remote site's (`remote_masks`: a stacked remote, named `STK_...`,
-has none of its own), joins
-them with `union_masks` -- a remote-referenced estimate uses both stations'
-samples, so noise at either one is left out -- and hands the union to
-`mtproc.process.process_station(time_masks=...)`, which
-calls `apply_time_masks` on the kernel dataset with the masks whose `bands`
-is `all`: each run interval is split around them, so aurora never sees
-those samples. A band-limited mask (`bands: [pmin_s, pmax_s]`, what a
-selection on the Cross-powers tab's polar panel records) reaches aurora
-through a scoped runtime patch instead:
-`mtproc.process._band_masks_applied` drops the STFT windows it overlaps
-(`windows_in_mask`) from each band whose centre period it covers
-(`applies`), before the regression. Aurora 0.6.2 has no input for that
-(checked in its source; docs/upstream_issues.md 22, and the
-prepared fix in docs/upstream_patches/):
+Masks in processing: scripts/process_rr.py loads the masks of the local site
+and of the remote site (`remote_masks`; a stacked remote named `STK_...` has
+none), joins them with `union_masks`, and passes the union to
+`mtproc.process.process_station(time_masks=...)`. A remote-referenced
+estimate uses the samples of both stations, so noise at either one is left
+out. `process_station` calls `apply_time_masks` with the masks whose `bands`
+is `all`, which splits each run interval around them so aurora receives none
+of those samples. A band-limited mask (`bands: [pmin_s, pmax_s]`, recorded by
+a selection on the polar panel of the Cross-powers tab) reaches aurora
+through a scoped runtime patch: `mtproc.process._band_masks_applied` drops
+the STFT windows the mask overlaps (`windows_in_mask`) from each band whose
+centre period it covers (`applies`), before the regression. Aurora 0.6.2 has
+no input for this (docs/upstream_issues.md 22):
 
 - `DecimationLevel.channel_weight_specs[].weights` is the only weight a
   config carries, and `aurora.pipelines.feature_weights.calculate_weights`
@@ -41,17 +40,19 @@ prepared fix in docs/upstream_patches/):
   feature weight specs) just before the regression;
 - the regression then uses it as ``band_weights = weights.mean(axis=1)``
   (`aurora.pipelines.transfer_function_helpers.
-  process_transfer_functions_with_weights`) -- one weight per STFT window,
+  process_transfer_functions_with_weights`), one weight per STFT window,
   the same for every band of the level; the per-band lookup
   (``chws.get_weights_for_band(band)``) is commented out there;
 - `process_mth5_legacy` builds the merged STFT objects and passes them
-  straight to the regression, with no callback between, and mth5's
-  `apply_masks_and_weights` ("add this method to tf-estimation right before
-  robust regression") is an empty stub.
+  straight to the regression with no callback between, and the mth5 method
+  `apply_masks_and_weights` is an empty stub.
 
-A band mask is also used by `mtproc.crosspower.stack_impedance`, the
-classical stacked remote-reference estimate from the kept chunks'
-cross-powers.
+`mtproc.crosspower.stack_impedance`, the classical stacked remote-reference
+estimate from the cross-powers of the kept chunks, also applies band masks.
+
+@author: ben kay (ben@auscope.org.au)
+
+:license: MIT
 """
 
 from __future__ import annotations
@@ -74,7 +75,10 @@ HEADER = (
 
 
 class _Dumper(yaml.SafeDumper):
-    """Block style, except a list of plain numbers (a mask's bands) on one line: [0.02, 0.1]."""
+    """YAML dumper in block style that writes a list of plain numbers on one line.
+
+    A mask's bands are written as ``[0.02, 0.1]``.
+    """
 
 
 _Dumper.add_representer(
@@ -84,7 +88,15 @@ _Dumper.add_representer(
 
 
 def masks_path(survey) -> Path:
-    """`<survey folder>/masks.yaml` for a `Survey`, a survey.yaml path or the survey folder."""
+    """Return the masks.yaml path of a survey.
+
+    Args:
+        survey (Survey or str or Path): A `Survey`, a survey.yaml path or the
+            survey folder.
+
+    Returns:
+        Path: ``<survey folder>/masks.yaml``.
+    """
     folder = getattr(survey, "config_dir", None)
     if folder is None:
         folder = Path(survey)
@@ -94,18 +106,35 @@ def masks_path(survey) -> Path:
 
 
 def utc(value) -> pd.Timestamp:
-    """A UTC-aware Timestamp (naive text is UTC)."""
+    """Return a UTC-aware Timestamp; naive input is taken as UTC."""
     ts = pd.Timestamp(value)
     return ts.tz_localize("UTC") if ts.tzinfo is None else ts.tz_convert("UTC")
 
 
 def iso(value) -> str:
-    """'2023-09-22T12:05:49Z' (fractions of a second kept when there are any)."""
+    """Format a time as ISO UTC, for example '2023-09-22T12:05:49Z'.
+
+    Fractions of a second are kept when present.
+    """
     return utc(value).isoformat().replace("+00:00", "Z")
 
 
 def normalise(mask: dict) -> dict:
-    """One mask with its keys in the file's order and its values checked; ValueError if not a mask."""
+    """Check one mask and return it with its keys in the file's order.
+
+    Args:
+        mask (dict): Mask with ``start`` and ``end`` and optional ``bands``,
+            ``reason`` and ``found_by``.
+
+    Returns:
+        dict: ``{"start", "end", "bands", "reason", "found_by"}``, times as
+        ISO UTC text, ``bands`` as ``"all"`` or a sorted ``[pmin_s, pmax_s]``.
+
+    Raises:
+        ValueError: If start or end is missing or unparseable, end is not
+            after start, bands is malformed, or found_by is not one of
+            `FOUND_BY`.
+    """
     try:
         start, end = utc(mask["start"]), utc(mask["end"])
     except (KeyError, ValueError, TypeError) as exc:
@@ -127,8 +156,11 @@ def normalise(mask: dict) -> dict:
 
 
 def _ordered(masks) -> list[dict]:
-    """Normalised, earliest first, the same interval and bands declared twice (a repeated
-    click on the Cross-powers tab) kept once."""
+    """Normalise masks, sort them earliest first and collapse duplicates.
+
+    A mask with the same interval and bands as an earlier one, for example
+    from a repeated click on the Cross-powers tab, is kept once.
+    """
     out, seen = [], set()
     for m in sorted((normalise(m) for m in masks), key=lambda m: m["start"]):
         key = (m["start"], m["end"], str(m["bands"]))
@@ -139,8 +171,16 @@ def _ordered(masks) -> list[dict]:
 
 
 def load_masks(survey, site: str) -> list[dict]:
-    """`site`'s masks from masks.yaml, normalised, earliest first, duplicates collapsed
-    ([] with no file or no entry)."""
+    """Load the masks of one site from masks.yaml.
+
+    Args:
+        survey (Survey or str or Path): Survey, survey.yaml path or folder.
+        site (str): Site id.
+
+    Returns:
+        list of dict: Normalised masks, earliest first, duplicates
+        collapsed. Empty when there is no file or no entry for the site.
+    """
     path = masks_path(survey)
     if not path.exists():
         return []
@@ -149,8 +189,15 @@ def load_masks(survey, site: str) -> list[dict]:
 
 
 def _blocks(text: str) -> tuple[str, list[tuple[str, str]]]:
-    """(the text before the first site, [(site, its block's text)]): a block runs from its
-    unindented key line to the next one, the comments and blank lines after it included."""
+    """Split masks.yaml text into its header and per-site blocks.
+
+    A block runs from its unindented key line to the next one, including the
+    comments and blank lines after it.
+
+    Returns:
+        tuple: ``(header, [(site, block_text), ...])``, where the header is
+        the text before the first site.
+    """
     lines = text.splitlines(keepends=True)
     starts = [i for i, line in enumerate(lines)
               if line[:1] not in ("", " ", "\t", "#", "-", "\n", "\r") and ":" in line]
@@ -164,11 +211,21 @@ def _blocks(text: str) -> tuple[str, list[tuple[str, str]]]:
 
 
 def save_masks(survey, site: str, masks) -> Path:
-    """Write `site`'s masks (normalised, earliest first, duplicates collapsed); an empty
-    list removes its block.
+    """Write the masks of one site to masks.yaml.
 
-    Only that site's block of the file changes: the other sites' blocks and
-    the leading comment are carried over as text, byte for byte.
+    The masks are normalised, sorted earliest first and collapsed as in
+    `load_masks`. The site's block is replaced; the other sites' blocks and
+    the leading comment are carried over as text, unchanged. A new file
+    starts with `HEADER`.
+
+    Args:
+        survey (Survey or str or Path): Survey, survey.yaml path or folder.
+        site (str): Site id.
+        masks (iterable of dict): The site's masks. An empty list removes
+            the site's block.
+
+    Returns:
+        Path: The masks.yaml path.
     """
     path = masks_path(survey)
     entries = _ordered(masks)
@@ -193,8 +250,17 @@ def save_masks(survey, site: str, masks) -> Path:
 
 
 def union_masks(*mask_lists) -> list[dict]:
-    """Several sites' masks as one list: normalised, earliest first, the same
-    interval and bands declared at two sites kept once (the first site's entry)."""
+    """Join the masks of several sites into one list.
+
+    The result is normalised and sorted earliest first. A mask with the same
+    interval and bands at two sites is kept once, as the first site's entry.
+
+    Args:
+        *mask_lists: Lists of masks; None is treated as empty.
+
+    Returns:
+        list of dict: The joined masks.
+    """
     return _ordered(m for masks in mask_lists for m in masks or [])
 
 
@@ -202,48 +268,87 @@ STACK_PREFIX = "STK_"
 
 
 def is_stack(site) -> bool:
-    """True for a stacked remote's name (`STK_<site>u|w`, what scripts/campaign.py builds):
-    a product of several sites, with no masks.yaml entry of its own."""
+    """Return True for the name of a stacked remote.
+
+    Stacked remotes built by scripts/campaign.py are named
+    ``STK_<site>u`` or ``STK_<site>w``. A stack combines several sites and
+    has no masks.yaml entry of its own.
+    """
     return str(site or "").startswith(STACK_PREFIX)
 
 
 def remote_masks(survey, remote) -> list[dict]:
-    """The masks a run takes from its remote: `load_masks(survey, remote)`, [] for a stack.
+    """Return the masks a run takes from its remote.
 
-    Decided by the name alone (`is_stack`), never by whether the remote's raw
-    folder or archive can be found: a site's masks apply with the data drive
-    unplugged, and scripts/process_rr.py, the campaign signature and the GUI
-    Process tab use this one rule. A stack built under another name (a
-    scripts/build_stack.py name without the prefix) is read like a site:
+    The choice depends on the remote's name alone (`is_stack`), so a site's
+    masks apply whether or not its raw folder or archive is available.
+    scripts/process_rr.py, the campaign signature and the GUI Process tab
+    all use this function. A stack built under another name (a
+    scripts/build_stack.py name without the prefix) is read like a site, and
     whatever masks.yaml holds under that name applies.
+
+    Args:
+        survey (Survey or str or Path): Survey, survey.yaml path or folder.
+        remote (str): Remote site id, or empty for a single-site run.
+
+    Returns:
+        list of dict: ``load_masks(survey, remote)``, or an empty list for
+        no remote or a stack.
     """
     return [] if not remote or is_stack(remote) else load_masks(survey, remote)
 
 
 def applies(mask: dict, period_s: float) -> bool:
-    """True when `mask` (normalised) covers the band whose centre period is `period_s`:
-    `bands: all`, or pmin_s <= period_s <= pmax_s. A mask picked on one band's polar
-    panel records that band's own [pmin, pmax], so it covers that band and no neighbour
-    (a neighbour's centre lies outside it)."""
+    """Return True when a mask covers the band with centre period `period_s`.
+
+    A mask covers a band when its ``bands`` is ``"all"`` or
+    pmin_s <= period_s <= pmax_s. A mask picked on the polar panel of one
+    band records that band's [pmin, pmax], so it covers that band and none
+    of its neighbours, whose centres lie outside it.
+
+    Args:
+        mask (dict): A normalised mask.
+        period_s (float): Centre period of the band in s.
+
+    Returns:
+        bool: Whether the mask applies to the band.
+    """
     bands = mask["bands"]
     return bands == "all" or bands[0] <= float(period_s) <= bands[1]
 
 
 def split_by_bands(masks) -> tuple[list[dict], list[dict]]:
-    """(the `bands: all` masks, the band-limited ones), each normalised, in the order given."""
+    """Split masks into the ``bands: all`` ones and the band-limited ones.
+
+    Returns:
+        tuple: ``(all_band_masks, band_limited_masks)``, each normalised and
+        in the order given.
+    """
     masks = [normalise(m) for m in masks or []]
     return [m for m in masks if m["bands"] == "all"], [m for m in masks if m["bands"] != "all"]
 
 
 def windows_in_mask(times, window_s: float, mask: dict) -> np.ndarray:
-    """Per STFT window, True when the window overlaps `mask`'s [start, end).
+    """Flag the STFT windows that overlap a mask's [start, end).
 
-    `times` is aurora's STFT `time` coordinate: naive datetime64 in UTC, each
-    window's FIRST sample (`aurora.time_series.windowing_scheme.
-    downsample_time_axis` keeps the left-hand window edges). A window lasts
-    `window_s` (num_samples over the level's sample rate), so window k spans
-    [times[k], times[k] + window_s); one with any sample inside the mask is
-    hit, as a chunk a mask overlaps is (`mtproc.crosspower.masked_chunks`).
+    `times` is aurora's STFT ``time`` coordinate: naive datetime64 in UTC,
+    holding the first sample of each window
+    (`aurora.time_series.windowing_scheme.downsample_time_axis` keeps the
+    left-hand window edges). Window k spans [times[k], times[k] + window_s),
+    and is flagged when any of its samples lies inside the mask, matching
+    the chunk rule of `mtproc.crosspower.masked_chunks`.
+
+    Args:
+        times (array-like): STFT window start times, datetime64.
+        window_s (float): Window length in s, num_samples over the level's
+            sample rate.
+        mask (dict): A normalised mask.
+
+    Returns:
+        np.ndarray: Boolean array, one entry per window.
+
+    Raises:
+        TypeError: If `times` is not datetime64.
     """
     t = np.asarray(times)
     if t.dtype.kind != "M":
@@ -256,6 +361,7 @@ def windows_in_mask(times, window_s: float, mask: dict) -> np.ndarray:
 
 
 def _merged(spans) -> list[tuple[pd.Timestamp, pd.Timestamp]]:
+    """Merge overlapping or touching (start, end) spans, sorted by start."""
     out: list = []
     for a, b in sorted(spans):
         if out and a <= out[-1][1]:
@@ -280,17 +386,28 @@ def _cut(start, end, cuts) -> list[tuple[pd.Timestamp, pd.Timestamp]]:
 
 
 def apply_time_masks(kd, masks, min_piece_s: float = MIN_PIECE_S):
-    """Cut the `bands: all` masks out of the KernelDataset's run intervals (in place; returns `kd`).
+    """Cut the ``bands: all`` masks out of a KernelDataset's run intervals.
 
-    Every row of `kd.df` (the local station's runs and, in RR, the remote's)
-    is split into the pieces [start, end) leaves around the masks; a piece a
-    mask made shorter than `min_piece_s` (10 min) is dropped, a row no mask
-    touches is kept as it is. Then, as `mtproc.process.clip_to_window` does,
-    the duration column is refreshed and, when there is a remote,
-    `restrict_run_intervals_to_simultaneous` pairs the local and remote
-    pieces again. Band-limited masks are **not** applied (see the module
-    docstring); they are counted in the log line. Raises ValueError when
-    nothing is left.
+    Every row of ``kd.df`` (the local station's runs and, in remote
+    reference, the remote's) is split into the pieces of [start, end) left
+    around the masks. A piece shorter than `min_piece_s` is dropped; a row
+    no mask touches is kept as it is. Then, as in
+    `mtproc.process.clip_to_window`, the duration column is refreshed and,
+    when there is a remote, `restrict_run_intervals_to_simultaneous` pairs
+    the local and remote pieces again. Band-limited masks are counted in the
+    log line and left to the band patch in `mtproc.process` (see the module
+    docstring).
+
+    Args:
+        kd (KernelDataset): Aurora kernel dataset, modified in place.
+        masks (iterable of dict): Masks to apply.
+        min_piece_s (float): Shortest piece kept, in s (default 600 s).
+
+    Returns:
+        KernelDataset: `kd`.
+
+    Raises:
+        ValueError: If the masks leave no data to process.
     """
     masks = [normalise(m) for m in masks or []]
     cuts = _merged((utc(m["start"]), utc(m["end"])) for m in masks if m["bands"] == "all")

@@ -1,6 +1,18 @@
-"""Unit test for scripts/profile_run.py: the log-phase parser and the sampler -- no archive, no aurora run.
+# -*- coding: utf-8 -*-
+"""
+Unit test for scripts/profile_run.py
 
+Checks the log-phase parser on an excerpt of a real campaign log, the mark
+partition and self times on synthetic marks, the sampler on a child
+process, the trace-stage markers on a stub pipeline and the tracemalloc diff
+table. Runs without an archive or an aurora run.
+
+Usage:
     python tests/profile_unit.py
+
+@author: ben kay (ben@auscope.org.au)
+
+:license: MIT
 
 **This test fails if** the parser, given 28 lines cut from a real campaign log
 (s3_C18_rr-C19_boxcar.log, loguru colour codes and a two-line
@@ -113,6 +125,7 @@ def test_rr_log_phases() -> None:
 
 
 def _marks(*rows):
+    """Build mark events from (t, flag, kind, name) rows."""
     return [{"type": "mark", "t": t, "flag": f, "kind": k, "name": n} for t, f, k, n in rows]
 
 
@@ -168,6 +181,7 @@ STUB = "profile_unit_stub_pipeline"
 
 
 def _stub_module():
+    """Register a stub aurora-like pipeline module and its marker targets ("stubtest")."""
     import time
     import types
 
@@ -231,6 +245,7 @@ def _stub_freed():
 
 
 def _inside(inner, outer):
+    """Check whether span `inner` lies within span `outer`."""
     return outer["t0"] <= inner["t0"] and inner["t1"] <= outer["t1"]
 
 

@@ -1,9 +1,9 @@
-"""Unit test for the mtproc aurora fork (branch `mtproc-fixes`, version `0.6.2+mtproc`) against stock aurora 0.6.2.
+# -*- coding: utf-8 -*-
+"""
+Unit test for the mtproc aurora fork against stock aurora 0.6.2
 
-    python tests/aurora_fork_unit.py                  # the checks below
-    python tests/aurora_fork_unit.py --make-fixtures  # stock aurora 0.6.2 only: rewrites tests/fixtures/aurora_stock/
-
-The estimate: `mtproc.process.process_station` on the synthetic pair of
+Tests the fork (branch `mtproc-fixes`, version `0.6.2+mtproc`). The
+estimate is `mtproc.process.process_station` on the synthetic pair of
 `tests/crosspower_unit.py` stretched to 2 h: its field, generator and
 archive writer (100 Hz, known Z) with the field running for `SPAN_S` = 7300
 s, L (ex ey hx hy) in two runs [T0, T0 + 3500 s) and [T0 + 3600 s, T0 +
@@ -15,11 +15,11 @@ same amplitude to 3200 s (seed 11), so that it keeps its share of the record
 their 10 Huber iterations under stock aurora. L rr R, the lemimt scheme at 100 Hz
 out to 10 s (four decimation levels, 24 bands, the scheme of
 `tests/band_masks_unit.py`), output channels ex and ey, no tweaks, no masks.
-R's ex and ey never enter the regression: under stock aurora the estimate
-is bit-identical with and without them; the fork no longer transforms them.
+R's ex and ey stay out of the regression: under stock aurora the estimate
+is identical with and without them, and the fork skips their transform.
 Every estimate runs in a fresh subprocess (`--worker`) with BLAS pinned to
-one thread (OPENBLAS/OMP/MKL_NUM_THREADS=1): its peak memory is its own, and
-PYTHONPATH chooses the aurora it imports (the clone, when it is the one
+one thread (OPENBLAS/OMP/MKL_NUM_THREADS=1), so its peak memory is its own
+and PYTHONPATH chooses the aurora it imports (the clone, when it is the one
 tested, ahead of this process's own PYTHONPATH and src).
 
 The fixtures (`tests/fixtures/aurora_stock/`, written by `--make-fixtures`
@@ -36,15 +36,23 @@ under stock aurora 0.6.2):
   working set of the worker process; RSS just before `process_station`), the
   best of `REPS` runs, and the affected bands.
 
-Which aurora is tested: the installed one (what this interpreter imports)
-when its `aurora.__version__` carries `+mtproc`; otherwise the clone of the
-fork at `MTPROC_FORKS/aurora` (MTPROC_FORKS defaults to
-`_scratch.DEFAULT_FORKS`) when its `aurora/__init__.py` carries `+mtproc`,
-run with PYTHONPATH=<clone> ahead of site-packages. With neither, only check
-0 runs and the fork checks are reported as skipped. When the installed aurora
-is the fork and a clone of it is there too, one estimate is also made with
-the clone and compared with the installed fork's, reported, not tested (a
-clone ahead of what is installed may differ).
+The aurora tested is the installed one (what this interpreter imports) when
+its `aurora.__version__` carries `+mtproc`; otherwise the clone of the fork
+at `MTPROC_FORKS/aurora` (MTPROC_FORKS defaults to `_scratch.DEFAULT_FORKS`)
+when its `aurora/__init__.py` carries `+mtproc`, run with
+PYTHONPATH=<clone> ahead of site-packages. With neither, check 0 alone runs
+and the fork checks are reported as skipped. When the installed aurora is
+the fork and a clone of it exists too, one estimate is also made with the
+clone and compared with the installed fork's, for information (a clone
+ahead of what is installed may differ).
+
+Usage:
+    python tests/aurora_fork_unit.py                  # the checks below
+    python tests/aurora_fork_unit.py --make-fixtures  # stock aurora 0.6.2 only: rewrites tests/fixtures/aurora_stock/
+
+@author: ben kay (ben@auscope.org.au)
+
+:license: MIT
 
 **This test fails if**
 
@@ -56,7 +64,7 @@ clone ahead of what is installed may differ).
 1. identity: in any band outside `huber_affected`, the fork's Z or Z error
    differs from the stock fixture's by more than `RTOL` of the band's largest
    |Z| (|Z error|); or, in a band of `huber_affected`, from the Huber-reset
-   stock run's; or the fork's `REPS` runs are not bit-identical to each other;
+   stock run's; or the fork's `REPS` runs are not identical to each other;
 2. the per-band window masks on the config: `DecimationLevel.window_masks` =
    [[T0 + 1800 s, T0 + 3200 s, pmin, pmax]] (the burst) on every level,
    [pmin, pmax] the edges of level 1's second band (0.4525 s, the cascade
@@ -70,7 +78,7 @@ clone ahead of what is installed may differ).
    recorded in the json; or its best-of-`REPS` wall time of
    `process_station` is not below stock's: with the clone (stock aurora
    installed), stock's best of `REPS` runs made now, alternating with the
-   fork's (each stock run must also reproduce the fixture bit for bit);
+   fork's (each stock run must also be identical to the fixture);
    with the fork installed, the stock best recorded in the json. Wall time
    on this machine moves by 15 % within an hour while the processing
    campaign runs (stock's best: 15.7 s when the fixtures were made, 18.2 s
@@ -113,6 +121,7 @@ OUTPUTS = ["ex", "ey"]
 
 
 def clone_is_fork(path: Path) -> bool:
+    """Check whether a clone's aurora/__init__.py carries the fork tag."""
     init = path / "aurora" / "__init__.py"
     return init.exists() and FORK_TAG in init.read_text(encoding="utf-8")
 
@@ -120,6 +129,7 @@ def clone_is_fork(path: Path) -> bool:
 # --------------------------------------------------------------------------- worker (one estimate per process)
 
 def _peak_bytes() -> int:
+    """Return this process's peak working set (Windows) or maximum RSS (POSIX) in bytes."""
     import psutil
 
     info = psutil.Process().memory_info()
@@ -131,12 +141,25 @@ def _peak_bytes() -> int:
 
 
 def _mask_edges(scheme) -> tuple[float, float]:
+    """Return the (pmin, pmax) period edges in s of the masked band."""
     lo, hi = np.asarray(scheme["band_edges"][MASK_LEVEL])[MASK_INDEX]
     return 1.0 / hi, 1.0 / lo
 
 
 def worker(out: Path, local: Path, remote: Path, mode: str, edi_dir: Path | None) -> None:
-    """One estimate in this process; writes periods, Z, Z error and a meta json to `out` (npz)."""
+    """Make one estimate in this process and write periods, Z, Z error and a meta json to `out` (npz).
+
+    Args:
+        out (Path): The npz to write.
+        local (Path): L's archive.
+        remote (Path): R's archive.
+        mode (str): "default", "huber_reset", "config_mask" or
+            "runtime_mask".
+        edi_dir (Path | None): Folder for the EDI, if one is written.
+
+    Raises:
+        ValueError: On an unknown mode.
+    """
     sys.path.insert(0, str(REPO / "tests"))
     import psutil
     import pandas as pd
@@ -148,11 +171,11 @@ def worker(out: Path, local: Path, remote: Path, mode: str, edi_dir: Path | None
     import mtproc.process as mp
     from aurora.pipelines.process_mth5 import process_mth5
     from aurora.transfer_function.regression.m_estimator import MEstimator
-    from mtproc.bands import lemimt_band_scheme
+    from mtproc.bands import build_band_scheme
 
     logger.remove()  # after aurora's and mth5's imports, which add their own sinks
     logger.add(sys.stderr, level="WARNING", filter=lambda r: r["name"].startswith("mtproc"))
-    scheme = lemimt_band_scheme(cu.FS, max_period=10.0)
+    scheme = build_band_scheme(cu.FS, max_period=10.0)
     pmin, pmax = _mask_edges(scheme)
     start, end = (cu.T0 + pd.Timedelta(seconds=s) for s in BURST_S)
     kwargs = dict(band_scheme=scheme, output_channels=OUTPUTS)
@@ -161,6 +184,7 @@ def worker(out: Path, local: Path, remote: Path, mode: str, edi_dir: Path | None
         original = MEstimator.apply_huber_regression
 
         def apply_huber_regression(estimator):
+            """Reset the iteration count, then run stock's Huber regression."""
             estimator.iter_control.reset_number_of_iterations()
             return original(estimator)
 
@@ -192,7 +216,11 @@ def worker(out: Path, local: Path, remote: Path, mode: str, edi_dir: Path | None
 # --------------------------------------------------------------------------- the parent side
 
 def write_pair(tmp: Path) -> tuple[Path, Path]:
-    """crosspower_unit's L and R archives over 2 h (SPAN_S, L_RUNS_S), R with ex ey hx hy."""
+    """Write crosspower_unit's L and R archives over 2 h (SPAN_S, L_RUNS_S), R with ex ey hx hy.
+
+    Returns:
+        tuple[Path, Path]: The L and R archives.
+    """
     sys.path.insert(0, str(REPO / "src"))
     sys.path.insert(0, str(REPO / "tests"))
     import crosspower_unit as cu
@@ -219,8 +247,17 @@ def write_pair(tmp: Path) -> tuple[Path, Path]:
 
 def run_worker(out: Path, local: Path, remote: Path, mode: str, aurora_path: Path | None = None,
                edi_dir: Path | None = None) -> dict:
-    """Runs `worker` in a fresh process; PYTHONPATH is `aurora_path` (if any), this process's own
-    PYTHONPATH, then this repo's src."""
+    """Run `worker` in a fresh process and load its npz.
+
+    PYTHONPATH is `aurora_path` (if any), this process's own PYTHONPATH,
+    then this repo's src; BLAS is pinned to THREADS.
+
+    Returns:
+        dict: The npz arrays, with "meta" parsed from JSON.
+
+    Raises:
+        RuntimeError: When the worker fails.
+    """
     env = dict(os.environ)
     for key in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS"):
         env[key] = THREADS
@@ -240,6 +277,7 @@ def run_worker(out: Path, local: Path, remote: Path, mode: str, aurora_path: Pat
 
 
 def versions() -> dict:
+    """Return the Python and package versions recorded with the fixtures."""
     import importlib.metadata as md
 
     out = {"python": platform.python_version()}
@@ -252,15 +290,17 @@ def versions() -> dict:
 
 
 def increment(meta: dict) -> int:
+    """Return a run's peak increment: peak working set minus RSS before process_station."""
     return int(meta["peak"]) - int(meta["rss_before"])
 
 
 def gib(n: float) -> str:
+    """Format bytes as GiB."""
     return f"{n / 2**30:.3f} GiB"
 
 
 def make_fixtures() -> int:
-    """Stock aurora only: the default estimate REPS times (bit-identical), its EDI, and the Huber-reset run."""
+    """Write the fixtures under stock aurora: the default estimate REPS times (identical), its EDI, and the Huber-reset run."""
     FIXTURES.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)
@@ -303,7 +343,11 @@ def make_fixtures() -> int:
 
 
 def check_fixtures() -> tuple[dict, dict]:
-    """0. The fixtures are there and hold what they should."""
+    """Run check 0: the fixtures exist and hold what they should.
+
+    Returns:
+        tuple[dict, dict]: The npz arrays and the json info.
+    """
     paths = [FIXTURES / f"{STEM}{ext}" for ext in (".edi", ".npz", ".json")]
     missing = [str(p) for p in paths if not p.exists()]
     assert not missing, f"0. missing fixtures {missing}: run python tests/aurora_fork_unit.py --make-fixtures under stock aurora"
@@ -333,13 +377,22 @@ def check_fixtures() -> tuple[dict, dict]:
 
 
 def worst_rel(a: np.ndarray, b: np.ndarray) -> np.ndarray:
-    """Per band: max |a - b| over the 2x2, over the band's largest |b|."""
+    """Return per band the max |a - b| over the 2x2, relative to the band's largest |b|."""
     return np.abs(a - b).max(axis=(1, 2)) / np.abs(b).max(axis=(1, 2))
 
 
 def check_fork(fx: dict, info: dict, aurora_path: Path | None, clone_too: Path | None = None) -> None:
-    """Checks 1-3 on the fork (`aurora_path` None: the installed one); `clone_too`, a clone of the
-    fork beside an installed fork, gets one estimate compared with the installed fork's, reported."""
+    """Run checks 1-3 on the fork.
+
+    Args:
+        fx (dict): The fixture arrays.
+        info (dict): The fixture json.
+        aurora_path (Path | None): The clone to test; None for the
+            installed fork.
+        clone_too (Path | None): A clone of the fork beside an installed
+            fork; one estimate is compared with the installed fork's, for
+            information.
+    """
     clone_run = None
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)
@@ -362,10 +415,10 @@ def check_fork(fx: dict, info: dict, aurora_path: Path | None, clone_too: Path |
     for res in stock_now:
         assert res["meta"]["aurora"] == STOCK_VERSION, res["meta"]
         assert np.array_equal(res["z"], fx["z"]) and np.array_equal(res["z_err"], fx["z_err"]), \
-            "1. the stock estimate made now is not bit-identical to the fixture: remake the fixtures"
+            "1. the stock estimate made now is not identical to the fixture: remake the fixtures"
     for res in runs[1:]:
         assert np.array_equal(res["z"], fork["z"]) and np.array_equal(res["z_err"], fork["z_err"]), \
-            "1. the fork's runs are not bit-identical to each other"
+            "1. the fork's runs are not identical to each other"
     affected = set(fx["huber_affected"].tolist())
     want_z = np.where(np.isin(np.arange(24), list(affected))[:, None, None], fx["z_huber_reset"], fx["z"])
     want_e = np.where(np.isin(np.arange(24), list(affected))[:, None, None], fx["z_err_huber_reset"], fx["z_err"])
@@ -374,7 +427,7 @@ def check_fork(fx: dict, info: dict, aurora_path: Path | None, clone_too: Path |
     identical = [k for k in range(24) if np.array_equal(fork["z"][k], want_z[k]) and np.array_equal(fork["z_err"][k], want_e[k])]
     bad = [(k, float(rz[k]), float(re_[k])) for k in range(24) if rz[k] > RTOL or re_[k] > RTOL]
     assert not bad, f"1. bands off stock by more than {RTOL:g} (band, dZ, dZerr): {bad}"
-    print(f"  1. identity: {len(identical)} of 24 bands bit-identical to stock (bands {sorted(affected)} to the "
+    print(f"  1. identity: {len(identical)} of 24 bands identical to stock (bands {sorted(affected)} to the "
           f"Huber-reset stock run); largest difference {rz.max():.2e} of |Z|, {re_.max():.2e} of |Z error| "
           f"(limit {RTOL:g})")
 
@@ -387,7 +440,7 @@ def check_fork(fx: dict, info: dict, aurora_path: Path | None, clone_too: Path |
         "2. the config's window_masks and mtproc's runtime patch differ"
     shift = float(worst_rel(config_mask["z"][k_mask:k_mask + 1], fork["z"][k_mask:k_mask + 1])[0])
     print(f"  2. window_masks over the burst in the {fx['periods'][k_mask]:.4f} s band: that band moves "
-          f"({shift:.2%} of |Z|), the other 23 bit-identical; bit-identical to mtproc's runtime patch in all 24")
+          f"({shift:.2%} of |Z|), the other 23 identical; identical to mtproc's runtime patch in all 24")
 
     # 3. cost: memory against the stock numbers recorded with the fixtures; time against stock
     #    run alternately now when stock aurora is installed (the clone case), else against the record
@@ -404,24 +457,26 @@ def check_fork(fx: dict, info: dict, aurora_path: Path | None, clone_too: Path |
     assert secs < stock_secs, "3. the fork is not faster than stock"
     assert inc < info["best_peak_increment"], "3. the fork's peak memory increment is not below stock's"
 
-    if clone_run is not None:  # reported, not tested
+    if clone_run is not None:  # reported for information
         same = np.array_equal(clone_run["z"], fork["z"]) and np.array_equal(clone_run["z_err"], fork["z_err"])
         worst = float(max(worst_rel(clone_run["z"], want_z).max(), worst_rel(clone_run["z_err"], want_e).max()))
         print(f"  clone: aurora {clone_run['meta']['aurora']} from {clone_run['meta']['aurora_file']}: "
-              + ("bit-identical to the installed fork's estimate: fixed too" if same else
+              + ("identical to the installed fork's estimate: fixed too" if same else
                  f"differs from the installed fork's estimate (largest difference from the stock/Huber-reset "
                  f"reference {worst:.2e} of |Z|): the clone is not what is installed"))
 
 
 def _scheme_edges() -> tuple[float, float]:
+    """Return the (low, high) frequency edges of the masked band of the 100 Hz scheme."""
     sys.path.insert(0, str(REPO / "src"))
-    from mtproc.bands import lemimt_band_scheme
+    from mtproc.bands import build_band_scheme
 
-    lo, hi = np.asarray(lemimt_band_scheme(100.0, max_period=10.0)["band_edges"][MASK_LEVEL])[MASK_INDEX]
+    lo, hi = np.asarray(build_band_scheme(100.0, max_period=10.0)["band_edges"][MASK_LEVEL])[MASK_INDEX]
     return float(lo), float(hi)
 
 
 def main() -> int:
+    """Check the fixtures, pick the fork to test and run checks 1-3; return 0."""
     fx, info = check_fixtures()
     import aurora
 

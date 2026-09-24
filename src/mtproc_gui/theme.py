@@ -1,31 +1,37 @@
-"""The GUI's one look: the MATLAB app's dark grey surface and its channel colours.
+# -*- coding: utf-8 -*-
+"""
+Colours and styling of the GUI
 
-One dark grey surface -- window and plot backgrounds the same grey, light
-grey text and ticks, no white plot areas, no panel borders -- magnetics in
-cyan-blue and electrics in red everywhere, panels stacked with no gap
-sharing one x axis, and names like "By-Ex (Zxy)".
+The look: one dark grey surface (window and plot
+backgrounds the same grey, light grey text and ticks, no white plot areas,
+no panel borders), magnetics in cyan-blue and electrics in red, panels
+stacked with no gap on a shared x axis, and names such as "By-Ex (Zxy)".
 
 `apply(app)` is called once on the `QApplication` before the main window is
-built (`__main__`, and the smoke test). It sets, in one go:
+built (in `__main__` and the smoke test). It sets:
 
-- Qt: the Fusion style with a dark `QPalette`, so every widget -- tables,
-  lists, the YAML preview, the job log, the Process tab's forms -- is on the
-  same grey without a stylesheet anywhere;
-- pyqtgraph: the `background` and `foreground` config options, read by every
-  `PlotWidget` created afterwards;
-- matplotlib: the rcParams the View EDIs canvas draws with (figure and axes
-  face, text, ticks, spines, grid, legend).
+* Qt: the Fusion style with a dark `QPalette`, so every widget (tables,
+  lists, the YAML preview, the job log, the Process tab's forms) uses the
+  same grey without stylesheets.
+* pyqtgraph: the `background` and `foreground` config options, read by every
+  `PlotWidget` created afterwards.
+* matplotlib: the rcParams of the View EDIs canvas (figure and axes face,
+  text, ticks, spines, grid, legend).
 
-Every colour a tab draws with comes from here: `colour(comp)` for a channel
-by its kind (`mtproc_gui.channels`: B_COLOUR for a magnetic name, hx or bx,
-E_COLOUR for an electric one, ex or e1, REMOTE_COLOUR for the remote's r_...),
-`label(comp)` for its name (Bx, By, Ex, Ey, E1, rBx -- `channels.label`) and
-`channel_order(names)` for the stack order (magnetics first, then electrics,
-each in name order),
-the faint dashed Schumann and mains markers of the Spectra tab, the
+The tabs take their colours from this module: `colour(comp)` gives a
+channel's colour by kind (`mtproc_gui.channels`; B_COLOUR for a magnetic
+name such as hx or bx, E_COLOUR for an electric one such as ex or e1,
+REMOTE_COLOUR for a remote's r_...), `label(comp)` its display name (Bx, By,
+Ex, Ey, E1, rBx; `channels.label`) and `channel_order(names)` the stack order
+(magnetics first, then electrics, each in name order). The module also
+defines the Spectra tab's faint dashed Schumann and mains markers, the
 Coherence tab's band colours, "All frequencies" curve and cursor, the
-Process tab's traffic light, site roles and summary text, and the Filter Data
-tab's light grey raw trace (`RAW_COLOUR`, `raw_pen`).
+Process tab's status colours, site roles and summary text, and the Filter
+Data tab's light grey raw trace (`RAW_COLOUR`, `raw_pen`).
+
+@author: ben kay (ben@auscope.org.au)
+
+:license: MIT
 """
 
 from __future__ import annotations
@@ -50,7 +56,7 @@ GRID_ALPHA = 0.3        # pyqtgraph grid opacity (a fraction of FOREGROUND)
 MPL_GRID = "#4a4a4a"    # matplotlib grid lines
 
 # ------------------------------------------------------------- the channels
-# the stack order is a rule, `channel_order` (magnetics first, as the MATLAB app stacks them)
+# the stack order is `channel_order` (magnetics first, then electrics)
 B_COLOUR = "#4fc3f7"       # magnetics: cyan-blue
 E_COLOUR = "#ff5252"       # electrics: red
 REMOTE_COLOUR = "#bdbdbd"  # the remote's coils: light grey
@@ -70,14 +76,14 @@ ALL_FREQ_WIDTH = 2.5
 CURSOR_COLOUR = "#ffd54f"
 
 # ------------------------------------------------------- the Process tab
-# the MATLAB Process Data tab's traffic light (the sync lamps and status line,
+# the Process tab's traffic light (the sync lamps and status line,
 # the recommendation) and the site roles on the map and the window bar
 OK_COLOUR = "#66bb6a"           # green: in sync, the recommended remote, the station
 WARN_COLOUR = "#ffa726"         # amber: the remote covers part of the window; stack members
 BAD_COLOUR = "#ef5350"          # red: no overlap, a span that could not be read, a failed job
 IDLE_COLOUR = "#9e9e9e"         # grey: no remote yet or still reading; every other site
 PAIR_REMOTE_COLOUR = "#42a5f5"  # blue: the remote's dot on the map and its bar
-SUMMARY_COLOUR = "#4fc3f7"      # the pair summary's text: the MATLAB app's cyan-blue
+SUMMARY_COLOUR = "#4fc3f7"      # the pair summary's text: cyan-blue, as the magnetics
 MARKER_EDGE = SURFACE           # the thin ring round a span bar
 SITE_OUTLINE = "#000000"        # the dark ring round a map dot, so it reads on a basemap
 SITE_LABEL_ALPHA = 170          # of 255: the SURFACE box behind a site name on the map, over imagery
@@ -91,29 +97,31 @@ RAW_COLOUR = "#a6a6a6"          # light grey: the raw ("before") trace behind th
 
 
 def colour(comp: str) -> str:
-    """B_COLOUR for a magnetic channel, E_COLOUR for an electric one, grey for the remote's."""
+    """Return B_COLOUR for a magnetic channel, E_COLOUR for an electric one, REMOTE_COLOUR for a remote's."""
     if comp.startswith("r_"):
         return REMOTE_COLOUR
     return {"magnetic": B_COLOUR, "electric": E_COLOUR}.get(kind(comp), FOREGROUND)
 
 
 def pen(comp: str, width: float = 1.0):
+    """Return a pyqtgraph pen in the channel's colour."""
     return pg.mkPen(colour(comp), width=width)
 
 
 def raw_pen(width: float = 1.0, dashed: bool = False):
-    """The Filter Data tab's raw ("before") trace: light grey, dashed on the PSD panels."""
+    """Return the pen of the Filter Data tab's raw ("before") trace: light grey, dashed on the PSD panels."""
     return pg.mkPen(RAW_COLOUR, width=width, style=Qt.DashLine if dashed else Qt.SolidLine)
 
 
 def mark_pen(hex_colour: str):
-    """A faint dashed pen for a frequency mark."""
+    """Return a faint dashed pen for a frequency mark."""
     c = QColor(hex_colour)
     c.setAlpha(MARK_ALPHA)
     return pg.mkPen(c, width=1, style=Qt.DashLine)
 
 
 def _palette() -> QPalette:
+    """Return the dark palette, with greyed disabled roles."""
     p = QPalette()
     roles = {
         QPalette.Window: WINDOW, QPalette.WindowText: TEXT,
@@ -138,19 +146,20 @@ def _palette() -> QPalette:
 
 
 class _Style(QProxyStyle):
-    """Fusion, with check box and radio button outlines drawn in INDICATOR_EDGE.
+    """Fusion style with check box and radio button outlines drawn in INDICATOR_EDGE.
 
     Fusion takes an indicator's outline from the palette's Window colour,
-    darkened: on this surface an unticked box was invisible (the View EDIs
-    tree, the Filter Data forms, the Process tab's switch). Only those three
-    primitives are drawn with a changed palette; the frames and grids that
-    also derive from Window stay borderless.
+    darkened, which leaves an unticked box invisible on this surface (in the
+    View EDIs tree, the Filter Data forms and the Process tab's switches).
+    Only the three indicator primitives are drawn with the changed palette,
+    so frames and grids that also derive from Window stay borderless.
     """
 
     INDICATORS = (QStyle.PE_IndicatorCheckBox, QStyle.PE_IndicatorItemViewItemCheck,
                   QStyle.PE_IndicatorRadioButton)
 
     def drawPrimitive(self, element, option, painter, widget=None):
+        """Draw indicator primitives with Window set to INDICATOR_EDGE; others unchanged."""
         if element not in self.INDICATORS:
             return super().drawPrimitive(element, option, painter, widget)
         kept = QPalette(option.palette)
@@ -164,7 +173,7 @@ class _Style(QProxyStyle):
 
 
 def apply(app) -> None:
-    """Dark Fusion palette on `app`, and the same grey for pyqtgraph and matplotlib."""
+    """Apply the dark Fusion style to `app` and the same colours to pyqtgraph and matplotlib."""
     app.setStyle(_Style("Fusion"))
     palette = _palette()
     app.setPalette(palette)

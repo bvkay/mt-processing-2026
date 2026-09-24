@@ -1,12 +1,22 @@
-"""Unit test for mtproc.quality (tf_quality, agreement, pairwise_spread), no Qt, no survey.
+# -*- coding: utf-8 -*-
+"""
+Unit test for mtproc.quality
 
+Checks `tf_quality`, `agreement` and `pairwise_spread` on synthetic TFs,
+without Qt or a survey. Every TF is written to an EDI through mt_metadata and
+read back from the file, as scripts/campaign.py reads aurora's products.
+
+The smooth TF spans 0.005-5000 s at 10 per decade (61 periods), with
+log10 rho = 2 + 0.6 tanh(log10 T) (40 to 400 ohm m), xy phase
+45 - 12 tanh(log10 T) deg and yx the same minus 180 (the physical
+quadrants), and 5 % impedance errors.
+
+Usage:
     python tests/quality_unit.py
 
-Every TF is synthetic, written to an EDI through mt_metadata and read back
-from the file, as scripts/campaign.py reads aurora's products. The smooth TF:
-0.005-5000 s at 10 per decade (61 periods), log10 rho = 2 + 0.6 tanh(log10 T)
-(40 to 400 ohm m), xy phase 45 - 12 tanh(log10 T) deg and yx the same minus
-180 (the physical quadrants), 5 % impedance errors.
+@author: ben kay (ben@auscope.org.au)
+
+:license: MIT
 
 **This test fails if**
 
@@ -71,11 +81,13 @@ OUT = Path(tempfile.mkdtemp(prefix="quality_unit_"))
 
 
 def periods(per_decade: float = 10.0) -> np.ndarray:
+    """Return log-spaced periods from 0.005 to 5000 s at `per_decade` per decade."""
     n = int(round(6.0 * per_decade)) + 1  # 0.005 .. 5000 s
     return np.logspace(np.log10(0.005), np.log10(5000.0), n)
 
 
 def smooth_z(period: np.ndarray) -> np.ndarray:
+    """Return the smooth (nf, 2, 2) impedance described in the module docstring."""
     x = np.log10(period)
     rho = 10.0 ** (2.0 + 0.6 * np.tanh(x))
     amp = np.sqrt(rho / (0.2 * period))
@@ -87,6 +99,16 @@ def smooth_z(period: np.ndarray) -> np.ndarray:
 
 
 def write_edi(name: str, period: np.ndarray, z: np.ndarray) -> Path:
+    """Write an impedance with 5 % errors to OUT/<name>.edi.
+
+    Args:
+        name (str): File stem.
+        period (np.ndarray): Periods in seconds.
+        z (np.ndarray): (nf, 2, 2) impedance.
+
+    Returns:
+        Path: The EDI written.
+    """
     tf = TF()
     tf.station = "SYN"
     tf.period = period
@@ -98,7 +120,19 @@ def write_edi(name: str, period: np.ndarray, z: np.ndarray) -> Path:
 
 
 def noisy(z: np.ndarray, rows: np.ndarray, seed: int = 3) -> np.ndarray:
-    """`z` with rho times 10**N(0, 0.3) and every third period's phase random, on `rows` only."""
+    """Add noise to an impedance on selected periods.
+
+    On `rows`, rho is multiplied by 10**N(0, 0.3) and every third period's
+    phase is replaced by a uniformly random one, per mode.
+
+    Args:
+        z (np.ndarray): (nf, 2, 2) impedance; a copy is modified.
+        rows (np.ndarray): Boolean mask of the periods to perturb.
+        seed (int): Seed of the random generator.
+
+    Returns:
+        np.ndarray: The noisy copy.
+    """
     z = z.copy()
     rng = np.random.default_rng(seed)
     idx = np.flatnonzero(rows)
@@ -206,6 +240,11 @@ def test_pairwise_spread() -> None:
 
 
 def main() -> int:
+    """Print the test contract and run every test.
+
+    Returns:
+        int: 0 when every test passes, 1 otherwise.
+    """
     print(__doc__.split("**This test fails if**")[1].strip())
     print()
     tests = [test_smooth_scores_high, test_noisy_scores_low, test_flipped_mode, test_blowups,

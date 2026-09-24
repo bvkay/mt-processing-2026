@@ -1,33 +1,40 @@
-"""Build a synthetic (stacked) remote reference from concurrent sites.
+# -*- coding: utf-8 -*-
+"""
+Build a synthetic (stacked) remote reference from concurrent sites
+
+The stack is built from the members' hx/hy counts as their MTH5 archives hold
+them, which is how processing sees each member: declared filters from
+<survey>/filters.yaml were applied at ingest and are not applied again. Each
+member needs an archive (scripts/ingest_site.py, or "Build MTH5" on the Time
+Series tab of the GUI); a missing one stops the build. Each member
+contributes the run that overlaps [start, end) most. The stack spans those
+runs' intersection with [start, end) and is read in 10-minute chunks, with
+only the two output coils held whole (ten members over 36 h peak at about
+2.7 GB). No calibration is needed because the remote-reference estimator is
+invariant to any linear transform of the remote. The script writes
+<workspace>/mth5/<name>.h5; process it as the remote with
+scripts/process_rr.py <survey.yaml> <local> <name>.
+
+--weighting none (the default) is the plain mean of the members. One dead
+channel spoils a mean, so check the members first: --check prints, per
+member and coil, the squared coherence with the plain mean of the other
+members (per 10-minute chunk, 0.1-1 s, 1-10 s and 0.1-10 s) and writes
+nothing. Leave out a coil that sits near zero.
+
+--weighting coherence weights each member, per 10-minute chunk and coil, by
+that coherence over 0.1-10 s, normalised per chunk, and drops a member under
+0.05 in a chunk. The rule is described in the mtproc.virtual module
+docstring; the archive's run and channel comments record it and the weights.
+The script prints the per-member table of mean weights per coil.
 
 Usage:
     python scripts/build_stack.py <survey.yaml> <name> <start> <end> <member> [<member> ...]
         [--weighting {none,coherence}] [--check]
     (each <member> is read from its archive <workspace>/mth5/<member>.h5)
 
-The stack is built from the members' hx/hy counts as their MTH5 archives hold
-them (scripts/ingest_site.py, or "Build MTH5" on the GUI's Time Series tab:
-a member without one stops the build), i.e. exactly as processing sees each
-member -- its declared filters from <survey>/filters.yaml were applied at
-ingest and are not applied again. Each member contributes the run that
-overlaps [start, end) most; the stack spans those runs' intersection with
-[start, end), read in 10-minute chunks: only the two output coils are held
-whole (ten members over 36 h peak at about 2.7 GB). No calibration is
-needed because the remote-reference estimator is invariant to any linear
-transform of the remote. Writes <workspace>/mth5/<name>.h5; process it as the remote with
-scripts/process_rr.py <survey.yaml> <local> <name>.
+@author: ben kay (ben@auscope.org.au)
 
---weighting none (the default) is the plain mean of the members. One dead
-channel poisons a mean, so check the members first: --check prints, per
-member and coil, the squared coherence with the plain mean of the other
-members (per 10-minute chunk, 0.1-1 s, 1-10 s and 0.1-10 s) and writes
-nothing; leave out a coil that sits near zero.
-
---weighting coherence weights each member, per 10-minute chunk and coil, by
-that coherence over 0.1-10 s, normalised per chunk, dropping a member under
-0.05 in a chunk (mtproc.virtual's module docstring has the rule; the archive's
-run and channel comments record it and the weights), and prints the
-per-member table of mean weights per coil.
+:license: MIT
 """
 
 import argparse
@@ -45,9 +52,10 @@ from mtproc.virtual import CHECK_BANDS_S, WEIGHTINGS, build_synthetic_remote, ch
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """Build the command-line parser of build_stack.py."""
     p = argparse.ArgumentParser(
         prog="build_stack.py",
-        description=__doc__.split("\n\nUsage:")[0],
+        description=next(line for line in __doc__.strip().splitlines() if line.strip()),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     p.add_argument("survey_yaml")
@@ -64,11 +72,20 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _band(b) -> str:
+    """Format a (short, long) period band in seconds as "a-b s"."""
     return f"{b[0]:g}-{b[1]:g} s"
 
 
 def print_check(result: dict) -> None:
-    """Per member and coil: median (and 10th percentile) gamma2 over chunks, each band."""
+    """Print the member check as one table per coil.
+
+    Each cell is the median (and 10th percentile) over chunks of a member's
+    squared coherence with the mean of the other members, per check band.
+
+    Args:
+        result (dict): Output of `mtproc.virtual.check_members`, keyed by
+            coil.
+    """
     for comp, info in result.items():
         n_chunks = len(info["chunk_starts"])
         print(f"\n{comp}: gamma2 with the mean of the other members, median [10th pct] "
@@ -83,7 +100,15 @@ def print_check(result: dict) -> None:
 
 
 def print_weights(weights: dict) -> None:
-    """Per member: mean weight, chunks dropped and median gamma2 (0.1-10 s), per coil."""
+    """Print the stack weights of each member per coil.
+
+    The columns per coil are the mean weight, the number of chunks dropped
+    (weight 0) and the median squared coherence over chunks (0.1-10 s).
+
+    Args:
+        weights (dict): Weights filled in by
+            `mtproc.virtual.build_synthetic_remote`, keyed by coil.
+    """
     comps = list(weights)
     members = sorted({m for info in weights.values() for m in info["members"]})
     n_chunks = len(next(iter(weights.values()))["chunk_starts"])
@@ -105,6 +130,11 @@ def print_weights(weights: dict) -> None:
 
 
 def main(argv=None) -> None:
+    """Check the members or build the stack.
+
+    Args:
+        argv (list[str] | None): Command-line arguments; sys.argv when None.
+    """
     args = build_parser().parse_args(argv)
     if len(args.members) < 2:
         sys.exit("give at least two members")

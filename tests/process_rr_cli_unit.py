@@ -1,10 +1,19 @@
-"""Unit test for `scripts/process_rr.py`'s command line, through --dry-run.
+# -*- coding: utf-8 -*-
+"""
+Unit test for the command line of scripts/process_rr.py
 
+The script is run as a subprocess, as the GUI runs it, with `--dry-run`,
+which resolves everything and exits without opening an archive or writing a
+product; its `key: value` lines are parsed back. The functions a dry run
+cannot reach (config building, the product stem, the sidecar, the quadrant
+window and the masks of both sites) are called in-process.
+
+Usage:
     python tests/process_rr_cli_unit.py
 
-The script is run as a subprocess (the way the GUI runs it) with `--dry-run`,
-which resolves everything and exits without opening an archive or writing a
-product. Its `key: value` lines are parsed back here.
+@author: ben kay (ben@auscope.org.au)
+
+:license: MIT
 
 **This test fails if** a plain `process_rr.py <survey.yaml> D02 E08 --dry-run`
 does not exit 0 with `local_archive` ending in `D02.h5`, `remote_archive` in
@@ -70,8 +79,8 @@ aurora, mth5, mt_metadata and mt_io -- or is not JSON-serialisable as it
 stands; a phase-quadrant verdict built from a mode 180 deg out of quadrant is
 not "flipped: ..." and one built from too few usable periods is not "not
 judged: ..."; or `quadrant_window` does not pick 0.1-10 s at 100 Hz and above
-and 30-3000 s below that (the false "180 deg out ... declare flip" the
-0.1-10 s window raised on Stuart Shelf's 10 Hz ST19/ST20).
+and 30-3000 s below that (on 10 Hz long-period data the 0.1-10 s window
+can raise a false "180 deg out ... declare flip").
 
 Both sites' time masks. **This test also fails if**, on a scratch copy of
 curnamona_cube whose own masks.yaml holds three D02 masks (one written twice),
@@ -120,10 +129,19 @@ STEM_RE = re.compile(r"^D02_rr-E08_\d{8}-\d{4}$")
 
 
 def make_survey_copy(scratch: Path, extra_filters: dict) -> Path:
-    """A scratch copy of curnamona_cube's survey.yaml + filters.yaml, workspace
-    pointed at the real one (the real D02.h5/E08.h5 are read, never copied or
-    written to), `extra_filters` merged into the copy's filters.yaml alone --
-    the real file is never opened for writing."""
+    """Write a scratch copy of curnamona_cube's survey.yaml and filters.yaml.
+
+    The copy's workspace points at the real one, so the real D02.h5/E08.h5
+    are read in place. `extra_filters` is merged into the copy's
+    filters.yaml; the real files are only read.
+
+    Args:
+        scratch (Path): Folder for the copy.
+        extra_filters (dict): Site entries to add to the copy's filters.yaml.
+
+    Returns:
+        Path: The copy's survey.yaml.
+    """
     for name in ("survey.yaml", "filters.yaml"):
         (scratch / name).write_bytes((SURVEY_DIR / name).read_bytes())
     copy_yaml = scratch / "survey.yaml"
@@ -138,7 +156,7 @@ def make_survey_copy(scratch: Path, extra_filters: dict) -> Path:
 
 
 def _load_process_rr():
-    """The script as a module, for the functions --dry-run cannot exercise directly."""
+    """Import the script as a module, for the functions --dry-run cannot exercise directly."""
     spec = importlib.util.spec_from_file_location("process_rr", SCRIPT)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -208,9 +226,11 @@ def test_no_filters_uses_the_raw_archive() -> None:
 
 
 def test_dry_run_reports_archive_status() -> None:
-    """The "local archive"/"remote archive" status lines, on a scratch copy of
-    curnamona_cube whose filters.yaml gains a notch for D02 -- whose real
-    archive has no variant for it."""
+    """Check the "local archive"/"remote archive" status lines.
+
+    Runs on a scratch copy of curnamona_cube whose filters.yaml gains a notch
+    for D02, whose real archive has no variant for it.
+    """
     with tempfile.TemporaryDirectory() as tmp:
         copy_yaml = make_survey_copy(Path(tmp), {LOCAL: [{"notch": {"f0": 50.0}}]})
         argv = [sys.executable, str(SCRIPT), str(copy_yaml), LOCAL, REMOTE, "--dry-run"]
@@ -239,7 +259,7 @@ def test_tag_suffix_and_no_window_in_the_stem() -> None:
     got = dry_run(start, end, "--tag", "try2")
     assert got["window"] == f"{start} to {end} UTC", got["window"]
     assert got["start"] == start and got["end"] == end, (got["start"], got["end"])
-    # the point of dropping the window from the name: it must not appear in the stem at all
+    # the window is kept out of the product name, so it must not appear in the stem
     assert re.match(r"^D02_rr-E08_\d{8}-\d{4}_try2$", got["stem"]), got["stem"]
     assert "_w" not in got["stem"].replace("_rr-", ""), f"a window token leaked into the stem: {got['stem']}"
     print(f"  --tag try2 with a window: stem {got['stem']}, tag {got['tag']!r}, window {got['window']!r}")
@@ -269,7 +289,7 @@ TWEAKED = {**IN_USE, "type": "hamming", "prewhitening_type": "", "recoloring": F
 
 
 def level_values(dec) -> dict:
-    """One decimation level's estimator settings, enums read as their plain strings."""
+    """Return one decimation level's estimator settings, enums read as their plain strings."""
     stft, reg = dec.stft, dec.regression
     return {"type": str(getattr(stft.window.type, "value", stft.window.type)),
             "prewhitening_type": str(getattr(stft.prewhitening_type, "value", stft.prewhitening_type)),
@@ -286,7 +306,7 @@ def test_tweaks_reach_every_decimation_level() -> None:
     from mth5.processing.spectre.prewhitening import apply_prewhitening
 
     sys.path.insert(0, str(REPO / "src"))
-    from mtproc.bands import lemimt_band_scheme
+    from mtproc.bands import build_band_scheme
     from mtproc.process import ESTIMATOR_DEFAULTS, apply_tweaks, build_config, kernel_dataset
 
     process_rr = _load_process_rr()
@@ -295,11 +315,11 @@ def test_tweaks_reach_every_decimation_level() -> None:
             "--r0", "2.0"]
     res = process_rr.resolve(process_rr.build_parser().parse_args(argv), started)
     assert res["tweaks"] == {"taper": "hamming", "overlap_pct": 50.0, "prewhiten": False, "r0": 2.0},         res["tweaks"]
-    scheme = lemimt_band_scheme(res["survey"].sample_rate, **res["scheme_kwargs"])
+    scheme = build_band_scheme(res["survey"].sample_rate, **res["scheme_kwargs"])
 
-    # read-only, as mth5 opens the archives itself (mtproc patches nothing): both are held
-    # open read-only for the whole build, and HDF5 refuses a read-write open of a file this
-    # process already holds read-only ("file is already open for read-only")
+    # read-only, as mth5 opens the archives itself: both are held open read-only for the
+    # whole build, and HDF5 refuses a read-write open of a file this process already holds
+    # read-only ("file is already open for read-only")
     archives = [MTH5_DIR / f"{LOCAL}.h5", MTH5_DIR / f"{REMOTE}.h5"]
     mtimes = [p.stat().st_mtime_ns for p in archives]
     held = [h5py.File(p, "r") for p in archives]
@@ -382,7 +402,7 @@ def test_quadrant_window_by_sample_rate() -> None:
 
 
 def _fake_tf(xy_deg: float, yx_deg: float, periods):
-    """A minimal in-memory mt_metadata TF: `periods` s, constant phases (deg), |Z| = 1."""
+    """Build a minimal in-memory mt_metadata TF: `periods` s, constant phases (deg), |Z| = 1."""
     import numpy as np
     from mt_metadata.transfer_functions.core import TF
 
@@ -399,6 +419,7 @@ def _fake_tf(xy_deg: float, yx_deg: float, periods):
 
 
 def _mask(start: str, end: str, reason: str, bands="all") -> dict:
+    """Build one masks.yaml entry found by "time"."""
     return {"start": start, "end": end, "bands": bands, "reason": reason, "found_by": "time"}
 
 
@@ -430,6 +451,7 @@ def test_masks_from_both_sites() -> None:
         (Path(tmp) / "masks.yaml").write_text(yaml.safe_dump(MASKS_BOTH, sort_keys=False), encoding="utf-8")
 
         def resolved(*extra):
+            """Resolve D02 rr E08 on the copy and build its sidecar; return (resolution, sidecar)."""
             args = process_rr.build_parser().parse_args([str(copy_yaml), LOCAL, REMOTE, *extra])
             res = process_rr.resolve(args, started)
             edi = res["survey"].workspace / "tf" / f"{res['stem']}.edi"

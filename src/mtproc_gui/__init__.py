@@ -1,14 +1,19 @@
-"""Desktop GUI for the MT processing workflow (PySide6 + pyqtgraph).
+# -*- coding: utf-8 -*-
+"""
+Desktop GUI for the MT processing workflow
 
-A launcher and viewer over `scripts/` and the per-survey YAML: the GUI picks a
-survey, shows what is in it, draws the archives, and runs the existing
-command-line scripts as subprocesses. No processing code lives here -- if a
-number has to be computed from the data to make a product, it belongs in
-`src/mtproc/` and is reached through a script in `scripts/`.
+A PySide6 and pyqtgraph front end over `scripts/` and the per-survey YAML. The
+GUI selects a survey, shows its contents, draws the archives and runs the
+command-line scripts as subprocesses. Product computations live in
+`src/mtproc/` and are reached through the scripts in `scripts/`.
 
 Run it with::
 
     python -m mtproc_gui [surveys/<name>/survey.yaml]
+
+@author: ben kay (ben@auscope.org.au)
+
+:license: MIT
 """
 
 __all__ = ["app", "jobs", "archive"]

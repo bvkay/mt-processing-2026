@@ -1,8 +1,9 @@
-"""A UoA field-notes CSV (the Stuart Shelf 2009 layout) -> the site table new_survey.py --site-table reads.
+# -*- coding: utf-8 -*-
+"""
+Convert a UoA field-notes CSV into the site table read by new_survey.py
 
-Usage:
-    python scripts/site_table_from_notes.py <notes.csv> <site_table.csv>
-        [--timezone Australia/Adelaide] [--data-root DIR]
+Converts a field-notes CSV in the Stuart Shelf 2009 layout into the site
+table that `new_survey.py --site-table` reads.
 
 The notes CSV is the field spreadsheet saved as CSV: a few header rows (group
 titles, long names, units), then the row that starts `Station` and names the
@@ -27,10 +28,18 @@ then one row per station; blank rows are skipped. Written per station:
                        is over an hour from that, a note saying so (and a printed
                        warning); the deployment / recovery / processing notes
 
-Every other column is left out. A blank cell stays blank (the survey default
-then applies; a blank dipole length is also named in the site's notes). With
---data-root, the stations are compared with the site folders there: a station
-with no folder and a folder with no station are both printed.
+Other columns are left out. A blank cell stays blank and the survey default
+then applies; a blank dipole length is also named in the site's notes. With
+--data-root, the stations are compared with the site folders there, and
+stations without a folder and folders without a station are printed.
+
+Usage:
+    python scripts/site_table_from_notes.py <notes.csv> <site_table.csv>
+        [--timezone Australia/Adelaide] [--data-root DIR]
+
+@author: ben kay (ben@auscope.org.au)
+
+:license: MIT
 """
 
 from __future__ import annotations
@@ -48,6 +57,7 @@ DMS_TOLERANCE_DEG = 1e-4
 
 
 def _num(value) -> float | None:
+    """Parse a cell as a float; None when blank or not a number."""
     try:
         text = str(value).strip()
         return float(text) if text else None
@@ -56,7 +66,21 @@ def _num(value) -> float | None:
 
 
 def read_notes(path: Path) -> pd.DataFrame:
-    """The station rows, columns named by the header row (the first row starting `Station` with `Latitude_dd`)."""
+    """Read the station rows of a field-notes CSV.
+
+    The header row is the first row starting `Station` that has a
+    `Latitude_dd` column. The unnamed degree/minute columns are named
+    Long_deg, Long_min, Lat_deg and Lat_min from the long-name row above it.
+
+    Args:
+        path (Path): Field-notes CSV.
+
+    Returns:
+        pd.DataFrame: One row per station, all cells as text.
+
+    Raises:
+        ValueError: When no header row is found.
+    """
     with open(path, encoding="utf-8-sig", errors="replace", newline="") as f:
         rows = list(csv.reader(f))
     at = next((i for i, r in enumerate(rows) if r and r[0].strip() == "Station" and "Latitude_dd" in r), None)
@@ -77,6 +101,15 @@ def read_notes(path: Path) -> pd.DataFrame:
 
 
 def to_utc(local: str, zone: str) -> pd.Timestamp | None:
+    """Convert a day-first local date and time to UTC.
+
+    Args:
+        local (str): Local date and time as typed on the sheet.
+        zone (str): IANA time zone of the sheet.
+
+    Returns:
+        pd.Timestamp | None: The UTC time, or None for a blank cell.
+    """
     text = str(local).strip()
     if not text:
         return None
@@ -85,7 +118,16 @@ def to_utc(local: str, zone: str) -> pd.Timestamp | None:
 
 
 def typed_utc_disagrees(typed: str, computed: pd.Timestamp | None) -> bool:
-    """Whether the sheet's typed UTC (a time, or a date and time) is more than an hour from `computed`."""
+    """Check whether the sheet's typed UTC is more than an hour from `computed`.
+
+    Args:
+        typed (str): Typed UTC, either a time or a day-first date and time.
+        computed (pd.Timestamp | None): UTC computed from the local time.
+
+    Returns:
+        bool: True when they differ by more than an hour; False when either
+        is missing.
+    """
     text = str(typed).strip()
     if not text or computed is None:
         return False
@@ -98,6 +140,17 @@ def typed_utc_disagrees(typed: str, computed: pd.Timestamp | None) -> bool:
 
 
 def site_row(r: pd.Series, zone: str, warnings: list[str]) -> dict:
+    """Build the site-table row of one station.
+
+    Args:
+        r (pd.Series): Station row of the notes.
+        zone (str): IANA time zone of the local times.
+        warnings (list[str]): List that warnings for this station are
+            appended to.
+
+    Returns:
+        dict: Values for the COLUMNS of the site table.
+    """
     site = r["Station"].strip()
     lat, lon = _num(r.get("Latitude_dd")), _num(r.get("Longitude_dd"))
     dms = {k: _num(r.get(k)) for k in ("Lat_deg", "Lat_min", "Long_deg", "Long_min")}
@@ -123,6 +176,7 @@ def site_row(r: pd.Series, zone: str, warnings: list[str]) -> dict:
         sheet_flags.append(f"{'/'.join(blank)} dipole length blank on the sheet: the survey default applies")
 
     def cell(name):
+        """Return a cell of the row as stripped text."""
         return str(r.get(name, "")).strip()
 
     kit = ", ".join(t for t in (
@@ -147,6 +201,14 @@ def site_row(r: pd.Series, zone: str, warnings: list[str]) -> dict:
 
 
 def main(argv=None) -> int:
+    """Write the site table from a field-notes CSV.
+
+    Args:
+        argv (list[str] | None): Command-line arguments; sys.argv when None.
+
+    Returns:
+        int: 0 on success, 1 when a station is on more than one row.
+    """
     p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     p.add_argument("notes_csv")
     p.add_argument("site_table")

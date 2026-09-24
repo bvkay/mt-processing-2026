@@ -1,4 +1,102 @@
-"""Profile one processing step: time, memory, CPU and disk, split into phases.
+# -*- coding: utf-8 -*-
+"""
+Profile one processing step: time, memory, CPU and disk, split into phases
+
+Each stage runs the production code as a child process: `rr` is
+scripts/process_rr.py <local> <remote>, `ingest` is scripts/ingest_site.py
+<site> --raw (the raw archive from the B423 files; --force when one exists),
+`variant` is `mtproc.ingest.build_variant(<site>)` (as the campaign runs it),
+`stack` is scripts/build_stack.py over --members, and `read` is the MTH5 read
+benchmarks below. Meanwhile this process samples the child every --interval
+s with psutil: its working set (RSS, as the campaign ledger records it) and
+private bytes, its CPU percent (100 = one core), its thread count and its own
+read/write bytes, plus the machine's CPU, memory in use and disk read/write
+bytes. The campaign may run alongside, and the machine curves show that
+contention.
+
+Phases come from the child's log. The child is started through this script
+(`--child`), which wraps a fixed list of library functions (`TARGETS`:
+mtproc's, mth5's, mt-io's, aurora's) so each call writes
+`PROFMARK <epoch> B|E P|D <name>` lines to stderr. P marks are the timeline's
+phases (sequential; a gap is "(untracked)"); D marks are details summed per
+name into `<stem>_details.csv` (count, total and self seconds).
+`--no-markers` runs the script bare. A bare process_rr log, including a
+campaign log (`--parse-log`), is split by the lines aurora itself logs:
+"DECIMATION LEVEL n", "Dataset Dataframe Updated", "Skip saving FCs" (one per
+run's STFT), "Features could not be accessed" (the regression starts),
+"type(tf_cls)", then process_rr's "wrote" lines.
+
+Outputs in --out (default: <workspace>/profile): `<stem>.log`,
+`<stem>_samples.csv`, `<stem>_phases.csv` (phase, start/end/seconds, peak
+RSS, mean CPU, machine disk MB read/written, the child's own MB
+read/written), `<stem>_details.csv`, `<stem>_timeline.png` (RSS, CPU and I/O
+against time, phases shaded and labelled).
+
+- `cprofile`: process_rr's `process_station` call (same arguments, from
+  `process_rr.resolve`) under cProfile in a child; the top 40 by cumulative
+  and by internal time go to `<stem>_cprofile.txt` (+ `.prof`).
+- `tracemalloc`: the same call, traced from the level-0 STFTs to the end of
+  the level-0 merge, where the peak is (tracing the whole run slows its
+  metadata-heavy start many times over), with a snapshot each time the RSS
+  passes its previous high by 2 GiB. The top 20 allocation sites of the last
+  snapshot (the peak, to within 2 GiB) go to `<stem>_tracemalloc.txt`.
+- `read`: MTH5 opens (r; a on --rw-archive alone, a dedicated file that is
+  not a hard link), the channel summary, h5py slicing vs mth5 `time_slice`
+  vs `to_runts` for 2 h and a whole run, `RunSummary` + `KernelDataset` for
+  the pair, and B423 files through numpy vs mt-io (`<stem>_bench.csv`).
+- `ingest`/`variant` also write `<stem>_h5layout.csv` (dtype, chunks,
+  compression, sizes).
+- `all` runs ingest, variant, stack, read, rr and cprofile in that order.
+
+--read-archives DIR --read-sites S ... points
+`mtproc.ingest.default_archive_path` and `variant_path` of those sites at
+DIR inside the child. Both archives are read there, read-only; everything
+written (EDIs, a rebuilt variant, a stack) goes to the survey's own
+workspace. This lets a scratch copy of a survey.yaml process the real
+archives without copying or linking them. `ingest` and `variant` refuse a
+site in --read-sites.
+
+--need-gb waits before a child starts until the available memory, less what
+other running process_rr.py children younger than 4 min may still grow by
+(to --other-peak-gb, default 62 GiB, the expected peak of such a child), is
+at least that much.
+
+`trace` (needs the dev tools viztracer and py-spy) runs one windowed
+estimate: `mtproc.process.process_station` on the sites' filtered variants
+in --read-archives (opened read-only and not built), the survey's lemimt
+bands, ex ey out, no tweaks, no masks. It runs as four sampled children per
+aurora (the installed fork, and stock 0.6.2 from a worktree of the fork's
+clone at its base commit, first on PYTHONPATH), so that each instrument runs
+alone:
+
+- `pyspy-idle` and `pyspy-gil`: clean runs with py-spy attached from outside;
+  a speedscope file of every sample and a flamegraph SVG of the GIL-holding
+  ones, exact call counts and seconds per phase of `COUNT_TARGETS` in
+  `_calls.csv`, every h5py dataset read in `_h5reads.csv`, and psutil at each
+  phase boundary in `_boundaries.csv`.
+- `viztracer`: every call of at least --viz-min-us us, C calls and GC
+  included, in `<stem>_viztracer.json` + `.json.gz` for ui.perfetto.dev or
+  `vizviewer`, with the phase / detail / per-band spans on the
+  "mtproc phases + counters" track and RSS, disk read, CPU and thread
+  counters every 0.25 s.
+- `tracemalloc`: a snapshot at every phase boundary diffed with the one
+  before (`_tm_sites.csv`), per-span traced peaks (`_tm_spans.csv`),
+  retained memory by owner (`_tm_owners.csv`), the time series aurora's
+  kernel dataset holds at each boundary, and the composition near the peak
+  (`_tm_peak.csv`). Tracing pauses over --tm-pause, where pandas allocates a
+  Python int per sample.
+
+The report per variant: `trace_<variant>_<run>_trace_timeline.png` (phases,
+RSS, disk read, CPU, the top 5 functions by self time per phase),
+`_trace_phases.csv`, `_viz_hot.csv`, `_viz_callers.csv`,
+`_calls_by_level.csv`, `_h5reads_summary.csv`, `_pyspy_top.csv`,
+`_tm_top_sites.csv`, `_tm_peak_sites.csv`, `_tm_retained.png`; and
+`trace_compare_<run>.csv/.png`, `trace_compare_functions_<run>.csv`.
+
+`--ledger` summarises a campaign: per kind, seconds and peak RSS
+(`ledger_stats.csv`), and from runs.log the jobs running over time and the
+share of each stage block with a slot idle (`ledger_slots.csv`,
+`ledger.png`).
 
 Usage:
     python scripts/profile_run.py <survey.yaml> <local> <remote>
@@ -12,87 +110,9 @@ Usage:
     python scripts/profile_run.py --parse-log LOG [LOG ...] [--out DIR]
     python scripts/profile_run.py --ledger <campaign dir> [--out DIR]
 
-Each stage runs as a CHILD process -- the real code: `rr` is scripts/process_rr.py
-<local> <remote>, `ingest` scripts/ingest_site.py <site> --raw (the raw archive
-from the B423 files; --force when one is already there), `variant`
-`mtproc.ingest.build_variant(<site>)` (as the campaign runs it), `stack`
-scripts/build_stack.py over --members, `read` the MTH5 read benchmarks below
--- while this process samples the child every --interval s with psutil: its
-working set (RSS, what the campaign ledger records) and private bytes, its
-CPU percent (100 = one core), its thread count and its own read/write bytes,
-plus the machine's CPU, memory in use and disk read/write bytes (the campaign
-runs beside it: the machine curves show that contention).
+@author: ben kay (ben@auscope.org.au)
 
-Phases come from the child's log. The child is started through this script
-(`--child`), which wraps a fixed list of library functions (`TARGETS`: mtproc's,
-mth5's, mt-io's, aurora's) so each call writes `PROFMARK <epoch> B|E P|D <name>`
-lines to stderr: P marks are the timeline's phases (sequential; a gap is
-"(untracked)"), D marks are details summed per name into `<stem>_details.csv`
-(count, total and self seconds). `--no-markers` runs the script bare, and a
-bare process_rr log -- a campaign log too, `--parse-log` -- is split by the
-lines aurora itself logs: "DECIMATION LEVEL n", "Dataset Dataframe Updated",
-"Skip saving FCs" (one per run's STFT), "Features could not be accessed"
-(the regression starts), "type(tf_cls)", then process_rr's "wrote" lines.
-
-Outputs in --out (default: the scratch folder of the run): `<stem>.log`,
-`<stem>_samples.csv`, `<stem>_phases.csv` (phase, start/end/seconds, peak RSS,
-mean CPU, machine disk MB read/written, the child's own MB read/written),
-`<stem>_details.csv`, `<stem>_timeline.png` (RSS, CPU and I/O against time,
-phases shaded and labelled). `cprofile`: process_rr's `process_station` call
-(same arguments, `process_rr.resolve`) under cProfile in a child: the top 40
-by cumulative and by internal time in `<stem>_cprofile.txt` (+ `.prof`).
-`tracemalloc`: the same call, traced from the level-0 STFTs to the end of the
-level-0 merge (where the peak is; tracing the whole run slowed its start
-tenfold), a snapshot each time the RSS passes its previous high by 2 GiB; the
-top 20 allocation sites of the last one (the peak, to within 2 GiB) in
-`<stem>_tracemalloc.txt`. `read`: MTH5
-opens (r; a only on --rw-archive, a dedicated file: never a hard link), the
-channel summary, h5py slicing vs mth5 `time_slice` vs `to_runts` for 2 h and
-a whole run, `RunSummary` + `KernelDataset` for the pair, and B423 files
-through numpy vs mt-io (`<stem>_bench.csv`). `ingest`/`variant` also write
-`<stem>_h5layout.csv` (dtype, chunks, compression, sizes). `all` runs ingest,
-variant, stack, read, rr and cprofile in that order.
-
---read-archives DIR --read-sites S ... points `mtproc.ingest.default_archive_path`
-and `variant_path` of those sites at DIR inside the child (both archives read
-there, read-only: everything written -- EDIs, a rebuilt variant, a stack --
-still goes to the survey's own workspace). That is how a scratch copy of a
-survey.yaml processes the real archives without copying or linking them;
-`ingest` and `variant` refuse a site in --read-sites.
-
---need-gb waits before a child starts until the available memory, less what
-other running process_rr.py children younger than 4 min may still grow by
-(to --other-peak-gb), is at least that much: the campaign's own jobs peak
-near 53 GiB each on 43 h pairs.
-
-`trace` (dev tools viztracer and py-spy in the environment) runs one windowed
-estimate -- `mtproc.process.process_station` on the sites' filtered variants in
---read-archives (never built, opened read-only), the survey's lemimt bands, ex ey
-out, no tweaks, no masks -- as four sampled children per aurora (the installed
-fork; stock 0.6.2 from a worktree of the fork's clone at its base commit, first on
-PYTHONPATH), so that no instrument distorts another: `pyspy-idle` and `pyspy-gil`
-(clean runs, py-spy attached from outside: a speedscope file of every sample, a
-flamegraph SVG of the GIL-holding ones; exact call counts and seconds per phase of
-`COUNT_TARGETS` in `_calls.csv`, every h5py dataset read in `_h5reads.csv`, psutil
-at each phase boundary in `_boundaries.csv`), `viztracer` (every call of at least
---viz-min-us us, C calls and GC included, in `<stem>_viztracer.json` + `.json.gz`
-for ui.perfetto.dev or `vizviewer`; our phase / detail / per-band spans on the
-"mtproc phases + counters" track, RSS, disk read, CPU and thread counters every
-0.25 s) and `tracemalloc` (a snapshot at every phase boundary diffed with the one
-before: `_tm_sites.csv`; per-span traced peaks `_tm_spans.csv`; retained memory by
-owner `_tm_owners.csv`; the time series aurora's kernel dataset holds at each
-boundary; the composition near the peak `_tm_peak.csv`; tracing stops over
---tm-pause, where pandas allocates a Python int per sample). The report per
-variant: `trace_<variant>_<run>_trace_timeline.png` (phases, RSS, disk read, CPU,
-the top 5 functions by self time per phase), `_trace_phases.csv`, `_viz_hot.csv`,
-`_viz_callers.csv`, `_calls_by_level.csv`, `_h5reads_summary.csv`,
-`_pyspy_top.csv`, `_tm_top_sites.csv`, `_tm_peak_sites.csv`, `_tm_retained.png`;
-and `trace_compare_<run>.csv/.png`, `trace_compare_functions_<run>.csv`.
-
-`--ledger` summarises a campaign: per kind, seconds and peak RSS
-(`ledger_stats.csv`), and from runs.log the jobs running over time and the
-share of each stage block with a slot idle (`ledger_slots.csv`,
-`ledger.png`).
+:license: MIT
 """
 
 from __future__ import annotations
@@ -235,6 +255,7 @@ _MAIN_TID = threading.get_ident()
 
 
 def _mark(flag: str, kind: str, name: str) -> None:
+    """Write one PROFMARK line to stderr and pass the mark to the in-process sinks."""
     t = time.time()
     sys.__stderr__.write(f"{MARK} {t:.6f} {flag} {kind} {name}\n")
     sys.__stderr__.flush()
@@ -244,7 +265,11 @@ def _mark(flag: str, kind: str, name: str) -> None:
 
 
 class phase:
-    """`with phase("name"):` -- a P mark pair around a block (the read benchmarks)."""
+    """Context manager writing a mark pair around a block: `with phase("name"):`.
+
+    Used by the read benchmarks; `seconds` holds the block's duration after
+    the exit.
+    """
 
     def __init__(self, name: str, kind: str = "P"):
         self.name, self.kind = name, kind
@@ -261,7 +286,7 @@ class phase:
 
 
 def _result(name: str, seconds: float, nbytes: float = 0.0, **extra) -> None:
-    """One `PROFRESULT {json}` line: a read benchmark's number, collected into <stem>_bench.csv."""
+    """Write one `PROFRESULT {json}` line, a read benchmark's result, collected into <stem>_bench.csv."""
     row = {"name": name, "seconds": round(seconds, 4), "MB": round(nbytes / MB, 1),
            "MB_per_s": round(nbytes / MB / seconds, 1) if seconds > 0 and nbytes else None,
            "rss_gib": round(psutil.Process().memory_info().rss / GIB, 2), **extra}
@@ -270,6 +295,20 @@ def _result(name: str, seconds: float, nbytes: float = 0.0, **extra) -> None:
 
 
 def _wrap(fn, label: str, kind: str):
+    """Wrap a function so each call writes a B/E mark pair.
+
+    The wrapper tracks the aurora decimation level (argument `i_dec_level`)
+    and the band being regressed (argument `band`) for the labels.
+
+    Args:
+        fn (callable): Function to wrap.
+        label (str | callable): Mark name; "{L}" is replaced by the current
+            level, or a callable taking the level.
+        kind (str): "P" (phase) or "D" (detail).
+
+    Returns:
+        callable: The wrapper.
+    """
     try:
         params = list(inspect.signature(fn).parameters)
     except (TypeError, ValueError):
@@ -298,7 +337,12 @@ def _wrap(fn, label: str, kind: str):
 
 
 def install_markers(stage: str) -> list[str]:
-    """Wrap every target of `stage` (plus COMMON) in place; returns what could not be found."""
+    """Wrap every target of `stage` (plus COMMON) in place.
+
+    Returns:
+        list[str]: The targets that could not be found, also reported on
+        stderr as PROFINFO lines.
+    """
     import importlib
 
     missing = []
@@ -321,7 +365,7 @@ def install_markers(stage: str) -> list[str]:
                     setattr(owner, attr, _wrap(raw, label, kind))
             else:
                 setattr(owner, attr, _wrap(getattr(owner, attr), label, kind))
-        except Exception as exc:  # a target renamed upstream: profile without it, say so
+        except Exception as exc:  # a target renamed upstream: profiled without it and reported
             missing.append(f"{module}:{qualname} ({type(exc).__name__}: {exc})")
     for m in missing:
         sys.__stderr__.write(f"PROFINFO marker not installed: {m}\n")
@@ -329,7 +373,7 @@ def install_markers(stage: str) -> list[str]:
 
 
 def openblas_threads() -> dict:
-    """OpenBLAS thread-pool sizes of numpy's and scipy's own copies (ctypes; no threadpoolctl here)."""
+    """Return the OpenBLAS thread-pool sizes of numpy's and scipy's own copies, read with ctypes."""
     import ctypes
     import glob
 
@@ -348,7 +392,10 @@ def openblas_threads() -> dict:
 
 
 def redirect_archives(directory: str, sites) -> None:
-    """`sites`' raw archive and variant are looked up in `directory` (read there, never written)."""
+    """Redirect the raw archive and variant paths of `sites` to `directory` inside this process.
+
+    The archives are read there; outputs still go to the survey's workspace.
+    """
     import mtproc.ingest as ing
 
     directory, sites = Path(directory), set(sites)
@@ -367,16 +414,25 @@ def redirect_archives(directory: str, sites) -> None:
 
 
 def child_env(first=()) -> dict:
-    """A child's environment: PYTHONPATH = `first` (e.g. a stock aurora checkout), this repo's src,
-    then the caller's own PYTHONPATH entries -- a fork clone put there reaches the child -- and
-    unbuffered output."""
+    """Build a child's environment with unbuffered output.
+
+    PYTHONPATH is `first` (e.g. a stock aurora checkout), this repo's src,
+    then the caller's own PYTHONPATH entries, so a fork clone placed there
+    reaches the child.
+
+    Args:
+        first (iterable): Paths to put first on PYTHONPATH.
+
+    Returns:
+        dict: The environment.
+    """
     caller = [e for e in os.environ.get("PYTHONPATH", "").split(os.pathsep) if e]
     path = list(dict.fromkeys([*map(str, first), str(REPO / "src"), *caller]))
     return {**os.environ, "PYTHONUNBUFFERED": "1", "PYTHONPATH": os.pathsep.join(path)}
 
 
 def package_origins(names=("aurora", "mth5", "mt_timeseries", "mt_metadata", "mt_io")) -> dict:
-    """Where each MT package would be imported from, found without importing it."""
+    """Return the folder each MT package would be imported from, found without importing it."""
     import importlib.util
 
     out = {}
@@ -390,6 +446,18 @@ def package_origins(names=("aurora", "mth5", "mt_timeseries", "mt_metadata", "mt
 
 
 def child_main(stage: str, spec_path: str) -> int:
+    """Run one stage in the child process (`--child`).
+
+    Args:
+        stage (str): Stage name.
+        spec_path (str): JSON spec written by the parent.
+
+    Returns:
+        int: 0 on success.
+
+    Raises:
+        SystemExit: On an unknown stage.
+    """
     # first lines of every stage log: which packages this child runs
     sys.__stderr__.write(f"PROFINFO PYTHONPATH={os.environ.get('PYTHONPATH', '')}\n")
     sys.__stderr__.write(f"PROFINFO packages {package_origins()}\n")
@@ -435,10 +503,15 @@ def child_main(stage: str, spec_path: str) -> int:
 # ------------------------------------------------------ in-process rr (cProfile / tracemalloc)
 
 def _rr_call(spec: dict):
-    """process_rr.main's own resolution, then the arguments it hands `process_station`."""
+    """Resolve a process_rr.py run as its `main` does and return the `process_station` arguments.
+
+    Returns:
+        tuple[tuple, dict]: Positional and keyword arguments of
+        `process_station`.
+    """
     import process_rr as pr
 
-    from mtproc.bands import lemimt_band_scheme
+    from mtproc.bands import build_band_scheme
     from mtproc.ingest import processing_archive
     from mtproc.masks import load_masks
 
@@ -448,7 +521,7 @@ def _rr_call(spec: dict):
     survey = res["survey"]
     local_h5 = processing_archive(survey, args.local)
     remote_h5 = res["remote_archive"] if res["virtual_remote"] else processing_archive(survey, args.remote)
-    scheme = lemimt_band_scheme(survey.sample_rate, **res["scheme_kwargs"])
+    scheme = build_band_scheme(survey.sample_rate, **res["scheme_kwargs"])
     masks = load_masks(survey, args.local)
     kwargs = dict(out_dir=survey.workspace / "tf", band_scheme=scheme, start=args.start, end=args.end,
                   tag=res["stem"], tweaks=res["tweaks"] or None, time_masks=masks or None)
@@ -458,7 +531,14 @@ def _rr_call(spec: dict):
 
 
 class PeakSnapper(threading.Thread):
-    """A tracemalloc snapshot each time this process's RSS passes its last snapshot's by `step`."""
+    """Thread taking a tracemalloc snapshot each time this process's RSS passes its last snapshot's by `step`.
+
+    Args:
+        step_gib (float): RSS step between snapshots in GiB.
+        interval (float): Polling interval in seconds.
+        top (int): Number of allocation sites in the report.
+        path (Path | None): File the latest report is written to.
+    """
 
     def __init__(self, step_gib: float = 2.0, interval: float = 0.5, top: int = 20, path: Path | None = None):
         super().__init__(daemon=True)
@@ -478,7 +558,7 @@ class PeakSnapper(threading.Thread):
                 traced, traced_peak = tracemalloc.get_traced_memory()
                 self.report = format_snapshot(snap, rss, traced, traced_peak, self.top)
                 del snap
-                if self.path is not None:  # the latest one survives a killed run
+                if self.path is not None:  # the latest report is kept if the run is killed
                     self.path.write_text(self.report + "\n", encoding="utf-8")
                 self.best_rss = rss
                 self.n_snaps += 1
@@ -489,6 +569,7 @@ class PeakSnapper(threading.Thread):
 
 
 def _short(filename: str) -> str:
+    """Shorten a source path to its package-relative form."""
     f = filename.replace("\\", "/")
     for key in ("site-packages/", "/src/", "/scripts/", "/tests/"):
         if key in f:
@@ -500,6 +581,7 @@ def _short(filename: str) -> str:
 
 
 def format_snapshot(snap, rss: float, traced: float, traced_peak: float, top: int) -> str:
+    """Format a tracemalloc snapshot: the top allocation sites by traceback and by line."""
     stats = snap.statistics("traceback")
     lines = [f"snapshot at {dt.datetime.now():%H:%M:%S}: RSS {rss / GIB:.2f} GiB, traced now "
              f"{traced / GIB:.2f} GiB (traced peak so far {traced_peak / GIB:.2f} GiB)",
@@ -519,6 +601,12 @@ def format_snapshot(snap, rss: float, traced: float, traced_peak: float, top: in
 
 
 def inprocess_rr(spec: dict, mode: str) -> None:
+    """Run process_rr's `process_station` call under cProfile or tracemalloc.
+
+    Args:
+        spec (dict): The child's spec.
+        mode (str): "cprofile" or "tracemalloc".
+    """
     from mtproc.process import process_station
 
     call_args, kwargs = _rr_call(spec)
@@ -547,10 +635,10 @@ def inprocess_rr(spec: dict, mode: str) -> None:
         Path(str(stem) + "_cprofile.txt").write_text(buf.getvalue(), encoding="utf-8")
         print(f"cprofile: {stem}_cprofile.txt ({wall:.1f} s)", flush=True)
         return
-    # Traced from the level-0 STFTs to the end of the level-0 merge only, where the peak is:
-    # tracing the whole run made the metadata-heavy start (kernel dataset, to_runts) crawl
-    # (0.5 GiB after 3 min). What was allocated before -- the level-0 time series
-    # the kernel dataset holds -- is untraced: the header gives the RSS at the start of tracing.
+    # Traced from the level-0 STFTs to the end of the level-0 merge, where the peak is:
+    # tracing the whole run makes the metadata-heavy start (kernel dataset, to_runts)
+    # crawl. What was allocated before, the level-0 time series the kernel dataset
+    # holds, is untraced; the header gives the RSS at the start of tracing.
     import tracemalloc
 
     import aurora.pipelines.process_mth5 as apm
@@ -597,8 +685,14 @@ def inprocess_rr(spec: dict, mode: str) -> None:
 # ------------------------------------------------------------- read benchmarks (child)
 
 def bench_read(spec: dict) -> None:
-    """MTH5 opens, the channel summary, h5py vs mth5 slices, to_runts, RunSummary + KernelDataset,
-    B423 files through numpy vs mt-io -- every step a phase and a PROFRESULT line."""
+    """Run the read benchmarks, each step a phase and a PROFRESULT line.
+
+    MTH5 opens, the channel summary, h5py vs mth5 slices, to_runts,
+    RunSummary + KernelDataset, and B423 files through numpy vs mt-io.
+
+    Args:
+        spec (dict): The child's spec.
+    """
     import gc
 
     import h5py
@@ -717,7 +811,7 @@ def bench_read(spec: dict) -> None:
             opens=len(opens), open_list="; ".join(f"{n}:{md}" for n, md in opens), rows=len(kd.df))
     del kd
 
-    # (3) a read-write open, only on a dedicated archive (never a hard link shared with another)
+    # (3) a read-write open, on a dedicated archive alone (one that is not a hard link)
     rw = spec.get("rw_archive")
     if rw and Path(rw).exists():
         rw = Path(rw)
@@ -762,7 +856,17 @@ def bench_read(spec: dict) -> None:
 # ------------------------------------------------------------------ HDF5 layout
 
 def h5_layout(path: Path, raw_bytes: float | None = None) -> pd.DataFrame:
-    """One row per data array of `path`: dtype, chunk shape/bytes, compression, stored vs in-memory float64."""
+    """Describe the HDF5 layout of an archive's data arrays.
+
+    Args:
+        path (Path): The archive.
+        raw_bytes (float | None): Size of the raw files, kept in the frame's
+            attrs.
+
+    Returns:
+        pd.DataFrame: One row per 1-D dataset over 100000 samples: dtype,
+        chunk shape and bytes, compression, stored size vs in-memory float64.
+    """
     import h5py
 
     rows = []
@@ -787,10 +891,20 @@ def h5_layout(path: Path, raw_bytes: float | None = None) -> pd.DataFrame:
 # ---------------------------------------------------------------- sampler (parent)
 
 def run_sampled(cmd: list[str], log_path: Path, interval: float = 0.5, env=None, on_spawn=None):
-    """Run `cmd` with stdout+stderr to `log_path`, sampling it every `interval` s; (samples, t_spawn, t_end, rc).
+    """Run a command with stdout+stderr to a log, sampling it with psutil every `interval` s.
 
-    `on_spawn(pid)`, if given, runs in a thread beside the sampling and returns the
-    processes it started (py-spy attached to the child), waited for once the child exits.
+    Args:
+        cmd (list[str]): Command line.
+        log_path (Path): Log file.
+        interval (float): Sampling interval in seconds.
+        env (dict | None): Environment of the child.
+        on_spawn (callable | None): Called with the child's pid in a thread
+            beside the sampling; returns the processes it started (py-spy
+            attached to the child), which are waited for once the child
+            exits.
+
+    Returns:
+        tuple: (samples DataFrame, spawn time, end time, exit code).
     """
     rows = []
     helpers: list = []
@@ -849,7 +963,15 @@ def run_sampled(cmd: list[str], log_path: Path, interval: float = 0.5, env=None,
 
 def wait_for_memory(need_gib: float, other_peak_gib: float = 62.0, young_min: float = 4.0,
                     poll_s: float = 15.0, log=functools.partial(print, flush=True)) -> None:
-    """Block until available memory less the growth still ahead of young process_rr.py children >= need_gib."""
+    """Wait until the available memory, less the growth still ahead of young process_rr.py children, reaches need_gib.
+
+    Args:
+        need_gib (float): Memory needed in GiB; <= 0 returns at once.
+        other_peak_gib (float): Expected peak of another process_rr.py run.
+        young_min (float): Age in minutes under which a run still grows.
+        poll_s (float): Polling interval in seconds.
+        log (callable): Logger for the progress lines.
+    """
     if need_gib <= 0:
         return
     last = 0.0
@@ -887,11 +1009,16 @@ STARTED = re.compile(r"^started: (\d{4}-\d{2}-\d{2}T\S+)$")
 
 
 def _epoch(text: str) -> float:
+    """Convert an ISO time to epoch seconds."""
     return dt.datetime.fromisoformat(text.replace(" ", "T", 1)).timestamp()
 
 
 def parse_log(text: str) -> list[dict]:
-    """Every timed line of a child log: {"type": mark|log|started|header|result, "t", ...}, in file order."""
+    """Parse every timed line of a child log, in file order.
+
+    Returns:
+        list[dict]: Events {"type": mark|log|started|header|result, "t", ...}.
+    """
     events = []
     for raw in text.splitlines():
         line = ANSI.sub("", raw).rstrip()
@@ -918,7 +1045,11 @@ def parse_log(text: str) -> list[dict]:
 
 
 def mark_intervals(events: list[dict]) -> list[dict]:
-    """B/E mark pairs -> [{"name", "kind", "t0", "t1", "depth"}]; an E closes the latest open B of its name."""
+    """Pair B/E marks into intervals; an E closes the latest open B of its name.
+
+    Returns:
+        list[dict]: [{"name", "kind", "t0", "t1", "depth"}], by start time.
+    """
     stack, out = [], []
     for e in events:
         if e["type"] != "mark":
@@ -936,9 +1067,16 @@ def mark_intervals(events: list[dict]) -> list[dict]:
 
 
 def phases_from_marks(intervals: list[dict], t_start: float, t_end: float, min_s: float = 0.05) -> list[dict]:
-    """Partition [t_start, t_end] by the P intervals: each instant goes to the innermost P interval
-    covering it; uncovered time is "python start + imports" (before the first), "exit" (after the
-    last) or "(untracked)"; pieces shorter than `min_s` fold into the piece before them."""
+    """Partition [t_start, t_end] into phases by the P intervals.
+
+    Each instant goes to the innermost P interval covering it. Uncovered
+    time is "python start + imports" (before the first), "exit" (after the
+    last) or "(untracked)". Pieces shorter than `min_s` fold into the piece
+    before them.
+
+    Returns:
+        list[dict]: [{"name", "t0", "t1"}].
+    """
     ps = [iv for iv in intervals if iv["kind"] == "P"]
     cuts = sorted({t_start, t_end, *[iv["t0"] for iv in ps], *[iv["t1"] for iv in ps]})
     cuts = [c for c in cuts if t_start <= c <= t_end]
@@ -968,7 +1106,11 @@ def phases_from_marks(intervals: list[dict], t_start: float, t_end: float, min_s
 
 
 def phases_from_rr_log(events: list[dict], t_start: float | None, t_end: float | None) -> list[dict]:
-    """A bare process_rr log (no marks) split at the lines aurora and process_rr themselves log."""
+    """Split a bare process_rr log (no marks) into phases at the lines aurora and process_rr log.
+
+    Returns:
+        list[dict]: [{"name", "t0", "t1"}]; [] for a log without loguru lines.
+    """
     logs = [e for e in events if e["type"] == "log"]
     if not logs:
         return []
@@ -982,6 +1124,7 @@ def phases_from_rr_log(events: list[dict], t_start: float | None, t_end: float |
     level, stft_last = 0, None
 
     def add(t, name):
+        """Append a phase change point unless it lies before the last one."""
         if t >= cps[-1][0]:
             cps.append((t, name))
 
@@ -1021,7 +1164,7 @@ def phases_from_rr_log(events: list[dict], t_start: float | None, t_end: float |
 
 
 def details_table(intervals: list[dict]) -> pd.DataFrame:
-    """Per D (and P) mark name: count, total seconds, self seconds (less directly nested marks)."""
+    """Sum the mark intervals per name: count, total seconds, self seconds (less directly nested marks)."""
     rows = {}
     for iv in intervals:
         kids = [k for k in intervals if k is not iv and k["depth"] == iv["depth"] + 1
@@ -1040,6 +1183,7 @@ def details_table(intervals: list[dict]) -> pd.DataFrame:
 
 
 def _interp(samples: pd.DataFrame, col: str, t: float) -> float:
+    """Interpolate a sample column at time t."""
     s = samples.dropna(subset=[col])
     if s.empty:
         return float("nan")
@@ -1047,6 +1191,7 @@ def _interp(samples: pd.DataFrame, col: str, t: float) -> float:
 
 
 def phase_table(phases: list[dict], samples: pd.DataFrame | None, t0: float) -> pd.DataFrame:
+    """Tabulate the phases with their duration and, given samples, peak RSS, CPU and I/O."""
     rows = []
     for ph in phases:
         row = {"phase": ph["name"], "start_s": round(ph["t0"] - t0, 2), "end_s": round(ph["t1"] - t0, 2),
@@ -1085,6 +1230,7 @@ CATEGORIES = [  # (name, colour, test on the phase name), first match wins
 
 
 def category(name: str) -> tuple[str, str]:
+    """Return the (category, colour) of a phase name from CATEGORIES."""
     for cat, colour, test in CATEGORIES:
         if test(name):
             return cat, colour
@@ -1092,6 +1238,7 @@ def category(name: str) -> tuple[str, str]:
 
 
 def plot_timeline(samples: pd.DataFrame, phases: list[dict], t0: float, title: str, out_png: Path) -> None:
+    """Plot memory, CPU and I/O against time with the phases shaded and labelled."""
     import matplotlib
 
     matplotlib.use("Agg")
@@ -1152,12 +1299,35 @@ def plot_timeline(samples: pd.DataFrame, phases: list[dict], t0: float, title: s
 # ------------------------------------------------------------------ orchestration
 
 def _stem(stage: str, who: str) -> str:
+    """Return the output stem <stage>_<who>_<YYYYMMDD-HHMMSS>."""
     return f"{stage}_{who}_{dt.datetime.now():%Y%m%d-%H%M%S}"
 
 
 def analyse(log_path: Path, samples: pd.DataFrame | None, t_spawn: float | None, t_end: float | None,
             out: Path, stem: str, stage: str, note: str = "") -> pd.DataFrame:
-    """Log (+ samples) -> <stem>_phases.csv, _details.csv, _bench.csv and the timeline figure."""
+    """Analyse a child log and its samples.
+
+    Writes <stem>_phases.csv, _details.csv, _bench.csv, _samples.csv and the
+    timeline figure, as far as the log and samples provide them.
+
+    Args:
+        log_path (Path): The child's log: PROFMARK lines, or a bare
+            process_rr log.
+        samples (pd.DataFrame | None): The psutil samples of `run_sampled`,
+            or None.
+        t_spawn (float | None): Epoch seconds at which the child started;
+            None takes the first timed log line.
+        t_end (float | None): Epoch seconds at which the child ended; None
+            takes the last timed log line.
+        out (Path): Output folder.
+        stem (str): Stem of the output files.
+        stage (str): Stage name; an `rr` log without PROFMARK lines is
+            split by aurora's own log lines (`phases_from_rr_log`).
+        note (str): Text appended to the timeline figure's title.
+
+    Returns:
+        pd.DataFrame: The phase table.
+    """
     events = parse_log(log_path.read_text(encoding="utf-8", errors="replace"))
     intervals = mark_intervals(events)
     timed = [e["t"] for e in events if e["t"] is not None]
@@ -1189,12 +1359,34 @@ def analyse(log_path: Path, samples: pd.DataFrame | None, t_spawn: float | None,
 
 
 def child_cmd(stage: str, spec: dict, spec_path: Path, markers: bool) -> list[str]:
+    """Write the child's spec and return the command that runs this script as that child."""
     spec_path.write_text(json.dumps({**spec, "markers": markers}, default=str), encoding="utf-8")
     return [sys.executable, str(Path(__file__).resolve()), "--child", stage, str(spec_path)]
 
 
 def run_stage(stage: str, spec: dict, out: Path, who: str, interval: float, markers: bool,
               need_gb: float, other_peak_gb: float, extra_note: str = "") -> dict:
+    """Run one stage as a sampled child and analyse it.
+
+    Args:
+        stage (str): Stage name: rr, ingest, variant, stack, read, cprofile
+            or tracemalloc.
+        spec (dict): The child's arguments; written to <stem>_spec.json
+            with "out_stem" and "markers" added.
+        out (Path): Output folder.
+        who (str): Site or pair named in the output stem.
+        interval (float): Sampling interval in s.
+        markers (bool): Whether the child wraps `TARGETS` to write
+            PROFMARK lines.
+        need_gb (float): Available memory in GiB to wait for before the
+            child starts (`wait_for_memory`).
+        other_peak_gb (float): Expected peak in GiB of another running
+            process_rr.py child.
+        extra_note (str): Text appended to the timeline title's note.
+
+    Returns:
+        dict: {"stem", "rc", "seconds", "table"}.
+    """
     stem = _stem(stage, who)
     spec = {**spec, "out_stem": str(out / stem)}
     wait_for_memory(need_gb, other_peak_gb)
@@ -1216,7 +1408,12 @@ def run_stage(stage: str, spec: dict, out: Path, who: str, interval: float, mark
 
 
 def parse_logs(paths: list[Path], out: Path) -> pd.DataFrame:
-    """--parse-log: bare process_rr logs (campaign ones too) -> one row per phase per log."""
+    """Split bare process_rr logs (campaign ones too) into phases for --parse-log.
+
+    Returns:
+        pd.DataFrame: One row per phase per log, also written to
+        parsed_phases.csv.
+    """
     frames = []
     for p in paths:
         events = parse_log(Path(p).read_text(encoding="utf-8", errors="replace"))
@@ -1233,7 +1430,12 @@ def parse_logs(paths: list[Path], out: Path) -> pd.DataFrame:
 
 
 def ledger_stats(campaign: Path, out: Path) -> None:
-    """Per kind: seconds and peak RSS; from runs.log: slots in use over each stage block."""
+    """Summarise a campaign for --ledger.
+
+    Writes per kind the seconds and peak RSS (ledger_stats.csv) and, from
+    runs.log, the slots in use over each stage block (ledger_slots.csv,
+    ledger.png).
+    """
     import matplotlib
 
     matplotlib.use("Agg")
@@ -1336,15 +1538,16 @@ def ledger_stats(campaign: Path, out: Path) -> None:
 # ====================================================================== trace stage
 #
 # One estimate (process_station on a window, the survey's lemimt bands, ex ey out,
-# no tweaks, no masks) run as four child passes of the same call, so no instrument
-# distorts another's numbers:
+# no tweaks, no masks) run as four child passes of the same call, so each
+# instrument's numbers are measured without the others:
 #   pyspy-idle   clean run; py-spy --idle attached from outside (speedscope); exact
 #                call counters + an h5py read log; psutil at every phase boundary
 #   pyspy-gil    the same clean run again; py-spy --gil (flamegraph SVG): only the
 #                samples of a thread holding the GIL
 #   viztracer    in-process trace of every call lasting --viz-min-us or more (C
-#                functions and GC included); our phase / detail / per-band spans on a
-#                track of their own; RSS, disk read, CPU and thread counters every 0.25 s
+#                functions and GC included); the profiler's phase / detail / per-band
+#                spans on a track of their own; RSS, disk read, CPU and thread counters
+#                every 0.25 s
 #   tracemalloc  traced from the first line: a snapshot at every phase boundary, each
 #                diffed with the one before; every span's traced peak; a snapshot each
 #                time the RSS passes its last high by 0.25 GiB (the peak's composition)
@@ -1359,6 +1562,7 @@ STOCK_AURORA_BASE = "3395804c"
 
 
 def _read_or_decimate(level: int) -> str:
+    """Label the update_dataset_df phase: "L0 read TS" at level 0, else "L<n> decimate TS"."""
     return "L0 read TS" if level == 0 else f"L{level} decimate TS"
 
 
@@ -1451,7 +1655,7 @@ COUNT_TARGETS = [
 # ------------------------------------------------------------ trace stage: child side
 
 class PhaseTracker:
-    """The innermost open P mark: the phase piece an instant belongs to (as `phases_from_marks` names it)."""
+    """Mark sink tracking the innermost open P mark, the phase an instant belongs to (as `phases_from_marks` names it)."""
 
     def __init__(self):
         self.open: list[str] = []
@@ -1470,16 +1674,23 @@ class PhaseTracker:
                 break
 
     def current(self) -> str:
+        """Return the name of the current phase."""
         return self.open[-1] if self.open else ("(untracked)" if self.seen else "python start + imports")
 
 
 class SpanSink:
-    """B/E marks -> closed spans {name, kind, t0, t1, level, band}, handed to `emit` at their E.
+    """Mark sink turning B/E marks into closed spans {name, kind, t0, t1, level, band}, passed to `emit` at their E.
 
-    `clock` stamps them (viztracer's own `getts` in the viztracer pass, so the spans sit on
-    the calls' timeline). A band's regression steps ("band: ...") also make one span per
-    band and output channel, "L<n> band <T> s <ch>", from its extraction to its set_tf
-    (aurora loops channels outside bands: the channel is the n-th time a band is seen).
+    `clock` stamps them (viztracer's own `getts` in the viztracer pass, so the
+    spans sit on the calls' timeline). A band's regression steps ("band: ...")
+    also make one span per band and output channel, "L<n> band <T> s <ch>",
+    from its extraction to its set_tf. aurora loops over channels outside the
+    band loop, so the channel is the n-th time a band is seen.
+
+    Args:
+        emit (callable): Receives each closed span.
+        clock (callable): Time stamp function.
+        output_channels (tuple[str, ...]): Output channels in aurora's order.
     """
 
     def __init__(self, emit, clock=time.perf_counter, output_channels=("ex", "ey")):
@@ -1513,6 +1724,7 @@ class SpanSink:
             self._close_band(t)
 
     def _close_band(self, t):
+        """Close and emit the open band span, if any."""
         if self.band_open is not None:
             span, self.band_open = self.band_open, None
             span["t1"] = t
@@ -1520,7 +1732,7 @@ class SpanSink:
 
 
 class BoundaryLog:
-    """psutil at every P boundary: RSS, I/O counters (bytes and operations), threads, CPU times, GC collections."""
+    """Mark sink recording psutil at every P boundary: RSS, I/O counters (bytes and operations), threads, CPU times, GC collections."""
 
     def __init__(self, tracker: PhaseTracker):
         import gc
@@ -1528,6 +1740,7 @@ class BoundaryLog:
         self.gc, self.tracker, self.proc, self.rows = gc, tracker, psutil.Process(), []
 
     def row(self, t: float, piece: str, flag: str = "", name: str = "") -> None:
+        """Record one boundary row."""
         p = self.proc
         with p.oneshot():
             mi, io, ct = p.memory_info(), p.io_counters(), p.cpu_times()
@@ -1548,7 +1761,10 @@ class BoundaryLog:
 
 
 def _h5_name(obj) -> tuple[str, str]:
-    """(file name, object path) through h5py's low-level ids: no File object made, no counter hit."""
+    """Return (file name, object path) of an h5py object through the low-level ids.
+
+    No File object is created, so the call counters are not touched.
+    """
     import h5py
 
     try:
@@ -1563,6 +1779,7 @@ def _h5_name(obj) -> tuple[str, str]:
 
 
 def _describe_selection(sel) -> tuple[str, int | None, int | None]:
+    """Describe an h5py dataset selection as (text, start, stop)."""
     if isinstance(sel, tuple) and len(sel) == 1:
         sel = sel[0]
     if isinstance(sel, slice):
@@ -1580,11 +1797,12 @@ def _describe_selection(sel) -> tuple[str, int | None, int | None]:
 
 
 class CallCounter:
-    """Exact calls and seconds of COUNT_TARGETS per phase piece (`tracker.current()` at the call).
+    """Count the exact calls and seconds of COUNT_TARGETS per phase (`tracker.current()` at the call).
 
-    Per (phase, label): calls, outermost calls, seconds of the outermost calls, and for
-    h5py dataset reads the bytes returned; every dataset read is also logged (time,
-    phase, file, dataset, selection, bytes, seconds) to tell sequential from repeated reads.
+    Per (phase, label): calls, outermost calls, seconds of the outermost
+    calls, and for h5py dataset reads the bytes returned. Every dataset read
+    is also logged (time, phase, file, dataset, selection, bytes, seconds) to
+    tell sequential from repeated reads.
     """
 
     def __init__(self, tracker: PhaseTracker):
@@ -1594,6 +1812,7 @@ class CallCounter:
         self.reads: list = []
 
     def wrap(self, fn, label: str):
+        """Return a counting wrapper of `fn` under `label`."""
         rows, depth, tracker, reads = self.rows, self.depth, self.tracker, self.reads
         depth[label] = 0
         log_read = label.startswith("h5py: Dataset[")
@@ -1632,11 +1851,13 @@ class CallCounter:
         return counted
 
     def table(self) -> pd.DataFrame:
+        """Return the counts as one row per (phase, target)."""
         return pd.DataFrame([{"phase": ph, "target": lab, "calls": r[0], "outer_calls": r[1], "seconds": r[2],
                               "MB": r[3] / MB} for (ph, lab), r in self.rows.items()])
 
 
 def _resolve_attr(module: str, qualname: str):
+    """Import `module` (or its "|"-separated fallbacks) and return (owner, attribute name) of `qualname`."""
     import importlib
 
     last = None
@@ -1654,7 +1875,7 @@ def _resolve_attr(module: str, qualname: str):
 
 
 def _replace_everywhere(orig, new) -> int:
-    """Every module attribute that *is* `orig` becomes `new`; returns how many."""
+    """Replace every module attribute that is `orig` by `new`; return how many were replaced."""
     n = 0
     for mod in list(sys.modules.values()):
         try:
@@ -1669,6 +1890,11 @@ def _replace_everywhere(orig, new) -> int:
 
 
 def install_counters(counter: CallCounter, targets=None) -> list[str]:
+    """Wrap COUNT_TARGETS (or `targets`) with the counter.
+
+    Returns:
+        list[str]: The targets that could not be installed.
+    """
     missing = []
     for module, qualname, label in COUNT_TARGETS if targets is None else targets:
         try:
@@ -1693,7 +1919,7 @@ def install_counters(counter: CallCounter, targets=None) -> list[str]:
 
 
 def _force_read_only() -> None:
-    """Every MTH5 open in this process read-only: the trace stage reads the campaign's own archives."""
+    """Force every MTH5 open in this process to read-only; the trace stage reads the campaign's own archives."""
     from mth5.mth5 import MTH5
 
     original = MTH5.open_mth5
@@ -1711,6 +1937,7 @@ def _force_read_only() -> None:
 
 @functools.lru_cache(maxsize=None)
 def _func_spans(filename: str) -> tuple:
+    """Return (first line, last line, qualname) of every function in a source file."""
     import ast
 
     try:
@@ -1734,7 +1961,7 @@ def _func_spans(filename: str) -> tuple:
 
 
 def _func_at(filename: str, lineno: int) -> str:
-    """The innermost function (qualname) whose source lines hold `lineno`; "<module>" if none."""
+    """Return the innermost function (qualname) whose source lines hold `lineno`; "<module>" if none."""
     best, width = "", float("inf")
     for a, b, qual in _func_spans(filename):
         if a <= lineno <= b and b - a < width:
@@ -1744,6 +1971,7 @@ def _func_at(filename: str, lineno: int) -> str:
 
 @functools.lru_cache(maxsize=None)
 def _package_of(filename: str) -> str:
+    """Return the package a source file belongs to, "python" for the standard library."""
     f = filename.replace("\\", "/")
     for pkg in MT_PACKAGES:
         if f"/{pkg}/" in f:
@@ -1754,29 +1982,40 @@ def _package_of(filename: str) -> str:
 
 
 def _frame_text(filename: str, lineno: int) -> str:
+    """Format a frame as 'file:line (function)'."""
     return f"{_short(filename)}:{lineno} ({_func_at(filename, lineno)})"
 
 
 def _raw_chain(frames, n: int = 4) -> str:
-    """The first `n` of `frames` (raw (file, line), innermost first) in the MT packages -- else the first
-    `n` -- as 'file:line|file:line' (resolved to function names later, outside the traced process)."""
+    """Format the first `n` frames in the MT packages (else the first `n` frames) as 'file:line|file:line'.
+
+    `frames` are raw (file, line) pairs, innermost first; they are resolved
+    to function names later, outside the traced process.
+    """
     ours = [fr for fr in frames if _package_of(fr[0]) in MT_PACKAGES]
     return "|".join(f"{f}:{ln}" for f, ln in (ours[:n] or list(frames)[:n]))
 
 
 def _resolve_chain(chain: str) -> str:
+    """Resolve a 'file:line|file:line' chain to 'file:line (function)  <-  ...'."""
     if not isinstance(chain, str) or not chain:
         return ""
     return "  <-  ".join(_frame_text(*_split_frame(fr)) for fr in chain.split("|"))
 
 
 def _split_frame(text: str) -> tuple[str, int]:
+    """Split 'file:line' into (file, line)."""
     f, ln = text.rsplit(":", 1)
     return f, int(ln)
 
 
 def _tm_group_own(snapshot) -> tuple[dict, int]:
-    """({raw traceback (innermost frame first): [bytes, blocks]}, bytes held by tracemalloc and this module)."""
+    """Group a snapshot's traces by traceback.
+
+    Returns:
+        tuple[dict, int]: {raw traceback (innermost frame first): [bytes,
+        blocks]}, and the bytes held by tracemalloc and this module.
+    """
     import tracemalloc
 
     skip = {tracemalloc.__file__, __file__}
@@ -1795,19 +2034,31 @@ def _tm_group_own(snapshot) -> tuple[dict, int]:
 
 
 def tm_group(snapshot) -> dict:
-    """A snapshot's traces grouped by their whole traceback: {raw frames, innermost first: [bytes, blocks]}.
-    Raw tuples rather than `Snapshot.statistics` objects: this runs at every phase boundary of a traced run."""
+    """Group a snapshot's traces by their whole traceback: {raw frames, innermost first: [bytes, blocks]}.
+
+    Uses raw tuples rather than `Snapshot.statistics` objects, since it runs
+    at every phase boundary of a traced run.
+    """
     return _tm_group_own(snapshot)[0]
 
 
 def tm_diff_table(new, old, phase: str, top: int = 15, resolve: bool = True) -> pd.DataFrame:
-    """The `top` allocation sites that grew most from `old` to `new` (snapshots or `tm_group` dicts).
+    """Tabulate the `top` allocation sites that grew most from `old` to `new`.
 
-    One row per site (a site = a whole traceback): phase, plus_mib (growth), blocks
-    (growth in blocks), alive_mib (held at `new`), site_file / site_line (the allocating
-    frame) and chain_frames (the next frames in the MT packages, innermost first, raw);
-    with `resolve`, also site ('pkg/file.py:line'), function (the def holding that line)
-    and chain ('file:line (function)  <-  ...': who asked for it).
+    Args:
+        new: Snapshot or `tm_group` dict.
+        old: Snapshot or `tm_group` dict.
+        phase (str): Phase name for the rows.
+        top (int): Number of sites.
+        resolve (bool): Whether to add function names from the sources.
+
+    Returns:
+        pd.DataFrame: One row per site (a site = a whole traceback): phase,
+        plus_mib (growth), blocks (growth in blocks), alive_mib (held at
+        `new`), site_file / site_line (the allocating frame) and chain_frames
+        (the next frames in the MT packages, innermost first, raw). With
+        `resolve`, also site ('pkg/file.py:line'), function (the def holding
+        that line) and chain ('file:line (function)  <-  ...', the callers).
     """
     if not isinstance(new, dict):
         new = tm_group(new)
@@ -1828,7 +2079,7 @@ def tm_diff_table(new, old, phase: str, top: int = 15, resolve: bool = True) -> 
 
 
 def tm_resolve(df: pd.DataFrame) -> pd.DataFrame:
-    """Adds site, function and chain (function names from the source files) to a raw site table."""
+    """Add site, function and chain (function names from the source files) to a raw site table."""
     df = df.copy()
     df["site"] = [f"{_short(f)}:{ln}" for f, ln in zip(df["site_file"], df["site_line"])]
     df["function"] = [_func_at(f, int(ln)) for f, ln in zip(df["site_file"], df["site_line"])]
@@ -1837,7 +2088,7 @@ def tm_resolve(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def tm_owner_bytes(grouped: dict) -> dict:
-    """Traced bytes per owner: the innermost frame in an MT package, else the allocating frame's package."""
+    """Sum traced bytes per owner: the innermost frame in an MT package, else the allocating frame's package."""
     out: dict = {}
     for frames, (size, _count) in grouped.items():
         owner = next((p for p in (_package_of(f) for f, _ in frames) if p in MT_PACKAGES), None)
@@ -1850,7 +2101,11 @@ _TFK_REF: list = [None]  # weakref to aurora's TransferFunctionKernel (tracemall
 
 
 def ts_census() -> dict:
-    """Bytes of the time series aurora's kernel dataset holds right now (data + coordinates), local and remote."""
+    """Return the bytes of the time series aurora's kernel dataset holds now (data + coordinates).
+
+    Returns:
+        dict: {"local": bytes, "remote": bytes}.
+    """
     out = {"local": 0, "remote": 0}
     tfk = _TFK_REF[0]() if _TFK_REF[0] is not None else None
     df = getattr(tfk, "dataset_df", None) if tfk is not None else None
@@ -1866,15 +2121,25 @@ def ts_census() -> dict:
 
 
 class TmSink:
-    """tracemalloc on the mark stream: every span's traced peak (all marks); at each P boundary
-    a snapshot, diffed with the previous one (the piece that just ended), and grouped by owner.
+    """Mark sink running tracemalloc on the mark stream.
 
-    Tracing stops over the `pause` phases and restarts after them (mth5's time_slice ->
-    mt_timeseries' make_dt_coordinates -> pandas DatetimeIndex.round allocates a Python int
-    per sample: traced, level 0's read of a 6 h window would take over an hour). A paused
-    piece has no traced numbers; memory allocated in it is invisible to tracemalloc from
-    then on, which is what the census (`ts_census`, the kernel dataset's time series, at
-    every boundary) accounts for.
+    Records every span's traced peak (all marks) and, at each P boundary, a
+    snapshot diffed with the previous one (the piece that just ended) and
+    grouped by owner.
+
+    Tracing stops over the `pause` phases and restarts after them: mth5's
+    time_slice -> mt_timeseries' make_dt_coordinates -> pandas
+    DatetimeIndex.round allocates a Python int per sample, and traced, level
+    0's read of a window of several hours would take far longer than the rest
+    of the run. A paused piece has no traced numbers, and memory allocated in
+    it stays invisible to tracemalloc; the census (`ts_census`, the kernel
+    dataset's time series at every boundary) accounts for it.
+
+    Args:
+        tracker (PhaseTracker): The phase tracker.
+        top (int): Allocation sites per boundary diff.
+        nframe (int): Frames per traceback.
+        pause (tuple[str, ...]): Phases to pause tracing over.
     """
 
     def __init__(self, tracker: PhaseTracker, top: int = 15, nframe: int = 10, pause=("L0 read TS",)):
@@ -1893,6 +2158,7 @@ class TmSink:
         self.epoch = 0
 
     def start(self) -> None:
+        """Take the first boundary snapshot once tracing has started."""
         self.t_piece0 = time.time()
         self.traced_piece0 = self.tm.get_traced_memory()[0]
         self.piece_peak = self.traced_piece0
@@ -1912,7 +2178,7 @@ class TmSink:
                 nm, kd, t0, c0, epoch = self.open.pop(idx)
                 inner = max(self.pk.pop(idx + 1), peak)
                 self.pk[idx] = max(self.pk[idx], inner)
-                ok = tracing and epoch == self.epoch  # never across a pause
+                ok = tracing and epoch == self.epoch  # a span across a pause gets no traced numbers
                 nan = float("nan")
                 self.spans.append({"name": nm, "kind": kd, "t0": t0, "t1": t,
                                    "traced_start_mib": c0 / MIB if ok else nan,
@@ -1941,6 +2207,7 @@ class TmSink:
             self.boundary(t, cur)
 
     def boundary(self, t: float, cur: int, first: bool = False) -> None:
+        """Snapshot at a phase boundary and record the piece that just ended."""
         piece = "start" if first else self.tracker.current()
         t0 = time.perf_counter()
         grouped, own = _tm_group_own(self.tm.take_snapshot())
@@ -1968,6 +2235,7 @@ class TmSink:
         self.tm.reset_peak()
 
     def write(self, stem: Path) -> None:
+        """Write the _tm_pieces, _tm_sites, _tm_owners and _tm_spans CSVs."""
         pd.DataFrame(self.pieces).to_csv(str(stem) + "_tm_pieces.csv", index=False)
         sites = pd.concat(self.sites, ignore_index=True) if self.sites else pd.DataFrame()
         sites.to_csv(str(stem) + "_tm_sites.csv", index=False)
@@ -1976,8 +2244,11 @@ class TmSink:
 
 
 class TmPeak(threading.Thread):
-    """A snapshot each time the RSS passes its last high by `step_gib`: the latest one's top sites
-    (raw, resolved later) are the composition near the run's peak."""
+    """Thread taking a snapshot each time the RSS passes its last high by `step_gib`.
+
+    The latest snapshot's top sites (raw, resolved later) are the
+    composition near the run's peak.
+    """
 
     def __init__(self, step_gib: float = 0.25, interval: float = 0.25, top: int = 25):
         super().__init__(daemon=True)
@@ -1997,7 +2268,7 @@ class TmPeak(threading.Thread):
                 t0 = time.perf_counter()
                 try:
                     grouped, _own = _tm_group_own(self.tm.take_snapshot())
-                except RuntimeError:  # tracing stopped (a paused phase) under us
+                except RuntimeError:  # tracing stopped (a paused phase) while this ran
                     self.halt.wait(self.interval)
                     continue
                 traced, _ = self.tm.get_traced_memory()
@@ -2011,11 +2282,15 @@ class TmPeak(threading.Thread):
             self.halt.wait(self.interval)
 
 
-# --- viztracer: our spans and counters on the calls' timeline
+# --- viztracer: the profiler's spans and counters on the calls' timeline
 
 class VizPump(threading.Thread):
-    """Beside the traced main thread (started before the tracer, so itself untraced): our spans onto
-    their own track (add_raw from this thread), and VizCounters every `interval` s."""
+    """Thread beside the traced main thread that writes the mark spans and counters to viztracer.
+
+    It is started before the tracer, so it is not traced itself. The spans
+    go onto their own track (add_raw from this thread), and the VizCounters
+    are logged every `interval` s.
+    """
 
     def __init__(self, tracer, interval: float = 0.25):
         super().__init__(name=SPAN_TRACK, daemon=True)
@@ -2033,11 +2308,13 @@ class VizPump(threading.Thread):
         self.cpu = VizCounter(tracer, "CPU (cores) and threads", trigger_on_change=False)
 
     def emit(self, span: dict) -> None:
+        """Queue a closed span as a viztracer "X" event."""
         args = {k: span[k] for k in ("level", "band") if span.get(k) is not None}
         self.q.put({"ph": "X", "cat": span["kind"], "name": span["name"], "ts": span["t0"],
                     "dur": max(span["t1"] - span["t0"], 0.0), "args": args})
 
     def flush(self) -> None:
+        """Hand the queued spans to the tracer."""
         while True:
             try:
                 ev = self.q.get_nowait()
@@ -2078,17 +2355,21 @@ class VizPump(threading.Thread):
 
 
 def trace_child(spec: dict) -> None:
-    """One pass of the trace stage (spec["pass"]): the estimate under that pass's instrument."""
+    """Run one pass of the trace stage (spec["pass"]): the estimate under that pass's instrument.
+
+    Args:
+        spec (dict): The child's spec.
+    """
     mode = spec["pass"]
     stem = Path(spec["out_stem"])
     import aurora
-    import aurora.pipelines.process_mth5  # noqa: F401 -- the targets' modules, imported before patching
+    import aurora.pipelines.process_mth5  # noqa: F401  (the targets' modules, imported before patching)
     import aurora.transfer_function.regression.RME_RR  # noqa: F401
     import aurora.transfer_function.TTFZ  # noqa: F401
     import mt_metadata.transfer_functions.core  # noqa: F401
     import pyproj  # noqa: F401
 
-    from mtproc.bands import lemimt_band_scheme
+    from mtproc.bands import build_band_scheme
     from mtproc.process import process_station
     from mtproc.survey import Survey
 
@@ -2097,7 +2378,7 @@ def trace_child(spec: dict) -> None:
     install_markers("trace")
     tracker = PhaseTracker()
     bounds = BoundaryLog(tracker)
-    # psutil at the boundaries costs ~10 ms each: not in the viztracer pass, whose counters cover it
+    # psutil at the boundaries costs ~10 ms each; the viztracer pass leaves it out, as its counters cover it
     sinks: list = [bounds] if mode != "viztracer" else []
     counter = tms = pump = tracer = snapper = None
     if mode.startswith("pyspy"):
@@ -2165,7 +2446,7 @@ def trace_child(spec: dict) -> None:
     t_wall = time.perf_counter()
     try:
         survey = Survey.from_yaml(spec["survey"])
-        scheme = lemimt_band_scheme(survey.sample_rate, **dict(survey.processing))
+        scheme = build_band_scheme(survey.sample_rate, **dict(survey.processing))
         process_station(Path(spec["local_h5"]), spec["local"], Path(spec["remote_h5"]), spec["remote"],
                         out_dir=Path(spec["edi_dir"]), band_scheme=scheme, start=spec["start"], end=spec["end"],
                         tag=stem.name, output_channels=list(spec.get("output_channels") or ["ex", "ey"]))
@@ -2205,12 +2486,13 @@ def trace_child(spec: dict) -> None:
 # ------------------------------------------------------------ trace stage: analysis (parent)
 
 def _phase_pieces(log_path: Path, t_start: float, t_end: float) -> list[dict]:
+    """Return the phase pieces of a child log from its marks."""
     events = parse_log(log_path.read_text(encoding="utf-8", errors="replace"))
     return phases_from_marks(mark_intervals(events), t_start, t_end)
 
 
 def agg_phases(table: pd.DataFrame) -> pd.DataFrame:
-    """A pass's `phase_table` pieces summed per phase name, in order of first appearance."""
+    """Sum a pass's `phase_table` pieces per phase name, in order of first appearance."""
     rows = []
     for name, g in table.groupby("phase", sort=False):
         secs = g["seconds"].sum()
@@ -2222,13 +2504,26 @@ def agg_phases(table: pd.DataFrame) -> pd.DataFrame:
 
 
 def _short_func(name: str) -> str:
-    """viztracer's 'func (C:\\...\\pkg\\mod.py:123)' -> 'func (pkg/mod.py:123)'."""
+    """Shorten viztracer's 'func (<full path>/pkg/mod.py:123)' to 'func (pkg/mod.py:123)'."""
     m = re.match(r"^(.*) \((.+):(\d+)\)$", name)
     return f"{m[1]} ({_short(m[2])}:{m[3]})" if m else name
 
 
 def viz_analyse(json_path: Path, meta: dict, pieces: list[dict], top: int = 15) -> dict:
-    """Self time and calls per function per phase from a viztracer JSON (MainThread), GC time per phase."""
+    """Compute self time and calls per function per phase, and GC time per phase, from a viztracer JSON.
+
+    Uses the MainThread events.
+
+    Args:
+        json_path (Path): The viztracer JSON.
+        meta (dict): The pass's _meta.json (clock offset, tracer entries).
+        pieces (list[dict]): Phase pieces from the marks.
+        top (int): Functions per phase in the hot table.
+
+    Returns:
+        dict: "hot", "self_all", "calls", "callers" tables, "gc" seconds
+        per phase, event counts, "overflow" and "phase_seconds".
+    """
     import bisect
     from collections import defaultdict
 
@@ -2244,6 +2539,7 @@ def viz_analyse(json_path: Path, meta: dict, pieces: list[dict], top: int = 15) 
     callers, caller_n = defaultdict(float), defaultdict(int)  # (function, its caller) -> inclusive us, calls
 
     def add_self(fn, a, b):
+        """Add self time [a, b) of `fn`, split over the phases it spans."""
         i = max(bisect.bisect_right(starts, a) - 1, 0)
         while a < b and i < len(starts):
             seg = min(b, ends[i])
@@ -2315,7 +2611,11 @@ def viz_analyse(json_path: Path, meta: dict, pieces: list[dict], top: int = 15) 
 
 
 def pyspy_speedscope(path: Path) -> tuple[pd.DataFrame, dict]:
-    """Per function (name + file) self and inclusive samples over all threads of a py-spy speedscope file."""
+    """Count self and inclusive samples per function (name + file) over all threads of a py-spy speedscope file.
+
+    Returns:
+        tuple[pd.DataFrame, dict]: The counts and the samples per thread.
+    """
     from collections import Counter
 
     d = json.loads(Path(path).read_text(encoding="utf-8"))
@@ -2336,7 +2636,11 @@ def pyspy_speedscope(path: Path) -> tuple[pd.DataFrame, dict]:
 
 
 def pyspy_svg(path: Path) -> tuple[pd.DataFrame, int]:
-    """Per function (name + file) inclusive samples from a py-spy flamegraph SVG's frame titles."""
+    """Count inclusive samples per function (name + file) from a py-spy flamegraph SVG's frame titles.
+
+    Returns:
+        tuple[pd.DataFrame, int]: The counts and the total samples.
+    """
     import html
     from collections import Counter
 
@@ -2358,7 +2662,7 @@ def pyspy_svg(path: Path) -> tuple[pd.DataFrame, int]:
 
 
 def h5reads_summary(reads: pd.DataFrame) -> pd.DataFrame:
-    """Per (file, dataset): reads, MB, distinct selections, repeated reads/MB, contiguous follow-ons, phases."""
+    """Summarise the h5py reads per (file, dataset): reads, MB, distinct selections, repeated reads/MB, contiguous follow-ons, phases."""
     rows = []
     if reads.empty:
         return pd.DataFrame()
@@ -2384,12 +2688,13 @@ def h5reads_summary(reads: pd.DataFrame) -> pd.DataFrame:
 
 
 def _level_group(phase: str) -> str:
+    """Return "L<n>" for a level phase name, else the name."""
     m = re.match(r"^L(\d+) ", phase)
     return f"L{m[1]}" if m else phase
 
 
 def boundary_deltas(bounds: pd.DataFrame) -> pd.DataFrame:
-    """Per phase name: process read MB and operations, write ops, other ops, CPU user/system s, max threads, GC runs."""
+    """Difference the boundary rows per phase name: process read MB and operations, write ops, other ops, CPU user/system s, max threads, GC runs."""
     b = bounds.sort_values("t").reset_index(drop=True)
     rows = []
     for i in range(1, len(b)):
@@ -2410,8 +2715,13 @@ def boundary_deltas(bounds: pd.DataFrame) -> pd.DataFrame:
 
 
 def tm_phase_table(pieces: pd.DataFrame) -> pd.DataFrame:
-    """tracemalloc pieces per phase name: net retained MiB (sum), peak over the piece's start (max), traced
-    peak (max) -- NaN for a phase tracing was paused over -- and the kernel dataset's time series at its end."""
+    """Aggregate the tracemalloc pieces per phase name.
+
+    Returns:
+        pd.DataFrame: Net retained MiB (sum), peak over the piece's start
+        (max), traced peak (max; NaN for a phase tracing was paused over)
+        and the kernel dataset's time series at its end.
+    """
     p = pieces[pieces["phase"] != "start"].copy()
     p["census_mib"] = p.get("census_local_mib", 0.0) + p.get("census_remote_mib", 0.0)
     return p.groupby("phase", sort=False).agg(tm_net_mib=("net_mib", "sum"),
@@ -2424,8 +2734,11 @@ def tm_phase_table(pieces: pd.DataFrame) -> pd.DataFrame:
 
 def plot_trace_timeline(samples: pd.DataFrame, pieces: list[dict], t0: float, hot: pd.DataFrame,
                         per_phase: pd.DataFrame, title: str, out_png: Path) -> None:
-    """Phases as numbered spans over RSS, disk read and CPU of a clean pass; the top 5 functions of each
-    phase by self time (viztracer pass) listed under it."""
+    """Plot the phases as numbered spans over RSS, disk read and CPU of a clean pass.
+
+    The top 5 functions of each phase by self time (viztracer pass) are
+    listed under the plot.
+    """
     import matplotlib
 
     matplotlib.use("Agg")
@@ -2490,9 +2803,13 @@ def plot_trace_timeline(samples: pd.DataFrame, pieces: list[dict], t0: float, ho
 
 
 def plot_tm_retained(pieces: pd.DataFrame, owners: pd.DataFrame, title: str, out_png: Path) -> None:
-    """Traced memory alive at the end of each phase piece, stacked by owner package; the piece's traced peak,
-    the RSS at its end, and the kernel dataset's time series (census). The glue pieces between phases
-    ("aurora (other)", "(untracked)") are left out; a piece tracing was paused over shows only RSS and census."""
+    """Plot the traced memory alive at the end of each phase piece, stacked by owner package.
+
+    Also shows the piece's traced peak, the RSS at its end and the kernel
+    dataset's time series (census). The glue pieces between phases
+    ("aurora (other)", "(untracked)") are left out; a piece tracing was
+    paused over shows the RSS and census alone.
+    """
     import matplotlib
 
     matplotlib.use("Agg")
@@ -2535,7 +2852,7 @@ def plot_tm_retained(pieces: pd.DataFrame, owners: pd.DataFrame, title: str, out
 
 
 def phase_kind(phase: str) -> str:
-    """A phase's kind across levels: read, decimate, STFT, merge, features, regression, setup, end, other."""
+    """Classify a phase across levels: read, decimate, STFT, merge, features, regression, setup, end, other."""
     m = re.match(r"^L\d+ (.+)$", phase)
     if m:
         return {"read TS": "read", "decimate TS": "decimate", "STFT": "STFT", "merge STFTs": "merge",
@@ -2548,7 +2865,12 @@ def phase_kind(phase: str) -> str:
 
 
 def compare_functions(fork_csv: Path, stock_csv: Path, top: int = 40) -> pd.DataFrame | None:
-    """Self seconds per (phase kind, function), fork vs stock, from the viztracer passes: the `top` largest differences."""
+    """Compare self seconds per (phase kind, function), fork vs stock, from the viztracer passes.
+
+    Returns:
+        pd.DataFrame | None: The `top` largest differences, or None when
+        either file is missing.
+    """
     if not (fork_csv.exists() and stock_csv.exists()):
         return None
     parts = []
@@ -2565,6 +2887,7 @@ def compare_functions(fork_csv: Path, stock_csv: Path, top: int = 40) -> pd.Data
 
 
 def plot_trace_compare(cmp: pd.DataFrame, title: str, out_png: Path) -> None:
+    """Plot seconds, peak RSS and traced allocation peak per phase, fork vs stock."""
     import matplotlib
 
     matplotlib.use("Agg")
@@ -2593,6 +2916,7 @@ def plot_trace_compare(cmp: pd.DataFrame, title: str, out_png: Path) -> None:
 # ------------------------------------------------------------ trace stage: orchestration (parent)
 
 def _pyspy_exe() -> str | None:
+    """Return the py-spy executable beside the interpreter or on PATH, or None."""
     import shutil
 
     cand = Path(sys.executable).parent / "Scripts" / "py-spy.exe"
@@ -2600,7 +2924,14 @@ def _pyspy_exe() -> str | None:
 
 
 def ensure_stock_aurora(path: Path) -> Path:
-    """A worktree of the fork's clone at stock 0.6.2's commit (created once; the clone itself is never checked out)."""
+    """Return a worktree of the aurora fork's clone at stock 0.6.2's commit, creating it once.
+
+    The clone's own checkout is left as it is; the clone is found under
+    MTPROC_FORKS.
+
+    Raises:
+        SystemExit: When the folder does not hold stock aurora 0.6.2.
+    """
     init = path / "aurora" / "__init__.py"
     if not init.exists():
         clone = Path(os.environ.get("MTPROC_FORKS", r"D:\BEN")) / "aurora"
@@ -2613,9 +2944,10 @@ def ensure_stock_aurora(path: Path) -> Path:
 
 
 def _pyspy_hook(log_path: Path, out_file: Path, fmt: str, flags: list[str], go_file: Path, spy_log: Path):
-    """on_spawn for run_sampled: once the child's interpreter is up, attach py-spy, then let the child go."""
+    """Build the on_spawn hook for run_sampled: once the child's interpreter is up, attach py-spy, then release the child."""
 
     def start(pid: int):
+        """Attach py-spy to `pid`, touch the go file and return the py-spy process."""
         t0 = time.time()
         while time.time() - t0 < 180:
             if log_path.exists() and "PROFINFO pid" in log_path.read_text(encoding="utf-8", errors="replace"):
@@ -2637,7 +2969,28 @@ def _pyspy_hook(log_path: Path, out_file: Path, fmt: str, flags: list[str], go_f
 
 def trace_runs(args, survey, survey_yaml: str, out: Path, run_id: str, local_h5: Path, remote_h5: Path,
                stock_dir: Path | None) -> None:
-    """Every pass of every variant as a sampled child (see the trace stage's header comment)."""
+    """Run every pass of every variant as a sampled child (described in the trace stage's header comment).
+
+    Args:
+        args (argparse.Namespace): The command line: local, remote,
+            --window, --variants, --passes, the viztracer and tracemalloc
+            options, --need-gb and --other-peak-gb.
+        survey (Survey): The survey; the children load `survey_yaml`
+            themselves.
+        survey_yaml (str): Path of the survey.yaml.
+        out (Path): Output folder.
+        run_id (str): Identifier in every output stem,
+            trace_<variant>_<run_id>_<pass>.
+        local_h5 (Path): The local site's filtered variant, opened
+            read-only.
+        remote_h5 (Path): The remote site's filtered variant, opened
+            read-only.
+        stock_dir (Path | None): Worktree of stock aurora, put first on the
+            PYTHONPATH of the stock variant's children.
+
+    Raises:
+        SystemExit: When a pass fails.
+    """
     for variant in args.variants:
         vstem = f"trace_{variant}_{run_id}"
         env = child_env([stock_dir] if variant == "stock" else [])
@@ -2673,6 +3026,7 @@ def trace_runs(args, survey, survey_yaml: str, out: Path, run_id: str, local_h5:
 
 
 def _pass_files(out: Path, stem: str):
+    """Load one pass's log, samples and phases, or None when the pass has no log."""
     log = out / f"{stem}.log"
     if not log.exists():
         return None
@@ -2687,8 +3041,15 @@ def _pass_files(out: Path, stem: str):
 
 
 def trace_report(out: Path, run_id: str, variants: list[str]) -> None:
-    """Per variant: <vstem>_trace_phases.csv, _trace_timeline.png, _viz_hot.csv, _calls_by_level.csv,
-    _h5reads_summary.csv, _pyspy_top.csv, _tm_retained.png; then the fork-vs-stock comparison."""
+    """Write the trace report.
+
+    Per variant: <vstem>_trace_phases.csv, _trace_timeline.png,
+    _viz_hot.csv, _calls_by_level.csv, _h5reads_summary.csv, _pyspy_top.csv,
+    _tm_retained.png; then the fork-vs-stock comparison.
+
+    Raises:
+        SystemExit: When a pass ran the other variant's aurora.
+    """
     per_variant = {}
     for variant in variants:
         vstem = f"trace_{variant}_{run_id}"
@@ -2814,7 +3175,16 @@ def trace_report(out: Path, run_id: str, variants: list[str]) -> None:
 
 
 def run_trace(args, survey, survey_yaml: str, out: Path) -> int:
-    if args.reanalyse:  # tables and figures only: no archive resolved, no aurora imported
+    """Run the trace stage, or with --reanalyse redo its tables and figures.
+
+    Returns:
+        int: 0.
+
+    Raises:
+        SystemExit: When --read-archives, the variants or --window are
+            missing.
+    """
+    if args.reanalyse:  # tables and figures alone: no archive resolved, no aurora imported
         trace_report(out, args.reanalyse, args.variants)
         return 0
     from mtproc.ingest import variant_path
@@ -2839,7 +3209,9 @@ def run_trace(args, survey, survey_yaml: str, out: Path) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="profile_run.py", description=__doc__.split("\n\nUsage:")[0],
+    """Build the command-line parser of profile_run.py."""
+    p = argparse.ArgumentParser(prog="profile_run.py",
+                                description=next(line for line in __doc__.strip().splitlines() if line.strip()),
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("survey_yaml", nargs="?")
     p.add_argument("local", nargs="?")
@@ -2893,6 +3265,15 @@ NEED_GB = {"rr": 58.0, "cprofile": 58.0, "tracemalloc": 60.0, "ingest": 25.0, "v
 
 
 def main(argv=None) -> int:
+    """Run the requested stages, or --parse-log / --ledger, or a child (--child).
+
+    Args:
+        argv (list[str] | None): Command-line arguments; sys.argv[1:] when
+            None.
+
+    Returns:
+        int: 0, or the exit code of the first failed stage with --stage all.
+    """
     argv = sys.argv[1:] if argv is None else argv
     if argv[:1] == ["--child"]:
         return child_main(argv[1], argv[2])

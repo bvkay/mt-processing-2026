@@ -1,6 +1,17 @@
-"""Unit test for scripts/compare_unmerged.py (no Qt).
+# -*- coding: utf-8 -*-
+"""
+Unit test for scripts/compare_unmerged.py
 
+Checks the site-name normalisation of compare_unmerged.py and runs the script
+end to end on synthetic lemimt EDIs written with mt_metadata's `TF`,
+including a corrupt file that must be skipped. Runs without Qt.
+
+Usage:
     python tests/compare_unmerged_unit.py
+
+@author: ben kay (ben@auscope.org.au)
+
+:license: MIT
 
 **This test fails if**
 
@@ -12,7 +23,7 @@
 (2) given two tiny synthetic lemimt EDIs in one folder -- each built with
     `mt_metadata`'s own `TF` (three periods, a 2x2 impedance), written as
     ``MT-D7_RR-D9_1000Hz_1.edi`` and ``MT-D7_RR-D9_125Hz.edi`` -- plus an
-    "aurora" EDI that is a byte-for-byte copy of the 1000 Hz file, running
+    "aurora" EDI that is an identical copy of the 1000 Hz file, running
     the script (site ``D07``, so normalisation is exercised too) does not
     exit 0, does not write the output PNG, or does not print a table whose
     1000 Hz row has a median absolute log10 rho difference below 1e-6 (the
@@ -38,6 +49,7 @@ SCRIPT = REPO / "scripts" / "compare_unmerged.py"
 
 
 def _load_script():
+    """Import scripts/compare_unmerged.py as a module."""
     spec = importlib.util.spec_from_file_location("compare_unmerged", SCRIPT)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -55,6 +67,18 @@ def test_site_name_normalisation() -> None:
 
 
 def _write_tf(out_path: Path, station: str, periods, xy, yx):
+    """Write a small EDI with a constant off-diagonal impedance.
+
+    Args:
+        out_path (Path): EDI to write.
+        station (str): Station name.
+        periods (list[float]): Periods in seconds.
+        xy (complex): Zxy at every period.
+        yx (complex): Zyx at every period.
+
+    Returns:
+        Path: `out_path`.
+    """
     import numpy as np
     from mt_metadata.transfer_functions.core import TF
 
@@ -122,6 +146,7 @@ def test_end_to_end_png_table_and_skip() -> None:
 
 
 def main() -> int:
+    """Print the test contract, run every test_* function and return 0."""
     print(__doc__.split("**This test fails if**")[1].strip())
     print()
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]

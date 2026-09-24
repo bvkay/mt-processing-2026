@@ -1,17 +1,28 @@
-"""Match reference EDIs back to survey sites, and write reference_edis.yaml.
+# -*- coding: utf-8 -*-
+"""
+Match reference EDIs to survey sites
 
-Four rules, tried in order, first hit wins:
+Matches a folder of reference EDIs back to the sites of a survey.yaml and
+writes reference_edis.yaml beside it. Four rules are tried in order and the
+first hit wins:
 
-1. file name — ``<site>.edi`` sits in the folder (Burra_2017-18);
-2. INFO-block SITE name — the merged lemimt EDIs were renamed
-   (e.g. Cube_017.edi) but kept "SITE : P-A02_RR-A03" inside;
-3. nearest EDI not yet claimed, within `MAX_KM`;
-4. nearest EDI overall within `MAX_KM`, reusing one already claimed — a repeat
-   deployment (Burra10repeat) sits on its original site's position and so
-   shares that site's EDI.
+1. File name: ``<site>.edi`` is in the folder.
+2. INFO-block SITE name: merged lemimt EDIs that were renamed (to a
+   numbered file name, say) keep "SITE : P-A02_RR-A03" inside.
+3. Nearest EDI not yet claimed, within `MAX_KM`.
+4. Nearest EDI overall within `MAX_KM`, reusing one already claimed. A repeat
+   deployment sits on its original site's position and so shares that
+   site's EDI.
+
+Each entry holds the EDI path and, when both positions are known, the
+distance in km between the EDI and the field-sheet position.
 
 Usage:
     python scripts/match_reference_edis.py <edi_dir> <survey.yaml>
+
+@author: ben kay (ben@auscope.org.au)
+
+:license: MIT
 """
 
 import math
@@ -25,7 +36,14 @@ MAX_KM = 3.0
 
 
 def parse_deg(value: str) -> float:
-    """EDI lat/lon: decimal degrees or [+-]DD:MM:SS.S."""
+    """Parse an EDI latitude or longitude to decimal degrees.
+
+    Args:
+        value (str): Decimal degrees or [+-]DD:MM:SS.S.
+
+    Returns:
+        float: Decimal degrees.
+    """
     value = value.strip().lstrip("+")
     if ":" in value:
         d, m, s = value.split(":")
@@ -35,6 +53,15 @@ def parse_deg(value: str) -> float:
 
 
 def edi_position(path: Path):
+    """Read LAT and LONG from the first 4000 characters of an EDI.
+
+    Args:
+        path (Path): EDI file.
+
+    Returns:
+        tuple[float, float] | None: (latitude, longitude) in decimal degrees,
+        or None when either is missing.
+    """
     head = path.read_text(errors="ignore")[:4000]
     lat = re.search(r"^\s*LAT\s*=\s*([+\-0-9:.]+)", head, re.M)
     lon = re.search(r"^\s*LONG\s*=\s*([+\-0-9:.]+)", head, re.M)
@@ -44,13 +71,22 @@ def edi_position(path: Path):
 
 
 def edi_site_name(path: Path):
-    """Original processing name from the INFO block, e.g. 'SITE : P-A02_RR-A03' -> A02."""
+    """Return the original processing name from the INFO block of an EDI.
+
+    Args:
+        path (Path): EDI file.
+
+    Returns:
+        str | None: The local site of 'SITE : P-<site>_RR...', e.g. A02 for
+        'SITE : P-A02_RR-A03', or None when absent.
+    """
     head = path.read_text(errors="ignore")[:4000]
     m = re.search(r"SITE\s*:\s*P-([A-Za-z0-9]+)_RR", head)
     return m.group(1) if m else None
 
 
 def km_between(lat1, lon1, lat2, lon2) -> float:
+    """Great-circle (haversine) distance in km between two points in degrees."""
     r = 6371.0
     p1, p2 = math.radians(lat1), math.radians(lat2)
     dp, dl = math.radians(lat2 - lat1), math.radians(lon2 - lon1)
@@ -59,6 +95,17 @@ def km_between(lat1, lon1, lat2, lon2) -> float:
 
 
 def entry_for(edi: Path, pos, site: dict) -> dict:
+    """Build the reference_edis.yaml entry of a site matched to an EDI.
+
+    Args:
+        edi (Path): Matched EDI.
+        pos (tuple[float, float] | None): EDI position, if known.
+        site (dict): Site entry of the survey.yaml.
+
+    Returns:
+        dict: {"edi": path}, plus "distance_km" when both positions are
+        known and a "warning" when the distance exceeds MAX_KM.
+    """
     entry = {"edi": str(edi)}
     if pos and site.get("latitude") is not None:
         d = km_between(site["latitude"], site["longitude"], *pos)
@@ -69,7 +116,15 @@ def entry_for(edi: Path, pos, site: dict) -> dict:
 
 
 def nearest(positions: dict, site: dict):
-    """(path, distance_km) of the closest EDI in `positions` to `site`."""
+    """Find the EDI closest to a site.
+
+    Args:
+        positions (dict): EDI path to (latitude, longitude).
+        site (dict): Site entry with "latitude" and "longitude".
+
+    Returns:
+        tuple[Path, float]: The closest EDI and its distance in km.
+    """
     best = min(
         positions.items(),
         key=lambda kv: km_between(site["latitude"], site["longitude"], *kv[1]),
@@ -78,6 +133,12 @@ def nearest(positions: dict, site: dict):
 
 
 def main(edi_dir: str, survey_yaml: str) -> None:
+    """Match the EDIs of a folder to the survey's sites and write reference_edis.yaml.
+
+    Args:
+        edi_dir (str): Folder of reference EDIs.
+        survey_yaml (str): survey.yaml whose `sites:` are matched.
+    """
     edi_dir, survey_yaml = Path(edi_dir), Path(survey_yaml)
     config = yaml.safe_load(survey_yaml.read_text(encoding="utf-8"))
 
@@ -86,7 +147,7 @@ def main(edi_dir: str, survey_yaml: str) -> None:
     all_coords = {edi: edi_position(edi) for edi in sorted(edi_dir.glob("*.edi"))}
     all_coords = {edi: pos for edi, pos in all_coords.items() if pos}
 
-    # 1. the EDI is named after the site (Burra_2017-18: Burra57.edi -> Burra57)
+    # 1. the EDI is named after the site (S01.edi -> S01)
     for name, site in sites.items():
         edi = edi_dir / f"{name}.edi"
         if edi.exists():
@@ -112,7 +173,7 @@ def main(edi_dir: str, survey_yaml: str) -> None:
             mapping[name] = {"edi": str(best), "distance_km": round(dist, 3)}
 
     # 4. last resort: nearest EDI overall, reusing one another site already
-    #    claimed — repeat/rr folders reoccupy an earlier site's position
+    #    claimed; repeat/rr folders reoccupy an earlier site's position
     for name, site in sites.items():
         if name in mapping or site.get("latitude") is None or not all_coords:
             continue

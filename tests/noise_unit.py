@@ -1,13 +1,23 @@
-"""Unit test for `mtproc.noise` -- the declared filters, on plain arrays and on a run.
+# -*- coding: utf-8 -*-
+"""
+Unit test for mtproc.noise
 
+Tests the declared filters on plain arrays and on a run. The main synthetic
+is 20 min at 1000 Hz: every channel carries a 50 Hz line (amplitude 2), a
+0.01 Hz drift (amplitude 100) and white noise (1 rms); ey also carries a
+200 Hz tone (amplitude 3) and ex a 12 s square wave (amplitude 5). Each
+measure below is taken with numpy alone (a lock-in projection, block means,
+a projection on the square wave) or with `mtproc.timefreq.line_excess` on a
+plain `scipy.signal.welch`, independently of the filter under test.
+
+Usage:
     python tests/noise_unit.py
 
-A synthetic 20 min at 1000 Hz: every channel carries a 50 Hz line (amplitude
-2), a 0.01 Hz drift (amplitude 100) and white noise (1 rms); ey also carries
-a 200 Hz tone (amplitude 3) and ex a 12 s square wave (amplitude 5). Each
-measure below is taken here with numpy alone -- a lock-in projection, block
-means, a projection on the square wave -- or with `mtproc.timefreq.line_excess` on a
-plain `scipy.signal.welch`, never with the filter under test. **This test
+@author: ben kay (ben@auscope.org.au)
+
+:license: MIT
+
+**This test
 fails if**
 
 - `notch` (50 Hz, 9 harmonics, the defaults) does not drop the 50 Hz line's
@@ -24,16 +34,16 @@ fails if**
   the cascade the module docstring advises (hp 0.05 Hz, then cp); cp alone
   on the drifting ex is printed, not asserted (the drift leaks into the
   median cycle: that is why the advice says high-pass first);
-- `channels` scoping leaves any channel it does not name bit-identical to
+- `channels` scoping leaves any channel it does not name identical to
   its input (notch, hp, lp and cp each scoped to one channel);
 - any input array changes (SHA-1 of its bytes before and after), or an
   untouched channel in the output is writable (it would alias the input);
 - the ingest path is not neutral: `apply_filters` on a run-like object (an
   xarray Dataset in `run.dataset`) and `apply_filters_arrays` on the same
-  arrays do not give bit-identical channels and identical provenance lines
+  arrays do not give identical channels and the same provenance lines
   for notch then cp, or either differs from calling `mains_notch` then
   `cp_stack_subtract` by hand in that order;
-- `workers=4` is not bit-identical to `workers=1`;
+- `workers=4` is not identical to `workers=1`;
 - `replace` does not take the donor's array when `donors` holds it, or,
   without it, does not leave the channel untouched and say "replace
   hx<-A06: donor not loaded, skipped in preview"; or `apply_filters` (the
@@ -55,7 +65,7 @@ fails if**
   with one 500 x single-sample spike on ex (a sferic), yields a span; or
   `channels: [ex]` changes hy (or ey, hx) by a bit;
 - `flip: {channels: [ey]}` does not make ey the exact negative of its
-  input with the other channels bit-identical and the line "flip: sign
+  input with the other channels identical and the line "flip: sign
   reversed on ['ey']", or a flip without `channels`, or of a channel the
   run lacks, is not refused;
 - `mains` (the defaults, on a third synthetic: 120 s at 1000 Hz of pink-ish
@@ -108,6 +118,7 @@ CP = {"cp": {"period_s": 12.0, "window_minutes": 10.0}}
 
 
 def synthetic(seed: int = 7) -> dict[str, np.ndarray]:
+    """Build the 20 min synthetic described in the module docstring, as float32 per channel."""
     rng = np.random.default_rng(seed)
     t = np.arange(N) / FS
     base = 2.0 * np.sin(2 * np.pi * 50.0 * t) + drift(t)
@@ -118,36 +129,41 @@ def synthetic(seed: int = 7) -> dict[str, np.ndarray]:
 
 
 def sha(a: np.ndarray) -> str:
+    """Return the SHA-1 of an array's bytes."""
     return hashlib.sha1(np.ascontiguousarray(a).tobytes()).hexdigest()
 
 
 def excess_50(x: np.ndarray) -> float:
+    """Return the 50 Hz line's excess in dB over its local floor, from a plain Welch PSD."""
     f, p = welch(np.asarray(x, dtype="float64"), fs=FS, nperseg=2**14)
     return line_excess(f, p, 50.0)
 
 
 def lock_in(x: np.ndarray, f: float) -> float:
-    """Amplitude of the f Hz component: projection on cos and sin over whole cycles."""
+    """Return the amplitude of the f Hz component by projection on cos and sin over whole cycles."""
     t = np.arange(len(x)) / FS
     x = np.asarray(x, dtype="float64")
     return float(2.0 * np.hypot(np.mean(x * np.cos(2 * np.pi * f * t)), np.mean(x * np.sin(2 * np.pi * f * t))))
 
 
 def block_means(x: np.ndarray, seconds: float = 10.0) -> np.ndarray:
+    """Return the means of consecutive `seconds`-long blocks."""
     m = int(seconds * FS)
     return np.asarray(x[: len(x) // m * m], dtype="float64").reshape(-1, m).mean(axis=1)
 
 
 def square(t: np.ndarray) -> np.ndarray:
+    """Return the unit 12 s square wave at times t."""
     return np.sign(np.sin(2 * np.pi * t / 12.0 + 0.1))
 
 
 def drift(t: np.ndarray) -> np.ndarray:
+    """Return the 0.01 Hz drift (amplitude 100) at times t."""
     return 100.0 * np.sin(2 * np.pi * 0.01 * t + 0.3)
 
 
 def square_amplitude(x: np.ndarray) -> float:
-    """Least-squares amplitude of the known 12 s square wave in x (white noise projects to ~1e-3)."""
+    """Return the least-squares amplitude of the known 12 s square wave in x (white noise projects to ~1e-3)."""
     sq = square(np.arange(len(x)) / FS)
     return float(np.dot(np.asarray(x, dtype="float64"), sq) / np.dot(sq, sq))
 
@@ -157,7 +173,11 @@ BURST_N = int(3 * 60 * FS)
 
 
 def burst_window(bursts=BURSTS, seed: int = 3) -> dict[str, np.ndarray]:
-    """White noise (1 rms) on every channel; 40 Hz ringings decaying as exp(-t / 0.5 s), 30 x on ex, ey, 5 x on hy."""
+    """Build the burst synthetic: white noise (1 rms) on every channel plus 40 Hz ringings.
+
+    The ringings decay as exp(-t / 0.5 s), at 30 x the noise on ex and ey
+    and 5 x on hy, starting at `bursts` (s).
+    """
     rng = np.random.default_rng(seed)
     t = np.arange(BURST_N) / FS
     ring = np.zeros(BURST_N)
@@ -171,7 +191,7 @@ def burst_window(bursts=BURSTS, seed: int = 3) -> dict[str, np.ndarray]:
 
 
 def changed_runs(new: np.ndarray, old: np.ndarray) -> list[tuple[int, int]]:
-    """[(start, stop)] runs of samples where new differs from old (gaps of up to 2 equal samples bridged)."""
+    """Return the [(start, stop)] runs of samples where new differs from old (gaps of up to 2 equal samples bridged)."""
     idx = np.flatnonzero(np.asarray(new, dtype="float64") != np.asarray(old, dtype="float64"))
     if not len(idx):
         return []
@@ -180,6 +200,7 @@ def changed_runs(new: np.ndarray, old: np.ndarray) -> list[tuple[int, int]]:
 
 
 def check_burst() -> None:
+    """Check the burst filter on the burst synthetic, on counts, on quiet noise and scoped to ex."""
     raw = burst_window()
     before = {c: sha(a) for c, a in raw.items()}
     out, lines = apply_filters_arrays(raw, FS, [{"burst": {}}], workers=4)
@@ -203,7 +224,7 @@ def check_burst() -> None:
                 f"std {np.std(inner):.3f})"
     hy_ring = max(np.max(np.abs(raw["hy"][a:b])) for a, b in runs)
     print(f"burst: {lines[0]!r}; ex changed in {[(float(a / FS), float(b / FS)) for a, b in runs]} s "
-          f"(true {[(tb, tb + 0.5) for tb in BURSTS]}); every channel bit-identical more than 0.3 s away, "
+          f"(true {[(tb, tb + 0.5) for tb in BURSTS]}); every channel identical more than 0.3 s away, "
           f"at the local level (|y| < 0.2) inside (hy's ringing, peak {hy_ring:.1f}, gone)")
 
     counts = dict(raw, ex=(5000.0 + 37.0 * raw["ex"].astype("float64")).astype("float32"))
@@ -232,10 +253,11 @@ def check_burst() -> None:
     for c in ("ey", "hx", "hy"):
         assert np.array_equal(out[c], raw[c]) and not out[c].flags.writeable, f"burst on [ex] touched {c}"
     assert {c: sha(a) for c, a in raw.items()} == before, "burst changed an input array"
-    print("burst: channels [ex] left ey, hx, hy bit-identical; the inputs' SHA-1 unchanged")
+    print("burst: channels [ex] left ey, hx, hy identical; the inputs' SHA-1 unchanged")
 
 
 def check_flip(raw: dict[str, np.ndarray]) -> None:
+    """Check the flip filter and its refusals."""
     out, lines = apply_filters_arrays(raw, FS, [{"flip": {"channels": ["ey"]}}])
     assert lines == ["flip: sign reversed on ['ey']"], lines
     assert np.array_equal(out["ey"], -raw["ey"].astype("float64")), "flipped ey is not the exact negative"
@@ -247,7 +269,7 @@ def check_flip(raw: dict[str, np.ndarray]) -> None:
         except ValueError:
             continue
         raise AssertionError(f"{spec} was accepted")
-    print(f"flip: ey exactly negated, ex hx hy bit-identical; {lines[0]!r}; no channels, or ez, refused")
+    print(f"flip: ey exactly negated, ex hx hy identical; {lines[0]!r}; no channels, or ez, refused")
 
 
 MAINS_STEPS = (40.0031, 80.0117)  # the mains synthetic's amplitude steps (s): 100 -> 300 -> 100
@@ -255,7 +277,7 @@ MAINS_N = int(120 * FS)
 
 
 def pinkish(seed: int) -> np.ndarray:
-    """MT-like noise: white shaped to an amplitude spectrum 1/sqrt(f) (flat below 0.5 Hz), std 1."""
+    """Return MT-like noise: white noise shaped to an amplitude spectrum 1/sqrt(f) (flat below 0.5 Hz), std 1."""
     f = np.fft.rfftfreq(MAINS_N, 1.0 / FS)
     x = np.fft.irfft(np.fft.rfft(np.random.default_rng(seed).standard_normal(MAINS_N)) / np.sqrt(np.maximum(f, 0.5)),
                      MAINS_N)
@@ -263,7 +285,7 @@ def pinkish(seed: int) -> np.ndarray:
 
 
 def mains_wave() -> np.ndarray:
-    """50, 150 and 250 Hz of amplitude 100 (300 between the steps), the frequency 49.95 -> 50.05 Hz in 120 s."""
+    """Return the mains: 50, 150 and 250 Hz of amplitude 100 (300 between the steps), the frequency 49.95 -> 50.05 Hz in 120 s."""
     t = np.arange(MAINS_N) / FS
     theta = 2 * np.pi * (49.95 * t + 0.1 * t ** 2 / (2 * 120.0))
     amp = np.where((t >= MAINS_STEPS[0]) & (t < MAINS_STEPS[1]), 300.0, 100.0)
@@ -271,6 +293,7 @@ def mains_wave() -> np.ndarray:
 
 
 def check_mains() -> None:
+    """Check the mains filter, criteria (a) to (g) of the module docstring."""
     clean = {c: pinkish(20 + i) for i, c in enumerate(COMPS)}
     raw = {c: (x + mains_wave()).astype("float32") for c, x in clean.items()}
     before = {c: sha(a) for c, a in raw.items()}
@@ -311,7 +334,7 @@ def check_mains() -> None:
     for c in ("ey", "hx", "hy"):
         assert np.array_equal(scoped[c], raw[c]) and not scoped[c].flags.writeable, f"(e) mains on [ex] touched {c}"
     assert {c: sha(a) for c, a in raw.items()} == before, "(e) mains changed an input array"
-    print("mains: channels [ex] left ey, hx, hy bit-identical (read-only views); 4 workers == 1; inputs unchanged")
+    print("mains: channels [ex] left ey, hx, hy identical (read-only views); 4 workers == 1; inputs unchanged")
 
     quiet, lines_quiet = apply_filters_arrays({c: x.astype("float32") for c, x in clean.items()}, FS, [{"mains": {}}])
     assert "0 amplitude steps followed in all" in lines_quiet[0], f"(f) on noise alone: {lines_quiet[0]!r}"
@@ -328,6 +351,7 @@ def check_mains() -> None:
 
 
 def main() -> int:
+    """Run every check and return 0 (a failure raises AssertionError)."""
     print(__doc__.split("**This test")[1].split('"""')[0].strip())
     print()
     raw = synthetic()
@@ -382,9 +406,9 @@ def main() -> int:
             assert np.array_equal(out[c], raw[c]) and out[c].dtype == raw[c].dtype, f"{kind} touched {c}"
             assert not out[c].flags.writeable, f"{kind}: untouched {c} is writable"
         assert "['ex']" in lines[0], lines[0]
-    print("channels: notch, hp, lp and cp scoped to ex left hx, hy, ey bit-identical (read-only views)")
+    print("channels: notch, hp, lp and cp scoped to ex left hx, hy, ey identical (read-only views)")
 
-    # --- inputs never modified
+    # --- inputs unchanged
     after = {c: sha(a) for c, a in raw.items()}
     assert after == before, "an input array changed"
     print("inputs: SHA-1 of every channel unchanged after every call")
@@ -399,14 +423,14 @@ def main() -> int:
         by_hand = cp_stack_subtract(mains_notch(arrays64[c], FS, 50.0, 9, 30.0, 2, []), FS, 12.0, 10.0)
         assert np.array_equal(run.dataset[c].data, arr_out[c]), f"{c}: run path != arrays path"
         assert np.array_equal(arr_out[c], by_hand), f"{c}: arrays path != mains_notch then cp_stack_subtract"
-    print(f"neutral: apply_filters(run) == apply_filters_arrays == the primitives by hand, bit for bit; "
+    print(f"neutral: apply_filters(run) == apply_filters_arrays == the primitives by hand, identical; "
           f"lines {run_lines}")
 
     # --- threads
     one, _ = apply_filters_arrays(raw, FS, [NOTCH, {"hp": {"cutoff_hz": 0.05}}, CP], workers=1)
     four, _ = apply_filters_arrays(raw, FS, [NOTCH, {"hp": {"cutoff_hz": 0.05}}, CP], workers=4)
     assert all(np.array_equal(one[c], four[c]) for c in COMPS), "workers=4 differs from workers=1"
-    print("workers: 4 threads bit-identical to 1")
+    print("workers: 4 threads identical to 1")
 
     # --- replace
     donor = {"A06": {"hx": np.full(N, 7.0, dtype="float32")}}

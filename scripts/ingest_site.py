@@ -1,37 +1,41 @@
-"""Ingest one site's raw files into its MTH5 archive, and build its filtered
-variant, exactly as process_rr.py does.
+# -*- coding: utf-8 -*-
+"""
+Ingest one site into its MTH5 archive and filtered variant
+
+Ingests one site's raw files into its MTH5 archive and builds its filtered
+variant, in the same way as process_rr.py. The raw archive is
+``<workspace>/mth5/<site>.h5`` (`mtproc.ingest.ingest_site`). It uses the run
+length of process_rr.py's MAX_RUN_FILES, imported from it (34 files of 90
+min, 51 h per run, unless --max-run-files), and the naming of
+`mtproc.ingest.default_archive_path`, so process_rr.py reuses an archive
+built here. The whole deployment goes into the raw archive; the processing
+window is chosen in process_rr.py. The site's recorder is
+`Survey.instrument_of(site)` (LEMI-423, LEMI-424 or Earth Data PR6-24,
+`mtproc.instruments`). --max-run-files counts B423 files, caps LEMI-423 runs
+only and applies to the raw archive alone.
+
+With no flag, and when the site declares filters in <survey>/filters.yaml,
+the script also builds the filtered variant ``<site>_f<hash>.h5``
+(`mtproc.ingest.build_variant`) on top of the raw archive. `--raw` builds the
+raw archive only; filters are applied to the variant alone. `--variant`
+builds the variant only, from an existing raw archive.
+
+Prints "archive: <path>" for the raw step and "variant: <path>" for the
+variant step (or "variant: none (no declared filters)"). An existing raw
+archive is rebuilt only with --force, since every transfer function of the
+site may have been made from it. A variant already current for the site's
+declared filters (`mtproc.ingest.variant_ready`) is likewise kept unless
+--force is given. A run that fails part-way removes the partial file it was
+writing. The Time Series tab of the GUI runs this script (no flags) from its
+"Build MTH5" button for a site without an archive.
 
 Usage:
     python scripts/ingest_site.py <survey.yaml> <site>
         [--raw | --variant] [--max-run-files N] [--force]
 
-Writes ``<workspace>/mth5/<site>.h5``, the RAW archive (`mtproc.ingest.ingest_site`:
-the same run length as process_rr.py's MAX_RUN_FILES, imported from it -- 34
-files of 90 min, 51 h per run, unless --max-run-files -- and the same naming,
-`mtproc.ingest.default_archive_path`, so an archive built here is the one
-process_rr.py later reuses); with no flag, and the site declares filters in
-<survey>/filters.yaml, also builds its filtered variant,
-``<site>_f<hash>.h5`` (`mtproc.ingest.build_variant`), on top of the raw
-archive just written or already there. `--raw` builds the raw archive only
-(no filters are ever applied to it -- this is the old `--no-filters`
-behaviour, renamed now that raw and filtered are always separate files).
-`--variant` builds the variant only, from a raw archive that must already
-exist. The whole deployment goes into the raw archive: a processing window
-belongs to process_rr.py, not to either archive. The site's recorder is
-`Survey.instrument_of(site)` (LEMI-423, LEMI-424 or Earth Data PR6-24,
-`mtproc.instruments`); --max-run-files counts B423 files and caps LEMI-423
-runs only, and applies to the raw archive alone.
+@author: ben kay (ben@auscope.org.au)
 
-Prints "archive: <path>" for the raw step and "variant: <path>" for the
-variant step (or "variant: none (no declared filters)"). An existing raw
-archive is never rebuilt without --force (every transfer function of the
-site may have been made from it); a variant already current for the site's
-declared filters (`mtproc.ingest.variant_ready`) is left alone the same way,
-unless --force. A run that fails part-way removes the partial file it was
-writing, so nothing downstream mistakes it for a finished one.
-
-The GUI's Time Series tab runs this (no flags) from its "Build MTH5" button,
-for a site its tree shows without an archive.
+:license: MIT
 """
 
 from __future__ import annotations
@@ -46,11 +50,13 @@ sys.path.insert(0, str(REPO / "scripts"))
 
 from mtproc.ingest import build_variant, default_archive_path, ingest_site, variant_path, variant_ready  # noqa: E402
 from mtproc.survey import Survey  # noqa: E402
-from process_rr import MAX_RUN_FILES  # noqa: E402  (one number, two scripts)
+from process_rr import MAX_RUN_FILES  # noqa: E402  (shared with process_rr.py)
 
 
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="ingest_site.py", description=__doc__.split("\n\nUsage:")[0])
+    """Build the command-line parser of ingest_site.py."""
+    p = argparse.ArgumentParser(prog="ingest_site.py",
+                                description=next(line for line in __doc__.strip().splitlines() if line.strip()))
     p.add_argument("survey_yaml")
     p.add_argument("site")
     group = p.add_mutually_exclusive_group()
@@ -63,12 +69,22 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _remove_partial(path: Path) -> None:
+    """Delete a partly written archive, if present, and report it on stderr."""
     if path.exists():
         path.unlink()
         print(f"removed the partial {path}", file=sys.stderr)
 
 
 def main(argv=None) -> int:
+    """Build the raw archive and/or the filtered variant of one site.
+
+    Args:
+        argv (list[str] | None): Command-line arguments; sys.argv when None.
+
+    Returns:
+        int: 0 on success, 1 when the site has no raw-file folder, 2 when
+        the raw archive exists and --force was not given.
+    """
     args = build_parser().parse_args(argv)
     survey = Survey.from_yaml(args.survey_yaml)
     raw_sites = survey.site_dirs()

@@ -1,42 +1,44 @@
-"""The segment QC engine: one 1-3 h stretch of a station, and the QC computed on it.
+# -*- coding: utf-8 -*-
+"""
+Segment QC engine
 
-What the MATLAB App Designer app did on one 90-minute B423 file -- Welch
-spectra, a spectrogram, band coherence -- done here on a window the student
-picks on the Time Series tab, with a remote folded in. No product comes out
-of this (no archive, no transfer function, no EDI, no report figure): the
-numbers are drawn on the QC tabs and thrown away. And nothing spectral is
-written here. `compute_segment_qc` calls `mtproc.timefreq` for every number --
-`levels_plan`, `cascade`, `band_from_levels`, `levels_to_grid`, `psd_ladder`,
-`power_db` -- the same functions `scripts/site_qc.py` and `scripts/psd_qc.py`
-call on a whole record, so a segment's coherogram is a slice of what figure
-03 would show, not another estimate of it.
+Loads a 1-3 h stretch of a station and computes its QC: Welch spectra, a
+spectrogram and band coherence, on a window chosen on the Time Series tab and
+optionally merged with a remote. The results are displayed on the QC tabs
+and held in memory only. `compute_segment_qc` takes every number from
+`mtproc.timefreq` (`levels_plan`, `cascade`, `band_from_levels`,
+`levels_to_grid`, `psd_ladder`, `power_db`), the functions
+`scripts/site_qc.py` and `scripts/psd_qc.py` call on a whole record, so a
+segment's coherogram is a slice of figure 03 computed the same way.
 
-- `Segment`       one stretch in `mtproc.timefreq.Record`'s convention: float32
-                  with the DC offset removed (a 1000 Hz LEMI count sits near
-                  1e9, where a float32 ulp is tens of counts), zero in the
-                  gaps, the gaps listed. `to_record()` gives a `Record`, so
-                  `mtproc.timefreq.merge` folds a remote in unchanged.
-- `load_segment`  reads it through `mtproc_gui.archive`'s run grid (`load_grid`,
-                  `run_slices`), read-only, one channel at a time -- each
-                  channel's counts are converted to offset-removed float32
-                  before the next is read, so a 3 h segment (10.8 M samples
-                  per channel, 43 MB as float32) peaks at the four channels
-                  plus one channel's raw counts and a float64 chunk, well
-                  under 400 MB. The 1-3 h limits are the GUI's rule, not this
-                  function's.
-- `SegmentQC`     everything one `compute_segment_qc` call produces.
+* `Segment`: one stretch in `mtproc.timefreq.Record`'s convention, float32
+  with the DC offset removed (a 1000 Hz LEMI count sits near 1e9, where a
+  float32 ulp is tens of counts), zero in the gaps, and the gaps listed.
+  `to_record()` returns a `Record`, so `mtproc.timefreq.merge` folds a remote
+  in unchanged.
+* `load_segment`: reads a segment read-only through the run grid of
+  `mtproc_gui.archive` (`load_grid`, `run_slices`), one channel at a time.
+  Each channel's counts are converted to offset-removed float32 before the
+  next is read, so a 3 h segment (10.8 M samples per channel, 43 MB as
+  float32) peaks at the four channels plus one channel's raw counts and a
+  float64 chunk, under 400 MB. The 1-3 h limits are set by the GUI.
+* `SegmentQC`: the output of one `compute_segment_qc` call.
 
-Channels are the archive's own names (a LEMI-424's bx .. e4); the pairs are
-`mtproc.timefreq.LOCAL_PAIRS` / `REMOTE_PAIRS` with each LEMI-423 name read
-as the part a channel plays (`mtproc_gui.channels.roles`: the first two
-magnetics Bx, By, the first two electrics Ex, Ey), so a LEMI-423 or EDL
-segment gets exactly the old pairs and a LEMI-424 one (by, e1) for Zxy.
-A window too short for the default segment lengths -- one hour at 1 Hz --
-gets them halved until the ladder fits (`_plan`, `_psd_nperseg`); a 1000 Hz
-window never is.
+Channels keep the archive's own names (bx .. e4 on a LEMI-424). The pairs are
+`mtproc.timefreq.LOCAL_PAIRS` and `REMOTE_PAIRS`, with each LEMI-423 name
+resolved to the channel playing that role (`mtproc_gui.channels.roles`: the
+first two magnetics are Bx, By, the first two electrics Ex, Ey). A LEMI-423
+or EDL segment therefore gets the standard pairs and a LEMI-424 segment
+(by, e1) for Zxy. For a window too short for the default segment lengths,
+such as one hour at 1 Hz, the lengths are halved until the ladder fits
+(`_plan`, `_psd_nperseg`); a 1000 Hz window keeps the defaults.
 
-No Qt in here; `mtproc_gui.segment_store` runs it off the GUI thread, and
-`tests/segment_unit.py` runs it on a synthetic hour.
+The module has no Qt dependency. `mtproc_gui.segment_store` runs it off the
+GUI thread and `tests/segment_unit.py` runs it on a synthetic hour.
+
+@author: ben kay (ben@auscope.org.au)
+
+:license: MIT
 """
 
 from __future__ import annotations
@@ -80,12 +82,22 @@ CHUNK = 1 << 22  # samples per counts -> float32 conversion (32 MB as float64)
 class Segment:
     """One stretch of a station, in `mtproc.timefreq.Record`'s convention.
 
-    `arrays[comp]` is float32 with the channel's DC offset removed (kept in
-    `offsets[comp]`, same units) for the reason `Record` gives: at 1000 Hz a
-    LEMI count sits around 1e7-1e9, where a float32 ulp is tens of counts.
-    `gaps` are the sample spans no run covers, as `Record.gaps`, and those
-    samples are already zero (the channel mean), which is what `cascade` and
-    `psd_ladder` do to them first anyway.
+    Attributes:
+        station (str): Station name.
+        survey (str): Survey name inside the MTH5.
+        t0 (pd.Timestamp): Time of the first sample, UTC.
+        sample_rate (float): Sample rate in Hz.
+        n (int): Number of samples.
+        arrays (dict[str, np.ndarray]): float32 samples per channel with the
+            DC offset removed. At 1000 Hz a LEMI count sits around 1e7-1e9,
+            where a float32 ulp is tens of counts.
+        offsets (dict[str, float]): The removed offset per channel, in the
+            channel's units.
+        gains (dict[str, float]): Scalar gain per channel.
+        scalar_only (set[str]): Channels calibrated by the scalar gain only.
+        gaps (list[tuple[int, int]]): Sample spans no run covers, as
+            `Record.gaps`. Those samples are zero (the channel mean), as
+            `cascade` and `psd_ladder` would set them.
     """
 
     station: str
@@ -101,17 +113,25 @@ class Segment:
 
     @property
     def duration_s(self) -> float:
+        """Length in seconds."""
         return self.n / self.sample_rate
 
     @property
     def end(self) -> pd.Timestamp:
+        """End time, UTC, to the microsecond."""
         return self.t0 + pd.Timedelta(microseconds=round(self.duration_s * 1e6))
 
     def to_record(self, prefix: str = "") -> Record:
-        """A `Record` over this segment's grid; `prefix` ("r_") names a remote.
+        """Return a `Record` over this segment's grid.
 
-        The arrays are shared, not copied; the dicts, the set and the gap
-        list are new objects, so `merge` never writes into this segment.
+        The arrays are shared rather than copied; the dicts, the set and the
+        gap list are new objects, so `merge` leaves this segment unchanged.
+
+        Args:
+            prefix (str): Prefix for the channel names, "r_" for a remote.
+
+        Returns:
+            Record: The record.
         """
         return Record(
             station=self.station,
@@ -135,17 +155,32 @@ def load_segment(
     end,
     comps=None,
 ) -> Segment:
-    """`station`'s samples from `start` to `end` (UTC), calibrated, offset removed.
+    """Load a station's samples from `start` to `end`, calibrated and offset-removed.
 
-    Placed on the station's own grid (`mtproc_gui.archive.load_grid`, so the
-    first sample is the grid sample nearest `start` and `t0` is that sample's
-    time), every run overlapping the window filled through `run_slices`. A
-    remote loaded for the same `start`/`end` therefore has the same `n`, and
-    a `t0` within half a sample, which `compute_segment_qc` checks before
-    `merge`. The MTH5 is opened read-only for the run metadata and closed,
-    then the datasets are sliced with h5py alone. `comps` are the channels
-    wanted, those present read (all the electric and magnetic ones when none
-    is, or when None -- `archive.load_grid`).
+    The segment sits on the station's own grid (`mtproc_gui.archive.load_grid`):
+    the first sample is the grid sample nearest `start` and `t0` is that
+    sample's time. Every run overlapping the window is filled in through
+    `run_slices`. A remote loaded for the same `start` and `end` therefore has
+    the same `n` and a `t0` within half a sample, which `compute_segment_qc`
+    checks before `merge`. The MTH5 is opened read-only for the run metadata
+    and closed, then the datasets are sliced with h5py.
+
+    Args:
+        mth5_path (str | Path): The MTH5 file.
+        survey_name (str): Survey name inside the MTH5.
+        station (str): Station name.
+        start: Window start, UTC; a naive time is taken as UTC.
+        end: Window end, UTC.
+        comps (list[str] | None): Channels to read; those present are read,
+            or every electric and magnetic channel when none is or when None
+            (`archive.load_grid`).
+
+    Returns:
+        Segment: The loaded segment.
+
+    Raises:
+        ValueError: If the window is empty, lies outside the record, or no
+            run covers it.
     """
     grid = load_grid(mth5_path, survey_name, station, comps)
     fs = grid.sample_rate
@@ -172,8 +207,8 @@ def load_segment(
             gain = grid.gains[comp]
             thinned = np.concatenate([raw[a:b:step] for a, b in covered]).astype("float64")
             offset_counts = float(np.median(thinned))
-            # counts -> offset-removed float32 in chunks: never a whole
-            # channel as float64 alongside its counts
+            # counts -> offset-removed float32 in chunks, so a whole channel
+            # is not held as float64 alongside its counts
             out = np.empty(n_win, dtype="float32")
             for c0 in range(0, n_win, CHUNK):
                 c1 = min(c0 + CHUNK, n_win)
@@ -204,15 +239,40 @@ def load_segment(
 
 @dataclass
 class SegmentQC:
-    """What one `compute_segment_qc` call produces for a segment (and its remote).
+    """Output of one `compute_segment_qc` call for a segment and optional remote.
 
-    `psd_stages` is `psd_ladder`'s output, [(fs, freqs, {channel: psd}), ...],
-    over the local channels plus r_hx/r_hy when a remote was given; `plan`,
-    `coh_levels`, `pow_levels` and `base_psd` are `levels_plan`'s and
-    `cascade`'s; `band_curves[pair][label]` is `(t_s, values)` from
-    `band_from_levels` over `BANDS_S`; `coherograms[pair]` and
-    `spectrograms[comp]` are `(t_s, periods, image)` from `levels_to_grid`,
-    the spectrogram in dB. `t_s` is seconds from the segment's `t0`.
+    Times `t_s` are seconds from the segment's `t0`.
+
+    Attributes:
+        station (str): Local station.
+        remote (str | None): Remote station, or None.
+        t0 (pd.Timestamp): Segment start, UTC.
+        duration_s (float): Segment length in seconds.
+        sample_rate (float): Sample rate in Hz.
+        win_s (float): Base window of the ladder in seconds.
+        step_s (float): Base step of the ladder in seconds.
+        channels (list[str]): Channels computed, remote coils prefixed "r_".
+        pairs (list[tuple[str, str]]): Coherence pairs computed.
+        psd_stages (list): `psd_ladder` output, [(fs, freqs, {channel: psd}), ...],
+            over the local channels plus the remote's coils when given.
+        plan (pd.DataFrame): `levels_plan` output.
+        coh_levels (dict): `cascade` coherence levels per pair.
+        pow_levels (dict): `cascade` power levels per channel.
+        base_psd (dict): `cascade` base-level PSD.
+        band_curves (dict): `band_curves[pair][label]` is `(t_s, values)`
+            from `band_from_levels` over `BANDS_S`.
+        coherograms (dict): `coherograms[pair]` is `(t_s, periods, image)`
+            from `levels_to_grid`.
+        spectrograms (dict): `spectrograms[comp]` is `(t_s, periods, image)`,
+            the image in dB.
+        note (str): Why the QC differs from the request, e.g. a remote that
+            does not cover the window; set by the worker and shown in every
+            view's title.
+        scalar_only (set): Channels (r_ for the remote's) calibrated by the
+            scalar gain only, for the labels.
+        roles (dict): Channels playing Bx, By, Ex, Ey (`channels.roles`,
+            keyed hx hy ex ey).
+        remote_roles (dict): The remote's coils (r_...).
     """
 
     station: str
@@ -233,7 +293,7 @@ class SegmentQC:
     coherograms: dict
     spectrograms: dict
 
-    # why the QC differs from what was asked for, e.g. a remote that does not
+    # why the QC differs from the request, e.g. a remote that does not
     # cover this window (set by the worker, shown in every view's title)
     note: str = ""
     # channels (r_ for the remote's) in nT from the scalar gain only, for the labels
@@ -243,12 +303,17 @@ class SegmentQC:
     remote_roles: dict = field(default_factory=dict)
 
 def _report(progress, percent: int, message: str) -> None:
+    """Call `progress(percent, message)` if a callback was given."""
     if progress is not None:
         progress(int(percent), message)
 
 
 def _plan(sample_rate: float, duration_s: float, win_s: float, step_s: float):
-    """`levels_plan` at its default segment (NPERSEG), halved only while not even one level fits."""
+    """Run `levels_plan` at the default segment length (NPERSEG), halving it while no level fits.
+
+    Raises:
+        ValueError: If no level fits even at `MIN_NPERSEG`.
+    """
     nperseg = NPERSEG
     while True:
         try:
@@ -260,7 +325,7 @@ def _plan(sample_rate: float, duration_s: float, win_s: float, step_s: float):
 
 
 def _psd_nperseg(n: int) -> int:
-    """`psd_ladder`'s PSD_NPERSEG, halved only while a first stage would not fit PSD_MIN_SEGMENTS of it."""
+    """Return PSD_NPERSEG, halved while `n` samples hold fewer than PSD_MIN_SEGMENTS segments."""
     nperseg = PSD_NPERSEG
     while nperseg > MIN_NPERSEG and n < PSD_MIN_SEGMENTS * nperseg:
         nperseg //= 2
@@ -274,24 +339,40 @@ def compute_segment_qc(
     step_s: float = STEP_S,
     progress=None,
 ) -> SegmentQC:
-    """The segment's ladder of coherence and power maps, band lines and PSDs.
+    """Compute a segment's coherence and power ladders, band lines and PSDs.
 
-    Every number comes from `mtproc.timefreq`; this function only chooses the
-    window and copies the arrays. `win_s` / `step_s` default to 120 / 30 s
-    where `scripts/site_qc.py` uses 20 / 10 min: on a 41 h record a 20 min
-    window gives ~250 columns, on a 1 h segment it would give four. 120 s
-    stepped by 30 s puts 117 columns on a 1 h segment's base level (20 is the
-    least worth drawing) and `levels_plan`'s `min_windows` still drops any
-    deeper level whose window no longer fits three times -- a 1 h segment
-    keeps periods to ~260 s, a 3 h one to ~1000 s. The PSD ladder runs one
-    channel at a time (`psd_ladder` casts what it is given to float64; one
-    channel of a 3 h segment is 86 MB, six would be 520 MB).
+    Every number comes from `mtproc.timefreq`; this function chooses the
+    window and copies the arrays. `win_s` and `step_s` default to 120 s and
+    30 s, where `scripts/site_qc.py` uses 20 and 10 min: on a record of a day
+    or two a 20 min window gives a few hundred columns, on a 1 h segment it
+    would give four. 120 s stepped by 30 s puts 117 columns on a 1 h segment's
+    base level (20 is the fewest worth drawing), and `levels_plan`'s
+    `min_windows` drops any deeper level whose window no longer fits three
+    times, so a 1 h segment reaches periods of about 260 s and a 3 h one about
+    1000 s. The PSD ladder runs one channel at a time, since `psd_ladder`
+    casts its input to float64 (86 MB for one channel of a 3 h segment, 520 MB
+    for six).
 
-    `segment` and `remote` are not modified: `cascade` and `psd_ladder`
-    consume what they are given, so they get copies -- one float32 copy of
-    every channel for the cascade (the segment's own size again, released
-    level by level as the cascade decimates) and one channel at a time for
-    the ladder. `progress(percent, message)` is called between stages.
+    `cascade` and `psd_ladder` consume their input, so they receive copies
+    and `segment` and `remote` are left unchanged: one float32 copy of every
+    channel for the cascade, released level by level as it decimates, and
+    one channel at a time for the PSD ladder.
+
+    Args:
+        segment (Segment): The local segment.
+        remote (Segment | None): A remote segment on the same grid.
+        win_s (float): Base window in seconds.
+        step_s (float): Base step in seconds.
+        progress: Optional callable `progress(percent, message)`, called
+            between stages.
+
+    Returns:
+        SegmentQC: The QC of the segment.
+
+    Raises:
+        ValueError: If the remote is not on the local segment's grid (a
+            different length or sample rate, or a start more than half a
+            sample off), or the ladder does not fit the segment.
     """
     record = segment.to_record()
     local_roles, remote_roles = roles(record.arrays), {}

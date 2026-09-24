@@ -1,21 +1,28 @@
-"""Aurora EDI vs every unmerged lemimt EDI for one site — first check on Morocco Atlas.
+# -*- coding: utf-8 -*-
+"""
+Compare an aurora EDI with every unmerged lemimt EDI of one site
 
-lemimt (LEMI's own processing program) writes one EDI per decimation rate,
+lemimt (LEMI's own processing program) writes one EDI per decimation rate
 and, at the higher rates, one per chunk of the record:
 ``MT-<site>_RR-<remote>_<rate>Hz[_<chunk>].edi``, e.g.
 ``MT-D7_RR-D9_1000Hz_3.edi``, ``MT-D7_RR-D9_125Hz.edi``. Each file covers the
-band that rate resolves. This overlays aurora's single EDI against all of
-them, coloured by rate, to see what settings the broadband data needs to
-reproduce lemimt's result.
-
-Usage:
-    python scripts/compare_unmerged.py <aurora.edi> <unmerged_dir> <site> \
-        [--remote NAME] [--out PNG] [--title TEXT]
+band that rate resolves. The script overlays aurora's single EDI on all of
+them, coloured by rate, to show which settings the broadband data needs to
+reproduce lemimt's result, and prints a table of the median differences per
+rate. Unreadable EDIs are skipped with a warning.
 
 Site matching: lemimt's site name is the survey's with leading zeros dropped
 after the letter (D07 -> D7), matched case-insensitively; ``--remote`` does
 the same to the RR- name. Without ``--remote``, every remote found for the
 site is used, and the legend says so.
+
+Usage:
+    python scripts/compare_unmerged.py <aurora.edi> <unmerged_dir> <site> \
+        [--remote NAME] [--out PNG] [--title TEXT]
+
+@author: ben kay (ben@auscope.org.au)
+
+:license: MIT
 """
 
 from __future__ import annotations
@@ -38,7 +45,7 @@ sys.path.insert(0, str(REPO / "src"))
 
 from mtproc.compare import rho_phi  # noqa: E402
 
-# a dark-neutral look, self-contained (no Qt/mtproc_gui dependency in a headless script)
+# a dark-neutral look, defined here so the headless script depends on matplotlib alone
 plt.rcParams.update({
     "figure.facecolor": "#1f1f1f", "figure.edgecolor": "#1f1f1f",
     "axes.facecolor": "#1f1f1f", "axes.edgecolor": "#c8c8c8",
@@ -60,10 +67,17 @@ UNMERGED_RE = re.compile(
 
 
 def normalise_site(name: str) -> str:
-    """lemimt's site/remote naming vs the survey's: drop leading zeros after the letter(s).
+    """Normalise a site name to lemimt's naming.
 
-    D07 -> D7, d07 -> D7, D007 -> D7, R06 -> R6. Anything that is not
-    letters-then-digits is just upper-cased.
+    Drops leading zeros after the letter(s) and upper-cases: D07 -> D7,
+    d07 -> D7, D007 -> D7, R06 -> R6. A name that is not letters followed by
+    digits is upper-cased only.
+
+    Args:
+        name (str): Site or remote name.
+
+    Returns:
+        str: The normalised name.
     """
     m = re.match(r"^([A-Za-z]+)(\d+)$", name.strip())
     if not m:
@@ -73,10 +87,16 @@ def normalise_site(name: str) -> str:
 
 
 def find_unmerged(unmerged_dir: Path, site: str, remote: str | None = None) -> list[dict]:
-    """Every unmerged EDI in `unmerged_dir` for `site` (and `remote`, if given).
+    """Find the unmerged EDIs of a site in a folder.
 
-    Each entry: path, rate (int, Hz), chunk (int or None), remote (as found
-    in the file name, un-normalised).
+    Args:
+        unmerged_dir (Path): Folder of lemimt's unmerged EDIs.
+        site (str): Site name, in either naming.
+        remote (str | None): Remote name to filter on; every remote when None.
+
+    Returns:
+        list[dict]: One entry per file with path, rate (int, Hz), chunk (int
+        or None) and remote (as found in the file name, not normalised).
     """
     target_site = normalise_site(site)
     target_remote = normalise_site(remote) if remote else None
@@ -100,13 +120,22 @@ def find_unmerged(unmerged_dir: Path, site: str, remote: str | None = None) -> l
 
 
 def load_unmerged(entries: list[dict]) -> dict[int, list[dict]]:
-    """Read each matched file with `rho_phi`, grouped by rate; bad files are
-    skipped with a printed warning, never raised."""
+    """Read each matched file with `rho_phi`, grouped by rate.
+
+    A file that fails to read is skipped with a logged warning.
+
+    Args:
+        entries (list[dict]): Entries from `find_unmerged`.
+
+    Returns:
+        dict[int, list[dict]]: Entries by rate, each extended with period,
+        rho, phi, rho_err and phi_err.
+    """
     by_rate: dict[int, list[dict]] = defaultdict(list)
     for entry in entries:
         try:
             period, rho, phi, rho_err, phi_err = rho_phi(entry["path"])
-        except Exception as exc:  # noqa: BLE001 - one bad lemimt EDI must not stop the run
+        except Exception as exc:  # noqa: BLE001 - a bad lemimt EDI is skipped and the run continues
             logger.warning(f"skip {entry['path'].name}: {exc!r}")
             continue
         by_rate[entry["rate"]].append({
@@ -117,17 +146,26 @@ def load_unmerged(entries: list[dict]) -> dict[int, list[dict]]:
 
 
 def diff_table(aurora_period, aurora_rho, aurora_phi, by_rate: dict[int, list[dict]]):
-    """Per-rate median |d log10 rho| and median |d phase| (deg), aurora
-    interpolated onto each lemimt point's period in log period.
+    """Compute the median differences between aurora and lemimt per rate.
 
-    Returns (rows, overall): each row/overall is a dict with rate (rows
-    only), n_files, and xy_n/xy_rho/xy_phi, yx_n/yx_rho/yx_phi.
+    Aurora is interpolated in log period onto each lemimt point's period;
+    the medians are of |d log10 rho| and |d phase| (deg).
+
+    Args:
+        aurora_period (np.ndarray): Aurora periods in seconds.
+        aurora_rho (np.ndarray): Aurora apparent resistivity, (nf, 2, 2).
+        aurora_phi (np.ndarray): Aurora phase in degrees, (nf, 2, 2).
+        by_rate (dict[int, list[dict]]): Output of `load_unmerged`.
+
+    Returns:
+        tuple[list[dict], dict]: (rows, overall). Each is a dict with rate
+        (rows only), n_files, and xy_n/xy_rho/xy_phi, yx_n/yx_rho/yx_phi.
     """
     order = np.argsort(aurora_period)
     log_p_a = np.log10(aurora_period)[order]
     with np.errstate(divide="ignore"):
-        # xx/yy are never indexed below; a zero there (an unset diagonal, as
-        # in a synthetic test TF) must not warn about a log10 it never uses
+        # xx/yy are not used below; a zero there (an unset diagonal, as in a
+        # synthetic test TF) would otherwise warn about an unused log10
         log10_rho_a = np.log10(aurora_rho)[order]
     phi_a = aurora_phi[order]
 
@@ -146,8 +184,8 @@ def diff_table(aurora_period, aurora_rho, aurora_phi, by_rate: dict[int, list[di
             phi_a_interp = np.interp(log_p_t, log_p_a, phi_a[:, i, j])
             with np.errstate(divide="ignore"):
                 # a real lemimt point can be exactly zero at a dead period;
-                # the resulting inf is a legitimate (large) disagreement, not
-                # a bug, so only the warning is suppressed
+                # the resulting inf is a real (large) disagreement, so only
+                # the warning is suppressed
                 d_rho = np.abs(rho_a_interp_log - np.log10(rho[:, i, j]))
             d_phi = np.abs(phi_a_interp - phi[:, i, j])
             row[f"{mode}_n"] = int(period.size)
@@ -168,6 +206,7 @@ def diff_table(aurora_period, aurora_rho, aurora_phi, by_rate: dict[int, list[di
 
 
 def print_table(rows, overall) -> None:
+    """Print the per-rate and overall difference table of `diff_table`."""
     header = (f"{'rate':>8}  {'n files':>8}  {'n(xy)':>6}  {'d log10 rho (xy)':>17}  "
               f"{'d phase deg (xy)':>17}  {'n(yx)':>6}  {'d log10 rho (yx)':>17}  {'d phase deg (yx)':>17}")
     print(header)
@@ -179,6 +218,19 @@ def print_table(rows, overall) -> None:
 
 
 def plot(aurora_path: Path, by_rate: dict[int, list[dict]], all_remotes: bool, title: str, out_png: Path):
+    """Plot aurora's rho and phase over the unmerged lemimt EDIs, coloured by rate.
+
+    Args:
+        aurora_path (Path): Aurora EDI.
+        by_rate (dict[int, list[dict]]): Output of `load_unmerged`.
+        all_remotes (bool): Whether every remote was used; noted in the
+            legend.
+        title (str): Figure title.
+        out_png (Path): Output figure.
+
+    Returns:
+        Path: `out_png`.
+    """
     aurora_period, aurora_rho, aurora_phi, aurora_rho_err, aurora_phi_err = rho_phi(aurora_path)
 
     rates = sorted(by_rate, reverse=True)
@@ -247,6 +299,11 @@ def plot(aurora_path: Path, by_rate: dict[int, list[dict]], all_remotes: bool, t
 
 
 def main(argv=None) -> None:
+    """Plot and tabulate the comparison; exits 0, or 1 when no EDI could be used.
+
+    Args:
+        argv (list[str] | None): Command-line arguments; sys.argv when None.
+    """
     args = parse_args(argv)
     aurora_path = Path(args.aurora_edi)
     unmerged_dir = Path(args.unmerged_dir)
@@ -281,7 +338,8 @@ def main(argv=None) -> None:
 
 
 def parse_args(argv=None) -> argparse.Namespace:
-    p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    """Parse the command line of compare_unmerged.py."""
+    p = argparse.ArgumentParser(description=next(line for line in __doc__.strip().splitlines() if line.strip()))
     p.add_argument("aurora_edi", help="aurora transfer function (EDI) to compare")
     p.add_argument("unmerged_dir", help="folder of lemimt's per-rate/per-chunk unmerged EDIs")
     p.add_argument("site", help="site name, survey convention (e.g. D07; matched to lemimt's D7)")

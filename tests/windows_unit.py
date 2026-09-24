@@ -1,8 +1,19 @@
-"""Unit test for `mtproc_gui.windows` -- the tree's window list, no Qt, no archive.
+# -*- coding: utf-8 -*-
+"""
+Unit test for mtproc_gui.windows
 
+Checks the window list the GUI tree offers for a record: window lengths per
+sample rate, window placement over runs and gaps, and window labels. Runs on
+a fake `Grid` and station group, without Qt or an archive.
+
+Usage:
     python tests/windows_unit.py
 
-**This test fails if** a record of 41.268 h at 1000 Hz (D02's length) in one
+@author: ben kay (ben@auscope.org.au)
+
+:license: MIT
+
+**This test fails if** a record of 41.268 h at 1000 Hz in one
 run does not give exactly 21 windows -- twenty of 2.0 h from the record
 start and a last one of 1.268 h ending at the record end -- with the first
 labelled '2021-06-29 06:55 UTC (2.0 h)'; 500 Hz data is not offered in 4 h
@@ -32,14 +43,24 @@ D02_SAMPLES = 148_564_754  # 41.268 h at 1000 Hz
 
 
 class _Dataset:
-    """Stands in for an h5py dataset: `run_slices` only reads `.shape`."""
+    """Stand-in for an h5py dataset; `run_slices` reads its `.shape`."""
 
     def __init__(self, n: int):
         self.shape = (n,)
 
 
 def fake_grid(fs: float, runs: list[tuple[float, int]]):
-    """A `Grid` plus a fake station group from (start hours, n samples) per run."""
+    """Build a `Grid` and a fake station group from a list of runs.
+
+    Args:
+        fs (float): Sample rate in Hz.
+        runs (list[tuple[float, int]]): Start (hours after T0) and number of
+            samples of each run.
+
+    Returns:
+        tuple[Grid, dict]: The grid and the station group, which maps run
+        names to {"ex": dataset}.
+    """
     run_list, station = [], {}
     for k, (start_h, n) in enumerate(runs):
         start = T0 + pd.Timedelta(microseconds=round(start_h * 3.6e9))
@@ -106,7 +127,7 @@ def test_gap_windows_dropped() -> None:
 
 def test_run_offset_not_a_whole_second() -> None:
     fs = 1000.0
-    # run 2 starts 2.001 s after run 1 ends (as D02's does, to the millisecond)
+    # run 2 starts 2.001 s after run 1 ends (a gap of whole samples, not whole seconds)
     n1 = int(1.5 * 3600 * fs)
     grid, station = fake_grid(fs, [(0.0, n1), ((n1 + 2001) / fs / 3600, int(3 * 3600 * fs))])
     windows = window_list(grid, station)

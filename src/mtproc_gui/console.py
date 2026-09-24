@@ -1,36 +1,37 @@
-"""ConsoleStrip: a small always-visible echo of what the backend is doing.
+# -*- coding: utf-8 -*-
+"""
+Console strip showing backend commands and log output
 
-A small, always-visible area at the bottom of the GUI that echoes the
-command-line terminal, so students can see the python commands and outputs
-from the backend as they run when something is clicked. `ConsoleStrip` is a read-only,
-monospace `QPlainTextEdit`, three lines tall by default (in the dark theme,
-`theme.apply` already having set the application palette every widget draws
-with, so nothing here sets a colour of its own), holding at most `MAX_BLOCKS`
-lines, always scrolled to the newest one. `MainWindow` puts it under the tab
-widget in a vertical `QSplitter`, so a student can drag it taller to read a
-full log -- the tabs keep the stretch, the strip only a minimum.
+An always-visible area at the bottom of the window that echoes the
+command-line terminal, showing the Python commands the GUI runs and their
+output. `ConsoleStrip` is a read-only monospace `QPlainTextEdit`, three lines
+tall by default, holding at most `MAX_BLOCKS` lines and scrolled to the
+newest one. Its colours come from the application palette set by
+`theme.apply`. `MainWindow` places it under the tab widget in a vertical
+`QSplitter`, so it can be dragged taller to read a full log; the tabs take
+the stretch.
 
-Three sources feed it, all through the `append(line)` slot:
+Three sources feed it through the `append(line)` slot:
 
-1. `state.runner.log_line` -- every line of the subprocess queue's merged
-   log, exactly as a terminal shows it: the "$ ..." command line the runner
-   already prefixes, then its stdout/stderr, unfiltered.
-2. the in-process backend's own `loguru` logger, through `LoguruQtSink`
-   below: a small `QObject` loguru calls as a plain sink, which re-emits
-   each formatted line as a `Signal(str)` so a line logged from a worker
-   thread (`mtproc.timefreq`'s `cascade` and `psd_ladder`, called off the GUI
-   thread by `SegmentStore`'s worker) reaches the strip on the GUI thread
-   through a queued connection, not a direct call across threads. Only
-   loguru records reach it, so pyqtgraph's and Qt's own console noise --
-   neither writes with loguru -- never does.
-3. `state.segment_store.qc_started`, prefixed "[segment] " so a window load
-   reads as one line, e.g. "[segment] D02 12:55 to 14:55 UTC".
+1. `state.runner.log_line`: every line of the subprocess queue's merged log
+   as a terminal shows it, the "$ ..." command line the runner prefixes and
+   then stdout and stderr, unfiltered.
+2. The in-process `loguru` logger, through `LoguruQtSink`. loguru calls the
+   sink as a plain function and the sink re-emits each formatted line as a
+   `Signal(str)`. A line logged from a worker thread (`mtproc.timefreq`'s
+   `cascade` and `psd_ladder`, called by `SegmentStore`'s worker) therefore
+   reaches the strip on the GUI thread through a queued connection. Output
+   from pyqtgraph and Qt does not go through loguru and does not appear.
+3. `state.segment_store.qc_started`, prefixed "[segment] ", so a window load
+   reads as one line, e.g. "[segment] S01 12:55 to 14:55 UTC".
 
-`append` never raises once the strip has been told the window is closing
-(`begin_shutdown()`, called from `MainWindow.closeEvent` before the loguru
-sink is removed): a line arriving mid-teardown, from a worker thread's
-queued connection landing after the widget starts coming down, is dropped
-rather than crashing the shutdown.
+After `begin_shutdown()`, called from `MainWindow.closeEvent` before the
+loguru sink is removed, `append` drops incoming lines, so a queued line
+arriving during teardown does not raise.
+
+@author: ben kay (ben@auscope.org.au)
+
+:license: MIT
 """
 
 from __future__ import annotations
@@ -44,7 +45,7 @@ VISIBLE_LINES = 3
 
 
 class ConsoleStrip(QPlainTextEdit):
-    """Read-only, monospace, three lines tall by default, always at the newest line."""
+    """Read-only monospace log view, three lines tall by default, kept at the newest line."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -61,6 +62,7 @@ class ConsoleStrip(QPlainTextEdit):
         self._closing = False
 
     def sizeHint(self) -> QSize:
+        """Height of `VISIBLE_LINES` lines plus the frame."""
         metrics = self.fontMetrics()
         frame = 2 * self.frameWidth()
         height = metrics.lineSpacing() * VISIBLE_LINES + frame + 6
@@ -68,7 +70,7 @@ class ConsoleStrip(QPlainTextEdit):
 
     @Slot(str)
     def append(self, line: str) -> None:
-        """Add one line and keep the view on the newest one; a no-op once closing."""
+        """Add one line and scroll to it; ignored after `begin_shutdown`."""
         if self._closing:
             return
         try:
@@ -81,23 +83,23 @@ class ConsoleStrip(QPlainTextEdit):
             pass
 
     def begin_shutdown(self) -> None:
-        """Stop accepting lines: call from `MainWindow.closeEvent` before the sink is removed."""
+        """Stop accepting lines; called from `MainWindow.closeEvent` before the sink is removed."""
         self._closing = True
 
 
 class LoguruQtSink(QObject):
-    """A plain loguru sink that re-emits each formatted record as a Qt signal.
+    """A loguru sink that re-emits each formatted record as a Qt signal.
 
-    loguru calls a callable sink synchronously, from whatever thread logged
-    the record -- here, the segment store's worker `QThread` as often as the
-    GUI thread. `write` only emits; the connection to `ConsoleStrip.append`
-    is made with `Qt.QueuedConnection` so the text actually lands on the GUI
-    thread.
+    loguru calls a callable sink synchronously on the thread that logged the
+    record, which is often the segment store's worker `QThread`. `write`
+    emits `line_written`; `MainWindow` connects it to `ConsoleStrip.append`
+    with `Qt.QueuedConnection`, so the text lands on the GUI thread.
     """
 
     line_written = Signal(str)
 
     def write(self, message) -> None:
-        # loguru passes a `Message` (a str subclass) already through `format`;
-        # only the trailing newline the format string leaves needs trimming
+        """Emit a formatted loguru message without its trailing newline."""
+        # loguru passes a `Message` (a str subclass) already formatted;
+        # the trailing newline the format leaves is trimmed
         self.line_written.emit(str(message).rstrip("\n"))

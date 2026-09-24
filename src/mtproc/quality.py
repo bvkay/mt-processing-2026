@@ -1,11 +1,13 @@
-"""Quality numbers for one transfer function, and agreement between two.
+# -*- coding: utf-8 -*-
+"""
+Quality numbers for one transfer function and agreement between two
 
-Built for comparing many processing runs of the same site (scripts/campaign.py:
-every remote, stacks, estimator options), where a user still judges by the
-plots -- these numbers only rank and flag. Everything is read through
+The numbers rank and flag the many processing runs of one site made by
+scripts/campaign.py (every remote, stacks, estimator options); the plots
+remain the basis for judging a result. All values are read through
 `mtproc.compare.rho_phi` (apparent resistivity, phase and their 1-sigma
-errors from the EDI's impedance and variances), so a TF object or an EDI path
-works the same.
+errors from the EDI impedance and variances), so a TF object and an EDI path
+are handled alike.
 
 `tf_quality(edi, pmin, pmax)`, per mode (xy = Zxy, yx = Zyx) over the periods in
 [pmin, pmax] (all of them when not given):
@@ -24,20 +26,21 @@ works the same.
       score = Q * S * exp(-5 * B / N)
 
   with Q the quadrant fraction, S the smoothness, B the blow-ups and N the
-  periods in the window (score 0 when S is undefined: fewer than two valid
-  periods). Each factor is a per-period (per-step) average, so a noisy band
-  costs score in proportion to its width. The roughness enters through S,
-  not through its median: the median ignores noise confined to fewer than
-  half of the steps, and a dead band a decade or two wide -- what separates
-  one remote from another -- is exactly that (tests/quality_unit.py (5): 13
-  noisy periods of 61 cost 0.06 of score through the median, 0.15 through S).
-  The per-step term is flat near zero on purpose: a smooth curve steps
-  0.03-0.06 dex between adjacent bands at 8-12 bands per decade, which costs
-  under 0.06 of S, so band density alone barely moves it; a step of 0.3 dex
-  keeps 0.24 of its share and one of 0.5 dex 0.02. One blow-up in 60 periods
-  costs 8 %. The error bars are reported but not scored: their size depends
-  on the estimator settings being compared (more overlap, more correlated
-  windows, smaller bars), not only on the data.
+  periods in the window. The score is 0 when S is undefined, that is with
+  fewer than two valid periods. Each factor is a per-period (per-step)
+  average, so a noisy band costs score in proportion to its width. The
+  roughness enters through S rather than through its median, because the
+  median ignores noise confined to fewer than half of the steps, and a dead
+  band a decade or two wide, which is what separates one remote from
+  another, is noise of that kind. In tests/quality_unit.py (5), 13 noisy
+  periods of 61 cost 0.06 of score through the median and 0.15 through S.
+  The per-step term is flat near zero: a smooth curve steps 0.03-0.06 dex
+  between adjacent bands at 8-12 bands per decade, which costs under 0.06
+  of S, so band density alone barely moves it; a step of 0.3 dex keeps 0.24
+  of its share and one of 0.5 dex keeps 0.02. One blow-up in 60 periods
+  costs 8 %. The error bars are reported but not scored, since their size
+  depends on the estimator settings being compared (more overlap gives more
+  correlated windows and smaller bars) as well as on the data.
 
 ``overall``: Q is the mean of the two modes', the relative error and the
 roughness are medians over both modes' values pooled, the blow-ups a sum, and
@@ -48,8 +51,12 @@ mode the median |dlog10 rho| and the median |dphase| (deg, wrapped to
 [0, 180]), and pooled over both modes in ``overall``.
 
 `pairwise_spread(tfs)`: per period of the first TF, per mode, the median over
-every pair of TFs of |dlog10 rho| and |dphase| -- where several remotes agree
-and where they do not.
+every pair of TFs of |dlog10 rho| and |dphase|, showing where several remotes
+agree and where they differ.
+
+@author: ben kay (ben@auscope.org.au)
+
+:license: MIT
 """
 
 from __future__ import annotations
@@ -73,11 +80,16 @@ PERIOD_RTOL = 0.02  # two periods are "the same" within 2 %
 
 @lru_cache(maxsize=512)
 def _curves_cached(path: str, mtime_ns: int):
+    """Return `rho_phi` of an EDI path, cached on path and modification time."""
     return rho_phi(path)
 
 
 def curves(tf_or_path):
-    """`rho_phi` of an EDI path (cached per path and mtime) or a TF object (not cached)."""
+    """Return `rho_phi` of an EDI path or a TF object.
+
+    Results for a path are cached per path and modification time; a TF
+    object is converted on every call.
+    """
     if isinstance(tf_or_path, (str, Path)):
         p = Path(tf_or_path)
         return _curves_cached(str(p), p.stat().st_mtime_ns)
@@ -85,6 +97,7 @@ def curves(tf_or_path):
 
 
 def _window(period: np.ndarray, pmin=None, pmax=None) -> np.ndarray:
+    """Boolean selection of the periods in [pmin, pmax], either bound optional."""
     sel = np.ones(period.size, dtype=bool)
     if pmin is not None:
         sel &= period >= float(pmin) * (1.0 - 1e-9)
@@ -94,21 +107,43 @@ def _window(period: np.ndarray, pmin=None, pmax=None) -> np.ndarray:
 
 
 def in_quadrant(phase_deg: np.ndarray, mode: str) -> np.ndarray:
-    """True where the phase (deg, as np.angle gives it) lies strictly inside the mode's physical quadrant."""
+    """Flag phases strictly inside the physical quadrant of a mode.
+
+    Args:
+        phase_deg (np.ndarray): Phases in degrees, as np.angle returns them.
+        mode (str): ``"xy"`` or ``"yx"``.
+
+    Returns:
+        np.ndarray: Boolean array, False for non-finite phases.
+    """
     lo, hi = QUADRANTS[mode]
     phase_deg = np.asarray(phase_deg, dtype=float)
     return np.isfinite(phase_deg) & (phase_deg > lo) & (phase_deg < hi)
 
 
 def smoothness(steps) -> float:
-    """Mean over adjacent |dlog10 rho| steps of exp(-(step / 0.25)**2); NaN with no steps."""
+    """Return the mean of exp(-(step / 0.25)**2) over adjacent |dlog10 rho| steps.
+
+    Non-finite steps are ignored. Returns NaN when there are no steps.
+    """
     steps = np.asarray(steps, dtype=float)
     steps = steps[np.isfinite(steps)]
     return float(np.mean(np.exp(-((steps / ROUGHNESS_SCALE) ** 2)))) if steps.size else float("nan")
 
 
 def combined_score(quadrant_frac: float, smooth: float, blowups: int, n_periods: int) -> float:
-    """Q * S * exp(-5 * B / N), in [0, 1]; 0 when Q or S is undefined or N is 0."""
+    """Combine quality factors into a score in [0, 1].
+
+    Args:
+        quadrant_frac (float): Q, the fraction of periods in quadrant.
+        smooth (float): S, the smoothness.
+        blowups (int): B, the number of blow-up periods.
+        n_periods (int): N, the number of periods in the window.
+
+    Returns:
+        float: Q * S * exp(-5 * B / N), clipped to [0, 1]; 0 when Q or S is
+        undefined or N is 0.
+    """
     if n_periods <= 0 or not np.isfinite(smooth) or not np.isfinite(quadrant_frac):
         return 0.0
     s = float(quadrant_frac) * float(smooth) * np.exp(-BLOWUP_WEIGHT * float(blowups) / float(n_periods))
@@ -116,17 +151,27 @@ def combined_score(quadrant_frac: float, smooth: float, blowups: int, n_periods:
 
 
 def _median(values) -> float:
+    """Median of the finite values; NaN when there are none."""
     values = np.asarray(values, dtype=float)
     values = values[np.isfinite(values)]
     return float(np.median(values)) if values.size else float("nan")
 
 
 def tf_quality(edi_path, pmin=None, pmax=None) -> dict:
-    """Per-mode and overall quality of one TF over [pmin, pmax] s (the module docstring has the rules).
+    """Compute the per-mode and overall quality of one TF.
 
-    Returns ``{"xy": {...}, "yx": {...}, "overall": {...}, "n_periods",
-    "pmin", "pmax", "period_min", "period_max"}``; each mode dict holds
-    ``quadrant_frac, median_rel_err, roughness, smoothness, blowups, n_valid, score``.
+    The rules are given in the module docstring.
+
+    Args:
+        edi_path (str or Path or TF): EDI path or TF object.
+        pmin (float, optional): Shortest period in s; all periods when None.
+        pmax (float, optional): Longest period in s; all periods when None.
+
+    Returns:
+        dict: ``{"xy": {...}, "yx": {...}, "overall": {...}, "n_periods",
+        "pmin", "pmax", "period_min", "period_max"}``. Each mode dict holds
+        ``quadrant_frac``, ``median_rel_err``, ``roughness``,
+        ``smoothness``, ``blowups``, ``n_valid`` and ``score``.
     """
     period, rho, phi, rho_err, _ = curves(edi_path)
     sel = _window(period, pmin, pmax)
@@ -180,7 +225,15 @@ def tf_quality(edi_path, pmin=None, pmax=None) -> dict:
 
 
 def flat_quality(q: dict) -> dict:
-    """`tf_quality`'s dict as one flat row: score, n_periods, then <mode>_<key> for xy, yx and overall."""
+    """Flatten a `tf_quality` result into one row.
+
+    Args:
+        q (dict): Result of `tf_quality`.
+
+    Returns:
+        dict: ``score`` and ``n_periods``, then ``<mode>_<key>`` for
+        overall, xy and yx.
+    """
     row = {"score": q["overall"]["score"], "n_periods": q["n_periods"]}
     for mode in ("overall", "xy", "yx"):
         for key, value in q[mode].items():
@@ -189,7 +242,19 @@ def flat_quality(q: dict) -> dict:
 
 
 def match_periods(pa: np.ndarray, pb: np.ndarray, rtol: float = PERIOD_RTOL) -> tuple[np.ndarray, np.ndarray]:
-    """Index pairs (ia, ib) of the periods of `pa` and `pb` equal to `rtol`, each nearest in log."""
+    """Match two period arrays within a relative tolerance.
+
+    Each period of `pa` is paired with the nearest period of `pb` in log
+    space, and the pair is kept when the two agree to within `rtol`.
+
+    Args:
+        pa (np.ndarray): First periods.
+        pb (np.ndarray): Second periods.
+        rtol (float): Relative tolerance (default 2 %).
+
+    Returns:
+        tuple: ``(ia, ib)`` index arrays into `pa` and `pb`.
+    """
     pa = np.asarray(pa, dtype=float)
     pb = np.asarray(pb, dtype=float)
     if pa.size == 0 or pb.size == 0:
@@ -206,11 +271,23 @@ def _wrap_deg(d: np.ndarray) -> np.ndarray:
 
 
 def agreement(edi_a, edi_b, pmin=None, pmax=None, rtol: float = PERIOD_RTOL) -> dict:
-    """Median |dlog10 rho| and |dphase| (deg) per mode over the periods both TFs have.
+    """Compute the agreement of two TFs over their common periods.
 
-    Returns ``{"n_common", "xy": {"dlog_rho", "dphase", "n"}, "yx": {...},
-    "overall": {"dlog_rho", "dphase", "n"}}``; NaN medians where no period is
-    valid in both.
+    Periods are matched with `match_periods`, then restricted to
+    [pmin, pmax] of the first TF.
+
+    Args:
+        edi_a (str or Path or TF): First TF.
+        edi_b (str or Path or TF): Second TF.
+        pmin (float, optional): Shortest period in s.
+        pmax (float, optional): Longest period in s.
+        rtol (float): Relative period tolerance for matching.
+
+    Returns:
+        dict: ``{"n_common", "xy": {"dlog_rho", "dphase", "n"}, "yx": {...},
+        "overall": {...}}`` with median |dlog10 rho| and median |dphase| in
+        degrees wrapped to [0, 180]. Medians are NaN where no period is
+        valid in both.
     """
     pa, ra, fa, _, _ = curves(edi_a)
     pb, rb, fb, _, _ = curves(edi_b)
@@ -233,13 +310,22 @@ def agreement(edi_a, edi_b, pmin=None, pmax=None, rtol: float = PERIOD_RTOL) -> 
 
 
 def pairwise_spread(tfs, rtol: float = PERIOD_RTOL) -> dict:
-    """Per period of the first TF and per mode, the median over all pairs of |dlog10 rho| and |dphase|.
+    """Compute the spread among several TFs per period and mode.
 
-    `tfs` is a list of EDI paths or TF objects (at least two). Each TF's
-    periods are matched to the first one's (`rtol`); a TF without a period, or
-    with an invalid value there, sits out of that period's pairs. Returns
-    ``{"period", "n" (TFs valid per period, per mode), "dlog_rho": {mode: array},
-    "dphase": {mode: array}}`` with NaN where fewer than two TFs are valid.
+    Each TF's periods are matched to the first TF's with `rtol`. A TF
+    without a matching period, or with an invalid value there, is left out
+    of that period's pairs.
+
+    Args:
+        tfs (iterable): EDI paths or TF objects, at least two.
+        rtol (float): Relative period tolerance for matching.
+
+    Returns:
+        dict: ``{"period", "n", "dlog_rho", "dphase"}``. ``period`` holds the
+        first TF's periods; ``n`` maps each mode to the number of valid TFs
+        per period; ``dlog_rho`` and ``dphase`` map each mode to the median
+        over all pairs of |dlog10 rho| and |dphase|, NaN where fewer than
+        two TFs are valid.
     """
     tfs = list(tfs)
     p0 = curves(tfs[0])[0]
@@ -264,7 +350,7 @@ def pairwise_spread(tfs, rtol: float = PERIOD_RTOL) -> dict:
             dl = np.abs(logr[mode][a] - logr[mode][b])
             dp = _wrap_deg(phs[mode][a] - phs[mode][b])
             dp[~np.isfinite(dl)] = np.nan
-            with warnings.catch_warnings():  # all-NaN columns: NaN, said once in the docstring
+            with warnings.catch_warnings():  # all-NaN columns give NaN, as documented
                 warnings.simplefilter("ignore", RuntimeWarning)
                 out["dlog_rho"][mode] = np.nanmedian(dl, axis=0)
                 out["dphase"][mode] = np.nanmedian(dp, axis=0)

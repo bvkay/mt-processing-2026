@@ -1,16 +1,17 @@
-"""Whole-record power spectral density per channel, in physical units, full band.
+# -*- coding: utf-8 -*-
+"""
+Whole-record power spectral density per channel, in physical units, full band
 
-The fifth per-site QC figure (after `scripts/site_qc.py`'s four). Where
-`site_qc.py`'s spectrogram walks `mtproc.timefreq.cascade`'s factor-4 decimation
-ladder and bins into log-period *and* time (a time-resolved view, log-period
-binned so a window's Welch segments are few), this one wants a single,
-whole-record spectrum at frequency resolution fine enough to actually show a
-50 Hz line next to its neighbours -- log-period binning dilutes a narrow line
-to invisibility, exactly as `site_qc.py`'s `check_lines()` explains. So a
-plainer cascade, all-time no-time: plain `scipy.signal.welch` at a fixed
+The fifth per-site QC figure, after the four of `scripts/site_qc.py`. The
+spectrogram of `site_qc.py` walks the factor-4 decimation ladder of
+`mtproc.timefreq.cascade` and bins into log period and time, a time-resolved
+view. This figure is a single whole-record spectrum at a frequency
+resolution fine enough to show a 50 Hz line next to its neighbours;
+log-period binning dilutes a narrow line to invisibility, as `check_lines()`
+in `site_qc.py` explains. It uses plain `scipy.signal.welch` at a fixed
 `nperseg = 2**16` on a ladder of four decimation-by-10 stages (native, /10,
-/100, /1000), each stage hand-picked to the decade its resolution suits and
-its record length still gives several Welch segments:
+/100, /1000). Each stage is assigned the decade its resolution suits and in
+which its record length still gives several Welch segments:
 
     stage  fs        assigned band   df          segment length
     0      1000 Hz   2-500 Hz        0.0153 Hz   65.5 s
@@ -18,85 +19,80 @@ its record length still gives several Welch segments:
     2      10 Hz     0.02-0.2 Hz     1.53e-4 Hz  1.82 h
     3      1 Hz      0.002-0.02 Hz   1.53e-5 Hz  18.2 h
 
-Each stage's Welch runs over its *whole* available spectrum (down to its own
-df, up to its own Nyquist), not just the slice above; only the assigned band
-is drawn, but the extra reach is what lets `check_boundary_continuity` compare
-two independently-decimated stages at the exact frequency where they hand
-off, which is the only genuine test available here without a reference
-spectrum (there is no lemimt EDI at these frequencies).
+Each stage's Welch runs over its whole available spectrum (down to its own
+df, up to its own Nyquist). The assigned band alone is drawn, and the extra
+reach lets `check_boundary_continuity` compare two independently decimated
+stages at the frequency where they hand off. This is the available test
+without a reference spectrum, since no lemimt EDI covers these frequencies.
 
 Gaps: `load_station` returns NaN outside the runs it found, with each
-channel's DC offset already removed (`Record.arrays`). Gap samples are
-zeroed in place -- zero is therefore already the channel mean, not
-subtracted again -- rather than dropped, exactly as `mtproc.timefreq.cascade`
-does before its own decimation: one contiguous array per channel keeps the
-FIR decimation simple, and a zeroed window softly lowers that window's
-average power instead of the spurious spectral content a NaN or a straight
-interpolation would add.
+channel's DC offset already removed (`Record.arrays`), so zero is the
+channel mean. Gap samples are zeroed in place rather than dropped, as
+`mtproc.timefreq.cascade` does before its own decimation. One contiguous
+array per channel keeps the FIR decimation simple, and a zeroed window
+lowers that window's average power slightly, where a NaN or a straight
+interpolation would add spurious spectral content.
 
-Units: hx/hy are (nT)^2/Hz, ex/ey are (mV/km)^2/Hz. The magnetics carry only
-the scalar (frequency-independent) part of the MTH5 filter chain -- the LEMI
-linear coefficient times `lemi423_b_scale` -- never the coil's shape; the
-electrics are fully calibrated (dipole length folded in). Same convention as
-`scripts/site_qc.py`.
+Units: hx/hy are (nT)^2/Hz, ex/ey are (mV/km)^2/Hz. The magnetics carry the
+scalar (frequency-independent) part of the MTH5 filter chain only, the LEMI
+linear coefficient times `lemi423_b_scale`, without the coil's shape. The
+electrics are fully calibrated (dipole length folded in). This is the
+convention of `scripts/site_qc.py`.
+
+`--before` overlays each local channel's PSD before any declared ingest
+filter, in grey dashed, labelled "before filters (raw file)". The raw trace
+is read from the site's B423 files: `mtproc.ingest.select_files` over the
+archive's own time span, `mtproc.ingest.read_lemi423` with the read kwargs
+of `ingest_site` (dipole lengths and `calibration_fn` from
+`survey.site(site)`), then `mtproc.ingest._keep_channels`. It is calibrated
+to the physical units of the archived trace by the scalar-gain rule of
+`load_station` (`_raw_scalar_gain` below: the rule of `_scalar_gain` on a raw
+channel's filter chain of LEMI linear coefficient, dipole length and
+`lemi423_b_scale`, after `mtproc.ingest._apply_h_scale`, since the archived
+channels carry it). The declared filters of `filters.yaml`
+(`mtproc.noise.apply_filters`) are not applied. A site with no declared
+filters is the correctness test: the two traces are the same samples
+through the same gain and coincide, and the CHECK lines quantify how well.
+
+A 45 h record is about 160M samples per channel, so `load_before` reads
+every file in the archive's span in one `read_lemi423` call (matching
+`load_station`, which concatenates every run) up to MAX_BEFORE_SAMPLES.
+Beyond that it falls back to the longest contiguous group of B423 files
+(`mtproc.ingest._group_contiguous`, the grouping ingest splits runs by) and
+logs the drop. The fallback is a last resort: two disjoint spans of the same
+natural field disagree by several dB from Welch sampling scatter alone, so
+dropping even a short run this way can put the before/archived agreement
+several dB out, while reading the whole span of a site with no declared
+filters matches to 0.000 dB.
 
 Usage:
     python scripts/psd_qc.py <survey.yaml> <site> [--remote NAME] [--before] [--out PNG]
 
-`--before` overlays each local channel's PSD *before* any declared ingest
-filter, in grey dashed, labelled "before filters (raw file)". The raw trace
-comes straight from the site's B423 files (`mtproc.ingest.select_files` over
-the archive's own time span, `mtproc.ingest.read_lemi423` with the same read
-kwargs `ingest_site` uses -- dipole lengths and `calibration_fn` from
-`survey.site(site)` -- then `mtproc.ingest._keep_channels`), calibrated to the
-same physical units the archived trace uses by the same scalar-gain rule
-`load_station` applies (`_raw_scalar_gain` below, `_scalar_gain`'s rule on a
-raw channel's filter chain -- LEMI linear coefficient, dipole length,
-`lemi423_b_scale` -- run through `mtproc.ingest._apply_h_scale` since the
-archived channels already carry it) but with none of `filters.yaml`'s
-declared filters applied: `mtproc.noise.apply_filters` never runs on it. A site
-with no declared filters is the correctness test -- the two traces should
-coincide, since they are the same samples through the same gain -- and the
-CHECK lines below quantify how well they do. A 45 h record is ~160M samples
-per channel, so `load_before` reads every file in the archive's span in one
-`read_lemi423` call (matching `load_station`, which also concatenates every
-run) only up to MAX_BEFORE_SAMPLES; past that it falls back to the
-**longest** contiguous group of B423 files instead (`mtproc.ingest._group_contiguous`,
-the same economy `mtproc.ingest._replace_channels` uses), logging the drop.
-Comparing the archive's full-span Welch estimate against a shorter group's is
-not the same test -- two disjoint spans of the same natural field disagree by
-several dB from Welch sampling scatter alone (measured directly: dropping
-D02's leading 1.5 h run this way put four channels' before/archived
-agreement as far out as 5-11 dB; reading its whole 28-file span instead
-matched every one to 0.000 dB) -- so the fallback is a last resort, not the
-default.
+@author: ben kay (ben@auscope.org.au)
 
-Test, printed as CHECK lines, run at the end of every invocation.
+:license: MIT
+
+Check, printed as CHECK lines at the end of every invocation.
 **It fails if** a channel's Welch PSD at a stage boundary (2, 0.2, 0.02 Hz),
 read from the stage above (fewer decimations, finer df) and the stage below
 (one more decimation, coarser df), disagree by more than that boundary's
-entry in BOUNDARY_TOL_DB. Both stages estimate the same physical quantity --
-the power at that exact frequency, from the same underlying samples -- by two
+entry in BOUNDARY_TOL_DB. Both stages estimate the same physical quantity,
+the power at that frequency from the same underlying samples, by two
 different pipelines (a different `scipy.signal.decimate` depth and a
-different-width Welch segment); a gain error in the decimation, an aliasing
-leak, wrong Welch scaling, or a stage assigned the wrong band would all show
-up as a systematic offset, on every channel at that boundary at once.
+different-width Welch segment). A gain error in the decimation, an aliasing
+leak, wrong Welch scaling or a stage assigned the wrong band would show up as
+a systematic offset on every channel at that boundary at once.
 
-The tolerance is per boundary, not one number, because the number of Welch
-segments the *deeper* stage averages falls off a cliff down the ladder --
-4532 at the 2 Hz boundary, 452 at 0.2 Hz, only 44 at 0.02 Hz on the 41 h D02
-record -- and a Welch estimate's own sampling scatter (chi-squared, ~2x the
-segment count degrees of freedom) grows the same way; two honest independent
-estimates of a physically non-stationary natural field can disagree by a few
-dB purely by chance once one side is down to a few dozen segments, before
-either pipeline has done anything wrong. Measured on Curnamona D02/E08:
-under 1 dB at the 2 Hz boundary, up to 3.6 dB at 0.2 Hz, up to
-6.0 dB at 0.02 Hz (r_hx, decimated three times, ~3 segments on that side) --
-one channel at a time, mixed sign, never every channel moving together,
-which is what a real decimation or scaling bug would look like instead.
-BOUNDARY_TOL_DB is set from that measured spread with headroom, not loosened
-to erase a failure: a fixed offset across every channel at a boundary would
-still fail it.
+The tolerance is set per boundary because the number of Welch segments the
+deeper stage averages drops tenfold per stage down the ladder, to a few dozen
+at the 0.02 Hz boundary on a record of a day or two. A Welch estimate's
+sampling scatter (chi-squared, about 2x the segment count degrees of freedom)
+grows the same way, so two independent estimates of a non-stationary natural
+field can disagree by a few dB by chance once one side is down to a few dozen
+segments: typically under 1 dB at the 2 Hz boundary and several dB at 0.02 Hz,
+one channel at a time and of mixed sign. A decimation or scaling bug would
+move every channel together. BOUNDARY_TOL_DB is set from that spread with
+headroom; a fixed offset across every channel at a boundary still fails it.
 """
 
 import argparse
@@ -124,11 +120,10 @@ NPERSEG = 2**16
 STAGE_FACTOR = 10
 N_STAGES = 4
 # the ladder itself is `mtproc.timefreq.psd_ladder`, which stops a stage short of
-# `min_segments` whole Welch segments. 1 here, not the library's default of 4:
-# this script always ran every stage on a whole record, and 41 h at the 1 Hz
-# stage is 148 k samples -- 2.3 segment lengths -- so the default would drop
-# stage 3 (0.002-0.02 Hz) on every archive in both surveys. One whole segment
-# is what welch needs to run at the stated nperseg at all.
+# `min_segments` whole Welch segments. 1 here, where the library default is 4:
+# every stage runs on a whole record, and under the default any record
+# shorter than 72.8 h (4 x 65536 samples at 1 Hz) would lose stage 3
+# (0.002-0.02 Hz). welch needs one whole segment to run at the stated nperseg.
 MIN_SEGMENTS = 1
 # stage index -> (low Hz, high Hz) plotted; must run high-to-low and join
 # seamlessly (each entry's low edge is the next entry's high edge)
@@ -138,8 +133,8 @@ LINES_HZ = (50.0, 100.0, 150.0)
 MAINS_HARMONICS = 9  # 50, 100, ... 450 Hz
 CP_HARMONICS = 30
 # per boundary (2, 0.2, 0.02 Hz): looser deeper down the ladder, where the
-# stage below has far fewer Welch segments and more sampling scatter -- see
-# the module docstring for the measured spread this is sized from.
+# stage below has far fewer Welch segments and more sampling scatter; the
+# module docstring gives the measured spread this is sized from.
 BOUNDARY_TOL_DB = (3.0, 5.0, 7.0)
 PANELS = ("hx", "hy", "ex", "ey")
 REMOTE_OF = {"hx": "r_hx", "hy": "r_hy"}
@@ -148,9 +143,9 @@ CP_COLOR = "firebrick"
 REMOTE_COLOR = "0.6"
 BEFORE_COLOR = "0.75"
 BEFORE_LABEL = "before filters (raw file)"
-# the y-range (task 2) is set from data in this sub-band, not the full XLIM --
-# excludes the anti-alias roll-off near 500 Hz and the sub-mHz edge, either of
-# which can sit many decades below the natural-field floor
+# the y-range is set from data in this sub-band rather than the full XLIM,
+# which excludes the anti-alias roll-off near 500 Hz and the sub-mHz edge;
+# either can sit many decades below the natural-field floor
 YLIM_PCTL_HZ = (0.003, 400.0)
 YLIM_PCTL = (1.0, 99.0)
 YLIM_PAD_DECADES = 1.0
@@ -163,19 +158,20 @@ RATIO_BANDS_HZ = (
     (0.2, 2.0, "0.2-2 Hz (cp band)"),
 )
 # above this many estimated raw samples/channel, load_before falls back to
-# the longest contiguous file group rather than the whole requested span --
-# see load_before's docstring for why the whole span is read by default
+# the longest contiguous file group rather than the whole requested span;
+# the module docstring explains why the whole span is read by default
 MAX_BEFORE_SAMPLES = 220_000_000
 
 
 def _hz_to_period(f):
-    """Hz <-> s: its own inverse, used for the top secondary axis (frequency in, period out)."""
+    """Convert Hz to s (and s to Hz, being its own inverse) for the top secondary axis."""
     with np.errstate(divide="ignore"):
         return 1.0 / np.asarray(f, dtype="float64")
 
 
 def parse_args(argv=None) -> argparse.Namespace:
-    p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    """Parse the command line of psd_qc.py."""
+    p = argparse.ArgumentParser(description=next(line for line in __doc__.strip().splitlines() if line.strip()))
     p.add_argument("survey_yaml", help="path to the survey's survey.yaml")
     p.add_argument("site", help="site name (MTH5 in <workspace>/mth5/<site>.h5)")
     p.add_argument("--remote", metavar="NAME", help="remote site: overlays its hx/hy coils")
@@ -188,6 +184,11 @@ def parse_args(argv=None) -> argparse.Namespace:
 
 
 def station_h5(survey: Survey, station: str) -> Path:
+    """Return <workspace>/mth5/<station>.h5.
+
+    Raises:
+        FileNotFoundError: When the station has no MTH5.
+    """
     h5 = survey.workspace / "mth5" / f"{station}.h5"
     if not h5.exists():
         raise FileNotFoundError(f"no MTH5 for station {station!r}: {h5}")
@@ -195,7 +196,11 @@ def station_h5(survey: Survey, station: str) -> Path:
 
 
 def cp_period_s(survey: Survey, site: str) -> float | None:
-    """The declared cathodic-protection period for `site` (`<survey>/filters.yaml`), or None."""
+    """Return the declared cathodic-protection period of a site in seconds, or None.
+
+    The period comes from the site's "cp" filter in `<survey>/filters.yaml`
+    (default 12 s).
+    """
     for spec in survey.site(site).filters or []:
         if "cp" in spec:
             return float((spec["cp"] or {}).get("period_s", 12.0))
@@ -206,7 +211,19 @@ def cp_period_s(survey: Survey, site: str) -> float | None:
 
 
 def check_boundary_continuity(stages, channels, bands_hz=BANDS_HZ, tol_db=BOUNDARY_TOL_DB) -> bool:
-    """Compare adjacent stages at the frequency where their assigned bands meet. See module docstring."""
+    """Compare adjacent stages at the frequency where their assigned bands meet.
+
+    The module docstring describes the check and its tolerances.
+
+    Args:
+        stages (list): (fs, freqs, psd) per stage from `psd_ladder`.
+        channels (list[str]): Channels to compare.
+        bands_hz (tuple): Assigned band of each stage, high to low.
+        tol_db (tuple | float): Tolerance in dB per boundary, or one value.
+
+    Returns:
+        bool: True when every channel is within tolerance at every boundary.
+    """
     ok = True
     for i in range(len(stages) - 1):
         f_b = bands_hz[i][0]  # stage i's low edge == stage i+1's high edge
@@ -232,15 +249,23 @@ def check_boundary_continuity(stages, channels, bands_hz=BANDS_HZ, tol_db=BOUNDA
 
 
 def _raw_scalar_gain(filters_list, label: str) -> tuple[float, bool]:
-    """`mtproc.timefreq._scalar_gain`'s rule, for a raw channel's filter chain.
+    """Apply the rule of `mtproc.timefreq._scalar_gain` to a raw channel's filter chain.
 
-    `read_lemi423` + `mtproc.ingest._apply_h_scale` builds the same chain a
-    channel gets at ingest -- [dipole coefficient, linear coefficient] for an
+    `read_lemi423` + `mtproc.ingest._apply_h_scale` builds the chain a
+    channel gets at ingest ([dipole coefficient, linear coefficient] for an
     electric, [linear coefficient, coil response, `lemi423_b_scale`] for a
-    magnetic -- just not yet written to an MTH5 channel group, so it has no
-    `.metadata.component` for `_scalar_gain` to log with; this takes the
-    filter list and a label directly instead. Same product-of-CoefficientFilter-
-    gains rule, same skip of the coil's shape filter.
+    magnetic) before it is written to an MTH5 channel group, so it has no
+    `.metadata.component` for `_scalar_gain` to log with. This function takes
+    the filter list and a label instead. The gain is the product of the
+    CoefficientFilter gains, and the coil's shape filter is skipped.
+
+    Args:
+        filters_list (list): The channel's filters.
+        label (str): Channel name for the debug log.
+
+    Returns:
+        tuple[float, bool]: The scalar gain and whether a shape filter was
+        skipped.
     """
     gain, skipped = 1.0, False
     for f in filters_list:
@@ -253,39 +278,46 @@ def _raw_scalar_gain(filters_list, label: str) -> tuple[float, bool]:
 
 
 def load_before(survey: Survey, site_name: str, channels: list[str], t0, t1):
-    """The site's raw B423 files over [t0, t1), calibrated like the archive but
-    with none of `filters.yaml`'s declared filters applied -- see the module
-    docstring's `--before`. Returns (sample rate, {channel: physical-unit
-    array}, {channel: whether a shape filter was skipped}, a note on the files
-    used).
+    """Read the site's raw B423 files over [t0, t1) for the --before trace.
+
+    The samples are calibrated like the archive, without the declared filters
+    of `filters.yaml`; the module docstring describes the --before trace.
+
+    Args:
+        survey (Survey): The survey.
+        site_name (str): Site name.
+        channels (list[str]): Channels to return.
+        t0: Start of the span (naive or tz-aware).
+        t1: End of the span (naive or tz-aware).
+
+    Returns:
+        tuple: (sample rate, {channel: physical-unit array}, set of channels
+        whose shape filter was skipped, a note on the files used).
     """
     site = survey.site(site_name)
     site_dir = survey.site_dirs()[site_name]
-    # select_files localises a naive start/end to UTC itself (as
-    # mtproc.ingest._replace_channels calls it, from a naive xarray time
-    # coordinate) and rejects an already tz-aware Timestamp; record.t0 is
-    # tz-aware (from run metadata), so strip that here rather than in
-    # select_files, which every other caller already gets right.
+    # select_files localises a naive start/end to UTC itself and rejects a
+    # tz-aware Timestamp; record.t0 is tz-aware (from run metadata), so the
+    # zone is stripped here.
     t0 = pd.Timestamp(t0)
     t0 = t0.tz_convert("UTC").tz_localize(None) if t0.tzinfo is not None else t0
     t1 = pd.Timestamp(t1)
     t1 = t1.tz_convert("UTC").tz_localize(None) if t1.tzinfo is not None else t1
     files = select_files(site_dir, start=t0, end=t1)
 
-    # `_group_contiguous` groups by epoch spacing for MTH5 *run* boundaries
-    # (aurora needs long, genuinely-gapless runs); that is not the same
-    # question as "is there missing data here". D02's own archive has two
-    # runs with a 4 s epoch-label anomaly between them, yet `load_station`
-    # finds zero actual sample gap (verified: reading all 28 files gives the
-    # same sample count as the two-run archive, and matches it to 0.000 dB
-    # everywhere) -- restricting to the *longest* group there would silently
-    # drop a real 1.5 h run and, by comparing a shorter span's Welch estimate
-    # against the archive's full-span one, introduce several dB of pure
-    # sampling scatter that looks like (but is not) a gain bug. So the whole
-    # requested span is read in one `read_lemi423` call by default -- exactly
-    # comparable to `load_station`, which also concatenates every run -- and
-    # only the longest contiguous group is read if the estimated raw sample
-    # count is too big to hold as a second full-resolution copy (memory).
+    # `_group_contiguous` groups by epoch spacing for MTH5 run boundaries
+    # (aurora needs long, gapless runs), which differs from whether data are
+    # missing: an archive can hold two runs split by an epoch-label anomaly of
+    # a few seconds while `load_station` finds no sample gap (reading every
+    # file gives the sample count of the two-run archive and matches it to
+    # 0.000 dB). Restricting to the longest group there would drop a real
+    # run and, by comparing a shorter span's Welch estimate with
+    # the archive's full-span one, add several dB of sampling scatter that
+    # resembles a gain bug. The whole requested span is therefore read in one
+    # `read_lemi423` call by default, comparable to `load_station`, which
+    # concatenates every run. The longest contiguous group is read when the
+    # estimated raw sample count is too large to hold as a second
+    # full-resolution copy in memory.
     epochs = np.array([int(f.stem) for f in files], dtype="int64")
     file_len_s = int(np.median(np.diff(epochs))) if epochs.size > 1 else 5400
     n_est = len(files) * file_len_s * survey.sample_rate
@@ -338,7 +370,11 @@ def load_before(survey: Survey, site_name: str, channels: list[str], t0, t1):
 
 
 def _stage_for_band(lo: float, hi: float, bands_hz=BANDS_HZ) -> int:
-    """The stage whose *assigned* band (BANDS_HZ) fully contains [lo, hi]."""
+    """Return the stage whose assigned band (BANDS_HZ) contains [lo, hi].
+
+    When no band contains it, the stage whose band centre is nearest in log
+    frequency is returned.
+    """
     for i, (blo, bhi) in enumerate(bands_hz):
         if lo >= blo and hi <= bhi:
             return i
@@ -347,15 +383,21 @@ def _stage_for_band(lo: float, hi: float, bands_hz=BANDS_HZ) -> int:
 
 
 def print_before_diagnostics(stages, stages_before, channels, below_hz: float = 100.0) -> None:
-    """Two CHECK blocks per channel, printed with --before.
+    """Print two CHECK blocks per channel for --before.
 
     (1) The largest before-vs-archived |diff| below `below_hz`, over every
-    plotted frequency (not just three bands) -- a site with no declared
-    filters should read ~0 dB everywhere, which is the module docstring's
-    --before correctness test. (2) The archived/before-filter power ratio in
-    RATIO_BANDS_HZ, quantifying what a site's declared filters actually did.
-    Diagnostic only, like `line_excess`'s CHECK lines -- a non-zero ratio is
-    correct and expected wherever a filter is declared to act.
+    plotted frequency. A site with no declared filters reads about 0 dB
+    everywhere, the --before correctness test of the module docstring.
+    (2) The archived/before-filter power ratio in RATIO_BANDS_HZ, which
+    quantifies what a site's declared filters did. Both are diagnostics,
+    like the `line_excess` CHECK lines; a non-zero ratio is expected wherever
+    a filter is declared to act.
+
+    Args:
+        stages (list): Archived (fs, freqs, psd) per stage.
+        stages_before (list): Before-filters (fs, freqs, psd) per stage.
+        channels (list[str]): Local channels.
+        below_hz (float): Upper frequency of the |diff| search.
     """
     print()
     for c in channels:
@@ -413,20 +455,33 @@ def psd_figure(
     dpi=DPI,
     figsize=(13, 10),
 ):
-    """One panel per local channel present (2x2: hx, hy, ex, ey), log-log, 0.002-500 Hz.
+    """Draw the PSD figure: one log-log panel per local channel (2x2: hx, hy, ex, ey), 0.002-500 Hz.
 
-    Local channel in its `mtproc.timefreq.COLOUR`; the remote's matching coil
-    (r_hx under hx, r_hy under hy) in grey; with `stages_before`, that same
-    channel's before-any-ingest-filter PSD in grey dashed, drawn under the
-    archived line (see the module docstring's `--before`). Faint dotted lines
-    mark 50 Hz and its harmonics; faint dashed lines mark the declared
-    cathodic-protection comb, if any.
+    The local channel is drawn in its `mtproc.timefreq.COLOUR`, the remote's
+    matching coil (r_hx under hx, r_hy under hy) in grey and, with
+    `stages_before`, the channel's PSD before any ingest filter in grey
+    dashed under the archived line. Faint dotted lines mark 50 Hz and its
+    harmonics; faint dashed lines mark the declared cathodic-protection comb,
+    if any.
 
-    Each panel's y-limits are set from the 1st-99th percentile of everything
-    actually plotted in it (archived, remote, before-filters alike) within
-    YLIM_PCTL_HZ, padded a decade either side -- not the full 0.002-500 Hz
-    XLIM_HZ, whose anti-alias roll-off near 500 Hz would otherwise drag the
-    bottom of the axis down many decades below any real data.
+    Each panel's y-limits are the 1st-99th percentile of everything plotted
+    in it (archived, remote and before-filters) within YLIM_PCTL_HZ, padded a
+    decade either side. The full XLIM_HZ range is avoided because the
+    anti-alias roll-off near 500 Hz would pull the bottom of the axis many
+    decades below the data.
+
+    Args:
+        record (Record): The site's record (station name, scalar_only).
+        stages (list): Archived (fs, freqs, psd) per stage.
+        channels (list[str]): Local channels.
+        remote_channels (list[str]): Remote channels present ("r_hx", "r_hy").
+        cp_period (float | None): Declared cathodic-protection period in s.
+        survey_name (str): Survey name for the title.
+        remote_name (str | None): Remote site name for the title.
+        out (Path): Output figure.
+        stages_before (list | None): Before-filters stages, if requested.
+        dpi (int): Figure resolution.
+        figsize (tuple): Figure size in inches.
     """
     panels = [c for c in PANELS if c in channels]
     ncols = 2
@@ -526,6 +581,15 @@ def psd_figure(
 
 
 def main(argv=None) -> None:
+    """Compute the PSD ladder, draw the figure and print the checks.
+
+    Args:
+        argv (list[str] | None): Command-line arguments; sys.argv when None.
+
+    Raises:
+        ValueError: When the before-filters sample rate differs from the
+            archive's.
+    """
     args = parse_args(argv)
     survey = Survey.from_yaml(args.survey_yaml)
     out = Path(args.out) if args.out else survey.workspace / "qc" / f"{args.site}_05_psd.png"

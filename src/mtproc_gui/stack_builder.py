@@ -1,24 +1,26 @@
-"""StackBuilder and RunOptions: the Process tab's stack builder and run options.
+# -*- coding: utf-8 -*-
+"""
+Stack builder and run options of the Process tab
 
-`docs/matlab_app_borrowing.md` says what each is and is not:
+* `StackBuilder`: the members, name and span of a synthetic remote. It
+  builds the `scripts/build_stack.py` command line and emits it; the Process
+  tab's "Build stack" button calls `build` and queues the job.
+* `RunOptions`: the group box of settings a run can vary (the four band
+  kwargs, the ingest-filters switch, the masks.yaml switch and the output tag
+  suffix). It returns `scripts/process_rr.py` flags for the settings changed
+  from the survey's `processing:` block only. Below it, collapsed by default,
+  `EstimatorOptions` ("Advanced (aurora estimator)") covers process_rr.py's
+  --taper ... --tolerance by the same rule, against the values a run uses
+  (`mtproc.process.ESTIMATOR_DEFAULTS`).
 
-- `StackBuilder` the members, name and span of a synthetic remote; it returns
-                 the `scripts/build_stack.py` command line and never runs it
-                 (the Process tab's "Build stack" button calls `build`).
-- `RunOptions`   the one group box of things a run can vary -- the four band
-                 kwargs, the ingest-filters switch, the masks.yaml switch
-                 and the output tag suffix --
-                 which hands back the `scripts/process_rr.py` flags for
-                 whatever was *changed* from the survey's `processing:` block,
-                 and nothing for what was not. Under them, collapsed by
-                 default, `EstimatorOptions`: "Advanced (aurora estimator)",
-                 process_rr.py's --taper ... --tolerance, by the same rule
-                 against the in-use values (`mtproc.process.ESTIMATOR_DEFAULTS`).
+`StackBuilder.argv` and `RunOptions.flags` assemble command lines from a
+`WindowBar`, the survey's `processing:` block (`band_defaults`) and the
+estimator defaults. The masks switch shows the `mtproc.masks.load_masks`
+count for the pair; the masks are applied by process_rr.py.
 
-Nothing here computes a product: `StackBuilder.argv` and `RunOptions.flags`
-only assemble command lines from a `WindowBar`, the survey's own
-`processing:` block (`band_defaults`, below) and the estimator defaults; the
-masks switch only counts `mtproc.masks.load_masks` for the pair.
+@author: ben kay (ben@auscope.org.au)
+
+:license: MIT
 """
 
 from __future__ import annotations
@@ -33,7 +35,7 @@ from PySide6.QtWidgets import (
     QLineEdit, QListWidget, QSpinBox, QToolButton, QVBoxLayout, QWidget,
 )
 
-from mtproc.bands import lemimt_band_scheme
+from mtproc.bands import build_band_scheme
 from mtproc.ingest import variant_ready
 from mtproc.masks import is_stack, load_masks, remote_masks
 from mtproc.process import ESTIMATOR_DEFAULTS, TAPERS
@@ -44,18 +46,25 @@ BAND_KEYS = ("min_period", "max_period", "periods_per_decade", "notch_frequencie
 
 
 def band_defaults(survey) -> dict:
-    """The survey's band settings: its `processing:` block over `lemimt_band_scheme`'s own defaults.
+    """Return the survey's band settings: its `processing:` block over `build_band_scheme`'s defaults.
 
-    The same rule `scripts/process_rr.py` applies, so "changed from the
-    default" means exactly "worth putting on the command line".
+    `scripts/process_rr.py` applies the same rule, so a value changed from
+    these defaults is one that needs a command-line flag.
+
+    Args:
+        survey: The open `mtproc.survey.Survey`, or None.
+
+    Returns:
+        dict: The values of `BAND_KEYS`.
     """
-    signature = inspect.signature(lemimt_band_scheme).parameters
+    signature = inspect.signature(build_band_scheme).parameters
     out = {key: signature[key].default for key in BAND_KEYS}
     out.update({k: v for k, v in (survey.processing if survey else {}).items() if k in out})
     return out
 
 
 def notch_text(values) -> str:
+    """Format notch frequencies as comma-separated Hz."""
     return ", ".join(f"{float(v):g}" for v in values or ())
 
 
@@ -63,7 +72,13 @@ def notch_text(values) -> str:
 
 
 class StackBuilder(QGroupBox):
-    """Name, members and span of a synthetic remote; returns the build_stack.py argv."""
+    """Name, members and span of a synthetic remote, and its build_stack.py command line.
+
+    Args:
+        state: The shared `mtproc_gui.app.State`.
+        window_bar (WindowBar): Supplies the processing window.
+        parent (QWidget | None): Qt parent.
+    """
 
     build_requested = Signal(list)  # the argv, for the tab to queue
     members_changed = Signal(list)  # for the map to paint them orange
@@ -78,9 +93,9 @@ class StackBuilder(QGroupBox):
         self.name_edit.setToolTip("the stack's archive name: <workspace>/mth5/<name>.h5")
         self.list = QListWidget(self)
         self.list.setSelectionMode(QAbstractItemView.ExtendedSelection)
-        # fixed list, two hint lines reserved: the Process tab's splitter drops the wrapped hint's
-        # height-for-width, so the builder's minimum must be the height it is drawn at or it
-        # overlaps the map above it (340 px minimum)
+        # fixed list height and two hint lines reserved: the Process tab's splitter ignores the
+        # wrapped hint's height-for-width; a minimum equal to the drawn height keeps the builder
+        # from overlapping the map above it (340 px minimum)
         self.list.setFixedHeight(110)
         self.list.itemSelectionChanged.connect(lambda: self.members_changed.emit(self.members()))
         self.hint = QLabel("two or more members, over the processing window; then Build stack", self)
@@ -96,10 +111,11 @@ class StackBuilder(QGroupBox):
         layout.setColumnStretch(1, 1)
 
     def reload(self) -> None:
+        """Refill the candidates for the current station."""
         self.set_station(self.station)
 
     def set_station(self, station: str | None) -> None:
-        """Refill the candidates (every raw site but this one) and the default name."""
+        """Refill the candidates (every raw site but `station`), keeping the selection, and set the default name."""
         self.station = station
         chosen = set(self.members())
         self.list.clear()
@@ -114,10 +130,15 @@ class StackBuilder(QGroupBox):
         self.members_changed.emit(self.members())
 
     def members(self) -> list[str]:
+        """Return the selected members."""
         return [item.text() for item in self.list.selectedItems()]
 
     def argv(self) -> list[str] | None:
-        """`build_stack.py <survey.yaml> <name> <start> <end> <members...>`, or None with a reason."""
+        """Build the command line `build_stack.py <survey.yaml> <name> <start> <end> <members...>`.
+
+        Returns:
+            list[str] | None: The argv, or None with the reason shown in the hint.
+        """
         members = self.members()
         name = self.name_edit.text().strip()
         window = self.window_bar.window()
@@ -150,7 +171,12 @@ class StackBuilder(QGroupBox):
 
 
 class RunOptions(QGroupBox):
-    """What a single run may change: the band kwargs, the ingest filters, the masks and the tag."""
+    """Settings a single run may change: the band kwargs, the ingest filters, the masks and the tag.
+
+    Args:
+        state: The shared `mtproc_gui.app.State`.
+        parent (QWidget | None): Qt parent.
+    """
 
     MASKS_TEXT = "apply masks.yaml"
     MASKS_TIP = (
@@ -187,7 +213,7 @@ class RunOptions(QGroupBox):
         self.tag_edit = QLineEdit(self)
         self.tag_edit.setPlaceholderText("tag suffix (optional), e.g. nofilt or try2")
 
-        # three columns of label + control, like the MATLAB app's options block
+        # the options block: three columns of label + control
         grid = QGridLayout(self)
         for row, column, widget in (
             (0, 0, QLabel("Min period", self)), (0, 1, self.min_spin),
@@ -207,7 +233,7 @@ class RunOptions(QGroupBox):
             grid.setColumnStretch(column, 1)
 
     def reload(self) -> None:
-        """Back to the survey's own band block, filters and masks on, no tag."""
+        """Reset to the survey's band block with filters and masks on and no tag."""
         self.defaults = band_defaults(self.state.survey)
         for spin, key in ((self.min_spin, "min_period"), (self.max_spin, "max_period"),
                           (self.decade_spin, "periods_per_decade")):
@@ -219,10 +245,17 @@ class RunOptions(QGroupBox):
         self.advanced.reset()
 
     def describe_filters(self, station, remote=None) -> None:
-        """One read-only line naming what the station and the remote declare in
-        `filters.yaml`; each list is applied on demand, into a filtered
-        variant of the site's raw archive (`mtproc.ingest.processing_archive`),
-        when a run wants it (`RunOptions.filters_check`, on by default)."""
+        """Show the filters the station and the remote declare in `filters.yaml`.
+
+        Each list is applied on demand into a filtered variant of the site's
+        raw archive (`mtproc.ingest.processing_archive`) when a run uses
+        filters (`filters_check`, on by default). The line also says whether
+        each variant is ready or will be built first.
+
+        Args:
+            station (str | None): Local station.
+            remote (str | None): Remote station.
+        """
         survey = self.state.survey
         if not station or survey is None:
             self.filters_label.setText("")
@@ -243,13 +276,20 @@ class RunOptions(QGroupBox):
         self.filters_label.setText(text + " (edit on the Filter Data tab)")
 
     def describe_masks(self, station, remote=None) -> None:
-        """The masks switch's label: 'apply masks.yaml (<station>: n, <remote>: m)', the
-        `load_masks` count of each site of the pair; a stacked remote (`is_stack`, the
-        name rule process_rr uses, so the label does not depend on data_root being
-        mounted) has none and is left out. Disabled and ticked again, with '(no masks
-        declared)', when neither site has any, so a greyed box never reads as switched
-        off. An unreadable file shows '(masks.yaml unreadable)', the error in the
-        tooltip. Counts only: nothing is applied here."""
+        """Label the masks switch with the mask count of each site of the pair.
+
+        The label reads 'apply masks.yaml (<station>: n, <remote>: m)' from
+        `load_masks` and `remote_masks`. A stacked remote (`is_stack`, the
+        name rule process_rr uses, independent of `data_root` being mounted)
+        has no masks and is left out. When neither site has masks the switch
+        is disabled and ticked, reading '(no masks declared)', so a greyed box
+        is not mistaken for switched off. An unreadable file shows
+        '(masks.yaml unreadable)' with the error in the tooltip.
+
+        Args:
+            station (str | None): Local station.
+            remote (str | None): Remote station.
+        """
         survey = self.state.survey
         counts = []
         try:
@@ -258,7 +298,7 @@ class RunOptions(QGroupBox):
                 if remote and remote != station and not is_stack(remote):
                     counts.append((remote, len(remote_masks(survey, remote))))
         except (OSError, ValueError, yaml.YAMLError) as exc:
-            self._masks_declared = True  # the run reports the file's error; the switch stays usable
+            self._masks_declared = True  # the run reports the file's error; the switch stays enabled
             self.masks_check.setEnabled(True)
             self.masks_check.setText(f"{self.MASKS_TEXT} (masks.yaml unreadable)")
             self.masks_check.setToolTip(f"{self.MASKS_TIP}\n\nmasks.yaml could not be read: {exc}")
@@ -273,8 +313,15 @@ class RunOptions(QGroupBox):
         self.masks_check.setText(f"{self.MASKS_TEXT} ({detail})")
 
     def flags(self) -> list[str]:
-        """Only what differs from the defaults: --min-period ... --notch, --no-filters,
-        --no-masks (only when the pair has masks to ignore), --tag, advanced."""
+        """Return process_rr.py flags for the settings changed from the defaults.
+
+        Covers --min-period, --max-period, --per-decade, --notch,
+        --no-filters, --no-masks (when the pair has masks), --tag and the
+        estimator flags.
+
+        Returns:
+            list[str]: The flags.
+        """
         out: list[str] = []
         for flag, spin, key in (("--min-period", self.min_spin, "min_period"),
                                 ("--max-period", self.max_spin, "max_period"),
@@ -295,12 +342,15 @@ class RunOptions(QGroupBox):
 
 
 class EstimatorOptions(QWidget):
-    """"Advanced (aurora estimator)": a toggle over process_rr.py's --taper ... --tolerance.
+    """Collapsible "Advanced (aurora estimator)" block for process_rr.py's --taper ... --tolerance.
 
     Collapsed by default. Every control starts at the value a run uses when
-    the flag is absent (`ESTIMATOR_DEFAULTS`, which tests/process_rr_cli_unit.py
-    checks against a real aurora config), and only a control moved off it
-    becomes a flag.
+    the flag is absent (`ESTIMATOR_DEFAULTS`, checked against a real aurora
+    config by tests/process_rr_cli_unit.py), and only a control moved off
+    that value becomes a flag.
+
+    Args:
+        parent (QWidget | None): Qt parent.
     """
 
     TITLE = "Advanced (aurora estimator)"
@@ -353,13 +403,13 @@ class EstimatorOptions(QWidget):
         self.reset()
 
     def set_expanded(self, expanded: bool) -> None:
-        """Show or hide the block; the arrow says which."""
+        """Show or hide the block and set the toggle's arrow."""
         self.toggle.setChecked(expanded)
         self.toggle.setArrowType(Qt.DownArrow if expanded else Qt.RightArrow)
         self.block.setVisible(expanded)
 
     def _numbers(self):
-        """(flag, spin box, ESTIMATOR_DEFAULTS key), in process_rr.py's order."""
+        """Return (flag, spin box, ESTIMATOR_DEFAULTS key) for each number, in process_rr.py's order."""
         return (("--overlap", self.overlap_spin, "overlap_pct"),
                 ("--min-windows", self.min_windows_spin, "min_windows"),
                 ("--max-iterations", self.iterations_spin, "max_iterations"),
@@ -368,7 +418,7 @@ class EstimatorOptions(QWidget):
                 ("--tolerance", self.tolerance_spin, "tolerance"))
 
     def reset(self) -> None:
-        """Every control back to the value a run uses without its flag."""
+        """Reset every control to the value a run uses without its flag."""
         self.taper_combo.setCurrentText(ESTIMATOR_DEFAULTS["taper"])
         self.prewhiten_check.setChecked(bool(ESTIMATOR_DEFAULTS["prewhiten"]))
         for _flag, spin, key in self._numbers():
@@ -376,7 +426,7 @@ class EstimatorOptions(QWidget):
             spin.setValue(int(value) if isinstance(spin, QSpinBox) else float(value))
 
     def flags(self) -> list[str]:
-        """--taper, --no-prewhiten, --overlap ... --tolerance: only the controls moved off their default."""
+        """Return --taper, --no-prewhiten and --overlap ... --tolerance for the controls moved off their default."""
         out: list[str] = []
         if self.taper_combo.currentText() != ESTIMATOR_DEFAULTS["taper"]:
             out += ["--taper", self.taper_combo.currentText()]

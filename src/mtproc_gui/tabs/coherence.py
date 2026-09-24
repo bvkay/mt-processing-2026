@@ -1,42 +1,49 @@
-"""Coherence tab: is there signal in the loaded window, and does the remote see the same field?
+# -*- coding: utf-8 -*-
+"""
+Coherence tab
 
-The live view of the window picked on the Time Series tab: on `qc_ready`
-the `SegmentQC.band_curves` -- `mtproc.timefreq.band_from_levels` over
-`BANDS_S`, the lines of `scripts/site_qc.py`'s figure 02 -- are drawn as one
-small plot per pair on a grid of **two aligned columns** (`ROWS`), named as
-the MATLAB app names them:
+Shows whether the loaded window has signal and whether the remote sees the
+same field. On `qc_ready` the tab draws `SegmentQC.band_curves`
+(`mtproc.timefreq.band_from_levels` over `BANDS_S`, the lines of figure 02 of
+`scripts/site_qc.py`) for the window chosen on the Time Series tab, as one
+small plot per pair on a grid of two aligned columns (`ROWS`), named by
+channel pair and impedance element::
 
     By-Ex (Zxy)         rBy-Ex (Zxy, remote)   the two impedance pairs,
     Bx-Ey (Zyx)         rBx-Ey (Zyx, remote)   local beside remote
     Bx-By (magnetic)    Bx-rBx                 then the two coil checks
     Ex-Ey (electric)    By-rBy
 
-The names are the parts channels play (`mtproc_gui.channels.roles`), so on a
+Names follow the roles channels play (`mtproc_gui.channels.roles`), so on a
 LEMI-424 the rows read "By-E1 (Zxy)", "Bx-E2 (Zyx)", ..., "E1-E2 (electric)";
 the panels stay keyed by the LEMI-423 pairs of `ROWS`.
 
-Each row puts a local pair beside the remote question that goes with it, so
-a low coherence on the left is read against the coil check on the right. With
-no remote in, the right column is hidden and the four local pairs fill the
-tab. Each column is one stack on one time axis -- no gap between the rows,
-tick labels on the bottom row only -- and every plot is kept on one x range
-(`qc_plots.link_x_ranges`), in minutes since the window's start, locked to
-the window and to coherence 0-1 (`qc_plots.lock_view`). Over each pair's
-band lines is a thick white "All frequencies" curve, their mean, drawn only.
+Each row places a local pair beside the matching remote pair, so a low
+coherence on the left can be read against the coil check on the right.
+Without a remote the right column is hidden and the four local pairs fill
+the tab. Each column is one stack on one time axis, with no gap between rows
+and tick labels on the bottom row only. All plots share one x range
+(`qc_plots.link_x_ranges`) in minutes since the window's start, locked to the
+window and to coherence 0-1 (`qc_plots.lock_view`). Over each pair's band
+lines a thick white "All frequencies" curve shows their mean. The tab has no
+coherogram, since the band curves already show coherence against time over
+the same 1-3 h window.
 
-There is no coherogram here: the band curves are already coherence against
-time over the same 1-3 h window, and the image only repeated them at a
-resolution the eye could not use.
+Controls:
 
-Controls: the **remote** the QC is computed against (`State.remote`, preset
-to the station's declared `remote:`; changing it asks the store again), the
-ladder's base window and step with Recompute, and a **cursor** -- a vertical
-line on every panel at once: click any panel to place it, drag it on any
-panel, the label gives its UTC time, and "Show in Time Series" puts the Time
-Series view +-5 minutes around it (`State.goto_time`).
+* Remote: the remote the QC is computed against (`State.remote`, none on a
+  new station); changing it requests the QC again.
+* The ladder's base window and step, with Recompute.
+* Cursor: a vertical line on every panel, placed by clicking any panel and
+  dragged on any panel. The label gives its UTC time, and "Show in Time
+  Series" centres the Time Series view on it, +-5 minutes
+  (`State.goto_time`).
 
-Nothing is computed here, and nothing is produced: the whole-record figures
-02 and 03 still come from `site_qc.py`, run from the Process tab.
+Whole-record figures 02 and 03 come from `scripts/site_qc.py`.
+
+@author: ben kay (ben@auscope.org.au)
+
+:license: MIT
 """
 
 from __future__ import annotations
@@ -56,10 +63,10 @@ from mtproc_gui.qc_plots import (
     lock_view, time_label, window_title,
 )
 
-# (local pair, its label, remote pair, its label) -- one row of the grid, in
-# the LEMI-423 names standing for each part (`channels.title` names them for
-# the loaded record). An r names the remote's coil, so "rBx-Ey (Zyx, remote)"
-# is this site's Ey against the REMOTE's Bx.
+# (local pair, its label, remote pair, its label): one row of the grid, in the
+# LEMI-423 role names (`channels.title` names them for the loaded record). An r
+# marks the remote's coil, so "rBx-Ey (Zyx, remote)" is this site's Ey against
+# the remote's Bx.
 ROWS = (
     (("hy", "ex"), "{hy}-{ex} (Zxy)", ("ex", "r_hy"), "{r_hy}-{ex} (Zxy, remote)"),
     (("hx", "ey"), "{hx}-{ey} (Zyx)", ("ey", "r_hx"), "{r_hx}-{ey} (Zyx, remote)"),
@@ -74,7 +81,12 @@ S_PER_UNIT = 60.0  # the x axis is in minutes
 
 
 class CoherenceTab(QWidget):
-    """Band-coherence lines for eight pairs on two aligned columns, one shared cursor."""
+    """Band-coherence lines for eight pairs on two aligned columns, with one shared cursor.
+
+    Args:
+        state: The shared `mtproc_gui.app.State`.
+        parent (QWidget | None): Qt parent.
+    """
 
     def __init__(self, state, parent=None):
         super().__init__(parent)
@@ -100,8 +112,8 @@ class CoherenceTab(QWidget):
         controls.addStretch(1)
         controls.addWidget(self.ladder)
 
-        # the grid: local pairs down the left, the remote question that goes
-        # with each one beside it. Every panel carries the same cursor.
+        # the grid: local pairs down the left, the matching remote pair beside
+        # each one. Every panel carries the same cursor.
         self.band_plots: dict[tuple[str, str], pg.PlotWidget] = {}
         self.labels: dict[tuple[str, str], str] = {}
         self.templates: dict[tuple[str, str], str] = {}
@@ -147,18 +159,19 @@ class CoherenceTab(QWidget):
         store.qc_ready.connect(self.draw)
         store.qc_failed.connect(lambda m: self.title_label.setText(f"QC failed: {m}"))
         self.state.selection_changed.connect(self._selection_changed)
-        # the remote can also be set from elsewhere (State.set_remote); keep the
-        # combo saying what the QC in view was actually computed against
+        # the remote can also be set elsewhere (State.set_remote); the combo
+        # shows what the QC in view was computed against
         self.state.remote_changed.connect(lambda _r: self._fill_remotes())
 
     # ------------------------------------------------------------ controls
 
     def reload(self) -> None:
+        """Clear the plots and refill the remotes after a survey change."""
         self.clear()
         self._fill_remotes()
 
     def _fill_remotes(self) -> None:
-        """The remotes for the selected station, `State.remote` preselected."""
+        """Fill the remote combo for the selected station, with `State.remote` selected."""
         station = self.state.selection[0] if self.state.selection else None
         self._filling = True
         try:
@@ -172,36 +185,38 @@ class CoherenceTab(QWidget):
             self._filling = False
 
     def _remote_picked(self, _index: int) -> None:
+        """Pass a remote chosen in the combo to `State.set_remote`."""
         if not self._filling:
             self.state.set_remote(self.remote_combo.currentData())
 
     def _selection_changed(self, selection) -> None:
+        """Refill the remotes, clearing the plots when nothing is selected."""
         self._fill_remotes()
         if selection is None:
             self.clear()
 
     def _started(self, what: str) -> None:
-        # the panels in view stay until the new result replaces them: picking
-        # a remote must not blank the coherence in view
+        """Show that a QC is running; the panels keep the previous result until it is replaced."""
         self.title_label.setText(f"computing {what}... (showing the previous result until it is done)")
 
     # ------------------------------------------------------------- drawing
 
     def show_remote_column(self, on: bool) -> None:
-        """The right column is there only when a remote is in."""
+        """Show or hide the remote column."""
         for pair in REMOTE_COLUMN:
             self.band_plots[pair].setVisible(on)
 
     def visible_pairs(self) -> list[tuple[str, str]]:
-        """The pairs on the grid, in row order (four without a remote, eight with).
+        """Return the pairs on the grid in row order: four without a remote, eight with.
 
-        `isHidden`, not `isVisible`: a tab that is not the current one is
-        hidden with everything on it, and the question here is what the layout
-        holds, not which tab is in front.
+        Uses `isHidden` rather than `isVisible`, since a tab that is not
+        current is hidden with all its children; the result reflects the
+        layout whichever tab is in front.
         """
         return [p for p in self.band_plots if not self.band_plots[p].isHidden()]
 
     def clear(self) -> None:
+        """Clear every plot, hide the remote column and reset the labels."""
         self.qc = None
         for plot in self.band_plots.values():
             plot.clear()
@@ -212,7 +227,7 @@ class CoherenceTab(QWidget):
         self.show_button.setEnabled(False)
 
     def draw(self, qc) -> None:
-        """Every pair's band lines; the right column only when the QC has a remote."""
+        """Draw every pair's band lines, showing the remote column when the QC has a remote."""
         self.qc = qc
         self.show_remote_column(bool(qc.remote))
         span = qc.duration_s / S_PER_UNIT
@@ -226,7 +241,7 @@ class CoherenceTab(QWidget):
                 draw_bands(plot, curves)
             else:
                 plot.clear()
-            lock_view(plot, x=(0.0, span), y=(0.0, 1.0))  # tight on the window, never zoomed out past it
+            lock_view(plot, x=(0.0, span), y=(0.0, 1.0))  # locked to the window
         for pair in (LOCAL_COLUMN[-1], REMOTE_COLUMN[-1]):  # the bottom row carries the time axis
             self.band_plots[pair].setLabel("bottom", time_label(qc.t0))
         self._restore_cursors()  # draw_bands clears the plot, cursor and all
@@ -238,7 +253,7 @@ class CoherenceTab(QWidget):
     # -------------------------------------------------------------- cursor
 
     def _add_cursor(self, pair, plot) -> None:
-        """One draggable vertical line on this panel, moving with every other."""
+        """Add a draggable vertical cursor to a panel, linked to every other panel's."""
         cursor = pg.InfiniteLine(angle=90, movable=True, pen=CURSOR_PEN)
         cursor.setZValue(10)
         plot.addItem(cursor)
@@ -247,22 +262,23 @@ class CoherenceTab(QWidget):
         self.cursors[pair] = cursor
 
     def _restore_cursors(self) -> None:
-        """Put the cursor lines back after a `PlotWidget.clear()` took them off."""
+        """Re-add the cursor lines after `PlotWidget.clear()` removed them."""
         for pair, plot in self.band_plots.items():
             if self.cursors[pair] not in plot.getPlotItem().items:
                 plot.addItem(self.cursors[pair])
 
     def cursor_value(self) -> float:
-        """Minutes since the window's start (every panel's cursor is on the same value)."""
+        """Return the cursor position in minutes since the window's start."""
         return float(next(iter(self.cursors.values())).value())
 
     def cursor_time(self) -> pd.Timestamp | None:
+        """Return the cursor's UTC time, or None with no QC drawn."""
         if self.qc is None:
             return None
         return self.qc.t0 + pd.Timedelta(microseconds=round(self.cursor_value() * S_PER_UNIT * 1e6))
 
     def set_cursor(self, minutes: float) -> None:
-        """Put every panel's cursor on `minutes` since the window's start."""
+        """Move every panel's cursor to `minutes` since the window's start."""
         self._moving = True
         try:
             for cursor in self.cursors.values():
@@ -272,15 +288,18 @@ class CoherenceTab(QWidget):
         self._cursor_moved()
 
     def _dragged(self, pair) -> None:
+        """Move every cursor to the one dragged."""
         if not self._moving:
             self.set_cursor(self.cursors[pair].value())
 
     def _clicked(self, event, plot) -> None:
+        """Place the cursor at a left click on a panel."""
         if self.qc is None or event.button() != Qt.LeftButton:
             return
         self.set_cursor(plot.getViewBox().mapSceneToView(event.scenePos()).x())
 
     def _cursor_moved(self) -> None:
+        """Update the cursor label and enable "Show in Time Series"."""
         when = self.cursor_time()
         if when is None:
             return
@@ -288,6 +307,7 @@ class CoherenceTab(QWidget):
         self.show_button.setEnabled(True)
 
     def show_in_timeseries(self) -> None:
+        """Emit `State.goto_time` with the cursor's time."""
         when = self.cursor_time()
         if when is not None:
             self.state.goto_time.emit(when)

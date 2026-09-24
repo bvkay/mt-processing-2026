@@ -1,9 +1,22 @@
-"""Portable scratch and fork-clone locations shared by tests/*.py.
+# -*- coding: utf-8 -*-
+"""
+Scratch and fork-clone locations for the tests
 
-Imported flat (`from _scratch import scratch_dir, fork_clone`), the same way
-`tests/*.py` already does `import instrument_samples`: these scripts run
-directly (`python tests/whatever_unit.py`), so `tests/` -- this module's own
-directory -- is on `sys.path` without any extra setup.
+Portable scratch directories and fork-clone locations shared by tests/*.py.
+The tests import it flat (`from _scratch import scratch_dir, fork_clone`), in
+the same way as `import instrument_samples`. The test scripts run directly
+(`python tests/whatever_unit.py`), so `tests/` is on `sys.path` without extra
+setup.
+
+Environment variables:
+    MTPROC_TEST_SCRATCH: base of the scratch directories (default: the OS
+        temp directory).
+    MTPROC_FORKS: parent of the forked-dependency clones (default:
+        DEFAULT_FORKS).
+
+@author: ben kay (ben@auscope.org.au)
+
+:license: MIT
 """
 
 from __future__ import annotations
@@ -18,9 +31,13 @@ DEFAULT_FORKS = Path("D:/BEN")
 
 
 def scratch_dir(name: str) -> Path:
-    """A scratch directory for one test, created on demand.
+    """Return a scratch directory for one test, creating it if needed.
 
-    Under MTPROC_TEST_SCRATCH (default: the OS temp directory) / mtproc_tests / <name>.
+    Args:
+        name (str): Name of the test's directory.
+
+    Returns:
+        Path: <MTPROC_TEST_SCRATCH or the OS temp directory>/mtproc_tests/<name>.
     """
     base = Path(os.environ.get("MTPROC_TEST_SCRATCH", tempfile.gettempdir()))
     path = base / "mtproc_tests" / name
@@ -29,20 +46,31 @@ def scratch_dir(name: str) -> Path:
 
 
 def forks_dir(name: str) -> Path:
-    """Where the clone of a forked dependency named `name` would be, whether or not it's there.
+    """Return the expected clone location of a forked dependency.
 
-    Under MTPROC_FORKS (default: DEFAULT_FORKS, i.e. D:\\BEN) / <name>. Fork tests
-    use this only to name the expected location in a SKIPPED message; `fork_clone`
-    is what they check.
+    The path is returned whether or not the clone exists. The fork tests use it
+    to name the expected location in a SKIPPED message and check for the clone
+    with `fork_clone`.
+
+    Args:
+        name (str): Directory name of the fork, e.g. "mth5".
+
+    Returns:
+        Path: <MTPROC_FORKS or DEFAULT_FORKS>/<name>.
     """
     base = Path(os.environ.get("MTPROC_FORKS", str(DEFAULT_FORKS)))
     return base / name
 
 
 def fork_clone(name: str) -> Path | None:
-    """The clone directory for a forked dependency, or None if there isn't one.
+    """Return the clone directory of a forked dependency, if present.
 
-    See `forks_dir` for the location; a clone is one holding a `.git` entry.
+    Args:
+        name (str): Directory name of the fork, e.g. "mth5".
+
+    Returns:
+        Path | None: The `forks_dir` location when it holds a `.git` entry,
+        otherwise None.
     """
     path = forks_dir(name)
     return path if (path / ".git").exists() else None

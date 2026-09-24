@@ -1,9 +1,11 @@
-"""The recorders mtproc reads, and how a folder of raw files says which one it holds.
+# -*- coding: utf-8 -*-
+"""
+Recorders mtproc reads and their detection from a folder of raw files
 
-A site's instrument is a fact of its files: the survey
-names a default (`instrument:` at the top of survey.yaml) and a site whose
-folder holds another recorder's files is that recorder, detected here and
-written by `scripts/new_survey.py` as the site's own `instrument:`.
+A site's instrument is determined by its files. The survey names a default
+(`instrument:` at the top of survey.yaml), and a site whose folder holds
+another recorder's files is detected as that recorder here and written by
+`scripts/new_survey.py` as the site's own `instrument:`.
 
     lemi423  LEMI-423 broadband logger: `<unix epoch>.B423` binary files
              (90 min each), mt_io.lemi.lemi423 -> hx hy hz ex ey (counts; the
@@ -21,14 +23,18 @@ written by `scripts/new_survey.py` as the site's own `instrument:`.
              signed dipole length, the x10 terminal box). A site may declare
              an extra `electric_gain:` for its electric chain beyond that:
              hardwired at the field terminal junction box, and for a survey
-             whose PR6-24 configs were not kept (Stuart Shelf 2009), known
-             only from the field notes. It gets one more filter here, on ex
-             and ey, of that gain (`ELECTRIC_GAIN_FILTER`)
+             whose PR6-24 configs were not kept, known from the field
+             notes. That gain is added as one more filter on ex and ey
+             (`ELECTRIC_GAIN_FILTER`)
 
-Nothing here imports mt-io at module load (`mtproc.survey` imports this);
-the readers are imported where they are used. File names carry each file's
-start in UTC (`file_start`), which is all the run splitting and the spans
-need.
+The mt-io readers are imported inside the functions that use them, so
+importing this module (and `mtproc.survey`, which imports it) does not load
+mt-io. File names carry each file's start in UTC (`file_start`), which is
+what run splitting and `span` use.
+
+@author: ben kay (ben@auscope.org.au)
+
+:license: MIT
 """
 
 from __future__ import annotations
@@ -54,22 +60,35 @@ LEMI424_ELECTRICS = ("e1", "e2", "e3", "e4")  # every electric column; `channels
 LEMI424_FIELDS = (24, 16)  # the reader's two line layouts: with and without the GPS block
 EDL_FILES = {".BX": "hx", ".BY": "hy", ".BZ": "hz", ".EX": "ex", ".EY": "ey"}  # pr624's mapping
 EDL_STAMP = re.compile(r"(\d{12})$")  # YYMMDDhhmmss at the end of the stem
-# an EDL site's magnetic sensors (`sensor_type:`, mt_io.uoa.pr624's own names) -> the prefix of
-# the response filter the reader puts on hx/hy/hz for them
+# EDL magnetic sensors (`sensor_type:`, in mt_io.uoa.pr624's names) mapped to the prefix of
+# the response filter the reader puts on hx, hy and hz for them
 EDL_SENSORS = {"bartington": "uoa_bartington", "lemi120": "lemi_120"}
 _EDL_SUFFIXES = {s.lower() for s in EDL_FILES}
 # An EDL site's electric chain may carry extra gain between the dipoles and the recorded values,
-# beyond what the reader already models (the x10 terminal box): hardwired at the field terminal
-# junction box, and for a survey whose PR6-24 configs were not kept (Stuart Shelf 2009), known only
-# from the field notes. `SiteConfig.electric_gain` (default 1.0, no filter) declares it; `read_run`
-# folds it into this filter on ex and ey: forward, as the reader's own gains are (input microVolt ->
-# stored words), so calibration divides by it and the channels come out that many times smaller.
-# The archive keeps the words as stored.
+# beyond what the reader models (the x10 terminal box). It is hardwired at the field terminal
+# junction box and, for a survey whose PR6-24 configs were not kept, known
+# from the field notes. `SiteConfig.electric_gain` (default 1.0, no filter) declares it, and
+# `read_run` adds it as this filter on ex and ey. The filter is forward, like the reader's own gains
+# (input microVolt to stored words), so calibration divides by it and the channels come out that
+# many times smaller. The archive keeps the words as stored.
 ELECTRIC_GAIN_FILTER = "uoa_electric_gain"
 
 
 def is_record(path: Path, instrument: str) -> bool:
-    """Whether `path`'s name is a data file of `instrument` (the name only; AppleDouble `._` twins never are)."""
+    """Return whether a file name is a data file of an instrument.
+
+    Only the name is checked. AppleDouble ``._`` twins are rejected.
+
+    Args:
+        path (Path): File path.
+        instrument (str): Key of `INSTRUMENTS`.
+
+    Returns:
+        bool: True for a data file name of `instrument`.
+
+    Raises:
+        ValueError: If the instrument is unknown.
+    """
     name, stem, suffix = path.name, path.stem, path.suffix
     if name.startswith("._"):
         return False
@@ -83,7 +102,7 @@ def is_record(path: Path, instrument: str) -> bool:
 
 
 def _lemi424_line(path: Path) -> bool:
-    """Whether the file's first line is one the LEMI-424 reader parses (24 or 16 fields, a date first)."""
+    """Return whether the first line parses as LEMI-424 data (24 or 16 fields, a year first)."""
     try:
         with open(path, "rb") as f:
             fields = f.readline(512).split()
@@ -93,19 +112,27 @@ def _lemi424_line(path: Path) -> bool:
 
 
 def detect_instrument(site_dir: str | Path, prefer: str = "lemi423") -> str | None:
-    """The instrument whose files `site_dir` holds anywhere below it, or None (not a site).
+    """Detect the instrument whose files a folder holds anywhere below it.
 
-    One walk. `prefer` (the survey's instrument) wins as soon as one of its
-    files is seen, so a LEMI-423 survey finds its sites exactly as the old
-    rule did (a B423 file named by its epoch anywhere under the folder);
-    otherwise the evidence seen decides, `prefer` first, then the
-    `INSTRUMENTS` order: a LEMI-424 `.txt` counts only when its first line
-    parses, an EDL folder by a channel file or its `recorder.ini`.
+    The folder is walked once. `prefer` is returned as soon as one of its
+    files is seen, so a LEMI-423 survey recognises a site by a B423 file
+    named by its epoch anywhere under the folder. Otherwise the evidence
+    seen decides, `prefer` first, then the `INSTRUMENTS` order. A LEMI-424
+    ``.txt`` counts when its first line parses; an EDL folder is recognised
+    by a channel file or its ``recorder.ini``.
+
+    Args:
+        site_dir (str or Path): Folder to search.
+        prefer (str): Instrument to return first, usually the survey's.
+
+    Returns:
+        str or None: Key of `INSTRUMENTS`, or None when the folder is not a
+        site.
     """
     seen: set[str] = set()
     for dirpath, _dirnames, filenames in os.walk(site_dir):
         for name in filenames:
-            low = name.lower()  # a cheap look at the extension before any Path is made
+            low = name.lower()  # check the extension before building a Path
             found = ("edl" if low == "recorder.ini" or low[-3:] in _EDL_SUFFIXES else
                      "lemi423" if low.endswith(".b423") else "lemi424" if low.endswith(".txt") else None)
             if found is None or found in seen and found != prefer:
@@ -122,12 +149,18 @@ def detect_instrument(site_dir: str | Path, prefer: str = "lemi423") -> str | No
 
 
 def b423_files(site_dir: Path) -> list[Path]:
-    """Every real B423 record file under `site_dir`, sorted by its epoch name.
+    """List the B423 record files under a folder, sorted by epoch name.
 
     A B423 file is named by the unix epoch of its first sample, so a name
-    that is not a whole number is not a record: data copied through a Mac
-    arrives with an AppleDouble twin per file (`._1677774771.B423`, a 4 kB
-    resource fork), and those are skipped with one warning per folder.
+    that is not a whole number is not a record. Data copied through a Mac
+    carry an AppleDouble twin per file (``._1677774771.B423``, a 4 kB
+    resource fork); those are skipped with one warning per folder.
+
+    Args:
+        site_dir (Path): Site folder, searched recursively.
+
+    Returns:
+        list of Path: Record files in time order.
     """
     real, skipped = [], []
     for f in Path(site_dir).rglob("*.B423"):
@@ -141,7 +174,11 @@ def b423_files(site_dir: Path) -> list[Path]:
 
 
 def file_start(path: Path, instrument: str) -> int:
-    """The UTC unix second a data file starts at, from its name."""
+    """Return the UTC unix second a data file starts at, parsed from its name.
+
+    Raises:
+        ValueError: If the instrument is unknown.
+    """
     stem = Path(path).stem
     if instrument == "lemi423":
         return int(stem)
@@ -155,11 +192,19 @@ def file_start(path: Path, instrument: str) -> int:
 
 
 def record_files(site_dir: Path, instrument: str) -> list[Path]:
-    """Every data file of `instrument` under `site_dir`, by start (EDL: the channel files of each start together).
+    """List the data files of an instrument under a folder, sorted by start time.
 
-    EDL: only the files named for the station `recorder.ini` names
-    (`station_long_identifier`, mt-io's `read_recorder_ini`), when it names one
-    and any file carries it (`_edl_own_files`).
+    For EDL, the channel files of each start are kept together, and when
+    ``recorder.ini`` names a station (``station_long_identifier``, read by
+    mt-io's `read_recorder_ini`) that some file carries, only that station's
+    files are returned (`_edl_own_files`).
+
+    Args:
+        site_dir (Path): Site folder, searched recursively.
+        instrument (str): Key of `INSTRUMENTS`.
+
+    Returns:
+        list of Path: Data files in start order.
     """
     if instrument == "lemi423":
         return b423_files(site_dir)
@@ -171,16 +216,24 @@ def record_files(site_dir: Path, instrument: str) -> list[Path]:
 
 
 def _edl_own_files(site_dir: Path, found: list[Path]) -> list[Path]:
-    """The EDL files whose name carries the station recorder.ini names; all of them when none does.
+    """Keep the EDL files named for the station that recorder.ini names.
 
     A PR6-24 keeps writing under the last deployment's name until it is set
-    for the new one, and keeps old deployments' day folders: Hillside's HSSL09
-    folder holds 115 stamps of another survey's PLB03 from 2012-04-29 (its span
-    read 1602.7 h), hs058 four stamps of "XX_" at 01:48-02:47 (one inside its
-    own record), hs061 a test recording "HStest_" under old/ with its own
-    files' stamps. Those are left out, with one warning per site. The station
+    for the new one, and keeps old deployments' day folders. A site's folder
+    can therefore hold stamps of another survey's station (which stretch the
+    site's span), a few stamps under a placeholder name such as "XX_" (some
+    inside the site's own record), or a test recording kept in a subfolder.
+    Files of other stations are left out with one warning per site. Station
     names compare case-insensitively without the separating "_" (mt-io's
     `parse_edl_station`).
+
+    Args:
+        site_dir (Path): Site folder holding recorder.ini.
+        found (list of Path): Candidate EDL files.
+
+    Returns:
+        list of Path: The station's files, or all of `found` when
+        recorder.ini names no station or no file carries its name.
     """
     from mt_io.uoa import UoACollection
     from mt_io.uoa.pr624 import parse_edl_station
@@ -208,11 +261,22 @@ def _edl_own_files(site_dir: Path, found: list[Path]) -> list[Path]:
 
 
 def edl_sample_rate(site_dir: Path, files=None) -> float | None:
-    """An EDL site's rate: `recorder.ini` (mt-io's `UoACollection.read_recorder_ini`), else the file spacing.
+    """Return the sample rate of an EDL site.
 
-    ASCII files carry no header; with no recorder.ini the rate comes from
-    consecutive file stamps and sample counts (`mt_io.uoa.pr624.infer_sample_rate`,
-    which needs two files). None when neither says.
+    The rate is read from ``recorder.ini`` (mt-io's
+    `UoACollection.read_recorder_ini`). ASCII files carry no header, so
+    without recorder.ini the rate comes from consecutive file stamps and
+    sample counts (`mt_io.uoa.pr624.infer_sample_rate`, which needs two
+    files).
+
+    Args:
+        site_dir (Path): Site folder.
+        files (list of Path, optional): The site's EDL files; listed with
+            `record_files` when None.
+
+    Returns:
+        float or None: Sample rate in Hz, or None when neither source gives
+        one.
     """
     from mt_io.uoa import UoACollection
     from mt_io.uoa.pr624 import infer_sample_rate
@@ -225,7 +289,7 @@ def edl_sample_rate(site_dir: Path, files=None) -> float | None:
 
 
 def _lemi424_last_second(path: Path) -> int:
-    """The UTC second of a LEMI-424 file's last line (its tail, not the whole file)."""
+    """Return the UTC second of a LEMI-424 file's last line, reading only the last 4 kB."""
     with open(path, "rb") as f:
         f.seek(0, 2)
         f.seek(max(0, f.tell() - 4096))
@@ -235,12 +299,26 @@ def _lemi424_last_second(path: Path) -> int:
 
 
 def span(site_dir: Path, instrument: str, files=None) -> tuple[pd.Timestamp, pd.Timestamp, int]:
-    """(start, end, number of files or file stamps) of a site's recording, from its file names.
+    """Return the recorded span of a site from its file names.
 
-    LEMI-423: first epoch to the last plus the median spacing (5400 s for one
-    file), as `scripts/timing_qc.py` and the MATLAB app read it. LEMI-424:
-    to the last file's last line plus one second. EDL: to the last stamp plus
-    its first channel file's sample count over the rate (`edl_sample_rate`).
+    LEMI-423: first epoch to the last plus the median spacing (5400 s for
+    one file), as `scripts/timing_qc.py` reads it.
+    LEMI-424: to the last file's last line plus one second. EDL: to the last
+    stamp plus its first channel file's sample count over the rate
+    (`edl_sample_rate`).
+
+    Args:
+        site_dir (Path): Site folder.
+        instrument (str): Key of `INSTRUMENTS`.
+        files (list of Path, optional): The site's data files; listed with
+            `record_files` when None.
+
+    Returns:
+        tuple: ``(start, end, n)``: UTC Timestamps and the number of
+        distinct file start stamps.
+
+    Raises:
+        FileNotFoundError: If the folder holds no files of the instrument.
     """
     files = files if files is not None else record_files(Path(site_dir), instrument)
     if not files:
@@ -262,14 +340,28 @@ def span(site_dir: Path, instrument: str, files=None) -> tuple[pd.Timestamp, pd.
 
 
 def header_facts(site_dir: Path, instrument: str, files: list[Path]) -> dict:
-    """What a LEMI-424 or EDL site's own files say, for `scripts/new_survey.py`.
+    """Collect the metadata a LEMI-424 or EDL site's files carry.
 
-    LEMI-424: the reader's first and last line (`LEMI424.read_metadata`) for
-    the GPS position and elevation and the rate; serial and firmware from the
-    `.inf` header the logger writes at deployment ("%LEMI424 #0160",
-    "%FIRMWARE Ver.1.4"; mt-io has no reader for it). EDL: the rate
-    (`edl_sample_rate`); the files carry no position and no serial. `columns`
-    are the reader's names for what ingest reads.
+    Used by `scripts/new_survey.py`. LEMI-424: the reader's first and last
+    line (`LEMI424.read_metadata`) give the GPS position, elevation and
+    rate; serial and firmware come from the ``.inf`` header the logger
+    writes at deployment ("%LEMI424 #0160", "%FIRMWARE Ver.1.4"), which
+    mt-io does not read. EDL: the rate (`edl_sample_rate`) and the
+    recorder.ini high-gain flags; the files carry no position and no serial.
+
+    Args:
+        site_dir (Path): Site folder.
+        instrument (str): ``"lemi424"`` or ``"edl"``.
+        files (list of Path): The site's data files.
+
+    Returns:
+        dict: ``sample_rate``, ``columns`` (the reader's names for what
+        ingest reads) and, as available, ``latitude``, ``longitude``,
+        ``elevation``, ``serial``, ``firmware``, ``high_gain`` and
+        ``problem`` (a message for the user).
+
+    Raises:
+        ValueError: For any other instrument.
     """
     if instrument == "lemi424":
         from mt_io.lemi.lemi424 import LEMI424
@@ -299,26 +391,47 @@ def header_facts(site_dir: Path, instrument: str, files: list[Path]) -> dict:
 
 
 def read_run(instrument: str, files: list[Path], site, site_dir: Path, calibration: Path | None = None):
-    """One contiguous group of a LEMI-424 or EDL site's files -> a RunTS, through the mt-io reader.
+    """Read one contiguous group of a LEMI-424 or EDL site's files into a RunTS.
 
-    (LEMI-423 is read in `mtproc.ingest.ingest_site` itself, unchanged.)
-    LEMI-424: every electric column (`LEMI424_ELECTRICS`) and the station id,
-    which the reader leaves empty; nothing else is touched -- no dipole
-    length, the reader's units. EDL: the rate from `edl_sample_rate`, the
-    site's dipole lengths, and its azimuths when `flip_reversed_dipoles` says a
-    180/270 degree azimuth is a reversed pair (the reader's dipole filter then
-    carries the sign; nominal 0/90 otherwise), the position when declared.
-    The x10 terminal box is the reader's default. The magnetic sensors are the
-    site's `sensor_type` (`EDL_SENSORS`): "bartington" (Mag-03 fluxgates, the
-    long-period setup; also what no `sensor_type` means, the reader's default)
-    or "lemi120" (induction coils, the broadband setup), whose response file
-    `calibration` (the site's resolved `calibration_fn`) goes to the reader for
-    hx, hy and hz -- a coil read with the fluxgate chain comes out 2800 times
-    too large with no coil response (Hillside). The site's declared
-    `electric_gain` (`edl_electric_gain`), when not 1.0, gets `ELECTRIC_GAIN_FILTER`
-    at the end of ex and ey's chain (`add_electric_gain`): Stuart Shelf 2009's
-    electric chain gain, declared from the field notes, is 10.0, and read
-    without it its rho came out 100x the 2009 result.
+    LEMI-423 files are read in `mtproc.ingest.ingest_site`.
+
+    LEMI-424: the reader is given every electric column
+    (`LEMI424_ELECTRICS`), and the station id, which the reader leaves
+    empty, is set. No dipole length is applied and the reader's units are
+    kept.
+
+    EDL: the reader is given the rate from `edl_sample_rate`, the site's
+    dipole lengths, its azimuths when `flip_reversed_dipoles` treats a
+    180/270 deg azimuth as a reversed pair (the reader's dipole filter then
+    carries the sign; nominal 0/90 otherwise), and the position when
+    declared. The x10 terminal box is the reader's default. The magnetic
+    sensors are the site's `sensor_type` (`EDL_SENSORS`): "bartington"
+    (Mag-03 fluxgates, the long-period setup and the reader's default) or
+    "lemi120" (induction coils, the broadband setup), whose response file
+    `calibration` is passed to the reader for hx, hy and hz. A coil read with
+    the fluxgate chain comes out 2800 times too large with no coil response.
+    When the declared `electric_gain` (`edl_electric_gain`) is not 1.0,
+    `ELECTRIC_GAIN_FILTER` is appended to the ex and ey chains
+    (`add_electric_gain`). Read without its declared gain g, a site's
+    apparent resistivity comes out g squared times too large (100 times
+    for a gain of 10).
+
+    Args:
+        instrument (str): ``"lemi424"`` or ``"edl"``.
+        files (list of Path): Files of one contiguous run.
+        site (SiteConfig): Site settings.
+        site_dir (Path): Site folder.
+        calibration (Path, optional): The site's resolved `calibration_fn`,
+            required for sensor_type lemi120.
+
+    Returns:
+        RunTS: The run as mt-io reads it.
+
+    Raises:
+        ValueError: If the EDL sample rate is unknown, a magnetic channel
+            lacks the expected sensor response, the sensor type is unknown,
+            or the instrument is neither lemi424 nor edl.
+        FileNotFoundError: If sensor_type lemi120 has no response file.
     """
     files = [Path(f) for f in files]
     if instrument == "lemi424":
@@ -348,7 +461,7 @@ def read_run(instrument: str, files: list[Path], site, site_dir: Path, calibrati
             kwargs.update(sensor_type="lemi120", **{f"calibration_fn_{c}": str(calibration) for c in ("bx", "by", "bz")})
         run = read_uoa(files, **kwargs)
         for comp in ("hx", "hy", "hz"):
-            # the reader logs a coil file it cannot read and leaves the channel with no chain
+            # a coil file the reader cannot read is logged and leaves the channel with no chain
             names = [f["applied_filter"]["name"] for f in run.dataset[comp].attrs.get("filters") or []] \
                 if comp in run.dataset else None
             if names is not None and not any(n.startswith(EDL_SENSORS[sensor]) for n in names):
@@ -359,19 +472,28 @@ def read_run(instrument: str, files: list[Path], site, site_dir: Path, calibrati
 
 
 def edl_electric_gain(site) -> float:
-    """An EDL site's declared electric chain gain (`SiteConfig.electric_gain`), 1.0 (no filter) when unset."""
+    """Return an EDL site's declared electric chain gain, 1.0 (no filter) when unset."""
     value = getattr(site, "electric_gain", None)
     return 1.0 if value is None else float(value)
 
 
 def add_electric_gain(run, gain: float, tag: str = "") -> list[str]:
-    """Append `ELECTRIC_GAIN_FILTER` (`gain`, microVolt in and out) to ex and ey's chain in `run`.
+    """Append `ELECTRIC_GAIN_FILTER` to the ex and ey filter chains of a run.
 
-    The samples are not touched: the filter goes into `run.filters` and each
-    channel's applied-filter list, as `mtproc.ingest._apply_h_scale` adds its
-    scale, so the archive carries it and calibration divides by it. `gain` of
-    1.0 (the default -- no gain declared) adds nothing. Returns the electric
-    channels this run has data for (ex, ey, whichever the run carries).
+    The samples are left unchanged. The coefficient filter (microVolt in
+    and out) goes into ``run.filters`` and each channel's applied-filter
+    list, as `mtproc.ingest._apply_h_scale` adds its scale, so the archive
+    carries it and calibration divides by it.
+
+    Args:
+        run (RunTS): Run to modify in place.
+        gain (float): Electric chain gain. A gain of 1.0, the default when
+            none is declared, adds nothing.
+        tag (str): Label for the caller; not used in the filter.
+
+    Returns:
+        list of str: The electric channels the filter was added to (ex, ey,
+        whichever the run carries).
     """
     if not gain or float(gain) == 1.0:
         return []
@@ -396,19 +518,25 @@ def add_electric_gain(run, gain: float, tag: str = "") -> list[str]:
 
 
 def recorder_ini_high_gain(site_dir: Path) -> list[str] | None:
-    """The EDL channels a site's recorder.ini flags `channel_n_high_gain=1` on, or None.
+    """List the EDL channels flagged ``channel_n_high_gain=1`` in recorder.ini.
 
-    EDM 021 4.2.8: one flag per channel, default low. mt-io's
-    `UoACollection.read_recorder_ini` folds the six into one boolean nothing
-    reads (docs/upstream_issues.md 21), so the file is read here, the first
-    recorder.ini under `site_dir` as mt-io takes it: channel n is the file
-    extension its `channel_n_long_id` names (BX .. EY, the reader's hx .. ey),
-    else UoA's order 0-4 = BX BY BZ EX EY. None when there is no recorder.ini
-    or it sets no gain; [] when every flag is 0. Informational only:
-    `electric_gain` is a field-notes fact about the electric chain, not
-    this PR6-24 pre-amplifier setting, so
-    `mtproc.ingest._electric_gain` only warns with what this returns, never
-    sets `electric_gain` from it.
+    EDM 021 4.2.8 defines one flag per channel, default low. mt-io's
+    `UoACollection.read_recorder_ini` folds the six into one boolean
+    (docs/upstream_issues.md 21), so the first recorder.ini under
+    `site_dir`, the one mt-io takes, is parsed here. Channel n is the file
+    extension its ``channel_n_long_id`` names (BX .. EY, the reader's
+    hx .. ey), else UoA's order 0-4 = BX BY BZ EX EY. The result is
+    informational: `electric_gain` records the electric chain gain from the
+    field notes, which is separate from this PR6-24 pre-amplifier setting,
+    and `mtproc.ingest._electric_gain` uses the result for a warning.
+
+    Args:
+        site_dir (Path): Site folder.
+
+    Returns:
+        list of str or None: Flagged channels in hx, hy, hz, ex, ey order;
+        an empty list when every flag is 0; None when there is no readable
+        recorder.ini or it sets no gain flag.
     """
     import configparser
 
@@ -440,7 +568,18 @@ def recorder_ini_high_gain(site_dir: Path) -> list[str] | None:
 
 
 def edl_sensor(site) -> str:
-    """An EDL site's magnetic sensors, a key of `EDL_SENSORS`: its `sensor_type`, "bartington" when unset."""
+    """Return an EDL site's magnetic sensor type.
+
+    Args:
+        site (SiteConfig): Site settings.
+
+    Returns:
+        str: Key of `EDL_SENSORS`, the site's `sensor_type` or
+        "bartington" when unset.
+
+    Raises:
+        ValueError: If `sensor_type` is not a key of `EDL_SENSORS`.
+    """
     sensor = str(getattr(site, "sensor_type", None) or "bartington").strip().lower()
     if sensor not in EDL_SENSORS:
         raise ValueError(f"{site.name}: sensor_type {sensor!r} is not one of {', '.join(EDL_SENSORS)}")

@@ -1,9 +1,88 @@
-"""Start a survey.yaml from a folder of site folders and their recorders' own files.
+# -*- coding: utf-8 -*-
+"""
+Start a survey.yaml from a folder of site folders and their recorders' files
 
-For a new survey that has only its raw data -- one subfolder per site with
-LEMI-423 ``*.B423``, LEMI-424 ``YYYYMMDDhhmm.txt`` or Earth Data PR6-24
-``{station}YYMMDDhhmmss.{BX,..,EY}`` files anywhere under it -- and paper
-field sheets.
+For a new survey that has its raw data and paper field sheets: one subfolder
+per site with LEMI-423 ``*.B423``, LEMI-424 ``YYYYMMDDhhmm.txt`` or Earth
+Data PR6-24 ``{station}YYMMDDhhmmss.{BX,..,EY}`` files anywhere under it.
+
+Sites are found by the rule of `mtproc.survey.Survey.site_dirs` (a subfolder
+of data_root with any of those files anywhere under it; site name = folder
+name), and each site's instrument is detected from its files
+(`mtproc.instruments.detect_instrument`). The survey's `instrument:` is the
+most common one, or the one named by `--instrument`. A site recorded on
+another instrument gets its own `instrument:` and that instrument's default
+`channels:` preset, since its reader uses other channel names. The facts of
+LEMI-424 and EDL sites come from `mtproc.instruments.header_facts`: a
+LEMI-424's `.inf` (serial, firmware) and its first data line through mt-io
+(GPS position, elevation; 1 Hz), and an EDL's recorder.ini (the rate, or the
+file spacing) without a position. Their span runs from the file names to the
+end of the last file (`mtproc.instruments.span`). For each LEMI-423 site the
+first B423 file (by its file-name epoch) is read through mt-io
+(`mt_io.lemi.lemi423`): `Read_Lemi_Header` gives the logger's serial number
+and firmware and its GPS latitude, longitude and elevation at deployment,
+and `fast_sample_rate` gives the sample rate from a bounded read of the first
+4096 records. mt-io's `Read_Lemi_Data.read_summary` scans the whole file (a
+first file can run to more than 100 MB); the bounded read takes milliseconds.
+The recorded span is that of the file-name epochs, first to last plus the
+median spacing, as the GUI's window bar reads it.
+
+The script writes surveys/<name>/survey.yaml (or --out) with the survey's
+name, instrument, sample_rate (the most common across sites; a warning names
+any site that differs), data_root, workspace, timezone and `generated_by:
+scripts/new_survey.py`; a `defaults:` block and a `processing:` block; and a
+`sites:` block with one entry per folder: latitude, longitude, elevation,
+serial, firmware, start and end (UTC), and a note that the dipole lengths and
+azimuths are the defaults. Dipole lengths and azimuths are left out of the
+site entries, so the defaults apply until they are set from the field sheet,
+on the GUI's Metadata tab or with --site-table. The site table is a CSV or
+XLSX with a `site` column plus any of `mtproc.survey.SITE_TABLE_COLUMNS`;
+its values are merged over the header's for
+the sites it names. The header's GPS fix takes precedence for latitude,
+longitude and elevation (the table fills them only where the header has
+none), and every disagreement is printed. The columns of the field-sheet
+survey CSV (SiteName, ExDipole, ExAzimuth, ..., TimeZone) are read as
+well. The coil response file (default: surveys/burra/sensors/l120n.rsp, the
+LEMI-120 one) is copied into the survey folder's sensors/.
+
+--channels declares which of the recorder's columns had a sensor attached,
+which is survey logistics that the files cannot tell. It is a preset label
+from `mtproc.survey.CHANNEL_PRESETS` for the instrument ("Ex Ey Bx By", the
+LEMI-423 default, with the Bz column an open input; "Ex Ey Bx By Bz"; "Bx By
+(magnetics only)" for a dedicated remote; "Bx By Bz") or a comma list of the
+reader's names ("hx,hy"). It is written as `defaults: channels:`, which
+ingest applies, dropping every other column from the archive; a site that
+differs gets its own `channels:` on the GUI's Metadata tab. The summary
+prints, per site, the columns mt-io reads from the first file (the B423
+record's Bx By Bz Ex Ey, stored as hx hy hz ex ey) next to the declared set,
+and warns when a declared channel is not among them.
+
+--electric-gain names the extra gain of an Earth Data PR6-24 site's electric
+chain between the dipoles and the recorded values, beyond what the reader
+already models (the x10 terminal box). It is hardwired at the field terminal
+junction box and declared from the field notes when the PR6-24's own configs
+were not kept (e.g. 10). It is written as `defaults:
+electric_gain:`, which ingest folds into a filter of that gain on every EDL
+site's ex and ey (`mtproc.instruments.read_run`). Without the option no key
+is written (1.0, no filter). A site's `config/recorder.ini` may carry its
+own `channel_n_high_gain` flags (read by
+`mtproc.instruments.recorder_ini_high_gain`, since mt-io's
+`read_recorder_ini` keeps one boolean for all six); the summary prints them
+against the declared gain for information only. The option is an error when
+no site is an EDL.
+
+The workspace, which holds the MTH5 archives, transfer functions, figures and
+the basemap, is `<data_root>/work` unless --workspace names another folder.
+It sits beside the raw data rather than in the repo because a 100-site
+survey's archives run to hundreds of GB. The script writes the key; the
+folder is created by the first script that writes into it.
+
+An existing survey.yaml holds hand edits and is overwritten only with
+--force. When legacy EDIs exist for the survey (lemimt, a contractor's), run
+
+    python scripts/match_reference_edis.py <edi_dir> <survey.yaml>
+
+afterwards to write reference_edis.yaml, which the View EDIs tab overlays.
 
 Usage:
     python scripts/new_survey.py <data_root> --name NAME [--instrument auto]
@@ -11,83 +90,9 @@ Usage:
         [--timezone Australia/Adelaide] [--out PATH]
         [--workspace DIR] [--calibration FILE] [--site-table CSV_OR_XLSX] [--force]
 
-Sites are found by the rule `mtproc.survey.Survey.site_dirs` uses (a subfolder
-of data_root with any of those files anywhere under it; site name = folder
-name), and each site's instrument is detected from its files
-(`mtproc.instruments.detect_instrument`). The survey's `instrument:` is the
-most common one (`--instrument` names it instead); a site recorded on another
-instrument gets its own `instrument:` and that instrument's default
-`channels:` preset, since the survey default's channel names are not its
-reader's. LEMI-424 and EDL sites' facts come from `mtproc.instruments.
-header_facts`: a LEMI-424's `.inf` (serial, firmware) and its first data
-line through mt-io (GPS position, elevation; 1 Hz), an EDL's recorder.ini
-(the rate; or the file spacing), no position; their span from the file
-names to the end of the last file (`mtproc.instruments.span`).
-For each LEMI-423 site, the FIRST B423 file (by its file-name epoch) is read through
-mt-io (`mt_io.lemi.lemi423`): `Read_Lemi_Header` for the logger's serial
-number and firmware, its GPS latitude, longitude and elevation at deployment,
-and `fast_sample_rate` (below) for the sample rate -- a bounded read of the
-first 4096 records rather than mt-io's own `Read_Lemi_Data.read_summary`,
-which scans the whole file (about 0.7 s a site on Curnamona's 162 MB first
-files; the bounded read is milliseconds). The recorded span is the file-name
-epochs', first to last plus the median spacing, as the GUI's window bar reads it.
+@author: ben kay (ben@auscope.org.au)
 
-Writes surveys/<name>/survey.yaml (or --out) with the survey's name,
-instrument, sample_rate (the most common across sites; a warning names any
-site that differs), data_root, workspace, timezone and `generated_by:
-scripts/new_survey.py`; a `defaults:` block and a `processing:` block; and a
-`sites:` block with one entry per folder: latitude, longitude, elevation,
-serial, firmware, start and end (UTC), and a note that the dipole lengths and
-azimuths are the defaults. Those are not written per site, so the defaults
-apply until they are set from the field sheet -- on the GUI's Metadata tab,
-or with --site-table (a CSV or XLSX with a `site` column plus any of
-`mtproc.survey.SITE_TABLE_COLUMNS`, see docs/site_table_template.csv), whose
-values are merged over the header's for the sites it names, except that
-the header's GPS fix wins for latitude, longitude and elevation (the table
-fills them only where the header has none) and every disagreement is
-printed; the MATLAB field app's survey CSV columns (SiteName, ExDipole,
-ExAzimuth, ..., TimeZone) are understood too. The coil
-response file (default: surveys/burra/sensors/l120n.rsp, the LEMI-120 one)
-is copied into the survey folder's sensors/.
-
---channels says which of the recorder's columns had a sensor attached, the
-survey's logistics rather than anything a file can tell: a preset label from
-`mtproc.survey.CHANNEL_PRESETS` for the instrument ("Ex Ey Bx By", the
-LEMI-423 default, with the Bz column an open input; "Ex Ey Bx By Bz"; "Bx By
-(magnetics only)" for a dedicated remote; "Bx By Bz") or a comma list of the
-reader's names ("hx,hy"). It is written as `defaults: channels:`, which ingest
-applies (every other column is dropped from the archive); a site that differs
-gets its own `channels:` on the GUI's Metadata tab. The summary prints, per
-site, the columns mt-io reads from the first file (the B423 record's Bx By Bz
-Ex Ey, stored as hx hy hz ex ey) next to the declared set, and warns when a
-declared channel is not among them.
-
---electric-gain names the extra gain of an Earth Data PR6-24 site's electric
-chain, between the dipoles and the recorded values, beyond what the reader
-already models (the x10 terminal box): hardwired at the field terminal
-junction box, and declared from the field notes when the PR6-24's own configs
-were not kept (Stuart Shelf 2009: 10). It is written as `defaults:
-electric_gain:`, which ingest folds into a filter of that gain on every EDL
-site's ex and ey (`mtproc.instruments.read_run`); omitted, no key is written
-(1.0, no filter). A site's `config/recorder.ini` may still carry its own
-`channel_n_high_gain` flags (read by `mtproc.instruments.recorder_ini_high_gain`,
-since mt-io's `read_recorder_ini` keeps one boolean for all six) -- the
-summary prints them against the declared gain, informationally: they set
-nothing. The flag is refused when no site is an EDL.
-
-The workspace -- where the MTH5 archives, transfer functions, figures and the
-basemap go -- is `<data_root>/work` unless --workspace names another folder:
-beside the raw data rather than in the repo, because a 100-site survey's
-archives run to hundreds of GB. This script only writes the key; the folder
-is made by the first script that writes into it.
-
-An existing survey.yaml is never overwritten without --force: hand edits live
-in it. When legacy EDIs exist for the survey (lemimt, a contractor's), run
-afterwards
-
-    python scripts/match_reference_edis.py <edi_dir> <survey.yaml>
-
-to write reference_edis.yaml, which the View EDIs tab overlays.
+:license: MIT
 """
 
 from __future__ import annotations
@@ -114,10 +119,9 @@ REPO = Path(__file__).resolve().parents[1]
 DEFAULT_CALIBRATION = REPO / "surveys" / "burra" / "sensors" / "l120n.rsp"
 DEFAULT_FILE_SECONDS = 5400  # a B423 file's nominal span, for a site with one file
 DEFAULTS_NOTE = "dipole lengths and azimuths from defaults - set them from the field sheet"
-# the LEMI-423's documented rates (mt_io.lemi.lemi_collection.LEMICollection's docstring)
-# the LEMI-423's documented rates. There is no 1 Hz mode: a file with one
-# record per second (Morocco R05, tick always 0) is an instrument fault and
-# is reported as measured, with a warning, never snapped to a known rate
+# the LEMI-423's documented rates (mt_io.lemi.lemi_collection.LEMICollection's docstring).
+# There is no 1 Hz mode: a file with one record per second (tick always 0)
+# is an instrument fault and is reported as measured, with a warning
 KNOWN_SAMPLE_RATES = (4000.0, 2000.0, 1000.0, 500.0, 250.0)
 SAMPLE_RATE_RECORDS = 4096  # bounded read for the rate scan: several seconds even at 250 Hz
 # how mt-io's LEMI423Reader.read names the B423 record's data columns (its `mapping`)
@@ -134,7 +138,12 @@ EDL_COIL_MIN_RATE = 100.0
 
 
 def edl_sensor_for(rate) -> str:
-    """"lemi120" (induction coils) at `EDL_COIL_MIN_RATE` Hz and above, else "bartington" (fluxgates)."""
+    """Return an EDL site's sensor_type from its rate.
+
+    Returns:
+        str: "lemi120" (induction coils) at `EDL_COIL_MIN_RATE` Hz and above,
+        otherwise "bartington" (fluxgates).
+    """
     return "lemi120" if rate and float(rate) >= EDL_COIL_MIN_RATE else "bartington"
 ISO = "%Y-%m-%dT%H:%M:%SZ"
 
@@ -159,20 +168,19 @@ defaults:
   # LEMI-120 coil response (LEMI-423 sites, and EDL sites with sensor_type lemi120);
   # a relative path resolves against this folder first
   calibration_fn: {calibration_fn}
-  # LEMI-423 sites: empirical magnetics correction vs the lemimt convention: pT -> nT + polarity
-  # (validated at Curnamona on D02/E08: constant 1e6 rho offset, exact 180 deg phase)
+  # LEMI-423 sites: magnetics correction to the lemimt convention, pT to nT and polarity
   h_scale: -1000.0
   # how to read a 180/270 deg dipole azimuth on the field sheet. true: the pair
-  # was wired reversed, so its data are sign-flipped at ingest (Curnamona).
-  # false: the azimuth only records the layout direction and the logger's
-  # terminals fix polarity, so nothing is flipped (Burra). Check the impedance
+  # was wired reversed, so its data are sign-flipped at ingest. false: the
+  # azimuth only records the layout direction and the logger's terminals fix
+  # polarity, so nothing is flipped. Check the impedance
   # phase quadrants after the first run: a wrong choice puts one mode 180 deg out.
   flip_reversed_dipoles: true
   # the columns that had a sensor attached (--channels, mtproc.survey.CHANNEL_PRESETS),
   # in the survey instrument's names; ingest drops the rest, e.g. the B423 Bz column,
   # an open input with no hz coil. A site on another instrument has its own channels:
   channels: {channels}
-{edl_sensor}{edl_gain}# lemimt-style even log-period band layout (see mtproc.bands.lemimt_band_scheme)
+{edl_sensor}{edl_gain}# lemimt-style even log-period band layout (see mtproc.bands.build_band_scheme)
 processing:
   min_period: 0.005
   max_period: 5000.0
@@ -183,24 +191,32 @@ processing:
 
 
 def scalar(value) -> str:
-    """One YAML scalar as safe_dump writes it (quoted when it would read back as another type)."""
+    """Format one YAML scalar as safe_dump writes it, quoted when it would read back as another type."""
     return yaml.safe_dump({"k": value}, allow_unicode=True, width=10**9).split(":", 1)[1].strip()
 
 
 def fast_sample_rate(path: Path, n_records: int = SAMPLE_RATE_RECORDS) -> float | None:
-    """The sample rate from a bounded read of `path`, instead of mt-io's whole-file scan.
+    """Derive a B423 file's sample rate from a bounded read.
 
     Skips the 1024-byte header and reads the first `n_records` of the 30-byte
-    records `mt_io.lemi.lemi423.Read_Lemi_Data.binary_format` documents
+    records documented by `mt_io.lemi.lemi423.Read_Lemi_Data.binary_format`
     (`time`: whole seconds; `tick`: milliseconds within the second, resetting
     to 0 when `time` ticks over). Counting records by their `time` value gives
-    records-per-whole-second directly; the last `time` value in the read is
-    dropped as possibly cut short by `n_records`, and (in case the read
-    starts mid-second) the derived rate is the largest count left, since a
-    partial second can only under-count. That is snapped to the nearest of
-    the LEMI-423's documented rates (`KNOWN_SAMPLE_RATES`), with a warning if
-    it is more than 1% off that rate (dropped samples, or a rate this script
-    does not know about).
+    records per whole second. The last `time` value in the read is dropped,
+    as `n_records` may cut it short, and the derived rate is the largest
+    count left, since a partial second at the start can only under-count.
+    The rate is snapped to the nearest of the LEMI-423's documented rates
+    (`KNOWN_SAMPLE_RATES`). When it is more than 1 % off that rate (dropped
+    samples, or an unknown rate) a warning is printed and the measured rate
+    is returned.
+
+    Args:
+        path (Path): B423 file.
+        n_records (int): Number of records to read.
+
+    Returns:
+        float | None: The sample rate in Hz, or None when the file holds no
+        complete record.
     """
     record = Read_Lemi_Data.binary_format
     with open(path, "rb") as f:
@@ -217,8 +233,8 @@ def fast_sample_rate(path: Path, n_records: int = SAMPLE_RATE_RECORDS) -> float 
     nearest = min(KNOWN_SAMPLE_RATES, key=lambda rate: abs(rate - derived))
     off = abs(derived - nearest) / nearest
     if off > 0.01:
-        # not a rate this script knows: report what was measured rather than
-        # a wrong known value (R05 at 1 record/s snapped to 250 Hz before 1 Hz was listed)
+        # an unknown rate: report what was measured rather than the nearest
+        # known value (a file at 1 record/s would otherwise snap to 250 Hz)
         print(f"  WARNING {path.name}: derived sample rate {derived} records/s is {off:.1%} off "
               f"the nearest LEMI-423 rate ({nearest:g} Hz) -- kept as measured: not a LEMI-423 rate, an instrument fault or dropped samples")
         return float(derived)
@@ -226,8 +242,18 @@ def fast_sample_rate(path: Path, n_records: int = SAMPLE_RATE_RECORDS) -> float 
 
 
 def file_columns(path: Path) -> list[str]:
-    """The channels mt-io reads from `path`: its records' data columns (`Read_Lemi_Data.binary_format`)
-    as `LEMI423Reader.read` names them; none when the file holds no complete record."""
+    """Return the channels mt-io reads from a B423 file.
+
+    These are the records' data columns (`Read_Lemi_Data.binary_format`) as
+    `LEMI423Reader.read` names them.
+
+    Args:
+        path (Path): B423 file.
+
+    Returns:
+        list[str]: Channel names, or [] when the file holds no complete
+        record.
+    """
     record = Read_Lemi_Data.binary_format
     if path.stat().st_size < 1024 + record.itemsize:
         return []
@@ -235,7 +261,17 @@ def file_columns(path: Path) -> list[str]:
 
 
 def read_other_site(site_dir: Path, instrument: str) -> dict:
-    """A LEMI-424 or EDL site's facts: `mtproc.instruments.span` and `header_facts`."""
+    """Read the facts of a LEMI-424 or EDL site.
+
+    Args:
+        site_dir (Path): The site's folder.
+        instrument (str): "lemi424" or "edl".
+
+    Returns:
+        dict: files, start, end, sample_rate, problem and columns, updated
+        with `mtproc.instruments.header_facts`. An unreadable first file is
+        recorded in "problem".
+    """
     files = record_files(site_dir, instrument)
     start, end, n = span(site_dir, instrument, files)
     facts = {"files": n, "start": start, "end": end, "sample_rate": None, "problem": None, "columns": None}
@@ -247,7 +283,20 @@ def read_other_site(site_dir: Path, instrument: str) -> dict:
 
 
 def read_site(site_dir: Path, instrument: str = "lemi423") -> dict:
-    """The facts one site's files give; for B423: header of the first file, its scan, the file-name span."""
+    """Read the facts of one site's files.
+
+    For a LEMI-423 site: the header and a bounded scan of the first B423
+    file, and the span of the file names. Other instruments go to
+    `read_other_site`.
+
+    Args:
+        site_dir (Path): The site's folder.
+        instrument (str): The site's instrument.
+
+    Returns:
+        dict: files, start, end, sample_rate, problem and columns, plus
+        serial, firmware and the GPS position when the header has them.
+    """
     if instrument != "lemi423":
         return read_other_site(site_dir, instrument)
     files = select_files(site_dir)
@@ -276,6 +325,7 @@ def read_site(site_dir: Path, instrument: str = "lemi423") -> dict:
 
 
 def site_entry(facts: dict) -> dict:
+    """Build a site's survey.yaml entry from its facts, with the defaults note."""
     entry = {key: facts[key] for key in ("latitude", "longitude", "elevation", "serial", "firmware")
              if facts.get(key) is not None}
     entry["start"] = facts["start"].strftime(ISO)
@@ -285,8 +335,17 @@ def site_entry(facts: dict) -> dict:
 
 
 def table_timezone(path: Path) -> str | None:
-    """The one time zone a site table names (the MATLAB survey CSV has a
-    TimeZone column), or None when absent or inconsistent."""
+    """Return the time zone a site table names.
+
+    The field-sheet survey CSV has a TimeZone column.
+
+    Args:
+        path (Path): CSV or XLSX site table.
+
+    Returns:
+        str | None: The single IANA zone the table names, or None when the
+        column is absent, names several zones or an invalid one.
+    """
     import pandas as pd
 
     df = pd.read_excel(path, dtype=object) if path.suffix.lower() in (".xlsx", ".xls") else pd.read_csv(path, dtype=object)
@@ -307,18 +366,27 @@ def table_timezone(path: Path) -> str | None:
 
 
 def merge_site_table(sites: dict, path: Path) -> None:
-    """Overwrite the header's values with the table's, for the sites it names."""
+    """Merge a site table over the header values, for the sites it names.
+
+    Position and elevation from the header's GPS fix are kept; the table
+    fills them only where the header has none. Disagreements, unmatched
+    sites and ignored columns are printed.
+
+    Args:
+        sites (dict): Site entries, updated in place.
+        path (Path): CSV or XLSX site table.
+    """
     rows, ignored = read_site_table(path)
     matched = [s for s in rows if s in sites]
     disagreements = []
     for site in matched:
         entry = sites[site]
         values = dict(rows[site])
-        # the header's GPS fix wins for position and elevation: a table is
-        # typed or derived by hand (the Morocco CSV carried 45 elevations
-        # exactly 1000 m low, a mis-read of the glued `%Alt1168.9` line). The
+        # the header's GPS fix takes precedence for position and elevation: a
+        # table is typed or derived by hand (elevations exactly 1000 m low come
+        # from a mis-read of the header's glued four-digit `%Alt` line). The
         # table fills them only where the header has no fix; every
-        # disagreement is printed so the student can check the sheet.
+        # disagreement is printed for a check against the sheet.
         for key, tol in (("latitude", 0.0005), ("longitude", 0.0005), ("elevation", 20.0)):
             if key in values and entry.get(key) is not None:
                 if abs(float(values[key]) - float(entry[key])) > tol:
@@ -341,6 +409,15 @@ def merge_site_table(sites: dict, path: Path) -> None:
 
 
 def main(argv=None) -> int:
+    """Write the survey.yaml and print the per-site summary.
+
+    Args:
+        argv (list[str] | None): Command-line arguments; sys.argv when None.
+
+    Returns:
+        int: 0 on success, 1 when no site folder is found, 2 when the
+        survey.yaml exists and --force was not given.
+    """
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("data_root", help="the folder holding one subfolder per site")
     parser.add_argument("--name", required=True, help="survey name (also the default folder under surveys/)")
@@ -384,8 +461,8 @@ def main(argv=None) -> int:
         print(f"ERROR no site folder with {', '.join(spec['label'] for spec in INSTRUMENTS.values())} "
               f"files under {data_root}")
         return 1
-    # a folder of a recorder mtproc does not read (Stuart Shelf 2009's Orange Box HFM*.BIN) is no
-    # site of this survey: named here, not dropped without a word
+    # a folder of a recorder mtproc does not read (Orange Box HFM*.BIN files, say) is not
+    # a site of this survey; such folders are listed here
     skipped = sorted(d.name for d in data_root.iterdir() if d.is_dir() and d.name not in found)
     if skipped:
         print(f"skipped {len(skipped)} folder(s) with no {', '.join(spec['label'] for spec in INSTRUMENTS.values())} "
@@ -413,15 +490,15 @@ def main(argv=None) -> int:
         if recorder[site] == "edl":  # an EDL site in another recorder's survey: its own sensors
             entry["sensor_type"] = edl_sensor_for(facts[site]["sample_rate"])
         sites[site] = {k: entry[k] for k in KEY_ORDER if k in entry}
-    # an EDL site whose recorder.ini flags channel_n_high_gain on some channel: informational only,
-    # printed against the declared electric_gain below -- it sets nothing (the electric chain's
-    # gain is a field-notes fact, not this PR6-24 setting)
+    # an EDL site whose recorder.ini flags channel_n_high_gain on some channel: printed against
+    # the declared electric_gain below for information; the electric chain's gain is declared
+    # from the field notes
     ini_flags = {site: f.get("high_gain") for site, f in facts.items()
                 if recorder[site] == "edl" and f.get("high_gain")}
     for site, f in facts.items():
-        # a site not at the survey rate is noted where the student will see
-        # it (the Metadata table), not only on this console -- among the
-        # survey instrument's sites (another recorder has its own rate)
+        # a site of the survey's instrument not at the survey rate gets a note
+        # in its entry, shown in the Metadata table, as well as a console
+        # warning (another recorder has its own rate)
         if f["sample_rate"] and f["sample_rate"] != sample_rate and site not in own:
             known = instrument != "lemi423" or f["sample_rate"] in KNOWN_SAMPLE_RATES
             fault = "" if known else " - not a LEMI-423 rate: instrument fault, exclude from processing"

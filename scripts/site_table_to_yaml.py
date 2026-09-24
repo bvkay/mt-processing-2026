@@ -1,11 +1,18 @@
-"""Convert a field-sheet spreadsheet into a survey.yaml sites section.
+# -*- coding: utf-8 -*-
+"""
+Field-sheet spreadsheet to survey.yaml sites
+
+Converts a field-sheet spreadsheet into the `sites:` section of a survey.yaml.
+The sheet has the columns SiteName, SampleRate, Latitude, Longitude,
+Elevation, ExDipole, ExAzimuth, EyDipole and EyAzimuth. The `sites:` block
+of the YAML is rewritten in place and every other key is preserved.
 
 Usage:
     python scripts/site_table_to_yaml.py <field_sheet.xlsx> <survey.yaml>
 
-Expects columns: SiteName, SampleRate, Latitude, Longitude, Elevation,
-ExDipole, ExAzimuth, EyDipole, EyAzimuth (as in a_Curnamona_Cube_LMEI.xlsx).
-Rewrites the `sites:` block of the YAML in place, preserving everything else.
+@author: ben kay (ben@auscope.org.au)
+
+:license: MIT
 """
 
 import sys
@@ -16,6 +23,12 @@ import yaml
 
 
 def main(xlsx_path: str, yaml_path: str) -> None:
+    """Write the sites of a field sheet into a survey.yaml.
+
+    Args:
+        xlsx_path (str): Field-sheet spreadsheet, one row per site.
+        yaml_path (str): survey.yaml to update; created if it does not exist.
+    """
     df = pd.read_excel(xlsx_path)
     df.columns = [str(c).strip() for c in df.columns]
 

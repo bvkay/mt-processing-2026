@@ -1,24 +1,31 @@
-"""Pre-ingest timing QC on raw LEMI-423 B423 files.
+# -*- coding: utf-8 -*-
+"""
+Pre-ingest timing QC on raw LEMI-423 B423 files
 
-Runs before `ingest_site` so students can catch a slipped file boundary or a
-GPS lock problem before it is baked into an MTH5. Three checks against a
-local/remote pair: (a) file-start epoch spacing per site, (b) local-vs-remote
-clock offset by cross-correlation, (c) GPS lock status per file.
+Runs before `ingest_site`, so a slipped file boundary or a GPS lock problem
+is found before it is written into an MTH5. Three checks on a local/remote
+pair: (a) file-start epoch spacing per site, (b) local-vs-remote clock
+offset by cross-correlation, (c) GPS lock status per file.
 
-This check fails if any cross-correlation peak sits more than 50 ms from zero
-lag (a real clock error, which no downstream step can repair). A file-start
-spacing other than 5400 s after the first file is reported as a WARNING, not a
-failure: `mtproc.ingest` starts a new run at every spacing anomaly and keeps the
-per-sample timestamps, so a one-second file-boundary slip (seen on Burra54rr3
-at 2018-06-25 09:13:41 UTC, samples inside correctly timed) costs nothing.
+The check fails (exit 1) if any cross-correlation peak sits more than 50 ms
+from zero lag, a real clock error that later steps cannot repair. A file-start
+spacing other than 5400 s after the first file is reported as a warning:
+`mtproc.ingest` starts a new run at every spacing anomaly and keeps the
+per-sample timestamps, so a one-second file-boundary slip (with the samples
+inside each file correctly timed) has no effect on the data. The figure goes
+to <workspace>/qc/<local>_vs_<remote>_timing.png unless --out is given.
 
 B423 record layout: 1024-byte ASCII header, then 30-byte little-endian
 records (time uint32 s, tick uint16 ms, Bx/By/Bz/Ex/Ey int32 raw counts,
 sync int8 = GPS deviation from PPS, stage uint8 = PLL accuracy, CRC int16).
-See mt_io.lemi.lemi423.Read_Lemi_Data for the authoritative layout.
+mt_io.lemi.lemi423.Read_Lemi_Data holds the reference layout.
 
 Usage:
     python scripts/timing_qc.py <survey.yaml> <local> <remote> [--files N] [--out PNG]
+
+@author: ben kay (ben@auscope.org.au)
+
+:license: MIT
 """
 
 import argparse
@@ -63,7 +70,8 @@ FS_DEC = 100.0  # decimate 1000 -> 100 Hz for the clock-offset check
 
 
 def parse_args(argv=None) -> argparse.Namespace:
-    p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    """Parse the command line of timing_qc.py."""
+    p = argparse.ArgumentParser(description=next(line for line in __doc__.strip().splitlines() if line.strip()))
     p.add_argument("survey_yaml", help="path to the survey's survey.yaml")
     p.add_argument("local", help="local site name (raw B423 folder = site_dirs()[local])")
     p.add_argument("remote", help="remote-reference site name")
@@ -76,12 +84,25 @@ def parse_args(argv=None) -> argparse.Namespace:
 
 
 def _records(fn: Path) -> np.memmap:
+    """Memory-map the records of a B423 file, read-only, after its header."""
     n = (fn.stat().st_size - HEADER_BYTES) // RECORD_DTYPE.itemsize
     return np.memmap(fn, dtype=RECORD_DTYPE, mode="r", offset=HEADER_BYTES, shape=(n,))
 
 
 def _concat(files: list[Path]) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Concatenate files' records -> (epoch_ms, hx, hy) raw counts at 1000 Hz."""
+    """Concatenate the records of consecutive B423 files.
+
+    Args:
+        files (list[Path]): B423 files in time order.
+
+    Returns:
+        tuple[np.ndarray, np.ndarray, np.ndarray]: (epoch_ms, hx, hy), the
+        magnetics in raw counts at 1000 Hz.
+
+    Raises:
+        ValueError: When the records are not contiguous in time (a gap, an
+            overlap or a bad tick).
+    """
     a = np.concatenate([np.asarray(_records(f)) for f in files])
     t = a["time"].astype(np.int64) * 1000 + a["tick"].astype(np.int64)
     if not np.all(np.diff(t) == 1):
@@ -90,14 +111,21 @@ def _concat(files: list[Path]) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
 
 
 def spacing_anomalies(files: list[Path]) -> list[dict]:
-    """Consecutive file-start epoch spacings that are not 5400 s, excluding
-    the first (partial) file's gap. Flags the known 5401-then-5399
-    one-second file-boundary slip specially.
+    """List the file-start spacings that are not 5400 s.
+
+    The spacing after the first (partial) file is excluded. A 5401 s spacing
+    followed by 5399 s is reported once, as a one-second file-boundary slip.
+
+    Args:
+        files (list[Path]): B423 files named by their start epoch.
+
+    Returns:
+        list[dict]: One row per anomaly with time, spacing and note.
     """
     epochs = np.array([int(f.stem) for f in files], dtype=np.int64)
     diffs = np.diff(epochs)
     rows: list[dict] = []
-    i = 1  # diffs[0] is the first file's gap (partial file) -- excluded
+    i = 1  # diffs[0] is the first file's gap (partial file), excluded
     while i < len(diffs):
         if diffs[i] == NOMINAL_SPACING_S:
             i += 1
@@ -113,7 +141,16 @@ def spacing_anomalies(files: list[Path]) -> list[dict]:
 
 
 def gps_status(files: list[Path], stride: int = 50) -> tuple[float, list[int]]:
-    """Fraction of subsampled records with sync != 0, and the stage values seen."""
+    """Summarise the GPS status of B423 files.
+
+    Args:
+        files (list[Path]): B423 files.
+        stride (int): Record subsampling step.
+
+    Returns:
+        tuple[float, list[int]]: Mean fraction of subsampled records with
+        sync != 0, and the sorted stage values seen.
+    """
     fracs, stages = [], set()
     for f in files:
         a = _records(f)
@@ -133,13 +170,27 @@ def _bandpass(x: np.ndarray, fs: float, lo: float = 3.0, hi: float = 40.0) -> np
 
 
 def _to_100hz(x: np.ndarray) -> np.ndarray:
-    """1000 Hz raw counts -> 100 Hz, FIR zero-phase, then 3-40 Hz band limit."""
+    """Decimate 1000 Hz raw counts to 100 Hz (FIR, zero phase) and band-limit to 3-40 Hz."""
     x = decimate(x - x.mean(), 10, ftype="fir", zero_phase=True)
     return _bandpass(x, FS_DEC)
 
 
 def _xcorr(xl: np.ndarray, xr: np.ndarray, i0: int, ml: int) -> tuple[np.ndarray, np.ndarray]:
-    """Normalised cross-correlation of xl against sliding windows of xr, lags -ml..+ml samples."""
+    """Cross-correlate xl with sliding windows of xr.
+
+    Args:
+        xl (np.ndarray): Local segment.
+        xr (np.ndarray): Remote series covering the segment plus margin.
+        i0 (int): Index in xr aligned with the start of xl at zero lag.
+        ml (int): Largest lag in samples.
+
+    Returns:
+        tuple[np.ndarray, np.ndarray]: Lags -ml..+ml and the normalised
+        correlation at each.
+
+    Raises:
+        ValueError: When xr does not cover the lag search.
+    """
     L = len(xl)
     if i0 - ml < 0 or i0 + ml + L > len(xr):
         raise ValueError("remote margin too small for the requested lag search")
@@ -154,9 +205,20 @@ def _xcorr(xl: np.ndarray, xr: np.ndarray, i0: int, ml: int) -> tuple[np.ndarray
 
 
 def clock_offset_row(local_file: Path, remote_dir: Path, margin_s: float = 20.0) -> dict:
-    """Cross-correlate one local file's hx/hy against the remote data that
-    covers it (plus margin), at 100 Hz band-limited to 3-40 Hz, lags +-5 s.
-    Also reports GPS status for both sides. Returns a flat dict row.
+    """Measure the clock offset of one local file against the remote.
+
+    Cross-correlates the file's hx and hy with the remote data that covers
+    it (plus margin), at 100 Hz band-limited to 3-40 Hz, over lags of +-5 s,
+    and adds the GPS status of both sides.
+
+    Args:
+        local_file (Path): Local B423 file.
+        remote_dir (Path): Remote site's B423 folder.
+        margin_s (float): Remote margin on each side in seconds.
+
+    Returns:
+        dict: Flat row with the peak r and lag per coil, r at +-1 s and the
+        GPS status of both sides.
     """
     e0 = int(local_file.stem)
     e1 = e0 + NOMINAL_SPACING_S
@@ -194,14 +256,26 @@ def clock_offset_row(local_file: Path, remote_dir: Path, margin_s: float = 20.0)
 
 
 def pick_spread(files: list[Path], n: int) -> list[Path]:
-    """n files spread evenly across the deployment, avoiding the (possibly
-    partial) first and last files where possible."""
+    """Pick n files spread evenly across the deployment.
+
+    The first and last files, which may be partial, are left out when there
+    are more than n + 2 files.
+    """
     interior = files[1:-1] if len(files) > n + 2 else files
     idx = sorted(set(np.linspace(0, len(interior) - 1, n).round().astype(int)))
     return [interior[i] for i in idx]
 
 
 def main(argv=None) -> int:
+    """Run the three timing checks and write the figure.
+
+    Args:
+        argv (list[str] | None): Command-line arguments; sys.argv when None.
+
+    Returns:
+        int: 1 when a cross-correlation peak is more than LAG_FAIL_MS from
+        zero lag, otherwise 0.
+    """
     args = parse_args(argv)
     survey = Survey.from_yaml(args.survey_yaml)
     site_dirs = survey.site_dirs()

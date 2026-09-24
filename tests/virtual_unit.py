@@ -1,32 +1,42 @@
-"""Unit test for `mtproc.virtual` -- the stacked remote, unweighted and coherence-weighted.
+# -*- coding: utf-8 -*-
+"""
+Unit test for mtproc.virtual
 
-    python tests/virtual_unit.py
-
-Synthetic members, 1000 Hz, four 10-minute chunks plus a 1234-sample tail,
-int32 counts like a B423 read, each member with its own DC offset (1e7-5e7
-counts) and gain (0.9-1.1). The common field is white noise of 1000 counts
-rms per coil; each clean coil adds 200 counts rms of its own noise.
+Tests the stacked remote, unweighted and coherence-weighted, on synthetic
+members: 1000 Hz, four 10-minute chunks plus a 1234-sample tail, int32
+counts like a B423 read, each member with its own DC offset (1e7-5e7 counts)
+and gain (0.9-1.1). The common field is white noise of 1000 counts rms per
+coil; each clean coil adds 200 counts rms of its own noise.
 
 - A1, A2, A3: clean on both coils;
 - D: hx dead (the offset plus 1 count rms, no field), hy clean;
 - C: clean, plus in chunk 2 only, on both coils, a mains-type burst: 5000
   counts rms broadband noise and a 10000-count 50 Hz tone.
 
-Three clean members, not one: leave-one-out cannot say which of two live
-coils is the bad one (each is the other's reference and coherence is
-symmetric), so the test needs at least three live coils besides the noisy one.
+There are three clean members because leave-one-out cannot tell which of two
+live coils is the bad one (each is the other's reference and coherence is
+symmetric); the test needs at least three live coils besides the noisy one.
 
 Each member is written as a real MTH5 archive, laid out as
 `mtproc.ingest.ingest_site` writes one (survey, station, run sr1000_0001
-through RunTS / `from_runts`, int32 hx/hy) at `<workspace>/mth5/<member>.h5`
+through RunTS / `from_runts`, int32 hx/hy), at `<workspace>/mth5/<member>.h5`
 in a temporary workspace, so the archive reader and the chunk streaming are
-under test; `build_synthetic_remote` runs end to end on them (a namespace
-survey; the stack written to a temporary folder and read back with mth5).
+under test. `build_synthetic_remote` runs end to end on them with a
+namespace survey; the stack is written to a temporary folder and read back
+with mth5.
+
+Usage:
+    python tests/virtual_unit.py
+
+@author: ben kay (ben@auscope.org.au)
+
+:license: MIT
+
 **This test fails if**
 
 1. the default build (no `weighting` argument) or ``weighting="none"`` writes
    hx/hy whose float32 bytes differ from the pre-weighting arithmetic, frozen
-   here verbatim (float64 sum in member order, divided by the count, cast to
+   here as written (float64 sum in member order, divided by the count, cast to
    float32), or its station comment differs from the pre-weighting string;
    and, as the control that this comparison can fail, if the weighted build's
    bytes are *equal* to it;
@@ -105,12 +115,14 @@ failures: list[str] = []
 
 
 def check(ok: bool, msg: str) -> None:
+    """Print a PASS/FAIL line and record a failure."""
     print(("PASS " if ok else "FAIL ") + msg)
     if not ok:
         failures.append(msg)
 
 
 def dataset(hx: np.ndarray, hy: np.ndarray) -> xr.Dataset:
+    """Build an xarray Dataset of int32 hx/hy counts at FS from T0."""
     t = T0.to_datetime64() + np.arange(N) * np.timedelta64(1, "ms")
     return xr.Dataset(
         {"hx": ("time", np.rint(hx).astype("int32")), "hy": ("time", np.rint(hy).astype("int32"))},
@@ -119,7 +131,16 @@ def dataset(hx: np.ndarray, hy: np.ndarray) -> xr.Dataset:
 
 
 def synthetic_members(burst: str = "mains", seed: int = 11) -> dict[str, xr.Dataset]:
-    """burst: "mains" (broadband + 50 Hz) or "tone" (50 Hz only)."""
+    """Build the synthetic members described in the module docstring.
+
+    Args:
+        burst (str): "mains" (broadband + 50 Hz) or "tone" (50 Hz only) for
+            C's burst.
+        seed (int): Seed of the random generator.
+
+    Returns:
+        dict[str, xr.Dataset]: Dataset by member name.
+    """
     rng = np.random.default_rng(seed)
     field = {c: FIELD_RMS * rng.standard_normal(N) for c in ("hx", "hy")}
     t = np.arange(N) / FS
@@ -142,7 +163,17 @@ def synthetic_members(burst: str = "mains", seed: int = 11) -> dict[str, xr.Data
 
 
 def write_archive(workspace: Path, site: str, runs: list[tuple[pd.Timestamp, dict]]) -> Path:
-    """One member's archive as `ingest_site` lays it out: [(run start, {coil: int32 counts})]."""
+    """Write one member's archive as `ingest_site` lays it out.
+
+    Args:
+        workspace (Path): Workspace; the archive is <workspace>/mth5/<site>.h5.
+        site (str): Member name.
+        runs (list[tuple[pd.Timestamp, dict]]): (run start, {coil: int32
+            counts}) per run.
+
+    Returns:
+        Path: The archive.
+    """
     path = workspace / "mth5" / f"{site}.h5"
     path.parent.mkdir(parents=True, exist_ok=True)
     m = MTH5(file_version="0.2.0")
@@ -166,13 +197,14 @@ def write_archive(workspace: Path, site: str, runs: list[tuple[pd.Timestamp, dic
 
 
 def write_members(datasets: dict, workspace: Path) -> Path:
-    """Every synthetic member as a one-run archive starting at T0; returns the workspace."""
+    """Write every synthetic member as a one-run archive starting at T0; return the workspace."""
     for m, ds in datasets.items():
         write_archive(workspace, m, [(T0, {c: ds[c].data for c in ("hx", "hy")})])
     return workspace
 
 
 def fake_survey(workspace: Path):
+    """Return a namespace standing in for a Survey with the given workspace."""
     return SimpleNamespace(
         name=SURVEY,
         sample_rate=FS,
@@ -183,7 +215,11 @@ def fake_survey(workspace: Path):
 
 def build(workspace: Path, tmp: Path, name: str, members=None, start="2023-09-19", end="2023-09-20",
           **kwargs):
-    """Run build_synthetic_remote on the archived members in `workspace`; return (path, weights_out)."""
+    """Run build_synthetic_remote on the archived members in `workspace`.
+
+    Returns:
+        tuple[Path, dict]: The stack archive and the weights it filled in.
+    """
     weights: dict = {}
     path = virtual.build_synthetic_remote(
         fake_survey(workspace), members or MEMBERS, start, end, name=name,
@@ -193,6 +229,7 @@ def build(workspace: Path, tmp: Path, name: str, members=None, start="2023-09-19
 
 
 def read_back(path: Path, name: str) -> dict:
+    """Read a stack archive's comments, hx/hy arrays and channel starts."""
     m = MTH5()
     m.open_mth5(path, mode="r")
     try:
@@ -210,12 +247,13 @@ def read_back(path: Path, name: str) -> dict:
 
 
 def _text(comment) -> str:
+    """Return a metadata comment as text, "" for None."""
     value = getattr(comment, "value", comment)
     return "" if value is None else str(value)
 
 
 def frozen_mean(datasets: dict, members: list[str], comp: str) -> np.ndarray:
-    """The pre-weighting stack arithmetic, verbatim: float64 sum in member order / count -> float32."""
+    """Compute the pre-weighting stack arithmetic as written: float64 sum in member order / count -> float32."""
     acc = np.zeros(N, dtype="float64")
     for m in members:
         acc += datasets[m][comp].data.astype("float64")
@@ -223,7 +261,7 @@ def frozen_mean(datasets: dict, members: list[str], comp: str) -> np.ndarray:
 
 
 def single_shot_weighted(datasets: dict, info: dict, comp: str) -> np.ndarray:
-    """Check 12's reference: the whole-array weighted sum in plain numpy, cast to float32."""
+    """Compute check 12's reference: the whole-array weighted sum in plain numpy, cast to float32."""
     w = info["weights"]
     k = np.minimum(np.arange(N) // CHUNK, w.shape[1] - 1)  # the tail takes the last chunk's
     acc = np.zeros(N, dtype="float64")
@@ -235,7 +273,7 @@ def single_shot_weighted(datasets: dict, info: dict, comp: str) -> np.ndarray:
 
 
 def raises(fn) -> str:
-    """The ValueError message `fn()` raises, or "" if it raises none."""
+    """Return the ValueError message `fn()` raises, or "" if it raises none."""
     try:
         fn()
     except ValueError as exc:
@@ -244,6 +282,7 @@ def raises(fn) -> str:
 
 
 def main() -> None:
+    """Run the checks and exit 1 when any failed."""
     logger.remove()
     logger.add(sys.stderr, level="WARNING")
     datasets = synthetic_members("mains")
@@ -251,7 +290,7 @@ def main() -> None:
         tmp = Path(tmpdir)
         ws = write_members(datasets, tmp / "ws_mains")
 
-        # 1. the default is byte-identical to the pre-weighting arithmetic
+        # 1. the default is identical to the pre-weighting arithmetic
         p_def, w_def = build(ws, tmp, "STK_default")
         p_none, _ = build(ws, tmp, "STK_none", weighting="none")
         p_coh, weights = build(ws, tmp, "STK_coh", weighting="coherence")
@@ -261,7 +300,7 @@ def main() -> None:
             check(default[c].dtype == np.float32 and default[c].tobytes() == ref.tobytes(),
                   f"1. default build {c}: float32 bytes identical to the frozen mean")
             check(none[c].tobytes() == ref.tobytes(), f"1. weighting='none' {c}: bytes identical to the frozen mean")
-            check(coh[c].tobytes() != ref.tobytes(), f"1. control: the weighted {c} is NOT byte-identical to the mean")
+            check(coh[c].tobytes() != ref.tobytes(), f"1. control: the weighted {c} is not identical to the mean")
         want = (f"synthetic remote: mean of raw hx/hy counts from {', '.join(sorted(MEMBERS))}; "
                 f"uncalibrated by design (RR estimator is calibration-invariant)")
         check(default["station_comment"] == want, "1. default station comment unchanged")
@@ -308,7 +347,7 @@ def main() -> None:
                 per_mille_ok &= np.array_equal(np.array(vals, dtype=int), np.rint(info["weights"][i] * 1000).astype(int))
         check(per_mille_ok, "6. channel comments hold the per-chunk weights (per mille)")
 
-        # 12. the streamed weighted stack == the single-shot numpy computation, bit for bit
+        # 12. the streamed weighted stack is identical to the single-shot numpy computation
         for c in ("hx", "hy"):
             ref = single_shot_weighted(datasets, weights[c], c)
             check(coh[c].tobytes() == ref.tobytes(),
@@ -362,6 +401,7 @@ def main() -> None:
         trio = {m: datasets[m] for m in ("A1", "A2")} | {"P": datasets["A3"]}
 
         def aligned_mean(c: str, lo: int, hi: int) -> np.ndarray:
+            """Return the float32 mean of A1, A2 and P over samples [lo, hi)."""
             acc = np.zeros(hi - lo, dtype="float64")
             for m in ("A1", "A2", "P"):
                 acc += trio[m][c].data[lo:hi].astype("float64")

@@ -1,48 +1,54 @@
-"""Fetch an INTERMAGNET observatory's one-second data and archive it as a site of the survey.
+# -*- coding: utf-8 -*-
+"""
+Fetch INTERMAGNET observatory data and archive it as a survey site
 
-Usage:
-    python scripts/fetch_observatory.py <survey.yaml> <IAGA code> [start] [end]
-        [--cache DIR] [--max-gap S] [--dry-run]
-
-For a remote reference that reaches the long periods, or a window longer than any
-site's: an INTERMAGNET observatory's one-second X, Y, Z from the BGS GIN
-(`mtproc.observatory`, ported from the AusLAMP processing), one request per
-UTC day, best available publication state.
+An observatory gives a remote reference that reaches the long periods, or a
+window longer than any site's. The script fetches an INTERMAGNET
+observatory's one-second X, Y, Z from the BGS GIN (`mtproc.observatory`,
+ported from the AusLAMP processing), one request per UTC day, at the best
+available publication state.
 
 start and end (UTC; dates or ISO times, whole days are fetched) default to the
 survey's earliest site `start:` and latest site `end:` in survey.yaml. Three
 steps, in order:
 
-  1. every day of the span the cache does not hold is fetched into
+  1. Every day of the span missing from the cache is fetched into
      <cache>/<CODE>/<year>/<CODE>_<YYYY-MM-DD>.sec.gz (--cache, default
-     <workspace>/observatory), each fetch logged with its size and seconds; a
-     day already cached is never asked for again, so a re-run fetches nothing
-     it has;
-  2. the cached days are written to <workspace>/mth5/<CODE>.h5
+     <workspace>/observatory), each fetch logged with its size and seconds.
+     Cached days are reused, so a re-run fetches only the missing days.
+  2. The cached days are written to <workspace>/mth5/<CODE>.h5
      (`mtproc.ingest.default_archive_path`): station <CODE> at the IAGA-2002
      header's position, channels hx = X (north), hy = Y (east), hz = Z (down)
      in nT at 1 Hz with no filters, gaps up to --max-gap seconds (default 600)
      filled by a straight line and one run per stretch between longer gaps.
-     The archive is rebuilt every time: it is a function of the cache alone;
+     The archive is rebuilt from the cache on every run.
   3. survey.yaml gains, or has refreshed, the site entry
      <CODE>: {instrument: intermagnet, channels: [hx, hy, hz], latitude,
      longitude, elevation, start, end, notes: "INTERMAGNET observatory, 1 s,
-     fetched <UTC>"}, through the GUI Metadata tab's own rewrite
-     (`mtproc_gui.metadata_edit.rewrite_sites_block`): only the `sites:` block
-     is rewritten, every other site's text and everything outside the block
-     byte for byte as it was, and any other key of an existing <CODE> entry
-     (a remote:, say) is kept. A site of that name that is not an
-     observatory is never touched.
+     fetched <UTC>"}, through the rewrite used by the GUI Metadata tab
+     (`mtproc_gui.metadata_edit.rewrite_sites_block`). The `sites:` block
+     alone is rewritten; every other site's text and everything outside the
+     block stay as they were, and any other key of an existing
+     <CODE> entry (a remote:, say) is kept. An existing site of that name
+     that is not an observatory is left as it is and the script exits 2.
 
---dry-run prints the days it would fetch and the days already cached, the
-archive and the entry it would write, and touches nothing. With the GIN out
-of reach it exits 1 with one line saying so, and the cache is as it was (a
-day is written whole or not at all).
+--dry-run prints the days it would fetch and the days already cached, and
+the archive and the entry it would write, without writing anything. With
+the GIN out of reach the script exits 1 with one line saying so; the cache
+keeps whole days only.
 
-Until `mtproc.survey.Survey.instrument_of` knows `intermagnet` (it accepts
-only the raw-data recorders of `mtproc.instruments.INSTRUMENTS`), anything
-that asks it about this site -- the GUI's Metadata tab asks it about every
-site -- raises; the script says so after writing the entry.
+`mtproc.survey.Survey.instrument_of` accepts the raw-data recorders of
+`mtproc.instruments.INSTRUMENTS` and raises for `intermagnet`, so the GUI's
+Metadata tab, which asks it about every site, fails on a survey holding an
+observatory site. The script prints a warning after writing the entry.
+
+Usage:
+    python scripts/fetch_observatory.py <survey.yaml> <IAGA code> [start] [end]
+        [--cache DIR] [--max-gap S] [--dry-run]
+
+@author: ben kay (ben@auscope.org.au)
+
+:license: MIT
 """
 
 from __future__ import annotations
@@ -61,7 +67,19 @@ from mtproc.survey import Survey  # noqa: E402
 
 
 def survey_span(sites: dict, code: str) -> tuple[str, str] | None:
-    """(earliest start, latest end) over the sites that are not observatories, or None when none is dated."""
+    """Return the dated span of the survey's recording sites.
+
+    Observatory sites (named `code` or with instrument intermagnet) are
+    skipped.
+
+    Args:
+        sites (dict): The `sites:` mapping of survey.yaml.
+        code (str): IAGA code of the observatory.
+
+    Returns:
+        tuple[str, str] | None: (earliest start, latest end), or None when no
+        site has both a start and an end.
+    """
     starts, ends = [], []
     for name, entry in sites.items():
         entry = entry or {}
@@ -75,7 +93,15 @@ def survey_span(sites: dict, code: str) -> tuple[str, str] | None:
 
 
 def day_ranges(days) -> str:
-    """Days as runs of consecutive dates: "2023-09-18 .. 2023-09-20 (3), 2023-09-25"; "none" when empty."""
+    """Format dates as runs of consecutive days.
+
+    Args:
+        days (list[datetime.date]): Days, in any order.
+
+    Returns:
+        str: E.g. "2023-09-18 .. 2023-09-20 (3), 2023-09-25", or "none" when
+        empty.
+    """
     days = sorted(days)
     if not days:
         return "none"
@@ -91,6 +117,15 @@ def day_ranges(days) -> str:
 
 
 def main(argv=None) -> int:
+    """Fetch, archive and register one observatory.
+
+    Args:
+        argv (list[str] | None): Command-line arguments; sys.argv when None.
+
+    Returns:
+        int: 0 on success, 1 when the GIN fails, 2 when survey.yaml already
+        has a site of that name that is not an observatory.
+    """
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("survey_yaml")
     parser.add_argument("code", help="the observatory's IAGA code, e.g. SFS")
@@ -157,7 +192,7 @@ def main(argv=None) -> int:
     for run in summary["runs"]:
         print(f"  run {run['id']}: {run['start']} .. {run['end']} ({run['n']} s)")
 
-    from mtproc_gui.metadata_edit import rewrite_sites_block  # the Metadata tab's own sites-block rewrite
+    from mtproc_gui.metadata_edit import rewrite_sites_block  # the sites-block rewrite of the Metadata tab
 
     entry = observatory.survey_entry(meta, summary["runs"])
     rewrite_sites_block(yaml_path, {code: entry})

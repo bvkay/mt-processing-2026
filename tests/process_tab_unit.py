@@ -1,12 +1,20 @@
-"""Unit test for the Process tab's "apply masks.yaml" switch (headless).
+# -*- coding: utf-8 -*-
+"""
+Unit test for the "apply masks.yaml" switch of the Process tab
 
+Runs headless. A scratch copy of curnamona_cube's survey.yaml, filters.yaml
+and reference_edis.yaml gets its own masks.yaml with MASKS[D02] and
+MASKS[E08] entries. The copy's workspace points at the real work folder,
+which the test only reads; the test also checks that the real survey folder
+still holds no masks.yaml at the end. `MainWindow` is built on the copy, the
+Process tab is selected and the switch is read back.
+
+Usage:
     QT_QPA_PLATFORM=offscreen python tests/process_tab_unit.py
 
-A scratch copy of curnamona_cube's survey.yaml, filters.yaml and
-reference_edis.yaml (workspace pointed at the real one: nothing is written
-there) gets its own masks.yaml, with MASKS[D02] and MASKS[E08] entries; the
-real survey folder holds no masks.yaml and is never written. `MainWindow` is
-built on the copy, the Process tab picked, and the switch read back.
+@author: ben kay (ben@auscope.org.au)
+
+:license: MIT
 
 **This test fails if** with station D02 and remote E08 the switch does not
 read exactly "apply masks.yaml (D02: 3, E08: 2)" (each site's own count,
@@ -56,6 +64,7 @@ SCRATCH = scratch_dir("process_tab_unit")
 
 
 def _mask(start: str, end: str, bands="all", reason="test") -> dict:
+    """Build one masks.yaml entry found by "time"."""
     return {"start": start, "end": end, "bands": bands, "reason": reason, "found_by": "time"}
 
 
@@ -70,7 +79,7 @@ MASKS = {
 }
 EXTRA_E08 = _mask("2021-06-30T03:00:00Z", "2021-06-30T03:30:00Z")
 
-# nothing is started: a job the window would run at once (a basemap fetch) is only recorded
+# run_now records the argv of a job the window would start at once (a basemap fetch) instead of starting it
 STARTED: list[list[str]] = []
 JobRunner.run_now = lambda self, label, argv, **details: STARTED.append([str(a) for a in argv]) or -1
 
@@ -78,7 +87,11 @@ SLOT_ERRORS: list[str] = []
 
 
 def _record_slot_error(exc_type, exc, tb) -> None:
-    """An exception inside a Qt slot is printed by PySide6, not raised: keep it, fail at the end."""
+    """Record an exception raised inside a Qt slot.
+
+    PySide6 prints such an exception instead of raising it; `main` fails at
+    the end when any were recorded.
+    """
     import traceback
 
     SLOT_ERRORS.append("".join(traceback.format_exception(exc_type, exc, tb)))
@@ -89,7 +102,15 @@ sys.excepthook = _record_slot_error
 
 
 def make_survey_copy(masks: dict) -> Path:
-    """The copy's survey.yaml (workspace -> the real work folder) with `masks` as its masks.yaml."""
+    """Copy the survey files to the scratch folder and write their masks.yaml.
+
+    Args:
+        masks (dict): Masks by site, written as the copy's masks.yaml.
+
+    Returns:
+        Path: The copy's survey.yaml, its workspace set to the real work
+        folder.
+    """
     for name in ("survey.yaml", "filters.yaml", "reference_edis.yaml"):
         shutil.copy2(SURVEY_DIR / name, SCRATCH / name)
     copy_yaml = SCRATCH / "survey.yaml"
@@ -101,22 +122,26 @@ def make_survey_copy(masks: dict) -> Path:
 
 
 def write_masks(masks: dict) -> None:
+    """Write the scratch masks.yaml."""
     (SCRATCH / "masks.yaml").write_text(yaml.safe_dump(masks, sort_keys=False), encoding="utf-8")
 
 
 def pump(app: QApplication, seconds: float = 0.1) -> None:
+    """Process Qt events for `seconds`."""
     end = time.time() + seconds
     while time.time() < end:
         app.processEvents()
 
 
 def set_remote(tab, name: str) -> None:
+    """Select a remote in the tab's remote combo box by its data."""
     index = tab.remote_combo.findData(name)
     assert index >= 0, f"{name} is not a remote choice"
     tab.remote_combo.setCurrentIndex(index)
 
 
 def main() -> int:
+    """Run the test sequence on the Process tab and return 0 on success."""
     print(__doc__.split("**This test fails if**")[1].strip())
     print()
     assert not (SURVEY_DIR / "masks.yaml").exists(), "the real survey folder holds a masks.yaml"

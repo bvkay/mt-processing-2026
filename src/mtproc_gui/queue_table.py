@@ -1,31 +1,34 @@
-"""QueueTable, QueuePanel and ProductList: the Process tab's view of the one job queue.
+# -*- coding: utf-8 -*-
+"""
+Job queue views of the Process tab
 
-The MATLAB app's Process Data tab shows its queue as a table (#, Mode, SS,
-RR, MR, Freq, Window). This is that table over `state.runner`, the window's
-one `JobRunner`, so every job from every tab is a row: a `process_rr` run
-queued by the Process tab fills Station, Remote, Window and Options (the
-optional `Job` fields it sets), and any other job shows its label under
-Station and "-" in the rest. Only processing jobs (process_rr, build_stack)
-appear here: utility jobs (Build MTH5, the basemap fetch, New survey) report
-in the console strip only. Under the table is the processing log,
-"Processing output", with Cancel (kill the running script; the queued ones stay
-queued until Run queue) and Clear log.
+`QueueTable`, `QueuePanel` and `ProductList` display the window's
+`JobRunner` (`state.runner`); the runner itself starts and stops the jobs.
 
-`ProductList` is the list under the site map: when a job finishes, the
-paths its output reports writing (a "wrote <path>" line -- `process_rr.py`
-logs one for the EDI, the comparison figure and the sidecar JSON in turn,
-`mtproc.process.process_station` for the EDI on its own) that exist and end
-in `.edi` or `.png` are listed, once each, and "Show in View EDIs" asks for
-the chosen one to be drawn (the Process tab forwards the request to the View
-EDIs tab). Reading the actual output line rather than predicting a name from
-the argv is what makes this agnostic to the output naming scheme: a run's
-EDI and figure share a stem built from the local time it started
-(`scripts/process_rr.run_stem`), not from the argv alone, so there is no
-name to predict without re-implementing that.
+`QueueTable` shows the queue as a table (#, Station, Remote, Window (UTC),
+Options, Status) over `state.runner`. A
+`process_rr` run queued by the Process tab fills Station, Remote, Window and
+Options from the optional `Job` fields; any other job shows its label under
+Station and "-" elsewhere. The table lists processing jobs (process_rr,
+build_stack); utility jobs (Build MTH5, the basemap fetch, New survey) report
+in the console strip. `QueuePanel` places the processing log, "Processing
+output", under the table, with Cancel (kill the running script; queued jobs
+wait for Run queue) and Clear log. The table is redrawn from `runner.jobs`
+on `queue_changed` and the log appends `log_line`.
 
-Nothing here runs or computes anything: the table is redrawn from
-`runner.jobs` on `queue_changed`, the log appends `log_line`, and the
-products are read off a finished job's output.
+`ProductList` is the list under the site map. When a job finishes, every
+path its output reports writing in a "wrote <path>" line that exists and
+ends in `.edi` or `.png` is listed once. `process_rr.py` logs such a line for
+the EDI, the comparison figure and the sidecar JSON, and
+`mtproc.process.process_station` for the EDI. "Show in View EDIs" emits the
+chosen path, which the Process tab forwards to the View EDIs tab. Paths are
+read from the output because a run's EDI and figure share a stem built from
+the local start time (`scripts/process_rr.run_stem`), which the argv alone
+does not determine.
+
+@author: ben kay (ben@auscope.org.au)
+
+:license: MIT
 """
 
 from __future__ import annotations
@@ -45,14 +48,18 @@ from mtproc_gui.theme import BAD_COLOUR, OK_COLOUR, WARN_COLOUR
 
 COLUMNS = ("#", "Station", "Remote", "Window (UTC)", "Options", "Status")
 STATUS_COLOURS = {RUNNING: WARN_COLOUR, DONE: OK_COLOUR, FAILED: BAD_COLOUR}
-# a script's own "wrote <path>" line (process_rr.py logs one for the EDI, the
-# comparison figure and the sidecar JSON; the sidecar's .json is deliberately
-# not matched here -- it is not a plotted product for View EDIs)
+# a script's "wrote <path>" line for an EDI or a figure; process_rr.py also logs
+# one for the sidecar JSON, which is not matched since View EDIs does not plot it
 WROTE_RE = re.compile(r"wrote\s+(\S.*\.(?:edi|png))\s*$", re.IGNORECASE)
 
 
 class QueueTable(QTableWidget):
-    """One row per job on the runner, in queue order, redrawn whenever the queue changes."""
+    """One row per processing job on the runner, in queue order, redrawn when the queue changes.
+
+    Args:
+        runner (JobRunner): The window's job runner.
+        parent (QWidget | None): Qt parent.
+    """
 
     def __init__(self, runner: JobRunner, parent=None):
         super().__init__(0, len(COLUMNS), parent)
@@ -69,8 +76,8 @@ class QueueTable(QTableWidget):
         runner.queue_changed.connect(self.refresh)
 
     def refresh(self) -> None:
-        # processing jobs only: ingest, basemap and new-survey jobs are utility
-        # jobs and show in the console strip, not here
+        """Redraw the rows from the runner's processing jobs."""
+        # ingest, basemap and new-survey jobs are utility jobs shown in the console strip
         shown = [job for job in self.runner.jobs if job.kind == "processing"]
         self.setRowCount(len(shown))
         for row, job in enumerate(shown):
@@ -86,7 +93,12 @@ class QueueTable(QTableWidget):
 
 
 class QueuePanel(QWidget):
-    """The queue table over the merged script log, with Cancel and Clear log."""
+    """The queue table over the processing log, with Cancel and Clear log.
+
+    Args:
+        runner (JobRunner): The window's job runner.
+        parent (QWidget | None): Qt parent.
+    """
 
     def __init__(self, runner: JobRunner, parent=None):
         super().__init__(parent)
@@ -124,17 +136,27 @@ class QueuePanel(QWidget):
         runner.log_line.connect(self._append_processing_line)
 
     def _append_processing_line(self, line: str) -> None:
-        """Only a processing job's output belongs in this pane (the console strip has everything)."""
+        """Append a line of a processing job's output; the console strip shows every job."""
         job = self.runner.current_job()
         if job is not None and job.kind == "processing":
             self.log_view.appendPlainText(line)
 
     def clear_log(self) -> None:
+        """Clear the processing log view."""
         self.log_view.clear()
 
 
 class ProductList(QWidget):
-    """The EDIs and figures the jobs wrote, read off their output; "Show in View EDIs" asks for one."""
+    """List of the EDIs and figures the jobs wrote, read from their output.
+
+    "Show in View EDIs" or a double-click emits `show_requested` with the
+    chosen path.
+
+    Args:
+        runner (JobRunner): The window's job runner.
+        repo_root: Root that relative paths in the output are resolved against.
+        parent (QWidget | None): Qt parent.
+    """
 
     show_requested = Signal(object)  # a Path
 
@@ -156,6 +178,7 @@ class ProductList(QWidget):
         runner.job_finished.connect(self._job_finished)
 
     def _job_finished(self, index: int, _ok: bool) -> None:
+        """Add every EDI or PNG a finished job reports writing."""
         for line in self.runner.jobs[index].output:
             match = WROTE_RE.search(line)
             if not match:
@@ -164,7 +187,7 @@ class ProductList(QWidget):
             self.add(path if path.is_absolute() else self.repo_root / path)
 
     def add(self, path: Path) -> None:
-        """List an EDI a job wrote, once, if it is really there."""
+        """List a product path once, if the file exists, and select it."""
         if not path.exists() or path in self.products:
             return
         self.products.append(path)
@@ -172,6 +195,7 @@ class ProductList(QWidget):
         self.list.setCurrentRow(len(self.products) - 1)
 
     def show_product(self) -> None:
+        """Emit `show_requested` for the selected product."""
         row = self.list.currentRow()
         if 0 <= row < len(self.products):
             self.show_requested.emit(self.products[row])

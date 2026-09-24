@@ -1,54 +1,50 @@
-"""View EDIs tab: mtpy-v2 transfer function plots over a checkable tree.
+# -*- coding: utf-8 -*-
+"""
+View EDIs tab
 
-Two groups in one tree. The first is every `*.edi` in `<workspace>/tf` -- what
-`scripts/process_rr.py` wrote -- ordered by stem so the newest run of a pair
-is last, and labelled from the stem when it is one of `run_stem`'s own
-(`_run_label`: "D02 rr E08, 23 Sep 21:15, hann"), else left as its plain file
-name (an EDI from before the naming change, or a hand-named one) -- and the
-second is the lemimt references declared in `<survey>/reference_edis.yaml`
-(site -> {edi, distance_km}), which live on the field drive and are only ever
-read. Ticked rows are overlaid on one live matplotlib canvas
-(`FigureCanvasQTAgg` + `NavigationToolbar2QT`), and
-everything mtpy-specific is in `mtproc_gui.tf_plot`: `PlotMTResponse` for a
-single station, `PlotMultipleResponses(plot_style="compare")` for an overlay,
-xy and yx (`plot_num=1`), mtpy's own error bars: mtpy-v2 draws decent
-transfer functions, and several can be stacked over each other for
-comparison.
+mtpy-v2 transfer function plots over a checkable tree with two groups. The
+first lists every `*.edi` in `<workspace>/tf` written by
+`scripts/process_rr.py`, ordered by stem so the newest run of a pair is last.
+A stem in `run_stem`'s format is labelled by `_run_label`
+("S01 rr S02, 23 Sep 21:15, hann"); any other EDI keeps its file name. The
+second group lists the lemimt reference EDIs declared in
+`<survey>/reference_edis.yaml` (site -> {edi, distance_km}), which are read
+from the field drive. Ticked rows are overlaid on one matplotlib canvas
+(`FigureCanvasQTAgg` with `NavigationToolbar2QT`). The mtpy calls live in
+`mtproc_gui.tf_plot`: `PlotMTResponse` for a single station and
+`PlotMultipleResponses(plot_style="compare")` for an overlay, xy and yx
+(`plot_num=1`), with mtpy's error bars. New EDIs are made on the Process tab.
 
-**Quick view** (on by default) lets the keyboard down arrow step through
-the list quickly. The row under the cursor -- moved with the
-arrow keys or clicked -- is drawn on its own *plus* whatever is ticked, so a
-student steps through a survey one EDI at a time against a fixed reference.
-Redraws are debounced by a single-shot 150 ms timer, so holding the key down
-queues one draw, not one per row. With quick view off only the ticked rows
-are drawn.
+Quick view (on by default) draws the current row, moved with the arrow keys
+or by a click, together with every ticked row, so a survey can be stepped
+through one EDI at a time against a fixed reference. Redraws are debounced
+by a single-shot 150 ms timer, so holding an arrow key queues one draw. With
+quick view off only the ticked rows are drawn.
 
-The **Plot** group picks what mtpy draws: apparent resistivity and phase, the
+The Plot group selects what mtpy draws: apparent resistivity and phase, the
 same plus a row of phase tensor ellipses per station, or the same plus the
 tipper. The tipper button is disabled on a survey whose sites declare no hz
-channel -- the aurora EDIs still carry a tipper, estimated from an open Bz
-input, and it is nonsense. Induction arrows for long-period data are the
-reason to keep the button there at all.
+channel, since the aurora EDIs then carry a tipper estimated from an open Bz
+input. It is kept for induction arrows on long-period data.
 
-The **Phase** group picks how the phase axes read the yx curve: mtpy always
-draws it folded into the xy curve's 0-90 quadrant (`+ 180` on every yx phase
-value, `tf_plot._apply_phase_range`'s default, "0 to 90 deg"), which is what
-most stations want; "-180 to 180 deg" undoes that fold so a physical yx
-(usually near -135) and a mode that is 180 deg out of quadrant both show
-where they really sit rather than inside 0-90. It applies to every EDI drawn
--- overlays and quick view alike -- and stays put across a Plot change or a
-redraw; only choosing it again changes it.
+The Phase group selects how the yx phase is shown. mtpy folds it into the xy
+curve's 0-90 quadrant (+180 on every yx phase value; "0 to 90 deg", the
+default of `tf_plot._apply_phase_range`). "-180 to 180 deg" undoes the fold,
+so a physical yx (usually near -135) and a mode 180 deg out of quadrant show
+where they sit. The choice applies to every EDI drawn, overlays and quick
+view alike, and persists across Plot changes and redraws.
 
-The **Apparent resistivity** group's two fields (`rho_min_edit`,
-`rho_max_edit`; "auto" placeholder, blank means mtpy's own scale) clamp the
-resistivity axes' y limits in Ohm m so an outlier point cannot flatten the
-rest of the curve; a field commits on `editingFinished`, through the same
-debounce as everything else, and a min at or above the max (or either at or
-below zero) is ignored -- the axes stay on mtpy's own scale -- and reported
-on the status line. Like Phase, the typed values apply to every EDI drawn
-and stay put until changed again.
+The Apparent resistivity fields (`rho_min_edit`, `rho_max_edit`; "auto"
+placeholder, blank for mtpy's own scale) set the resistivity axes' y limits
+in Ohm m, so an outlier cannot flatten the rest of the curve. A field
+commits on `editingFinished` through the same debounce. A min at or above
+the max, or either at or below zero, is not applied and is reported on the
+status line. Like Phase, the values apply to every EDI drawn and persist
+until changed.
 
-Nothing is produced here: to make a new EDI, use the Process tab.
+@author: ben kay (ben@auscope.org.au)
+
+:license: MIT
 """
 
 from __future__ import annotations
@@ -80,7 +76,7 @@ from PySide6.QtWidgets import (
 
 from mtproc_gui import tf_plot
 
-# holding the down arrow must not queue one mtpy draw per row
+# redraw delay, so holding an arrow key queues one mtpy draw
 DEBOUNCE_MS = 150
 NO_HZ_TIP = "no hz sensor on this survey"
 MAX_RHO = 1e12  # the Apparent resistivity fields' validator ceiling, Ohm m
@@ -91,9 +87,15 @@ _STEM_RE = re.compile(r"^(?P<local>.+)_rr-(?P<remote>.+?)_(?P<stamp>\d{8}-\d{4})
 
 
 def _run_label(stem: str) -> str | None:
-    """"<local> rr <remote>, <DD Mon HH:MM>[, <tag>]" from a `run_stem` file stem, e.g.
-    "D02 rr E08, 23 Sep 21:15, hann"; None when `stem` does not match that pattern -- an
-    EDI from before the naming change, or a hand-named one, keeps its plain file name.
+    """Build a tree label from a `run_stem` file stem.
+
+    Args:
+        stem (str): EDI file stem.
+
+    Returns:
+        str | None: "<local> rr <remote>, <DD Mon HH:MM>[, <tag>]", e.g.
+        "S01 rr S02, 23 Sep 21:15, hann"; None when `stem` does not match
+        the `run_stem` format.
     """
     match = _STEM_RE.match(stem)
     if not match:
@@ -108,14 +110,19 @@ def _run_label(stem: str) -> str | None:
 
 
 class EdiTab(QWidget):
-    """A checkable tree of EDIs over one mtpy canvas."""
+    """A checkable tree of EDIs beside one mtpy canvas.
+
+    Args:
+        state: The shared `mtproc_gui.app.State`.
+        parent (QWidget | None): Qt parent.
+    """
 
     def __init__(self, state, parent=None):
         super().__init__(parent)
         self.state = state
         self._checked: set[str] = set()
         self.last_seconds: float | None = None
-        self.draws = 0  # how many times mtpy has drawn: the debounce is testable
+        self.draws = 0  # number of mtpy draws, used to test the debounce
 
         self.tree = QTreeWidget(self)
         self.tree.setHeaderLabels(["transfer function"])
@@ -223,7 +230,7 @@ class EdiTab(QWidget):
     # ------------------------------------------------------------ the lists
 
     def reload(self) -> None:
-        """Re-list both groups, keeping whatever is ticked."""
+        """Re-list both groups, keeping the ticked rows."""
         self.tree.blockSignals(True)
         self.tree.clear()
         tf_dir = self.state.tf_dir()
@@ -247,6 +254,7 @@ class EdiTab(QWidget):
         self.schedule()
 
     def _references(self) -> dict:
+        """Return the reference_edis.yaml mapping, or {} when absent."""
         path = self.state.reference_edis_yaml()
         if path is None or not path.exists():
             return {}
@@ -254,10 +262,11 @@ class EdiTab(QWidget):
             return yaml.safe_load(handle) or {}
 
     def _add_leaf(self, parent: QTreeWidgetItem, label: str, path: Path) -> None:
+        """Add a checkable EDI row, greyed when the file is missing."""
         item = QTreeWidgetItem(parent, [label])
         item.setData(0, Qt.UserRole, str(path))
-        # selectable as well as checkable: the arrow keys move the *current*
-        # row, which is what quick view draws
+        # selectable as well as checkable: the arrow keys move the current
+        # row, which quick view draws
         item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsUserCheckable | Qt.ItemIsSelectable)
         item.setCheckState(0, Qt.Checked if str(path) in self._checked else Qt.Unchecked)
         if not path.exists():
@@ -273,12 +282,14 @@ class EdiTab(QWidget):
         return False
 
     def _leaves(self):
+        """Yield every EDI row of both groups."""
         for top in range(self.tree.topLevelItemCount()):
             parent = self.tree.topLevelItem(top)
             for row in range(parent.childCount()):
                 yield parent.child(row)
 
     def checked_files(self) -> list[tuple[str, Path]]:
+        """Return (label, path) of every ticked row."""
         return [
             (item.text(0), Path(str(item.data(0, Qt.UserRole))))
             for item in self._leaves()
@@ -286,7 +297,7 @@ class EdiTab(QWidget):
         ]
 
     def quick_row(self) -> tuple[str, Path] | None:
-        """(label, path) of the row under the cursor, when quick view is on."""
+        """Return (label, path) of the current row when quick view is on, else None."""
         if not self.quick_check.isChecked():
             return None
         item = self.tree.currentItem()
@@ -298,23 +309,26 @@ class EdiTab(QWidget):
     # --------------------------------------------------------------- slots
 
     def _item_changed(self, _item, _column) -> None:
+        """Record the ticked rows and schedule a redraw."""
         self._checked = {str(p) for _label, p in self.checked_files()}
         self.schedule()
 
     def _current_changed(self, _current, _previous) -> None:
+        """Schedule a redraw when the current row moves in quick view."""
         if self.quick_check.isChecked():
             self.schedule()
 
     def _item_clicked(self, _item, _column) -> None:
-        # a click must leave the arrow keys working on the tree
+        """Keep keyboard focus on the tree after a click, so the arrow keys step through it."""
         self.tree.setFocus()
 
     def _choice_toggled(self, on: bool) -> None:
+        """Schedule a redraw when a radio button is switched on."""
         if on:  # a radio group fires twice, off then on
             self.schedule()
 
     def _job_finished(self, index: int, ok: bool) -> None:
-        """A finished process_rr rewrote `<workspace>/tf`: re-list and re-read."""
+        """Clear the EDI cache and re-list after a successful process_rr job rewrote `<workspace>/tf`."""
         job = self.state.runner.jobs[index]
         if ok and "process_rr" in job.label:
             tf_plot.clear_cache()
@@ -323,7 +337,7 @@ class EdiTab(QWidget):
     # ------------------------------------------------------------- the plot
 
     def choice(self) -> str:
-        """Which of `tf_plot.CHOICES` the radio buttons are asking for."""
+        """Return the `tf_plot.CHOICES` entry selected by the Plot radio buttons."""
         if self.pt_radio.isChecked():
             return "pt"
         if self.tipper_radio.isChecked():
@@ -331,14 +345,17 @@ class EdiTab(QWidget):
         return "rho"
 
     def phase_range(self) -> str:
-        """Which of `tf_plot.PHASE_CHOICES` the Phase radio buttons are asking for."""
+        """Return the `tf_plot.PHASE_CHOICES` entry selected by the Phase radio buttons."""
         if self.phase_unfold_radio.isChecked():
             return tf_plot.PHASE_UNFOLDED
         return tf_plot.PHASE_FOLDED
 
     def rho_limits(self) -> tuple[float | None, float | None]:
-        """(min, max) Ohm m from the Apparent resistivity fields; a blank or
-        unparsable field reads as None, tf_plot's own "automatic" value."""
+        """Return (min, max) in Ohm m from the Apparent resistivity fields.
+
+        A blank or unparsable field gives None, which `tf_plot` treats as
+        mtpy's automatic value.
+        """
 
         def value(edit: QLineEdit) -> float | None:
             text = edit.text().strip()
@@ -352,11 +369,12 @@ class EdiTab(QWidget):
         return value(self.rho_min_edit), value(self.rho_max_edit)
 
     def _survey_has_hz(self) -> bool:
-        """Does any site of this survey declare a vertical magnetic channel (hz; bz on a LEMI-424)?
+        """True if any site of the survey declares a vertical magnetic channel (hz; bz on a LEMI-424).
 
-        `channels: [ex, ey, hx, hy]` is how a survey says its loggers carried
-        no hz sensor; the B423 Bz column is then an open input and any tipper
-        in the EDIs is an estimate from a dead channel.
+        A site with no `channels:` declaration counts as having one. A survey
+        declares `channels: [ex, ey, hx, hy]` when its loggers carried no hz
+        sensor; the B423 Bz column is then an open input and any tipper in
+        the EDIs is estimated from a dead channel.
         """
         survey = self.state.survey
         if survey is None:
@@ -368,6 +386,7 @@ class EdiTab(QWidget):
         return False
 
     def _update_tipper_button(self) -> None:
+        """Enable the tipper button only on a survey with an hz channel."""
         has_hz = self._survey_has_hz()
         self.tipper_radio.setEnabled(has_hz)
         self.tipper_radio.setToolTip("" if has_hz else NO_HZ_TIP)
@@ -375,7 +394,7 @@ class EdiTab(QWidget):
             self.rho_radio.setChecked(True)
 
     def rows_to_draw(self) -> tuple[list[tuple[str, Path]], tuple[str, Path] | None]:
-        """(rows, quick row): the cursor row first, then everything ticked."""
+        """Return (rows, quick row): the current row first in quick view, then every ticked row."""
         quick = self.quick_row()
         rows = list(self.checked_files())
         if quick is not None:
@@ -383,7 +402,7 @@ class EdiTab(QWidget):
         return rows, quick
 
     def schedule(self) -> None:
-        """Ask for a redraw in `DEBOUNCE_MS`, replacing any pending one."""
+        """Request a redraw in `DEBOUNCE_MS`, replacing any pending one."""
         self._timer.start()
 
     def redraw(self) -> None:

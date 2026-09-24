@@ -1,24 +1,32 @@
-"""Unit test for the mtproc forks of mth5 and mt-metadata (branch `mtproc-fixes`) against stock mth5 0.6.9 and mt_metadata 1.0.10.
+# -*- coding: utf-8 -*-
+"""
+Unit test for the mtproc forks of mth5 and mt-metadata
 
-    python tests/mth5_fork_unit.py
-
-The forks are the clones at MTPROC_FORKS/mth5 (import name `mth5`) and
-MTPROC_FORKS/mt-metadata (import name `mt_metadata`); MTPROC_FORKS defaults
-to `_scratch.DEFAULT_FORKS`. Every check runs in a fresh subprocess
-(`--worker`): the fork's with PYTHONPATH=<mth5 clone>;<mt-metadata
-clone>[;<mt-io clone>/src], then this process's own PYTHONPATH and src,
-ahead of site-packages -- the mt-io clone too when there is one, because
-check 2 ingests through `mtproc.ingest`, whose LEMI-423 coil chain is the
-mt-io fork's (mtproc patches nothing of mt-io). The installed packages' run
+Tests the forks (branch `mtproc-fixes`) against stock mth5 0.6.9 and
+mt_metadata 1.0.10. The forks are the clones at MTPROC_FORKS/mth5 (import
+name `mth5`) and MTPROC_FORKS/mt-metadata (import name `mt_metadata`);
+MTPROC_FORKS defaults to `_scratch.DEFAULT_FORKS`. Every check runs in a
+fresh subprocess (`--worker`). The fork's run has PYTHONPATH=<mth5
+clone>;<mt-metadata clone>[;<mt-io clone>/src], then this process's own
+PYTHONPATH and src, ahead of site-packages. The mt-io clone is included
+when there is one because check 2 ingests through `mtproc.ingest`, whose
+LEMI-423 coil chain comes from the mt-io fork. The installed packages' run
 (what this interpreter imports: site-packages, or a PYTHONPATH set before
-the test) gets this process's own PYTHONPATH and src only.
+the test) gets this process's own PYTHONPATH and src alone.
 
-The installed packages run checks 1, 2 and 4 as well, reported, not tested:
-stock mth5 0.6.9 / mt_metadata 1.0.10 (with stock mt-io) fail all three --
-which is what shows each check can fail -- and the forks, once installed,
-pass all three, reported as fixed. Without both clones the fork checks are
+The installed packages run checks 1, 2 and 4 as well, reported for
+information. Stock mth5 0.6.9 / mt_metadata 1.0.10 (with stock mt-io) fail
+all three, which shows each check can fail, and the installed forks pass
+all three, reported as fixed. Without both clones the fork checks are
 reported as skipped and the test passes; when the installed packages pass
 checks 1, 2 and 4 (the forks installed), the timing comparison is skipped.
+
+Usage:
+    python tests/mth5_fork_unit.py
+
+@author: ben kay (ben@auscope.org.au)
+
+:license: MIT
 
 **This test fails if**
 
@@ -84,13 +92,18 @@ TIMED_OPS = ["to_runts", "to_runts_20min", "time_slice_20min"]
 
 
 def branch(path: Path) -> str:
+    """Return a clone's checked-out branch, or the first 10 characters of a detached HEAD."""
     head = path / ".git" / "HEAD"
     text = head.read_text(encoding="utf-8").strip() if head.exists() else ""
     return text.rsplit("/", 1)[-1] if text.startswith("ref:") else text[:10]
 
 
 def _env(fork: tuple[Path, ...] | None) -> dict:
-    """The fork's clones (None: none, the installed packages), this process's own PYTHONPATH, then src."""
+    """Build a worker's environment.
+
+    PYTHONPATH is the fork's clones (None: none, for the installed
+    packages), this process's own PYTHONPATH, then src.
+    """
     env = dict(os.environ)
     env.pop("HDF5_USE_FILE_LOCKING", None)  # the lock is what check 1 needs
     parts = [str(p) for p in fork] if fork else []
@@ -100,7 +113,16 @@ def _env(fork: tuple[Path, ...] | None) -> dict:
 
 
 def run_worker(fork: tuple[Path, ...] | None, *args: str) -> dict:
-    """Run `--worker args` in a fresh process (fork on PYTHONPATH, or the installed packages); return its JSON line."""
+    """Run `--worker args` in a fresh process and return its JSON line.
+
+    Args:
+        fork (tuple[Path, ...] | None): Clones to put on PYTHONPATH; None
+            for the installed packages.
+        *args (str): Worker name and its arguments.
+
+    Raises:
+        RuntimeError: When the worker fails or prints no JSON line.
+    """
     done = subprocess.run([sys.executable, str(Path(__file__).resolve()), "--worker", *args],
                           env=_env(fork), capture_output=True, text=True, cwd=REPO)
     lines = [ln for ln in done.stdout.splitlines() if ln.startswith("{")]
@@ -112,6 +134,7 @@ def run_worker(fork: tuple[Path, ...] | None, *args: str) -> dict:
 # --------------------------------------------------------------------------- workers (one per process)
 
 def _quiet():
+    """Remove every loguru sink and return the logger."""
     from loguru import logger
 
     logger.remove()  # after mth5's import, which adds its own sink
@@ -119,6 +142,7 @@ def _quiet():
 
 
 def _where() -> dict:
+    """Return the files mth5 and mt_metadata are imported from."""
     import mt_metadata
     import mth5
 
@@ -126,7 +150,7 @@ def _where() -> dict:
 
 
 def w_write_small(tmp: str) -> dict:
-    """crosspower_unit's L (two runs) and R (one run) archives."""
+    """Write crosspower_unit's L (two runs) and R (one run) archives into `tmp`."""
     sys.path.insert(0, str(REPO / "tests"))
     import crosspower_unit as cu
     import pandas as pd
@@ -153,7 +177,7 @@ def w_hold(tmp: str) -> None:
 
 
 def w_read_only(tmp: str) -> dict:
-    """RunSummary and KernelDataset over L and R, straight from mth5 (mtproc.process is not imported)."""
+    """Build RunSummary and KernelDataset over L and R directly with mth5, without mtproc.process."""
     from mth5.processing.kernel_dataset import KernelDataset
     from mth5.processing.run_summary import RunSummary
 
@@ -167,14 +191,14 @@ def w_read_only(tmp: str) -> dict:
         kernel_dataset = KernelDataset()
         kernel_dataset.from_run_summary(run_summary, "L", "R")
         stations = sorted(kernel_dataset.df.station.unique().tolist())
-    except Exception as exc:  # the stock control is expected to land here
+    except Exception as exc:  # the stock control raises here
         error = f"{type(exc).__name__}: {exc}"
     after = [os.stat(p).st_mtime_ns for p in paths]
     return {**_where(), "stations": stations, "error": error, "mtime_unchanged": before == after}
 
 
 def w_run_ids(tmp: str) -> dict:
-    """mtproc's own ingest of three synthetic LEMI-423 files; the mth5.groups.run warnings it logs."""
+    """Ingest three synthetic LEMI-423 files with mtproc and collect the mth5.groups.run warnings logged."""
     sys.path[:0] = [str(REPO / "src"), str(REPO / "tests")]
     import new_survey_unit as nsu
 
@@ -211,7 +235,7 @@ def w_run_ids(tmp: str) -> dict:
 
 
 def w_rate(tmp: str) -> dict:
-    """hx, hy at 10.00064 Hz through from_runts, back through to_runts and time_slice; a 1.5 Hz RunTS."""
+    """Write hx, hy at 10.00064 Hz with from_runts, read them back with to_runts and time_slice, and build a 1.5 Hz RunTS."""
     import mt_timeseries
     import numpy as np
     from mt_metadata.timeseries import Magnetic, Run, Station
@@ -222,6 +246,7 @@ def w_rate(tmp: str) -> dict:
     start = "2009-06-16T02:01:04+00:00"
 
     def pair(fs: float) -> list:
+        """Build hx and hy ChannelTS of 3600 samples at `fs`."""
         chans = []
         for comp in ("hx", "hy"):
             meta = Magnetic(component=comp, sample_rate=fs)
@@ -242,6 +267,7 @@ def w_rate(tmp: str) -> dict:
         m.close_mth5()
 
     def step_ns(t) -> float:
+        """Return the first time step of an index in ns."""
         return float((t[1] - t[0]) / np.timedelta64(1, "ns"))
 
     m = MTH5()
@@ -263,6 +289,7 @@ def w_rate(tmp: str) -> dict:
 
 
 def w_band() -> dict:
+    """Set the indices of a band holding no harmonic and report the error raised."""
     import numpy as np
     from mt_metadata.common.band import Band
 
@@ -276,7 +303,7 @@ def w_band() -> dict:
 
 
 def w_make_synth(path: str) -> dict:
-    """1 h at 1000 Hz, ex ey hx hy hz float64, as mtproc lays a site out (one run, sr1000_0001)."""
+    """Write 1 h at 1000 Hz of ex ey hx hy hz float64, laid out as mtproc lays a site (one run, sr1000_0001)."""
     import numpy as np
     from mt_metadata.timeseries import Electric, Magnetic, Run, Station
     from mt_timeseries import ChannelTS, RunTS
@@ -304,7 +331,7 @@ def w_make_synth(path: str) -> dict:
 
 
 def w_time(path: str, op: str) -> dict:
-    """Best of REPS calls of one operation; this process's peak working-set increment."""
+    """Time one operation: the best of REPS calls and this process's peak working-set increment."""
     import psutil
     from mth5.mth5 import MTH5
 
@@ -349,10 +376,11 @@ WORKERS = {"write_small": w_write_small, "hold": w_hold, "read_only": w_read_onl
 # --------------------------------------------------------------------------- the parent side
 
 def check_read_only(fork, tmp: Path) -> bool:
-    """Asserts the fork; returns whether the installed packages pass too."""
+    """Run check 1: assert it on the fork and return whether the installed packages pass too."""
     run_worker(None, "write_small", str(tmp))
 
     def held(which) -> dict:
+        """Run the read_only worker while another process holds both archives open read-only."""
         holder = subprocess.Popen([sys.executable, str(Path(__file__).resolve()), "--worker", "hold", str(tmp)],
                                   env=_env(None), stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
         try:
@@ -376,7 +404,7 @@ def check_read_only(fork, tmp: Path) -> bool:
 
 
 def check_run_ids(fork, tmp: Path) -> bool:
-    """Asserts the fork; returns whether the installed packages pass too."""
+    """Run check 2: assert it on the fork and return whether the installed packages pass too."""
     got = run_worker(fork, "run_ids", str(tmp / "fork"))
     assert not got["warnings"], f"2. fork: mth5.groups.run warned {got['warnings']}"
     wrong = [row for row in got["ids"] if not (row[0] == row[1] == row[3])]
@@ -398,6 +426,7 @@ def check_run_ids(fork, tmp: Path) -> bool:
 
 
 def check_rate(fork, tmp: Path) -> None:
+    """Run check 3 with the mt-timeseries clone, if any, and with the installed mt_timeseries."""
     mtts_clone = fork_clone("mt-timeseries")
     stacks = [("installed mt_timeseries", fork)]
     if mtts_clone is not None and (mtts_clone / "src" / "mt_timeseries" / "__init__.py").exists():
@@ -417,7 +446,7 @@ def check_rate(fork, tmp: Path) -> None:
                 f"{got['run_rate']:.7g}; 1.5 Hz: {got['step_15_ns']:,.0f} ns, rate {got['rate_15']:.7g}; station "
                 f"channels {got['channels_recorded']}")
         if all(s == 1e8 for s in steps) and not is_clone:
-            print(f"  3. {label}: {seen}: NOT FIXED ({got['mt_timeseries']})")
+            print(f"  3. {label}: {seen}: not fixed ({got['mt_timeseries']})")
             continue
         assert all(abs(s - want) <= 1.0 for s in steps), f"3. {label}: {seen}; want {want:,.1f} ns"
         assert got["run_rate"] == FS_ODD and got["channel_rate"] == FS_ODD, f"3. {label}: partial fix: {got}"
@@ -427,7 +456,7 @@ def check_rate(fork, tmp: Path) -> None:
 
 
 def check_band(fork) -> bool:
-    """Asserts the fork; returns whether the installed packages pass too."""
+    """Run check 4: assert it on the fork and return whether the installed packages pass too."""
     got = run_worker(fork, "band")
     assert got["error"] and got["error"][0] == "ValueError", f"4. fork: {got['error']}"
     assert "0.1575-0.1984 Hz" in got["error"][1] and "0.078125 Hz" in got["error"][1], f"4. fork: {got['error']}"
@@ -440,6 +469,7 @@ def check_band(fork) -> bool:
 
 
 def check_cost(fork, tmp: Path) -> None:
+    """Run check 5: time the fork against the installed packages, alternating ROUNDS times."""
     path = tmp / "synthetic_1h_1000hz.h5"
     run_worker(None, "make_synth", str(path))
     rows = {op: {"stock": [], "fork": []} for op in TIMED_OPS}
@@ -463,6 +493,7 @@ def check_cost(fork, tmp: Path) -> None:
 
 
 def main() -> int:
+    """Run the checks on the fork clones; return 0 (a failure raises AssertionError)."""
     print(__doc__.split("**This test fails if**")[1].strip())
     print()
     mth5_clone, mtm_clone = fork_clone("mth5"), fork_clone("mt-metadata")

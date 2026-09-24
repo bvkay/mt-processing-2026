@@ -1,32 +1,36 @@
-"""Raw time series -> one MTH5 archive per site, plus filtered variants of it.
+# -*- coding: utf-8 -*-
+"""
+Raw time series to one MTH5 archive per site, plus filtered variants
 
-`ingest_site` writes exactly one archive per site, `<workspace>/mth5/<site>.h5`
-(`default_archive_path`), and it is always the raw recording: no
-`filters.yaml` entry is ever applied here, not even `replace` -- calibration
-only (the coil response, `h_scale`, the reversed-dipole flip; LEMI-424 and
-Earth Data PR6-24 sites go through their own mt-io readers,
-`mtproc.instruments.read_run`, with the reader's channel names and filter
-chain). The site's instrument is `Survey.instrument_of(site)`.
+`ingest_site` writes one archive per site, `<workspace>/mth5/<site>.h5`
+(`default_archive_path`), holding the raw recording with calibration only:
+the coil response, `h_scale` and the reversed-dipole flip. Entries of
+`filters.yaml`, including `replace`, are applied in the variants described
+below. LEMI-424 and Earth Data PR6-24 sites are read by their mt-io readers
+(`mtproc.instruments.read_run`) with the reader's channel names and filter
+chain. The site's instrument is `Survey.instrument_of(site)`.
 
-LEMI-423 files are read by the mt-io fork's `read_lemi423` as it stands: it
-parses the four-digit altitude line of firmware 2.1 (``%Alt1060.0,m``) and,
-given a `calibration_fn`, builds each magnetic channel's chain physical to
+LEMI-423 files are read by `read_lemi423` of the mt-io fork. It parses the
+four-digit altitude line of firmware 2.1 (``%Alt1060.0,m``) and, given a
+`calibration_fn`, builds each magnetic channel's chain from physical to
 recorded, [LEMI-120 coil table nT -> nT (normalized), linear nT -> counts],
 with units mt_metadata accepts (docs/upstream_issues.md 1, 2 and 6).
-Nothing of mt-io is patched here; `_apply_h_scale` only appends one stage.
+`_apply_h_scale` appends one stage to that chain.
 
-A site's declared filters (`<survey>/filters.yaml`) are applied on top of the
-raw archive, on demand, into a **variant**: `<site>_f<hash>.h5`
-(`variant_path`, `hash` = `filters_hash` of the declared list), built by
-`build_variant` from the raw archive's own runs -- `replace` entries read the
-donor's *raw* archive, never B423 files -- and never overwrites it. Whatever
-wants the site "as processing should see it" asks `processing_archive`,
-which builds the variant if it is missing or stale (a `filters.yaml` edit
-changes the hash) and returns the raw path outright for a site with no
-declared filters. An archive from before this split, whose run comments
-record filters baked into `<site>.h5` itself, is the one thing
-`processing_archive` refuses to touch (`archive_filter_kinds`) -- it must be
-rebuilt raw first.
+A site's declared filters (`<survey>/filters.yaml`) are applied to the raw
+archive on demand, producing a variant `<site>_f<hash>.h5` (`variant_path`,
+with `hash` the `filters_hash` of the declared list). `build_variant` builds
+it from the raw archive's runs, reading `replace` donors from their raw
+archives, and leaves the raw archive unchanged. `processing_archive` returns
+the archive processing should read: it builds the variant if it is missing
+or stale (an edit of `filters.yaml` changes the hash) and returns the raw
+path for a site with no declared filters. An old-layout archive, whose run
+comments record filters applied inside `<site>.h5`, is rejected by
+`processing_archive` (`archive_filter_kinds`) and must be rebuilt raw.
+
+@author: ben kay (ben@auscope.org.au)
+
+:license: MIT
 """
 
 from __future__ import annotations
@@ -54,40 +58,54 @@ from .timefreq import _real_runs
 
 
 def default_archive_path(survey: Survey, site_name: str, ignore_filters: bool = False) -> Path:
-    """Where `ingest_site` writes a site's RAW archive: ``<workspace>/mth5/<site>.h5``.
+    """Return the path of a site's raw archive, ``<workspace>/mth5/<site>.h5``.
 
-    `ignore_filters` is accepted and ignored, kept only so old call sites
-    keep working: there is no more separate ``<site>_unfiltered.h5`` -- raw
-    IS the unfiltered archive now (the module docstring). A run that wants
-    the site's declared filters applied asks `processing_archive`, not this.
+    For the archive with the site's declared filters applied, use
+    `processing_archive`.
+
+    Args:
+        survey (Survey): The survey.
+        site_name (str): Site name.
+        ignore_filters (bool): Accepted for compatibility with older callers
+            and ignored; the raw archive is the unfiltered archive.
+
+    Returns:
+        Path: The archive path.
     """
     return survey.workspace / "mth5" / f"{site_name}.h5"
 
 
-# the prefix a run comment carries its filter provenance with -- an old-layout
-# `ingest_site` build (`_filter_lines`/`archive_filter_kinds`) or a
-# `build_variant` one (`_VARIANT_PREFIX`, below); everything after either is
-# one provenance line per filter, joined "; then "
+# prefix of the filter provenance in a run comment, written by an old-layout
+# `ingest_site` build (`_filter_lines`, `archive_filter_kinds`) or by
+# `build_variant` (after `_VARIANT_HASH_PREFIX`, below); the text after it is
+# one provenance line per filter, joined by "; then "
 _FILTERS_PREFIX = "ingest filters (in order): "
-# `build_variant`'s own prefix: the hash, then `_FILTERS_PREFIX` and the same
-# provenance lines an old-layout archive would have carried
+# prefix of a `build_variant` run comment: the hash, then `_FILTERS_PREFIX` and
+# the same provenance lines an old-layout archive carries
 _VARIANT_HASH_PREFIX = "filters hash "
 
 
 def _run_comment(run_group) -> str:
+    """Return a run group's comment text, "" when there is none."""
     comment = run_group.metadata.comments
     return "" if comment is None else str(getattr(comment, "value", comment) or "")
 
 
 def _all_real_run_comments(path: Path) -> list[str] | None:
-    """Every real run's comment in `path`'s one station (`_real_runs`, which
-    drops mth5/aurora's auxiliary station-level groups), earliest first.
+    """Return the comment of every real run in an archive's station, earliest first.
 
-    None when `path` does not exist, or names a ``.part`` temp file
-    (`build_variant` never leaves a finished archive under that name -- only
-    `os.replace` moves one onto the final name, after every run is written
-    and both files are closed). [] when the archive exists but has no real
-    run.
+    Real runs come from `_real_runs`, which skips the auxiliary station-level
+    groups of mth5 and aurora. The archive is opened read-only.
+
+    Args:
+        path (Path): MTH5 file with one station.
+
+    Returns:
+        list of str or None: The comments; an empty list for an archive with
+        no real run; None when the file does not exist or is a ``.part``
+        temporary file of `build_variant`, which is moved onto the final
+        name with `os.replace` once every run is written and both files are
+        closed.
     """
     path = Path(path)
     if path.suffix == ".part" or not path.exists():
@@ -106,23 +124,34 @@ def _all_real_run_comments(path: Path) -> list[str] | None:
 
 
 def _earliest_real_run_comment(path: Path) -> str | None:
-    """The earliest real run's comment (`_all_real_run_comments`); "" for an
-    archive with no real run, None for one that does not exist (or is a
-    `.part` temp file). `archive_filter_kinds` uses this -- one `ingest_site`/
-    `build_variant` call applies the same filters to every run of a site, so
-    the earliest stands for the whole archive there. `variant_ready` checks
-    every run instead of trusting that: see its own docstring for why.
+    """Return the earliest real run's comment (`_all_real_run_comments`).
+
+    Used by `archive_filter_kinds`: one `ingest_site` or `build_variant`
+    call applies the same filters to every run of a site, so the earliest
+    run represents the archive. `variant_ready` checks every run.
+
+    Returns:
+        str or None: The comment; "" for an archive with no real run; None
+        for a missing file or a ``.part`` temporary file.
     """
     comments = _all_real_run_comments(path)
     return None if comments is None else (comments[0] if comments else "")
 
 
 def _filter_lines(comment: str) -> list[tuple[str, str]]:
-    """[(kind, provenance line), ...] out of a run `comment` that starts with
-    `_FILTERS_PREFIX` (after `_VARIANT_HASH_PREFIX` too, when there is one);
-    [] when it does not. The declared electric-gain note, when `ingest_site`
-    appended one, rides "; " (not "; then ") after the last filter's line and
-    is stripped off that line before it is returned.
+    """Parse the filter provenance lines out of a run comment.
+
+    The comment must start with `_FILTERS_PREFIX`, optionally preceded by
+    the `_VARIANT_HASH_PREFIX` part. The electric-gain note that
+    `ingest_site` may append follows the last filter's line after "; "
+    (rather than "; then ") and is stripped from that line.
+
+    Args:
+        comment (str): Run comment.
+
+    Returns:
+        list of tuple: ``(kind, provenance_line)`` pairs; empty when the
+        comment records no filters.
     """
     if comment.startswith(_VARIANT_HASH_PREFIX):
         comment = comment.split("; ", 1)[1] if "; " in comment else ""
@@ -138,53 +167,72 @@ def _filter_lines(comment: str) -> list[tuple[str, str]]:
 
 
 def archive_filter_kinds(path: Path) -> list[str] | None:
-    """The filter kinds recorded in `path`'s run comments, in order.
+    """Return the filter kinds recorded in an archive's run comments, in order.
 
-    None when the archive does not exist. [] for a raw archive (nothing
-    recorded -- every archive `ingest_site` writes now) or one with no real
-    run. A non-empty result on `default_archive_path`'s own path is an
-    "old-layout" archive, from before filters and raw recordings were split:
-    `processing_archive` refuses to build a variant from, or process, one of
-    those. See `_filter_lines` for exactly how the comment is read.
+    A non-empty result on `default_archive_path` marks an old-layout
+    archive with filters applied inside the raw archive; `processing_archive`
+    and `build_variant` reject such an archive. See `_filter_lines` for how
+    the comment is parsed.
+
+    Args:
+        path (Path): MTH5 file.
+
+    Returns:
+        list of str or None: The kinds; an empty list for a raw archive, as
+        `ingest_site` writes, or one with no real run; None when the archive
+        does not exist.
     """
     comment = _earliest_real_run_comment(path)
     return None if comment is None else [kind for kind, _line in _filter_lines(comment)]
 
 
 def filters_hash(filters: list[dict] | None) -> str:
-    """The first 8 hex characters of the sha1 of `filters` (`json.dumps(..., sort_keys=True)`):
-    `variant_path`'s ``_f<hash>`` suffix and the hash `build_variant` records
-    in its run comments. Order-sensitive (two lists of the same entries in a
-    different order hash differently -- order changes what is applied).
+    """Hash a declared filter list.
+
+    The hash is the first 8 hex characters of the sha1 of
+    ``json.dumps(filters, sort_keys=True)``. It forms the ``_f<hash>``
+    suffix of `variant_path` and is recorded in `build_variant` run
+    comments. It depends on the order of the entries, since the order
+    changes what is applied.
+
+    Args:
+        filters (list of dict or None): Declared filters.
+
+    Returns:
+        str: 8 hex characters.
     """
     text = json.dumps(list(filters or []), sort_keys=True)
     return hashlib.sha1(text.encode("utf-8")).hexdigest()[:8]
 
 
 def variant_path(survey: Survey, site_name: str) -> Path:
-    """``<workspace>/mth5/<site>_f<hash>.h5``, hash = `filters_hash` of the site's
-    currently declared filters. Meaningful only when the site declares some
-    (an empty list hashes to something too, but callers -- `processing_archive`,
-    `variant_ready` -- treat "no declared filters" as "no variant, use the raw
-    archive" before ever asking for this path)."""
+    """Return the variant path ``<workspace>/mth5/<site>_f<hash>.h5``.
+
+    The hash is `filters_hash` of the site's current declared filters. The
+    path applies to sites that declare filters; `processing_archive` and
+    `variant_ready` use the raw archive for a site without them.
+    """
     h = filters_hash(survey.site(site_name).filters)
     return survey.workspace / "mth5" / f"{site_name}_f{h}.h5"
 
 
 def variant_ready(survey: Survey, site_name: str) -> bool:
-    """True when `variant_path` names a finished file (never a ``.part`` one
-    `build_variant` is still writing -- `_all_real_run_comments` returns None
-    for that), *every* one of its real runs' comment carries a recorded
-    hash, and every one of those hashes equals `filters_hash` of the site's
-    current declaration.
+    """Return whether the site's variant is complete and current.
 
-    Checking every run rather than trusting the file's name (or just its
-    earliest run) is the guard against a variant that stopped part-way
-    through: `build_variant` now only `os.replace`s its ``.part`` file onto
-    the variant's real name after the last run is written and both files are
-    closed, so a crash should never leave a partial file under that name --
-    but a hard kill mid-`os.replace`, or a file dropped in or edited by hand,
-    is exactly what this catches instead of silently trusting.
+    The variant is ready when `variant_path` names a finished file (a
+    ``.part`` file still being written gives None from
+    `_all_real_run_comments`), every real run's comment carries a recorded
+    hash, and every hash equals `filters_hash` of the site's current
+    declaration. Every run is checked, which detects a variant cut short by
+    a process killed during `os.replace`, or a file copied in or edited by
+    hand.
+
+    Args:
+        survey (Survey): The survey.
+        site_name (str): Site name.
+
+    Returns:
+        bool: False also for a site with no declared filters.
     """
     site = survey.site(site_name)
     if not site.filters:
@@ -202,13 +250,29 @@ def variant_ready(survey: Survey, site_name: str) -> bool:
 
 
 def _donor_channel(survey: Survey, donor_site: str, comp: str, t0, n: int, fs: float, tag: str) -> np.ndarray:
-    """`comp`'s raw counts for `n` samples at `fs` Hz from `donor_site`'s RAW
-    archive, starting at `t0` (a pandas Timestamp) -- the array `build_variant`
-    hands `apply_filters_arrays` as `donors[donor_site][comp]` for a `replace`
-    entry. Raises when the donor has no raw archive, no run covering the span,
-    a different sample rate, a run that does not start on the target's exact
-    sample grid (GPS timing assumption, as `mtproc.virtual` asserts it), or a
-    run too short for `n` samples from there.
+    """Read a donor channel for a `replace` filter from the donor's raw archive.
+
+    `build_variant` passes the result to `apply_filters_arrays` as
+    ``donors[donor_site][comp]``. The archive is opened read-only.
+
+    Args:
+        survey (Survey): The survey.
+        donor_site (str): Donor site name.
+        comp (str): Channel component.
+        t0 (pd.Timestamp): Time of the first sample.
+        n (int): Number of samples.
+        fs (float): Sample rate in Hz.
+        tag (str): Label for error messages.
+
+    Returns:
+        np.ndarray: `n` raw counts.
+
+    Raises:
+        FileNotFoundError: If the donor has no raw archive.
+        ValueError: If no donor run covers the span, the sample rate
+            differs, the run does not start on the target's sample grid
+            (the GPS timing assumption, as in `mtproc.virtual`), or the run
+            is too short.
     """
     path = default_archive_path(survey, donor_site)
     if not path.exists():
@@ -244,26 +308,36 @@ def _donor_channel(survey: Survey, donor_site: str, comp: str, t0, n: int, fs: f
 
 
 def build_variant(survey: Survey, site_name: str, workers: int = 4) -> Path:
-    """Build (or replace) `site_name`'s filtered variant from its raw archive.
+    """Build or replace a site's filtered variant from its raw archive.
 
-    Reads the raw archive (`default_archive_path`; raises if it is missing,
-    or if `archive_filter_kinds` finds it is an old-layout archive with
-    filters already baked in -- rebuild it raw first, `scripts/ingest_site.py
-    <survey.yaml> <site> --raw`) run by run (`_real_runs`), applies the
-    site's declared `filters.yaml` list to that run's channel arrays
-    (`mtproc.noise.apply_filters_arrays`, `workers` threads per filter),
-    `replace` entries reading the donor's own RAW archive over the run's span
-    (`_donor_channel`) -- never B423 files, so a `replace` donor need not be
-    LEMI-423 any more -- and writes the result to `variant_path`: the same
-    runs, the raw station's own metadata, and each run's provenance lines
-    (as an old-layout `ingest_site` build would have written them) behind a
-    leading ``filters hash <hash>; `` (`variant_ready` reads it back). One
-    run's channel arrays are held at a time, never the whole site.
+    The raw archive (`default_archive_path`) is read run by run
+    (`_real_runs`). The site's declared `filters.yaml` list is applied to
+    each run's channel arrays (`mtproc.noise.apply_filters_arrays`, with
+    `workers` threads per filter); `replace` entries read the donor's raw
+    archive over the run's span (`_donor_channel`), so a donor may be any
+    instrument. The result is written to `variant_path` with the same runs,
+    the raw station's metadata, and each run's provenance lines behind a
+    leading ``filters hash <hash>; `` that `variant_ready` reads back. One
+    run's channel arrays are held in memory at a time. The file is written
+    under a ``.part`` name and moved into place when complete. After a
+    successful write every other ``<site>_f*.h5`` is deleted, leaving one
+    variant per site.
 
-    Raises `ValueError` when the site declares no filters (there is nothing
-    to build -- the raw archive already is the processing archive). After a
-    successful write, every *other* ``<site>_f*.h5`` is deleted, so exactly
-    one variant exists per site at a time.
+    Args:
+        survey (Survey): The survey.
+        site_name (str): Site name.
+        workers (int): Threads per filter.
+
+    Returns:
+        Path: The variant path.
+
+    Raises:
+        ValueError: If the site declares no filters (the raw archive is then
+            the processing archive), the raw archive is an old-layout
+            archive with filters applied (rebuild it with
+            ``scripts/ingest_site.py <survey.yaml> <site> --raw``), or it
+            has no real run.
+        FileNotFoundError: If the raw archive is missing.
     """
     site = survey.site(site_name)
     filters = site.filters or []
@@ -281,10 +355,9 @@ def build_variant(survey: Survey, site_name: str, workers: int = 4) -> Path:
     h = filters_hash(filters)
     out_path = survey.workspace / "mth5" / f"{site_name}_f{h}.h5"
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    # built under a .part name and moved onto out_path only once every run is
-    # written and both files are closed (os.replace, below): a crash midway
-    # leaves only the .part file, which variant_ready never mistakes for a
-    # finished variant, instead of a truncated file under the real name
+    # written under a .part name and moved onto out_path once every run is
+    # written and both files are closed (os.replace, below); after a crash
+    # midway only the .part file exists, which variant_ready does not accept
     tmp_path = out_path.with_name(out_path.name + ".part")
     if tmp_path.exists():
         tmp_path.unlink()
@@ -339,11 +412,9 @@ def build_variant(survey: Survey, site_name: str, workers: int = 4) -> Path:
     finally:
         m_in.close_mth5()
 
-    # the one moment the variant's real name starts to exist: every run is
-    # written and both files are closed, so a reader (variant_ready) never
-    # sees a partial file under it -- os.replace is an atomic rename on the
-    # same filesystem (POSIX and Windows both), overwriting out_path if a
-    # stale one of the same hash is somehow already there
+    # every run is written and both files are closed; os.replace is an atomic
+    # rename on the same filesystem (POSIX and Windows), overwriting any
+    # existing out_path of the same hash
     os.replace(tmp_path, out_path)
     took = time.perf_counter() - started
     size_mb = out_path.stat().st_size / 1e6
@@ -357,17 +428,28 @@ def build_variant(survey: Survey, site_name: str, workers: int = 4) -> Path:
 
 
 def processing_archive(survey: Survey, site_name: str, use_filters: bool = True) -> Path:
-    """The archive a processing run should read for `site_name`.
+    """Return the archive a processing run reads for a site.
 
-    The raw archive (`default_archive_path`) when `use_filters` is False, or
-    the site declares no filters; otherwise its filtered variant
-    (`variant_path`), built first (`build_variant`) when it is missing or its
-    recorded hash does not match the current declaration (`variant_ready`).
+    This is the raw archive (`default_archive_path`) when `use_filters` is
+    False or the site declares no filters, and otherwise the filtered
+    variant (`variant_path`), built first with `build_variant` when it is
+    missing or its recorded hash differs from the current declaration
+    (`variant_ready`). The raw archive must already exist; ingest runs in
+    `ingest_site`.
 
-    Raises when the raw archive itself does not exist -- this never ingests,
-    only builds a variant on top of an existing raw archive -- or when it is
-    an old-layout archive with filters baked in (`archive_filter_kinds`):
-    rebuild it raw first, `scripts/ingest_site.py <survey.yaml> <site> --raw`.
+    Args:
+        survey (Survey): The survey.
+        site_name (str): Site name.
+        use_filters (bool): Whether to apply the declared filters.
+
+    Returns:
+        Path: The archive path.
+
+    Raises:
+        FileNotFoundError: If the raw archive does not exist.
+        ValueError: If the raw archive is an old-layout archive with filters
+            applied (`archive_filter_kinds`); rebuild it with
+            ``scripts/ingest_site.py <survey.yaml> <site> --raw``.
     """
     site = survey.site(site_name)
     raw = default_archive_path(survey, site_name)
@@ -392,10 +474,23 @@ def processing_archive(survey: Survey, site_name: str, use_filters: bool = True)
 def select_files(site_dir: Path, start=None, end=None, instrument: str = "lemi423") -> list[Path]:
     """Return the site's data files overlapping [start, end).
 
-    File names carry each file's start in UTC (B423: the unix epoch;
-    `mtproc.instruments.file_start` for the others); a file's span is taken as
-    running to the next file's start (median spacing for the last). An EDL
-    stamp names five channel files, all kept or dropped together.
+    File names carry each file's start in UTC (the unix epoch for B423,
+    `mtproc.instruments.file_start` for the others). A file's span runs to
+    the next file's start, or the median spacing for the last file. An EDL
+    stamp names five channel files, which are kept or dropped together.
+
+    Args:
+        site_dir (Path): Site folder.
+        start: Window start, UTC; None for no bound.
+        end: Window end, UTC; None for no bound.
+        instrument (str): Key of `INSTRUMENTS`.
+
+    Returns:
+        list of Path: The selected files.
+
+    Raises:
+        FileNotFoundError: If the folder holds no files of the instrument.
+        ValueError: If no file overlaps the window.
     """
     if instrument != "lemi423":
         return _select_stamped(site_dir, start, end, instrument)
@@ -418,7 +513,7 @@ def select_files(site_dir: Path, start=None, end=None, instrument: str = "lemi42
 
 
 def _select_stamped(site_dir: Path, start, end, instrument: str) -> list[Path]:
-    """`select_files` for a LEMI-424 or EDL site: the same rule on each distinct file start."""
+    """Apply the `select_files` rule to each distinct file start of a LEMI-424 or EDL site."""
     files = record_files(Path(site_dir), instrument)
     if not files:
         spec = INSTRUMENTS[instrument]
@@ -442,10 +537,16 @@ def _select_stamped(site_dir: Path, start, end, instrument: str) -> list[Path]:
 def _standardise_e_orientation(run, site: SiteConfig) -> None:
     """Sign-flip electric channels recorded with reversed dipoles.
 
-    Field crews sometimes lay dipoles at 180/270 deg; the data are the negative
-    of the standard 0/90 frame. Flipping at ingest keeps everything downstream
-    in one convention. Arbitrary azimuths are not handled (none occur in the
-    surveys processed here).
+    Dipoles laid at 180/270 deg record the negative of the standard 0/90
+    frame; flipping at ingest keeps later processing in one convention. The
+    flip is skipped with a log line when `flip_reversed_dipoles` is False.
+
+    Args:
+        run (RunTS): Run, modified in place.
+        site (SiteConfig): Site settings.
+
+    Raises:
+        ValueError: If an azimuth is neither standard nor reversed by 180 deg.
     """
     for comp, az, standard in (
         ("ex", site.azimuth_ex, 0.0),
@@ -467,9 +568,9 @@ def _standardise_e_orientation(run, site: SiteConfig) -> None:
                 f"(flip_reversed_dipoles=False) — no sign flip"
             )
             continue
-        # the reader already writes the standard azimuth into the channel
-        # attrs, so flipping the data is the whole correction. NB mutate
-        # run.dataset directly: run.<comp> accessors return fresh copies.
+        # the reader writes the standard azimuth into the channel attrs, so
+        # flipping the data completes the correction. run.dataset is modified
+        # directly because run.<comp> accessors return copies.
         run.dataset[comp].data = -run.dataset[comp].data
         logger.info(f"{site.name} {comp}: azimuth {az} -> sign-flipped to {standard}")
 
@@ -477,11 +578,16 @@ def _standardise_e_orientation(run, site: SiteConfig) -> None:
 def _apply_h_scale(run, site: SiteConfig) -> None:
     """Fold `h_scale` into each magnetic channel's filter chain.
 
-    Appended as an explicit CoefficientFilter so the correction is visible in
-    the MTH5 provenance. Calibration divides by the chain response, so a gain
-    of -1000 turns the reader's pT-with-inverted-polarity output into nT in
-    the lemimt convention. Applied to hz too, which leaves the tipper
-    unchanged (numerator and denominator flip together).
+    The scale is appended as a CoefficientFilter, so the correction is
+    recorded in the MTH5 provenance. Calibration divides by the chain
+    response, so a gain of -1000 turns the reader's pT output with inverted
+    polarity into nT in the lemimt convention. It is applied to hz too,
+    which leaves the tipper unchanged since numerator and denominator flip
+    together. A scale of 1.0 adds nothing.
+
+    Args:
+        run (RunTS): Run, modified in place.
+        site (SiteConfig): Site settings.
     """
     if site.h_scale == 1.0:
         return
@@ -497,8 +603,8 @@ def _apply_h_scale(run, site: SiteConfig) -> None:
         f"gain {site.h_scale} (pT -> nT with sign flip)"
     )
     # RunTS keeps filters in run.filters and the per-channel applied list in
-    # dataset attrs; run.<comp> accessors return fresh copies, so mutating
-    # those would be lost.
+    # dataset attrs; run.<comp> accessors return copies, so the attrs are
+    # modified directly.
     run.filters[coef.name] = coef
     for comp in ("hx", "hy", "hz"):
         if comp not in run.dataset:
@@ -517,17 +623,28 @@ def _apply_h_scale(run, site: SiteConfig) -> None:
 
 
 def _electric_gain(survey: Survey, site: SiteConfig, instrument: str, site_dir: Path) -> float:
-    """The gain `read_run` folds into ex and ey's chain, checked once per site before anything is written.
+    """Return the electric gain `read_run` folds into the ex and ey chains.
 
-    EDL: `SiteConfig.electric_gain` (`edl_electric_gain`; default 1.0, no
-    filter). recorder.ini's own `channel_n_high_gain` flags
-    (`recorder_ini_high_gain`) are read only to warn, informationally, when it
-    flags a channel and a gain is declared -- they never set the value: this
-    is the electric chain's gain, declared from the field notes, not the
-    PR6-24's own setting.
-    Another instrument: an `electric_gain:` in the site's own entry raises --
-    it is an EDL electric-chain setting -- and a `defaults:` value is not
-    applied to it.
+    Checked once per site before anything is written. For EDL sites this is
+    `SiteConfig.electric_gain` (`edl_electric_gain`, default 1.0 with no
+    filter). The recorder.ini ``channel_n_high_gain`` flags
+    (`recorder_ini_high_gain`) produce an informational warning when set;
+    the declared value is the electric chain gain from the field notes,
+    separate from the PR6-24 pre-amplifier setting. For other instruments a
+    `defaults:` value is ignored and the gain is 1.0.
+
+    Args:
+        survey (Survey): The survey.
+        site (SiteConfig): Site settings.
+        instrument (str): The site's instrument.
+        site_dir (Path): Site folder.
+
+    Returns:
+        float: The gain.
+
+    Raises:
+        ValueError: If a non-EDL site sets its own `electric_gain` other
+            than 1.0.
     """
     if instrument != "edl":
         own = ((survey.config.get("sites") or {}).get(site.name) or {}).get("electric_gain")
@@ -544,11 +661,18 @@ def _electric_gain(survey: Survey, site: SiteConfig, instrument: str, site_dir: 
 
 
 def _keep_channels(run, site: SiteConfig) -> None:
-    """Drop channels not listed in `site.channels` (e.g. the unconnected hz).
+    """Drop channels not listed in `site.channels`, such as an unconnected hz.
 
-    The reader always returns all five B423 columns; the survey says which
-    ones had a sensor attached. Dropping here keeps the MTH5 honest and stops
-    aurora from producing a tipper out of an open input.
+    The reader returns every column of the file, and the survey declares
+    which had a sensor attached. Dropping the others keeps the MTH5 to the
+    recorded channels, so aurora estimates no tipper from an open input.
+
+    Args:
+        run (RunTS): Run, modified in place.
+        site (SiteConfig): Site settings.
+
+    Raises:
+        ValueError: If none of the declared channels is among the reader's.
     """
     if not site.channels:
         return
@@ -570,17 +694,24 @@ def _keep_channels(run, site: SiteConfig) -> None:
 
 
 def _incomplete_stamps(files: list[Path], stamps: list[int]) -> set[int]:
-    """The EDL file stamps without exactly one file for every channel the site's stamps have.
+    """Find the EDL file stamps without exactly one file per channel.
 
     mt-io's reader (`mt_io.uoa.pr624.UoAReader.read`) joins each channel's
     files end to end and trims every channel to the shortest, so a stamp
     missing one channel's file shifts that channel's later samples early by
-    the file's length, to the end of the run: Hillside hs058 has no EX file
-    at 2012-03-27 15:35, and its archived ex then held the file stamped five
-    minutes later at every time to 23:30 (hx, hy, ey right). A stamp with two
-    files for a channel (hs061: a test recording under old/ with the stamps
-    of the real files) puts both in and dates every later sample late. Such
-    a stamp is left out, every channel of it, and the run ends there as at a gap.
+    the file's length, to the end of the run: read as a whole, a site with no
+    EX file at one stamp has, in its ex, the next file's samples at every
+    later time, while the other channels are correct. A stamp with two files
+    for a channel (a test recording kept in a subfolder with the stamps of the
+    real files) includes both and dates every later sample late. Such a stamp
+    is left out for every channel, and the run ends there as at a gap.
+
+    Args:
+        files (list of Path): EDL files.
+        stamps (list of int): Start stamp of each file, unix seconds.
+
+    Returns:
+        set of int: The stamps to leave out.
     """
     have: dict[int, list[str]] = {}
     for f, s in zip(files, stamps):
@@ -601,18 +732,27 @@ def _incomplete_stamps(files: list[Path], stamps: list[int]) -> set[int]:
 
 
 def _edl_runs_by_samples(files: list[Path], stamps: list[int], drop: set[int], rate: float) -> list[set[int]]:
-    """EDL runs by sample count, mt-io's own contiguity rule (`UoACollection._run_boundaries`).
+    """Group EDL stamps into runs by sample count.
 
-    Every file's samples are counted (`mt_io.uoa.pr624.count_samples`: a
-    newline count, a few seconds a site once the files are cached, and the
-    reader reads them next anyway). A stamp joins the run when it starts where
-    the previous stamp's files end, to two samples; so a file shorter than the
-    time to the next stamp ends its run. The stamp spacing alone missed those:
-    Hillside's startup files of 15 s each, stamped 300 s apart (hs058 02:00 to
-    02:15, hs053, hs054, hs075, hs076, ...), were read as one stretch and every
-    later sample of the run dated early (mt-io's reader warns "1140.0 s
-    missing between files"). A stamp whose channel files differ in length is
-    left out, as a missing one is.
+    Follows mt-io's contiguity rule (`UoACollection._run_boundaries`). Every
+    file's samples are counted (`mt_io.uoa.pr624.count_samples`, a newline
+    count taking a few seconds per site once the files are cached). A stamp
+    joins the run when it starts where the previous stamp's files end, to
+    within two samples, so a file shorter than the time to the next stamp
+    ends its run. Stamp spacing alone does not detect this: short startup
+    files (e.g. 15 s each, stamped 300 s apart), read as one stretch, date
+    every later sample of the run early (mt-io's reader warns of the seconds
+    missing between files). A stamp whose channel files differ in length is
+    left out, as a stamp with a missing file is.
+
+    Args:
+        files (list of Path): EDL files.
+        stamps (list of int): Start stamp of each file, unix seconds.
+        drop (set of int): Stamps already left out (`_incomplete_stamps`).
+        rate (float): Sample rate in Hz.
+
+    Returns:
+        list of set: The stamps of each run.
     """
     from mt_io.uoa.pr624 import count_samples
 
@@ -651,16 +791,26 @@ def _group_contiguous(files: list[Path], max_run_files: int | None = None,
                       instrument: str = "lemi423", rate: float | None = None) -> list[list[Path]]:
     """Group data files into contiguous runs using the starts their names carry.
 
-    Files are nominally back-to-back (epoch spacing == file length, typically
-    5400 s for a B423, a day for a LEMI-424, an hour for an EDL); any other
-    spacing means a real gap (e.g. the short first file after deployment) and
-    starts a new run. Long runs matter: aurora STFTs each run independently,
-    so the longest estimable period is set by run length, not total
-    recording. For LEMI-424 and EDL the B423 rule runs on the distinct starts
-    and a group carries every file of its starts (an EDL stamp's channels);
-    an EDL stamp without exactly one file per channel is left out, which ends
-    the run there (`_incomplete_stamps`). With the EDL `rate`, the runs follow
-    the files' sample counts instead of the spacing (`_edl_runs_by_samples`).
+    Files are nominally back to back (epoch spacing equal to the file
+    length, typically 5400 s for a B423, a day for a LEMI-424, an hour for
+    an EDL); any other spacing is a gap, for example the short first file
+    after deployment, and starts a new run. Aurora computes STFTs per run,
+    so the longest estimable period is set by run length rather than total
+    recording. For LEMI-424 and EDL the B423 rule is applied to the distinct
+    starts, and a group carries every file of its starts (an EDL stamp's
+    channels). An EDL stamp without exactly one file per channel is left
+    out, ending the run there (`_incomplete_stamps`). Given the EDL `rate`,
+    runs follow the files' sample counts instead of the spacing
+    (`_edl_runs_by_samples`).
+
+    Args:
+        files (list of Path): Data files in start order.
+        max_run_files (int, optional): Most files per LEMI-423 run.
+        instrument (str): Key of `INSTRUMENTS`.
+        rate (float, optional): EDL sample rate in Hz.
+
+    Returns:
+        list of list of Path: The runs.
     """
     if instrument != "lemi423":
         stamps = [file_start(f, instrument) for f in files]
@@ -669,8 +819,8 @@ def _group_contiguous(files: list[Path], max_run_files: int | None = None,
             runs = _edl_runs_by_samples(files, stamps, drop, float(rate))
             return [[f for f, s in zip(files, stamps) if s in ids] for ids in runs]
         runs: list[set[int]] = []
-        # the spacing rule on every stamp (the nominal spacing is theirs), then
-        # each run cut at the stamps left out
+        # apply the spacing rule to the distinct stamps, then cut each run at
+        # the stamps left out
         for run in _group_contiguous([Path(f"{s}.B423") for s in sorted(set(stamps))], max_run_files):
             ids: set[int] = set()
             for stamp in (int(p.stem) for p in run):
@@ -706,31 +856,53 @@ def ingest_site(
     max_run_files: int | None = None,
     ignore_filters: bool = False,
 ) -> Path:
-    """Read a site's data files and write its RAW MTH5 (`default_archive_path`).
+    """Read a site's data files and write its raw MTH5 archive.
 
-    Contiguous files (exact epoch spacing) are merged into long runs so aurora
-    can use long STFT windows; any spacing anomaly starts a new run, so gaps
-    never corrupt sample timing.
+    Contiguous files (exact epoch spacing) are merged into long runs so
+    aurora can use long STFT windows; a spacing anomaly starts a new run,
+    which keeps sample timing correct across gaps.
 
-    The instrument is `survey.instrument_of(site_name)`. LEMI-423 is read with
-    `read_lemi423` exactly as before. LEMI-424 and EDL sites are read with
-    their mt-io readers (`mtproc.instruments.read_run`): the reader's channel
-    names, the declared `channels:` applied the same way; `h_scale` and the
-    reversed-dipole flip are LEMI-423 keys, `calibration_fn` too except on an
-    EDL site whose `sensor_type` is lemi120 (its coils), and `max_run_files`
-    caps LEMI-423 runs only -- 90 days of EDL at 10 Hz (78 M samples a
-    channel) is less than one 51 h LEMI-423 run. An EDL site's declared
-    `electric_gain` gets a filter on ex and ey's chain (`read_run`; the
-    samples stay the stored words) and the run comment the line "electric
-    gain 10 on ['ex', 'ey'] (declared from the field notes)"; the key is
-    checked before an existing archive is deleted (`_electric_gain`).
+    The instrument is `survey.instrument_of(site_name)`. LEMI-423 files are
+    read with `read_lemi423`. LEMI-424 and EDL sites are read with their
+    mt-io readers (`mtproc.instruments.read_run`), keeping the reader's
+    channel names, with the declared `channels:` applied in the same way.
+    `h_scale` and the reversed-dipole flip apply to LEMI-423 sites, as does
+    `calibration_fn`, which is also used by an EDL site whose `sensor_type`
+    is lemi120. `max_run_files` caps LEMI-423 runs only: 90 days of EDL at
+    10 Hz (78 M samples per channel) is less than one 51 h LEMI-423 run. An
+    EDL site's declared `electric_gain` becomes a filter on the ex and ey
+    chains (`read_run`; the samples stay the stored words), and the run
+    comment gets a line such as "electric gain 10 on ['ex', 'ey'] (declared
+    from the field notes)". The key is checked before an existing archive is
+    deleted (`_electric_gain`).
 
-    `<survey>/filters.yaml`'s declared list, `replace` included, is never
-    applied here -- calibration only (the coil response, `h_scale`, the
-    reversed-dipole flip, the declared electric gain). A site's filters are
-    applied on top of this archive, on demand, by `build_variant`;
-    `ignore_filters` is accepted and ignored, kept only so old call sites
-    keep working.
+    The archive holds calibration only: the coil response, `h_scale`, the
+    reversed-dipole flip and the declared electric gain. The declared list
+    of `<survey>/filters.yaml`, `replace` included, is applied on demand by
+    `build_variant`.
+
+    Args:
+        survey (Survey): The survey.
+        site_name (str): Site name.
+        start: Window start, UTC; None for no bound.
+        end: Window end, UTC; None for no bound.
+        out_path (Path, optional): Output file; default
+            `default_archive_path`.
+        overwrite (bool): Replace an existing file. When False, an existing
+            file is returned as it is.
+        max_run_files (int, optional): Most files per LEMI-423 run.
+        ignore_filters (bool): Accepted for compatibility with older callers
+            and ignored.
+
+    Returns:
+        Path: The archive path.
+
+    Raises:
+        FileNotFoundError: If the coil calibration file is missing or the
+            site has no data files.
+        ValueError: If a setting does not fit the instrument (see
+            `_electric_gain`, `_keep_channels`, `_standardise_e_orientation`)
+            or no file overlaps the window.
     """
     site = survey.site(site_name)
     site_dir = survey.site_dirs()[site_name]
@@ -753,13 +925,14 @@ def ingest_site(
     )
     coil = None  # an EDL site's LEMI-120 response file, for read_run
     if instrument != "lemi423":
-        max_run_files = None  # see the docstring
+        max_run_files = None  # caps LEMI-423 runs only (see the docstring)
     needs_coil = instrument == "lemi423" or (instrument == "edl" and edl_sensor(site) == "lemi120")
     if needs_coil and site.calibration_fn:
         cal = Path(site.calibration_fn)
         if not cal.is_absolute():
-            # relative paths: the survey folder first (sensor files kept with
-            # the config, as for Burra), then the raw-data root (Curnamona).
+            # relative paths resolve against the survey folder first (sensor
+            # files kept with the config), then the raw-data root (sensor files
+            # kept with the data)
             cal = next(
                 (c for c in (survey.config_dir / cal, survey.data_root / cal) if c.exists()),
                 survey.data_root / cal,
@@ -794,7 +967,7 @@ def ingest_site(
                 run = read_run(instrument, group, site, site_dir, calibration=coil)
             _keep_channels(run, site)
             carried = [c for c in ("ex", "ey") if electric_gain != 1.0 and c in run.dataset]
-            if carried:  # the filter is in their chains (read_run); this is the line a person reads
+            if carried:  # the filter is in their chains (read_run); the comment records it in text
                 note = f"electric gain {electric_gain:g} on {carried} (declared from the field notes)"
                 prior = run.run_metadata.comments.value
                 run.run_metadata.comments.value = f"{prior}; {note}" if prior else note

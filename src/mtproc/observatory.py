@@ -1,42 +1,51 @@
-"""INTERMAGNET one-second observatory data: a day cache from the GIN, a gap-filling loader, an MTH5 archive.
+# -*- coding: utf-8 -*-
+"""
+INTERMAGNET one-second observatory data
 
-An observatory is a remote reference that reaches the long periods: far from the survey, quiet, and
-recording for as long as anyone likes. INTERMAGNET's one-second records come from the BGS GIN
-(`GIN_BASE`), one request per UTC day, as IAGA-2002 text in geographic XYZF, best available
-publication state (definitive where it exists, else quasi-definitive, else provisional or
-variation; each day's own `Data Type` header line says which it is).
+A day cache filled from the BGS GIN, a gap-filling loader and an MTH5
+archive writer. An observatory serves as a remote reference for the long
+periods: it is far from the survey, quiet, and records continuously.
+INTERMAGNET one-second records come from the BGS GIN (`GIN_BASE`), one
+request per UTC day, as IAGA-2002 text in geographic XYZF at the best
+available publication state (definitive where it exists, else
+quasi-definitive, else provisional or variation; each day's ``Data Type``
+header line says which).
 
-Ported from the AusLAMP-Processing-2026 repository's auslamp_proc/observatory.py (itself from the
-2025 GICs paper's fetch_observatory_1sec.py): `gin_url`, the three-try fetch, the 88888/99999 fill
-rule, the short-gap fill (`_fill_short`: gaps up to max_gap_s linear, never a gap touching either
-end of the window) and the loader's scatter of rows by their own time stamps. What differs:
+`gin_url`, the three-try fetch, the 88888/99999 fill rule, the short-gap
+fill (`_fill_short`: gaps up to max_gap_s filled linearly, except a gap
+touching either end of the window) and the loader's placement of rows by
+their own time stamps are ported from auslamp_proc/observatory.py in the
+AusLAMP-Processing-2026 repository, which in turn derives from
+fetch_observatory_1sec.py of the 2025 GICs paper. This module differs in:
 
-  the cache      one gzip file per observatory-day, holding the IAGA-2002 text exactly as the GIN
-                 served it: <cache_dir>/<CODE>/<year>/<CODE>_<YYYY-MM-DD>.sec.gz, the fetch time
-                 in its gzip header. A day is cached when its file exists, so a re-run fetches
-                 nothing already held; each file is written whole (a temporary file moved into
-                 place) or not at all. The AusLAMP code keeps one parquet per observatory-year;
-                 this environment has no parquet engine (neither pyarrow nor fastparquet is
-                 installed or declared), a year file has to be read and rewritten for every day
-                 added, and the served text is the INTERMAGNET standard format, so a parser fix
-                 applies to every cached day without a re-fetch. A day the GIN serves no finite
-                 X, Y, Z for is not cached and is asked for again on the next run.
-  the window     whole UTC days: `load(code, start, end)` covers start's date 00:00 to the end of
-                 end's date, so the loader, the cache and the archive agree on what a span is.
-  the product    `to_mth5` writes an MTH5 archive in this repo's layout (mtproc.ingest): one
-                 station, one run per stretch between gaps longer than max_gap_s.
+  the cache      one gzip file per observatory-day holding the IAGA-2002 text as the GIN served
+                 it: <cache_dir>/<CODE>/<year>/<CODE>_<YYYY-MM-DD>.sec.gz, with the fetch time in
+                 its gzip header. A day is cached when its file exists, so a re-run fetches only
+                 missing days. Each file is written to a temporary name and moved into place
+                 whole. Keeping the served text means a parser fix applies to every cached day
+                 without a re-fetch. The AusLAMP code keeps one parquet file per
+                 observatory-year instead. A day for which the GIN serves no finite X, Y, Z is
+                 not cached and is requested again on the next run.
+  the window     whole UTC days: `load(code, start, end)` covers 00:00 of start's date to the
+                 end of end's date, so the loader, the cache and the archive share one span.
+  the product    `to_mth5` writes an MTH5 archive in the layout of mtproc.ingest: one station,
+                 one run per stretch between gaps longer than max_gap_s.
 
-The archive's channels are hx = X (geographic north), hy = Y (geographic east), hz = Z (down),
-in nT at 1 Hz, with no filters: the GIN serves calibrated nT, so there is nothing to remove. They
-are named hx/hy/hz, not bx/by/bz, because hx hy hz is this repo's magnetic nomenclature (the
-LEMI-423 and EDL readers write it, `scripts/build_stack.py` reads `hx`/`hy`, `mtproc.process`
-hands aurora hx hy as its input channels); an archive named bx/by/bz instead would need a
-nomenclature switch everywhere it is used as a remote. F is
-fetched and loaded but not archived: it is the total field, not a component.
+The archive channels are hx = X (geographic north), hy = Y (geographic
+east) and hz = Z (down), in nT at 1 Hz with no filters, since the GIN serves
+calibrated nT. The names follow the magnetic nomenclature of this package:
+the LEMI-423 and EDL readers write hx hy hz, `scripts/build_stack.py` reads
+hx and hy, and `mtproc.process` passes hx and hy to aurora as input
+channels. F, the total field, is fetched and loaded but not archived.
 
-Never demeaned, detrended or rotated here: the AusLAMP reference store turns the pair into the
-window's mean-field frame at use (references.observatory_member); an MTH5 remote keeps the
-geographic frame the header states.
+The data are not demeaned, detrended or rotated, and an MTH5 remote keeps
+the geographic frame the header states. The AusLAMP reference store rotates
+the pair into the window's mean-field frame at use
+(references.observatory_member).
+
+@author: ben kay (ben@auscope.org.au)
+
+:license: MIT
 """
 
 from __future__ import annotations
@@ -71,14 +80,22 @@ _HEADER = re.compile(r"^ (\S(?:.*?\S)?)\s{2,}(.*?)\s*\|?\s*$")
 
 
 class GINError(RuntimeError):
-    """The GIN could not be reached, or would not serve, after every try."""
+    """Raised when the GIN cannot be reached, or does not serve, after every try."""
 
 
 # ------------------------------------------------------------------ the GIN
 
 
 def gin_url(code: str, day) -> str:
-    """The GIN request for one UTC day of one-second IAGA-2002 XYZF, best available."""
+    """Build the GIN request URL for one UTC day of one-second IAGA-2002 XYZF, best available.
+
+    Args:
+        code (str): IAGA observatory code.
+        day: Any value pandas reads as a date.
+
+    Returns:
+        str: Request URL.
+    """
     d = pd.Timestamp(day)
     return (f"{GIN_BASE}?Request=GetData&observatoryIagaCode={code.upper()}"
             f"&dataStartDate={d:%Y-%m-%d}&dataDuration=1&samplesPerDay=Second"
@@ -86,13 +103,27 @@ def gin_url(code: str, day) -> str:
 
 
 def _http_get(url: str, timeout: float = TIMEOUT_S) -> bytes:
-    """The one network call (the unit test replaces it)."""
+    """Fetch a URL and return its body; the unit tests replace this function."""
     with urllib.request.urlopen(url, timeout=timeout) as response:
         return response.read()
 
 
 def fetch_text(code: str, day, tries: int = TRIES) -> bytes:
-    """One observatory-day as the GIN serves it, in `tries` attempts; raises GINError after the last."""
+    """Fetch one observatory-day from the GIN.
+
+    Failed attempts are retried after RETRY_WAIT_S times the attempt number.
+
+    Args:
+        code (str): IAGA observatory code.
+        day: Any value pandas reads as a date.
+        tries (int): Number of attempts.
+
+    Returns:
+        bytes: The IAGA-2002 text as served.
+
+    Raises:
+        GINError: If every attempt fails.
+    """
     url = gin_url(code, day)
     last = None
     for k in range(tries):
@@ -111,13 +142,23 @@ def fetch_text(code: str, day, tries: int = TRIES) -> bytes:
 
 
 def parse_iaga2002(text: str | bytes) -> dict:
-    """IAGA-2002 text -> dict(times, x, y, z, f, header, columns).
+    """Parse IAGA-2002 text.
 
-    `times` are int64 unix seconds, the row's own time stamp; x, y, z, f are float64 nT with NaN
-    where the file holds 99999.00 (missing) or 88888.00 (not recorded). `header` maps each header
-    line's label ("Geodetic Latitude", "Data Type", ...) to its value; comment lines are skipped.
-    Raises ValueError when the data columns are not X, Y, Z (the GIN did not honour
-    orientation=XYZF). An HTML page or a text with no data line gives empty arrays.
+    Args:
+        text (str or bytes): IAGA-2002 file content.
+
+    Returns:
+        dict: ``times`` (int64 unix seconds, each row's own time stamp,
+        floored to the second), ``x``, ``y``, ``z``, ``f`` (float64 nT, NaN
+        where the file holds 99999.00 for missing or 88888.00 for not
+        recorded), ``header`` (each header line's label, such as
+        "Geodetic Latitude" or "Data Type", mapped to its value; comment
+        lines skipped) and ``columns``. An HTML page or a text with no data
+        line gives empty arrays.
+
+    Raises:
+        ValueError: If the data columns are not X, Y, Z, meaning the GIN
+            did not honour orientation=XYZF.
     """
     if isinstance(text, bytes):
         text = text.decode("utf-8", errors="replace")
@@ -159,10 +200,16 @@ def parse_iaga2002(text: str | bytes) -> dict:
 
 
 def header_position(header: dict) -> tuple[float | None, float | None, float | None]:
-    """(latitude, longitude in -180..180, elevation m) from an IAGA-2002 header; None where absent.
+    """Read the position from an IAGA-2002 header.
 
-    IAGA-2002 gives the longitude east, 0-360 (San Fernando is 354.06): it is turned into the
-    -180..180 the survey.yaml sites use.
+    IAGA-2002 gives the longitude east in 0-360 (San Fernando is 354.06);
+    it is converted to the -180..180 range used for survey.yaml sites.
+
+    Args:
+        header (dict): Header as returned by `parse_iaga2002`.
+
+    Returns:
+        tuple: ``(latitude, longitude, elevation_m)``, each None where absent.
     """
     def num(key):
         try:
@@ -180,6 +227,7 @@ def header_position(header: dict) -> tuple[float | None, float | None, float | N
 
 
 def _utc_day(value) -> date:
+    """Return the UTC calendar date of a time value."""
     t = pd.Timestamp(value)
     if t.tzinfo is not None:
         t = t.tz_convert("UTC")
@@ -187,7 +235,11 @@ def _utc_day(value) -> date:
 
 
 def days_between(start, end) -> list[date]:
-    """Every UTC calendar day from start's date to end's date, both included."""
+    """List every UTC calendar day from start's date to end's date, both included.
+
+    Raises:
+        ValueError: If end is before start.
+    """
     d0, d1 = _utc_day(start), _utc_day(end)
     if d1 < d0:
         raise ValueError(f"end {d1} is before start {d0}")
@@ -195,14 +247,27 @@ def days_between(start, end) -> list[date]:
 
 
 def day_path(cache_dir, code: str, day) -> Path:
-    """<cache_dir>/<CODE>/<year>/<CODE>_<YYYY-MM-DD>.sec.gz"""
+    """Return the cache path of one day: <cache_dir>/<CODE>/<year>/<CODE>_<YYYY-MM-DD>.sec.gz."""
     d = _utc_day(day)
     code = code.upper()
     return Path(cache_dir) / code / f"{d.year:04d}" / f"{code}_{d:%Y-%m-%d}.sec.gz"
 
 
 def coverage(code: str, start, end, cache_dir) -> pd.DataFrame:
-    """One row per UTC day of [start, end]: day, cached (its file exists), path, url. Reads no file."""
+    """Tabulate the cache state of each UTC day of [start, end].
+
+    Only file existence is checked.
+
+    Args:
+        code (str): IAGA observatory code.
+        start: Start of the span; its UTC date is the first day.
+        end: End of the span; its UTC date is the last day.
+        cache_dir (str or Path): Cache root (`day_path`).
+
+    Returns:
+        pd.DataFrame: One row per day with columns ``day``, ``cached``,
+        ``path`` and ``url``.
+    """
     rows = []
     for d in days_between(start, end):
         p = day_path(cache_dir, code, d)
@@ -211,7 +276,7 @@ def coverage(code: str, start, end, cache_dir) -> pd.DataFrame:
 
 
 def _write_day(path: Path, raw: bytes, fetched: datetime) -> None:
-    """The served bytes, gzipped with the fetch time in the header, moved into place whole."""
+    """Write the served bytes gzipped, with the fetch time in the header, via a temporary file."""
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(path.name + ".tmp")
     tmp.write_bytes(gzip.compress(raw, compresslevel=6, mtime=int(fetched.timestamp())))
@@ -219,7 +284,12 @@ def _write_day(path: Path, raw: bytes, fetched: datetime) -> None:
 
 
 def read_day(path) -> dict:
-    """One cached day: `parse_iaga2002` of its text, plus `fetched` (UTC datetime) and `path`."""
+    """Read one cached day.
+
+    Returns:
+        dict: `parse_iaga2002` of its text plus ``fetched`` (UTC datetime
+        from the gzip header, or None) and ``path``.
+    """
     with gzip.open(path, "rb") as g:
         raw = g.read()
         mtime = g.mtime
@@ -230,13 +300,25 @@ def read_day(path) -> dict:
 
 
 def fetch_days(code: str, start, end, cache_dir) -> list[Path]:
-    """Fetch every day of [start, end] the cache does not hold; the cached day files of the span, in order.
+    """Fetch every day of [start, end] missing from the cache.
 
-    One GIN request per missing day, logged with its size, its sample count, its data type and the
-    seconds it took. A day already cached is not asked for. A day the GIN serves no finite X, Y,
-    Z for is logged and not cached. Raises GINError when the GIN cannot be had (the days fetched
-    before that are kept, each whole), and ValueError when a served day is not the observatory
-    asked for or not XYZ.
+    One GIN request is made per missing day and logged with its size,
+    sample count, data type and duration. A day for which the GIN serves no
+    finite X, Y, Z is logged and not cached. Days fetched before an error
+    stay in the cache, each file complete.
+
+    Args:
+        code (str): IAGA observatory code.
+        start: Start of the span.
+        end: End of the span.
+        cache_dir (str or Path): Cache root.
+
+    Returns:
+        list of Path: The cached day files of the span, in order.
+
+    Raises:
+        GINError: If the GIN cannot be reached.
+        ValueError: If a served day is for another observatory or is not XYZ.
     """
     code = code.upper()
     cov = coverage(code, start, end, cache_dir)
@@ -267,16 +349,24 @@ def fetch_days(code: str, start, end, cache_dir) -> list[Path]:
 
 
 def _runs(bad: np.ndarray) -> list[tuple[int, int]]:
-    """[start, end) index pairs of the True stretches of `bad`."""
+    """Return [start, end) index pairs of the True stretches of a boolean array."""
     d = np.diff(np.r_[0, bad.astype(np.int8), 0])
     return list(zip(np.flatnonzero(d == 1).tolist(), np.flatnonzero(d == -1).tolist()))
 
 
 def _fill_short(x, mask, max_gap):
-    """Linearly fill runs of missing samples up to `max_gap` long, in place (AusLAMP's rule).
+    """Linearly fill runs of missing samples up to `max_gap` long, in place.
 
-    A gap touching either end of the window is never filled: np.interp would extend the edge value
-    across it. Returns (samples filled, the longest gap left, every gap's length).
+    A gap touching either end of the window is left unfilled, since
+    np.interp would extend the edge value across it.
+
+    Args:
+        x (np.ndarray): Samples, modified in place.
+        mask (np.ndarray): True where samples are valid.
+        max_gap (int): Longest gap filled, in samples.
+
+    Returns:
+        tuple: ``(n_filled, longest_unfilled_gap, gap_lengths)``.
     """
     bad = ~mask
     if not bad.any():
@@ -298,14 +388,29 @@ def _fill_short(x, mask, max_gap):
 
 
 def load(code: str, start, end, cache_dir, max_gap_s: float = MAX_GAP_S) -> dict:
-    """One observatory's X, Y, Z, F on a 1 s grid over the whole UTC days of [start, end], from the cache.
+    """Load an observatory's X, Y, Z, F from the cache on a 1 s grid.
 
-    Returns dict(times, x, y, z, f, mask, meta): `times` datetime64[s]; x, y, z in nT with every gap
-    up to max_gap_s filled by a straight line and longer ones (and any touching the window's ends)
-    NaN; f as served, never filled; `mask` True where x, y and z are all real data. `meta` holds
-    the header's station name and position (longitude in -180..180), each data type's sample
-    count, the fetch times, the first day's GIN url, the days cached and missing, and the gap
-    statistics. Raises FileNotFoundError when no day of the span is cached.
+    The grid covers the whole UTC days of [start, end].
+
+    Args:
+        code (str): IAGA observatory code.
+        start: Start of the span.
+        end: End of the span.
+        cache_dir (str or Path): Cache root.
+        max_gap_s (float): Longest gap filled by a straight line, in s.
+
+    Returns:
+        dict: ``times`` (datetime64[s]); ``x``, ``y``, ``z`` in nT with
+        gaps up to `max_gap_s` filled linearly and longer gaps, or gaps
+        touching the ends of the window, left NaN; ``f`` as served and
+        unfilled; ``mask``, True where x, y and z are all recorded data;
+        and ``meta``, holding the header's station name and position
+        (longitude in -180..180), the sample count per data type, the fetch
+        times, the first day's GIN URL, the days cached and missing, and gap
+        statistics.
+
+    Raises:
+        FileNotFoundError: If no day of the span is cached.
     """
     code = code.upper()
     days = days_between(start, end)
@@ -360,7 +465,7 @@ def load(code: str, start, end, cache_dir, max_gap_s: float = MAX_GAP_S) -> dict
 
 
 def provenance(meta: dict) -> str:
-    """The run comment: what the values are and where they came from."""
+    """Build the run comment stating what the values are and where they came from."""
     first, last = meta["fetched_first"], meta["fetched_last"]
     when = first.strftime(ISO) if first == last else f"{first.strftime(ISO)} .. {last.strftime(ISO)}"
     url = meta["url"]
@@ -371,15 +476,35 @@ def provenance(meta: dict) -> str:
 
 def to_mth5(code: str, start, end, cache_dir, archive_path, station_id: str | None = None,
             max_gap_s: float = MAX_GAP_S, survey: str = "INTERMAGNET") -> dict:
-    """Write the cached days of [start, end] as an MTH5 archive; returns dict(path, station, runs, meta).
+    """Write the cached days of [start, end] as an MTH5 archive.
 
-    One station (`station_id`, default the IAGA code upper case) at the IAGA-2002 header's
-    latitude, longitude and elevation, under MTH5 survey `survey` (scripts/fetch_observatory.py
-    passes the survey's own name, as mtproc.ingest does for a site); channels hx = X (north),
-    hy = Y (east), hz = Z (down), nT, 1 Hz, no filters; F is not written. One run
-    (sr1_0001, sr1_0002, ...) per stretch between gaps longer than max_gap_s, shorter gaps filled
-    by `load`. Every run's comment is the provenance line (`PROVENANCE`). An existing archive is
-    replaced: it is a function of the cache alone, and a failed write leaves no partial archive.
+    The archive holds one station at the latitude, longitude and elevation
+    of the IAGA-2002 header, under MTH5 survey `survey`;
+    scripts/fetch_observatory.py passes the survey's own name, as
+    mtproc.ingest does for a site. Channels are hx = X (north), hy = Y
+    (east) and hz = Z (down), in nT at 1 Hz with no filters; F is not
+    written. There is one run (sr1_0001, sr1_0002, ...) per stretch between
+    gaps longer than `max_gap_s`; shorter gaps are filled by `load`. Every
+    run's comment is the provenance line (`PROVENANCE`). An existing
+    archive is replaced, and a failed write removes the partial file.
+
+    Args:
+        code (str): IAGA observatory code.
+        start: Start of the span.
+        end: End of the span.
+        cache_dir (str or Path): Cache root.
+        archive_path (str or Path): Output MTH5 file.
+        station_id (str, optional): Station id; the upper-case IAGA code
+            when None.
+        max_gap_s (float): Longest gap filled, in s.
+        survey (str): MTH5 survey id.
+
+    Returns:
+        dict: ``path``, ``station``, ``runs`` (list of dicts with ``id``,
+        ``start``, ``end`` and ``n``) and ``meta`` from `load`.
+
+    Raises:
+        ValueError: If no sample has X, Y and Z.
     """
     from mt_metadata.timeseries import Run, Station
     from mt_timeseries import ChannelTS, RunTS
@@ -450,10 +575,18 @@ def to_mth5(code: str, start, end, cache_dir, archive_path, station_id: str | No
 
 
 def survey_entry(meta: dict, runs: list[dict]) -> dict:
-    """The observatory's survey.yaml `sites:` entry, keys in scripts/new_survey.py's KEY_ORDER.
+    """Build the observatory's survey.yaml `sites:` entry.
 
-    start is the first run's first sample and end the last run's last sample plus one second (the
-    end of the record, as new_survey.py writes a site's span).
+    Keys follow KEY_ORDER of scripts/new_survey.py. ``start`` is the first
+    run's first sample and ``end`` the last run's last sample plus one
+    second, the end of the record, as new_survey.py writes a site's span.
+
+    Args:
+        meta (dict): ``meta`` from `load`.
+        runs (list of dict): ``runs`` from `to_mth5`.
+
+    Returns:
+        dict: The site entry.
     """
     end = pd.Timestamp(runs[-1]["end"]) + pd.Timedelta(seconds=1 / FS)
     fetched = meta["fetched_last"].strftime(ISO) if meta["fetched_last"] else "unknown"

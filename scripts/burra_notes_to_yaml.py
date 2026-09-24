@@ -1,37 +1,44 @@
-"""Build the `sites:` block of the Burra survey.yaml from the field sheets.
+# -*- coding: utf-8 -*-
+"""
+Build the sites block of the Burra survey.yaml from the field sheets
 
-One-off, Burra-specific counterpart to ``site_table_to_yaml.py`` - the Burra
-field sheet is laid out differently (short site names, a combined
-"Azimuth (Ex, Ey)" cell, no positions for the Sep-Oct 2018 phase) and the
-clock status lives in two separate timing sheets.
+The Burra-specific counterpart of ``site_table_to_yaml.py``. The Burra field
+sheet has a different layout (short site names, a combined
+"Azimuth (Ex, Ey)" cell, no positions for the Sep-Oct 2018 phase), and the
+clock status is kept in two separate timing sheets.
 
 Sources, all under the survey's ``data_root``:
 
-* ``Burra_DeploymentNotes.xlsx`` / "Deployment Notes" - the older field sheet.
-* ``BurraTimingPhase2.xlsx`` / "Deployment Notes" - the newer field sheet, with
+* ``Burra_DeploymentNotes.xlsx`` / "Deployment Notes": the older field sheet.
+* ``BurraTimingPhase2.xlsx`` / "Deployment Notes": the newer field sheet, with
   the Sep-Oct 2018 phase filled in. Same columns: dipole lengths, azimuths,
   positions, free-form notes; one row per deployment, short names (b1, b10r).
-  The two are merged as a union keyed by short name; where both carry a
-  non-empty value for a field this script uses, the newer sheet wins and the
-  older value is appended to that site's ``notes`` as a "conflict: ..." string.
-* ``Burra_Timing.xlsx`` / "Sheet1" - clock status for the June 2018 phases.
-* ``BurraTimingPhase2.xlsx`` / "Sheet2" - clock status for Sep-Oct 2018.
-* ``lemi423_metadata_summary.csv`` - positions read from the B423 headers, used
-  where the field sheet has none and as a cross-check where it has both, plus
-  the recording window of every folder.
+  The two are merged as a union keyed by short name. Where both carry a
+  non-empty value for a field the script uses, the newer sheet's value is
+  kept and the older value is appended to that site's ``notes`` as a
+  "conflict: ..." string.
+* ``Burra_Timing.xlsx`` / "Sheet1": clock status for the June 2018 phases.
+* ``BurraTimingPhase2.xlsx`` / "Sheet2": clock status for Sep-Oct 2018.
+* ``lemi423_metadata_summary.csv``: positions read from the B423 headers,
+  used where the field sheet has none and as a cross-check where it has
+  both, plus the recording window of every folder.
 
-The authoritative site list is the set of zip stems in ``data_root`` (site name
-= folder name = zip stem), not the field sheet: a few folders have no row.
+The site list is the set of zip stems in ``data_root`` (site name = folder
+name = zip stem); a few folders have no field-sheet row.
 
-Each site also gets its ``remote``: the dedicated remote is one location
+Each site also gets its ``remote``. The dedicated remote is one location
 redeployed once per stage as the folders Burra54, Burra54rr, Burra54rr2,
-Burra54rr3 and Burra54rr4, so a site's remote is simply the Burra54* run whose
-recording window overlaps the site's for the longest time (a site that overlaps
-none of them gets no ``remote`` and a note saying so; the Burra54* folders
-themselves get none).
+Burra54rr3 and Burra54rr4, so a site's remote is the Burra54* run whose
+recording window overlaps the site's for the longest time. A site that
+overlaps none of them gets a note instead, and the Burra54* folders get no
+``remote``.
 
 Usage:
     python scripts/burra_notes_to_yaml.py surveys/burra/survey.yaml
+
+@author: ben kay (ben@auscope.org.au)
+
+:license: MIT
 """
 
 from __future__ import annotations
@@ -46,13 +53,13 @@ import pandas as pd
 import yaml
 from loguru import logger
 
-# (workbook, sheet) oldest first - later sheets win where values conflict
+# (workbook, sheet) oldest first; later sheets take precedence where values conflict
 DEPLOYMENT_SHEETS = [
     ("Burra_DeploymentNotes.xlsx", "Deployment Notes"),
     ("BurraTimingPhase2.xlsx", "Deployment Notes"),
 ]
-# columns this script actually writes out: only these are merged and
-# conflict-checked, so cosmetic differences elsewhere stay out of the notes
+# columns this script writes out; these alone are merged and conflict-checked,
+# so cosmetic differences elsewhere stay out of the notes
 MERGED_COLUMNS = [
     "UnixTime",
     "Lat",
@@ -82,32 +89,39 @@ NO_REMOTE_NOTE = "no Burra54 remote deployment overlaps this site"
 POSITION_TOLERANCE_KM = 0.2
 # A row's UnixTime is the deployment epoch and equals the folder's first B423
 # filename for every clean case, so a row further than this from the folder's
-# first-file epoch describes a different run. (Do not use the CSV's "Start Time"
-# column for this: it runs a constant +8 h ahead of the file epochs.)
+# first-file epoch describes a different run. The CSV's "Start Time" column
+# runs a constant +8 h ahead of the file epochs and is unsuitable for this.
 MATCH_TOLERANCE_S = 6 * 3600.0
 
 
 def site_folders(data_root: Path) -> list[str]:
-    """Authoritative site list: one zip per site, site name = zip stem."""
+    """Return the site list: one zip per site, site name = zip stem."""
     return sorted(p.stem for p in data_root.glob("*.zip") if p.stem not in EXCLUDE_STEMS)
 
 
 def is_remote_folder(name: str) -> bool:
-    """A deployment of the dedicated remote: Burra54, Burra54rr ... Burra54rr4."""
+    """Check whether a folder is a deployment of the dedicated remote (Burra54, Burra54rr ... Burra54rr4)."""
     return str(name).startswith(REMOTE_FOLDER_PREFIX)
 
 
 def site_number(name: str) -> int | None:
-    """Site number shared by a site's deployments: b18/b18r/Burra18repeat -> 18."""
+    """Return the site number shared by a site's deployments: b18/b18r/Burra18repeat -> 18."""
     m = re.match(r"(?:b|burra)0*(\d+)", str(name).strip().lower())
     return int(m.group(1)) if m else None
 
 
 def short_to_folder(short: str, folders: set[str]) -> str | None:
-    """Field-sheet short name -> folder name: b1 -> Burra01, b10r -> Burra10repeat.
+    """Map a field-sheet short name to its folder: b1 -> Burra01, b10r -> Burra10repeat.
 
     The repeat suffix is spelled two ways in the raw data ("repeat" and "r"),
-    so both are tried and only a spelling that actually exists is returned.
+    so both are tried and the spelling that exists is returned.
+
+    Args:
+        short (str): Short site name from the field sheet.
+        folders (set[str]): Existing folder names.
+
+    Returns:
+        str | None: The folder name, or None when no spelling exists.
     """
     m = re.fullmatch(r"b(\d+)([a-z0-9]*)", str(short).strip().lower())
     if not m:
@@ -125,9 +139,12 @@ def short_to_folder(short: str, folders: set[str]) -> str | None:
 def _decompose_azimuths(token: str) -> list[str]:
     """Split a run-together azimuth cell ('180270') into two valid azimuths.
 
-    Only split when the decomposition against {0, 90, 180, 270} is unique, so
-    this is a parse rather than a guess; the caller still keeps the raw cell
-    text in the site's notes.
+    The cell is split when its decomposition into {0, 90, 180, 270} is
+    unique, so the result is a parse rather than a guess; the caller keeps
+    the raw cell text in the site's notes.
+
+    Returns:
+        list[str]: The two azimuths, or [token] when the split is not unique.
     """
     splits = [
         [a, token[len(a) :]]
@@ -138,7 +155,11 @@ def _decompose_azimuths(token: str) -> list[str]:
 
 
 def split_azimuths(cell) -> tuple[float, float]:
-    """'180, 90' -> (180.0, 90.0). Only 0/90/180/270 are expected."""
+    """Parse an "Azimuth (Ex, Ey)" cell: '180, 90' -> (180.0, 90.0).
+
+    Raises:
+        ValueError: When the cell does not hold two of 0/90/180/270.
+    """
     text = str(cell).strip()
     parts = [p for p in re.split(r"[,;/\s]+", text) if p]
     if len(parts) == 1:
@@ -151,6 +172,7 @@ def split_azimuths(cell) -> tuple[float, float]:
 
 
 def km_between(lat1, lon1, lat2, lon2) -> float:
+    """Great-circle (haversine) distance in km between two points in degrees."""
     r = 6371.0
     p1, p2 = math.radians(lat1), math.radians(lat2)
     dp, dl = math.radians(lat2 - lat1), math.radians(lon2 - lon1)
@@ -159,7 +181,7 @@ def km_between(lat1, lon1, lat2, lon2) -> float:
 
 
 def clean(value):
-    """Spreadsheet cell -> None when blank, else the stripped value."""
+    """Normalise a spreadsheet cell: None when blank, else the stripped value."""
     if value is None:
         return None
     if isinstance(value, str):
@@ -174,7 +196,7 @@ def clean(value):
 
 
 def as_float(value):
-    """Cell -> float, or None when it is not a number (numpy scalars included)."""
+    """Convert a cell to float, or None when it is not a number (numpy scalars included)."""
     try:
         return float(value)
     except (TypeError, ValueError):
@@ -200,7 +222,7 @@ ASCII_SUBSTITUTIONS = {
 
 
 def ascii_text(text: str) -> str:
-    """Plain-ASCII note text: substitute known characters, drop anything left over."""
+    """Convert note text to plain ASCII: substitute known characters, drop the rest."""
     for bad, good in ASCII_SUBSTITUTIONS.items():
         text = text.replace(bad, good)
     stripped = text.encode("ascii", "ignore").decode("ascii")
@@ -210,8 +232,11 @@ def ascii_text(text: str) -> str:
 
 
 def same_value(a, b) -> bool:
-    """Spreadsheet-cell equality: numbers by value (int 13 == float 13.0 as the
-    two sheets store them differently), everything else as text."""
+    """Compare two spreadsheet cells.
+
+    Numbers compare by value (int 13 == float 13.0, as the two sheets store
+    them differently); everything else compares as text.
+    """
     fa, fb = as_float(a), as_float(b)
     if fa is not None and fb is not None:
         return math.isclose(fa, fb, rel_tol=1e-9, abs_tol=1e-9)
@@ -219,14 +244,20 @@ def same_value(a, b) -> bool:
 
 
 def read_deployment_notes(data_root: Path) -> tuple[dict, dict, list]:
-    """Both field sheets -> {short name: merged row}, {short name: [conflicts]},
-    and the short names whose row was a blank placeholder.
+    """Read and merge both field sheets.
 
-    Merged as a union keyed by the short site name: a later sheet's non-empty
-    value wins, an earlier one fills a gap, and a genuine disagreement is
-    recorded so it ends up in the site's notes rather than being silently lost.
-    A row whose merged columns are all empty (b44/b56/b71 in the older sheet)
-    is dropped - it is a placeholder, not metadata.
+    The rows are merged as a union keyed by the short site name: a later
+    sheet's non-empty value is kept, an earlier one fills a gap, and a real
+    disagreement is recorded for the site's notes. A row whose merged columns
+    are all empty (b44/b56/b71 in the older sheet) is a placeholder and is
+    dropped.
+
+    Args:
+        data_root (Path): Folder holding the workbooks.
+
+    Returns:
+        tuple[dict, dict, list]: {short name: merged row}, {short name:
+        [conflicts]}, and the short names whose row was a blank placeholder.
     """
     rows: dict[str, dict] = {}
     sources: dict[str, dict] = {}
@@ -268,8 +299,19 @@ def assign_rows(rows: dict, folders: list[str], starts: dict, issues: list) -> t
     the September run and Burra18repeat the June one), so a name match whose
     ``UnixTime`` is more than ``MATCH_TOLERANCE_S`` from the folder's first
     B423 epoch is re-tested against the other rows for the same site number.
-    Returns {folder: (short, row)}, {folder: [extra notes]} and the short names
-    that map to no folder at all.
+
+    Args:
+        rows (dict): Merged field-sheet rows by short name.
+        folders (list[str]): Site folders.
+        starts (dict): First B423 epoch by folder.
+        issues (list): List that problems are appended to.
+
+    Returns:
+        tuple[dict, dict, list]: {folder: (short, row)}, {folder: [extra
+        notes]} and the short names that map to no folder.
+
+    Raises:
+        ValueError: When time matching assigns one row to two folders.
     """
     folder_set = set(folders)
     by_name = {}
@@ -292,6 +334,7 @@ def assign_rows(rows: dict, folders: list[str], starts: dict, issues: list) -> t
         groups.setdefault(site_number(short), []).append(short)
 
     def offset(short, folder):
+        """Return |UnixTime - first B423 epoch| in s, or None when either is missing."""
         unix, start = as_float(rows[short].get("UnixTime")), starts.get(folder)
         return None if unix is None or start is None else abs(unix - start)
 
@@ -330,10 +373,16 @@ def assign_rows(rows: dict, folders: list[str], starts: dict, issues: list) -> t
 
 
 def read_timing(data_root: Path) -> dict[str, str]:
-    """Both timing sheets -> {short name: 'Correct' | 'Behind' | 'No data'}.
+    """Read both timing sheets.
 
-    Keyed by short name, not folder, so the flag follows its row through the
-    deployment-time matching in ``assign_rows``.
+    The flags are keyed by short name so that each follows its row through
+    the deployment-time matching in ``assign_rows``.
+
+    Args:
+        data_root (Path): Folder holding the workbooks.
+
+    Returns:
+        dict[str, str]: {short name: 'Correct' | 'Behind' | 'No data'}.
     """
     flags: dict[str, str] = {}
     for workbook, sheet, column in TIMING_SHEETS:
@@ -354,20 +403,27 @@ def read_timing(data_root: Path) -> dict[str, str]:
 
 
 def iso_epoch(value) -> float | None:
-    """A "Start/End Time ISO" cell -> unix epoch seconds, None when unparseable."""
+    """Convert a "Start/End Time ISO" cell to unix epoch seconds, or None when unparseable."""
     stamp = pd.to_datetime(clean(value), utc=True, errors="coerce")
     return None if pd.isna(stamp) else float(stamp.timestamp())
 
 
 def read_header_metadata(data_root: Path) -> dict[str, dict]:
-    """B423 header summary -> {folder: {latitude, longitude, elevation, start,
-    window_start, window_end}}.
+    """Read the B423 header summary CSV.
 
-    ``start`` is the folder's first B423 filename as a unix epoch (the zips are
-    never opened); it is what the field sheet's ``UnixTime`` records.
-    ``window_start``/``window_end`` come from the CSV's ISO columns instead, and
-    are only ever compared with each other (they run a constant few hours ahead
-    of the file epochs, which cancels in an overlap between two folders).
+    ``start`` is the folder's first B423 filename as a unix epoch, read from
+    the CSV without opening the zips; the field sheet's ``UnixTime`` records
+    the same instant. ``window_start``/``window_end`` come from the CSV's ISO
+    columns and are compared with each other alone: they run a constant few
+    hours ahead of the file epochs, which cancels in an overlap between two
+    folders.
+
+    Args:
+        data_root (Path): Folder holding the CSV.
+
+    Returns:
+        dict[str, dict]: {folder: {latitude, longitude, elevation, start,
+        window_start, window_end}}.
     """
     df = pd.read_csv(data_root / METADATA_CSV)
     out = {}
@@ -386,13 +442,20 @@ def read_header_metadata(data_root: Path) -> dict[str, dict]:
 
 
 def assign_remotes(folders: list[str], headers: dict) -> dict[str, str]:
-    """{site folder: Burra54* folder} - the remote run that overlaps it longest.
+    """Assign each site the Burra54* remote run that overlaps it longest.
 
-    The dedicated remote sat at one location and was redeployed once per stage,
-    so which of its folders a site belongs with is a question about time alone:
-    take the Burra54* recording window with the largest overlap with the site's.
-    A site whose window overlaps none of them (or that the header summary has no
-    window for) is left out; so are the Burra54* folders themselves.
+    The dedicated remote sat at one location and was redeployed once per
+    stage, so a site's remote folder is decided by time alone: the Burra54*
+    recording window with the largest overlap with the site's. A site whose
+    window overlaps none of them, or that has no window in the header
+    summary, is left out, as are the Burra54* folders themselves.
+
+    Args:
+        folders (list[str]): Site folders.
+        headers (dict): Output of `read_header_metadata`.
+
+    Returns:
+        dict[str, str]: {site folder: Burra54* folder}.
     """
     windows = {
         f: (headers.get(f, {}).get("window_start"), headers.get(f, {}).get("window_end"))
@@ -417,7 +480,23 @@ def assign_remotes(folders: list[str], headers: dict) -> dict[str, str]:
 
 
 def build_site(folder, row, header, defaults, timing, remote, conflicts, extra_notes, issues) -> dict:
-    """One site entry: field sheet first, B423 header metadata as fallback."""
+    """Build one site entry from the field sheet, with B423 header metadata as fallback.
+
+    Args:
+        folder (str): Site folder.
+        row (dict | None): Merged field-sheet row, or None when the folder
+            has none (the survey defaults are used).
+        header (dict | None): The folder's B423 header metadata.
+        defaults (dict): The survey's `defaults:` block.
+        timing (str | None): Clock status flag.
+        remote (str | None): Burra54* remote folder.
+        conflicts (list[str] | None): Field-sheet conflicts for the notes.
+        extra_notes (list[str] | None): Further notes.
+        issues (list): List that problems are appended to.
+
+    Returns:
+        dict: The site entry.
+    """
     notes: list[str] = []
     header = header or {}
     conflicts = list(conflicts or [])
@@ -435,7 +514,7 @@ def build_site(folder, row, header, defaults, timing, remote, conflicts, extra_n
         raw_azimuth = str(clean(row.get("Azimuth (Ex, Ey)")))
         azimuth_ex, azimuth_ey = split_azimuths(raw_azimuth)
         if raw_azimuth.replace(" ", "") != f"{azimuth_ex:.0f},{azimuth_ey:.0f}":
-            # malformed cell: record what was there rather than silently fixing it
+            # malformed cell: the raw text is recorded in the notes
             notes.append(f'azimuth cell read as "{azimuth_ex:.0f}, {azimuth_ey:.0f}" '
                          f'from raw text "{raw_azimuth}"')
             issues.append(f"{folder}: azimuth cell {raw_azimuth!r}")
@@ -484,8 +563,18 @@ def build_site(folder, row, header, defaults, timing, remote, conflicts, extra_n
 
 
 def write_sites_block(yaml_path: Path, sites: dict) -> None:
-    """Replace the `sites:` block in place, keeping the rest of the file (comments
-    included) byte-for-byte. Requires `sites:` to be the last top-level key."""
+    """Replace the `sites:` block in place, keeping the rest of the file unchanged.
+
+    Comments outside the block are kept.
+
+    Args:
+        yaml_path (Path): survey.yaml to update.
+        sites (dict): New site entries.
+
+    Raises:
+        ValueError: When `sites:` is missing, repeated or not the last
+            top-level key.
+    """
     text = yaml_path.read_text(encoding="utf-8")
     if text.count("\nsites:") != 1:
         raise ValueError(f"expected exactly one top-level 'sites:' key in {yaml_path}")
@@ -498,6 +587,11 @@ def write_sites_block(yaml_path: Path, sites: dict) -> None:
 
 
 def main(yaml_path: str) -> None:
+    """Build and write the Burra `sites:` block.
+
+    Args:
+        yaml_path (str): The Burra survey.yaml.
+    """
     yaml_path = Path(yaml_path)
     config = yaml.safe_load(yaml_path.read_text(encoding="utf-8"))
     data_root = Path(config["data_root"])

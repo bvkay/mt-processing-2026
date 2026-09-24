@@ -1,9 +1,18 @@
-"""QC products built on the processing band scheme.
+# -*- coding: utf-8 -*-
+"""
+QC products built on the processing band scheme
 
-`band_coherence` computes magnitude-squared coherence between two channels,
-band-averaged into the same decimation levels and bands the TF estimation
-uses, so QC plots share the TF plots' period axis. Works on raw counts:
-coherence is invariant to per-channel scaling.
+`band_coherence` computes the magnitude-squared coherence between two
+channels, band-averaged into the same decimation levels and bands the TF
+estimation uses, so QC plots share the period axis of the TF plots. It works
+on raw counts, since coherence is invariant to per-channel scaling.
+
+The loaders (`load_channel`, `longest_run`, `run_periods`,
+`best_overlap_runs`) open MTH5 archives read-only.
+
+@author: ben kay (ben@auscope.org.au)
+
+:license: MIT
 """
 
 from __future__ import annotations
@@ -18,7 +27,19 @@ from scipy.signal import csd, decimate, welch
 
 
 def load_channel(mth5_path: Path, survey_name: str, station: str, run: str, comp: str):
-    """Return (data, start_timestamp, sample_rate) for one channel."""
+    """Load one channel from an MTH5 archive.
+
+    Args:
+        mth5_path (Path): MTH5 file, opened read-only.
+        survey_name (str): Survey id.
+        station (str): Station id.
+        run (str): Run id.
+        comp (str): Channel component, for example ``"ex"`` or ``"hy"``.
+
+    Returns:
+        tuple: ``(data, start, sample_rate)``: float64 samples, start time as
+        a pandas Timestamp, and sample rate in Hz.
+    """
     m = MTH5()
     m.open_mth5(Path(mth5_path), mode="r")
     try:
@@ -32,7 +53,16 @@ def load_channel(mth5_path: Path, survey_name: str, station: str, run: str, comp
 
 
 def longest_run(mth5_path: Path, survey_name: str, station: str) -> str:
-    """Run id with the most samples for a station."""
+    """Return the id of the longest run of a station.
+
+    Args:
+        mth5_path (Path): MTH5 file, opened read-only.
+        survey_name (str): Survey id.
+        station (str): Station id.
+
+    Returns:
+        str: Run id with the longest time period.
+    """
     m = MTH5()
     m.open_mth5(Path(mth5_path), mode="r")
     try:
@@ -50,12 +80,19 @@ def longest_run(mth5_path: Path, survey_name: str, station: str) -> str:
 
 
 def run_periods(mth5_path: Path, survey_name: str, station: str) -> dict[str, tuple[pd.Timestamp, pd.Timestamp]]:
-    """Map run id -> (start, end) for every run group of a station.
+    """Map each run group of a station to its time period.
 
-    Auxiliary station-level groups written by aurora/mth5 (Features,
+    Auxiliary station-level groups written by aurora and mth5 (Features,
     Fourier_Coefficients, Transfer_Functions, ...) come back with a null
-    1980-01-01 period, same as in `longest_run`, so they never win an
-    overlap search.
+    1980-01-01 period, as in `longest_run`, so they lose any overlap search.
+
+    Args:
+        mth5_path (Path): MTH5 file, opened read-only.
+        survey_name (str): Survey id.
+        station (str): Station id.
+
+    Returns:
+        dict: Run id to ``(start, end)`` pandas Timestamps.
     """
     m = MTH5()
     m.open_mth5(Path(mth5_path), mode="r")
@@ -73,13 +110,24 @@ def run_periods(mth5_path: Path, survey_name: str, station: str) -> dict[str, tu
 def best_overlap_runs(
     mth5_a: Path, survey_name: str, station_a: str, mth5_b: Path, station_b: str
 ) -> tuple[str, str, float]:
-    """Run ids (one per station) whose time periods overlap the most, plus the overlap in seconds.
+    """Find the pair of runs, one per station, that overlap the most.
 
-    Unlike `longest_run` (longest run of a single station, regardless of a
-    partner), this picks the run *pair* that shares the most time -- the
-    right choice for a local/remote or local/stack comparison where each
-    station may have been split into several runs (e.g. a run boundary
-    forced by a file-timing anomaly; see scripts/timing_qc.py).
+    Where `longest_run` looks at a single station, this picks the run pair
+    that shares the most time. It suits a local/remote or local/stack
+    comparison where each station may be split into several runs, for
+    example at a run boundary forced by a file-timing anomaly (see
+    scripts/timing_qc.py).
+
+    Args:
+        mth5_a (Path): MTH5 file of the first station.
+        survey_name (str): Survey id, shared by both files.
+        station_a (str): First station id.
+        mth5_b (Path): MTH5 file of the second station.
+        station_b (str): Second station id.
+
+    Returns:
+        tuple: ``(run_a, run_b, overlap_s)``. The overlap is negative when
+        no pair overlaps.
     """
     periods_a = run_periods(mth5_a, survey_name, station_a)
     periods_b = run_periods(mth5_b, survey_name, station_b)
@@ -94,7 +142,20 @@ def best_overlap_runs(
 
 
 def align(channels: list[tuple[np.ndarray, pd.Timestamp, float]]) -> list[np.ndarray]:
-    """Slice channels (all same sample rate, ms-aligned grids) to their common span."""
+    """Slice channels to their common time span.
+
+    Args:
+        channels (list of tuple): ``(data, start, sample_rate)`` tuples as
+            returned by `load_channel`, all at one sample rate and on
+            millisecond-aligned grids.
+
+    Returns:
+        list of np.ndarray: The sliced arrays, all of one length.
+
+    Raises:
+        ValueError: If the sample rates differ or the channels do not
+            overlap.
+    """
     srs = {sr for _, _, sr in channels}
     if len(srs) != 1:
         raise ValueError(f"mixed sample rates: {srs}")
@@ -113,6 +174,7 @@ def align(channels: list[tuple[np.ndarray, pd.Timestamp, float]]) -> list[np.nda
 
 
 def _band_average(freqs: np.ndarray, spec: np.ndarray, edges: np.ndarray) -> np.ndarray:
+    """Average a spectrum over each band in `edges`; NaN for an empty band."""
     out = []
     for a, b in edges:
         mask = (freqs >= a) & (freqs < b)
@@ -121,9 +183,23 @@ def _band_average(freqs: np.ndarray, spec: np.ndarray, edges: np.ndarray) -> np.
 
 
 def band_coherence(x: np.ndarray, y: np.ndarray, sample_rate: float, scheme: dict):
-    """Band-averaged squared coherence over the scheme's decimation cascade.
+    """Compute band-averaged squared coherence over a decimation cascade.
 
-    Returns (period_centers, gamma2), concatenated across all levels.
+    Both series are demeaned, then decimated level by level with a
+    zero-phase FIR filter. On each level the cross- and auto-spectra from
+    Welch's method are averaged over the level's bands. The cascade stops
+    early when a level has fewer than four windows of data.
+
+    Args:
+        x (np.ndarray): First channel.
+        y (np.ndarray): Second channel, aligned with `x`.
+        sample_rate (float): Sample rate of `x` and `y` in Hz.
+        scheme (dict): Band scheme as returned by
+            `mtproc.bands.build_band_scheme`.
+
+    Returns:
+        tuple: ``(period_centers, gamma2)`` across all levels, sorted by
+        period. Band centres are geometric means of the band edges.
     """
     window = scheme["num_samples_window"][0]
     factors = scheme["decimation_factors"]

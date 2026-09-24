@@ -1,12 +1,22 @@
-"""Unit test for mtproc.compare.phase_quadrants (no Qt).
+# -*- coding: utf-8 -*-
+"""
+Unit test for mtproc.compare.phase_quadrants
 
+Checks the phase-quadrant check on a synthetic TF and, when the workspace is
+mounted, on the real Morocco D05_rr-D13.edi. Runs without Qt.
+
+The synthetic TF has 44 periods, 0.005-100 s at 10 per decade, rho 100 ohm m,
+xy phases 35-55 deg and yx -145 to -125 deg (the physical quadrants). Every
+period shorter than 0.1 s is replaced by noise: a random amplitude and a
+uniformly random phase per period and mode, seeded. This is what Morocco D05
+RR D13 looks like at 0.01-0.1 s.
+
+Usage:
     python tests/compare_unit.py
 
-The synthetic TF: 44 periods, 0.005-100 s at 10 per decade, rho 100 ohm m;
-xy phases 35-55 deg and yx -145 to -125 deg (the physical quadrants), except
-that every period shorter than 0.1 s is replaced by noise -- a random
-amplitude and a uniformly random phase per period and mode, seeded -- which
-is what Morocco D05 RR D13 looks like at 0.01-0.1 s.
+@author: ben kay (ben@auscope.org.au)
+
+:license: MIT
 
 **This test fails if**
 
@@ -33,13 +43,13 @@ is what Morocco D05 RR D13 looks like at 0.01-0.1 s.
 (5) phases straddling np.angle's +-180 cut are misjudged: a physical yx that
     alternates -172 and -184 deg (read as +176) must be ok with its median
     within 1 deg of -178, and a flipped xy that alternates -174 and -182 deg
-    (read as +178) must NOT be ok. Both cases are checked to fool a plain
+    (read as +178) must not be ok. Both cases are checked to fool a plain
     np.median of the raw angles (+2 deg in each: yx judged out, flipped xy
     judged physical), so the wrap handling is what passes them;
 
 (6) on the real Morocco D05_rr-D13.edi (skipped, and said so, when the
     workspace is not mounted): the default window raises an alarm, the old
-    window does NOT reproduce the false alarm on xy, or negating Zxy / Zyx in
+    window does not reproduce the false alarm on xy, or negating Zxy / Zyx in
     memory does not raise it on that mode alone.
 """
 
@@ -64,7 +74,16 @@ OLD = dict(pmin=0.01, pmax=0.1)
 
 
 def synthetic_z(seed: int = 0, noisy_below: float = 0.1) -> np.ndarray:
-    """(nf, 2, 2) impedance in mV/km/nT: physical quadrants, random-phase noise below `noisy_below` s."""
+    """Build the synthetic impedance described in the module docstring.
+
+    Args:
+        seed (int): Seed of the random generator for the noisy band.
+        noisy_below (float): Periods shorter than this (s) are noise.
+
+    Returns:
+        np.ndarray: (nf, 2, 2) impedance in mV/km/nT with physical quadrants
+        and random-phase noise below `noisy_below`.
+    """
     z = np.zeros((PERIOD.size, 2, 2), dtype=complex)
     amp = np.sqrt(100.0 / (0.2 * PERIOD))  # rho = 0.2 T |Z|^2 = 100 ohm m
     x = np.log10(PERIOD)
@@ -79,6 +98,7 @@ def synthetic_z(seed: int = 0, noisy_below: float = 0.1) -> np.ndarray:
 
 
 def make_tf(z: np.ndarray) -> TF:
+    """Wrap an impedance on PERIOD in an mt_metadata TF with 5 % errors."""
     tf = TF()
     tf.station = "SYN"
     tf.period = PERIOD
@@ -88,7 +108,16 @@ def make_tf(z: np.ndarray) -> TF:
 
 
 def with_phases(z: np.ndarray, mode: tuple, phases_deg: np.ndarray) -> np.ndarray:
-    """`z` with `mode`'s phases in the 0.1-10 s window replaced (amplitudes kept)."""
+    """Replace one mode's phases in the 0.1-10 s window, keeping amplitudes.
+
+    Args:
+        z (np.ndarray): (nf, 2, 2) impedance; a copy is modified.
+        mode (tuple): (i, j) index of the mode.
+        phases_deg (np.ndarray): New phases in degrees for the window.
+
+    Returns:
+        np.ndarray: The modified copy.
+    """
     z = z.copy()
     i, j = mode
     z[WINDOW, i, j] = np.abs(z[WINDOW, i, j]) * np.exp(1j * np.radians(phases_deg))
@@ -189,6 +218,7 @@ def test_real_d05() -> None:
 
 
 def main() -> int:
+    """Print the test contract, run the tests in order and return 0."""
     print(__doc__.split("**This test fails if**")[1].strip())
     print()
     tests = [

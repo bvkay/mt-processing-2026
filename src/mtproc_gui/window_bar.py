@@ -1,24 +1,30 @@
-"""WindowBar: the Process tab's slide bar, borrowed from the MATLAB app's `SlideBar`.
+# -*- coding: utf-8 -*-
+"""
+Processing window bar of the Process tab
 
-`docs/matlab_app_borrowing.md` says what it is and is not: the station's and
-the remote's recorded spans as two bars on one UTC time axis, a draggable
-region for the processing window (bounded to the union of the two spans,
-defaulting to their overlap), the same window as two UTC fields with the
-local time under each (`Survey.timezone`) -- the start at the bar's left end,
-the end at its right end -- and above the bar the sync status in the lamps'
-wording, centred between two round lamps of its colour.
+`WindowBar` is the processing-window slider. It shows the station's and
+the remote's recorded spans as two bars on one UTC time axis with a draggable
+region for the processing window, bounded to the union of the two spans and
+defaulting to their overlap. The same window appears as two UTC fields, the
+start left of the bar and the end right of it, each with the local time
+(`Survey.timezone`) below. Above the bar the sync status is shown in the
+words of `status_state`, between two round lamps of the status colour.
 
-Nothing here computes a product: the time arithmetic is a set intersection,
-and the spans come from `mtproc_gui.archive.load_grid` (an archived site) or
-`mtproc.instruments.span` (a site that has only its raw files) --
-`site_span`, below. The Process tab's summary (`mtproc_gui.site_map.PairSummary`)
-reads its hours from `span`, `known` and `read_spans`.
+The window arithmetic is an interval intersection. Spans come from
+`site_span`: `mtproc_gui.archive.load_grid` for an archived site, or
+`mtproc.instruments.span` for a site with raw files only. The Process tab's
+summary (`mtproc_gui.site_map.PairSummary`) reads its hours through `span`,
+`known` and `read_spans`.
 
-The spans are read off the GUI thread (`load_grid` is 0.66 s for D02, 0.56 s
-for E08; a B423 file listing ~1 ms), exactly as the tree reads its windows:
-one `ReadThread` at a time under `State.archive_lock`, the pair ahead of any
-other site, cached per survey, each read one event-loop turn late so a window
-clicked in the tree takes the lock first.
+Spans are read off the GUI thread (`load_grid` opens the site's archive; a
+raw site needs only a file listing), in the same way the tree reads its windows:
+one `ReadThread` at a time under `State.archive_lock`, the current pair ahead
+of other sites, cached per survey. Each read starts one event-loop turn
+later, so a window clicked in the tree takes the lock first.
+
+@author: ben kay (ben@auscope.org.au)
+
+:license: MIT
 """
 
 from __future__ import annotations
@@ -43,15 +49,26 @@ UTC_FMT = "%Y-%m-%d %H:%M"  # what the fields hold and the scripts take
 
 
 def site_span(survey, site: str, archive, site_dir):
-    """(first sample, one past the last) UTC for a site, from whichever source exists.
+    """Return a site's recorded span from its archive or its raw files.
 
-    The archive when there is one (`load_grid`: the same grid the Time Series
-    tab lists windows off, so the bar and the tree agree to the sample),
-    otherwise the raw file names (`mtproc.instruments.span`, for the site's
-    instrument): for B423s the first epoch to the last epoch plus the median
-    spacing, which is what `scripts/timing_qc.py` and the MATLAB app's
-    `getSiteBounds` both do. Runs in a `ReadThread`; raises if neither source
-    is there.
+    Uses the archive when there is one (`load_grid`, the grid the Time Series
+    tab lists windows from, so the bar and the tree agree to the sample),
+    otherwise the raw file names (`mtproc.instruments.span` for the site's
+    instrument). For B423 files the span runs from the first epoch to the
+    last epoch plus the median spacing, as in `scripts/timing_qc.py`.
+    Runs in a `ReadThread`.
+
+    Args:
+        survey: The open `mtproc.survey.Survey`.
+        site (str): Site name.
+        archive: The site's archive path, or None.
+        site_dir: The site's raw folder, or None.
+
+    Returns:
+        tuple: (first sample, one past the last sample), UTC.
+
+    Raises:
+        FileNotFoundError: If the site has neither an archive nor a raw folder.
     """
     if archive is not None and Path(archive).exists():
         grid = load_grid(archive, survey.name, site)
@@ -63,13 +80,13 @@ def site_span(survey, site: str, archive, site_dir):
 
 
 def to_utc(value) -> pd.Timestamp:
-    """A UTC-aware Timestamp from anything pandas parses (naive text is UTC)."""
+    """Return a UTC-aware Timestamp from anything pandas parses; naive values are taken as UTC."""
     ts = pd.Timestamp(value)
     return ts.tz_localize("UTC") if ts.tzinfo is None else ts.tz_convert("UTC")
 
 
 def overlap(a, b):
-    """The intersection of two (start, end) spans, or None."""
+    """Return the intersection of two (start, end) spans, or None."""
     if a is None or b is None:
         return None
     lo, hi = max(a[0], b[0]), min(a[1], b[1])
@@ -77,7 +94,12 @@ def overlap(a, b):
 
 
 class WindowBar(QWidget):
-    """Both sites' recorded spans, the processing window over them, and the sync lamps."""
+    """Both sites' recorded spans, the processing window over them, and the sync lamps.
+
+    Args:
+        state: The shared `mtproc_gui.app.State`.
+        parent (QWidget | None): Qt parent.
+    """
 
     window_changed = Signal(str, str)  # (start, end) UTC text, whenever either moves
     spans_changed = Signal()  # a span was read, or failed to be
@@ -150,7 +172,7 @@ class WindowBar(QWidget):
     # ------------------------------------------------------------ the spans
 
     def reload(self) -> None:
-        """A new survey: forget every span and every window."""
+        """Forget every span and window after a survey change."""
         self.spans.clear()
         self.unreadable.clear()
         self._queue.clear()
@@ -159,19 +181,22 @@ class WindowBar(QWidget):
         self.set_sites(None, None)
 
     def set_sites(self, station: str | None, remote: str | None) -> None:
-        """Show these two sites; their unknown spans are read in the background, first."""
+        """Show two sites, reading their unknown spans in the background ahead of other sites."""
         if station != self.station:
             self._chosen = False  # a new station gets the default window again
         self.station, self.remote = station, remote
         # the read waits one event-loop turn (inside read_spans): a station
         # picked in the tree reaches this tab through `site_changed`, which
-        # `State.set_selection` emits *before* `request_qc`, and the spans
-        # always give way to the window the student just clicked
+        # `State.set_selection` emits before `request_qc`, and the spans
+        # give way to the window just clicked
         self.read_spans((station, remote), first=True)
         self.refresh()
 
     def read_spans(self, sites, first: bool = False) -> None:
-        """Queue reads of the unread `sites` (at the front if `first`); the summary asks for its candidates."""
+        """Queue span reads of the unread `sites`, at the front if `first`.
+
+        Also called by the pair summary for its candidate remotes.
+        """
         wanted = [s for s in dict.fromkeys(sites) if s and not self.known(s)]
         if first:
             self._queue[:] = wanted + [s for s in self._queue if s not in wanted]
@@ -181,16 +206,16 @@ class WindowBar(QWidget):
             QTimer.singleShot(0, self._kick)
 
     def known(self, site) -> bool:
-        """True once `site`'s span has been read, or has failed to be."""
+        """True once `site`'s span has been read or has failed."""
         return site in self.spans or site in self.unreadable
 
     def _kick(self) -> None:
-        """Start the next span read, if the archive is free and nothing is running."""
+        """Start the next span read if the archive lock is free and no read is running."""
         lock = self.state.archive_lock
         if self._thread is not None or not self._queue or self.state.survey is None:
             return
         if lock.busy and lock.holder is not self:
-            return  # the segment worker or the tree has a file open; `changed` brings us back
+            return  # the segment worker or the tree has a file open; `changed` calls this again
         site = self._queue.pop(0)
         survey = self.state.survey
         archive = self.state.archive_path(site)
@@ -200,36 +225,41 @@ class WindowBar(QWidget):
         thread.failed.connect(self._span_failed)
         thread.finished.connect(self._read_done)
         thread.finished.connect(thread.deleteLater)
-        self._thread = thread  # before acquire: its `changed` re-enters _kick, which must see it
+        self._thread = thread  # set before acquire, since its `changed` re-enters _kick
         lock.acquire(self)
         thread.start()
 
     def _span_read(self, site, span) -> None:
+        """Store a span read and redraw if it belongs to the pair."""
         self.spans[str(site)] = (to_utc(span[0]), to_utc(span[1]))
         if site in (self.station, self.remote):  # another site's span changes no bar
             self.refresh()
         self.spans_changed.emit()
 
     def _span_failed(self, site, message: str) -> None:
+        """Mark a site's span unreadable and report it if it belongs to the pair."""
         self.unreadable.add(str(site))
         if site in (self.station, self.remote):  # another site's failure only means "no span"
             self._paint_status(BAD_COLOUR, f"{site}: {message}")
         self.spans_changed.emit()
 
     def _read_done(self) -> None:
+        """Release the archive lock after a read."""
         self._thread = None
         self.state.archive_lock.release(self)  # its `changed` runs _kick for the next site
 
     def wait_for_read(self) -> None:
-        """Let a span read in flight finish (the window is closing)."""
+        """Block until a span read in flight finishes, dropping queued reads; used on window close."""
         self._queue.clear()
         if self._thread is not None:
             self._thread.wait()
 
     def span(self, site) -> tuple[pd.Timestamp, pd.Timestamp] | None:
+        """Return a site's recorded span, or None if not read."""
         return self.spans.get(site) if site else None
 
     def union(self):
+        """Return the span covering the station and the remote, or None."""
         spans = [s for s in (self.span(self.station), self.span(self.remote)) if s]
         if not spans:
             return None
@@ -238,7 +268,7 @@ class WindowBar(QWidget):
     # ------------------------------------------------------------- drawing
 
     def refresh(self) -> None:
-        """Redraw the bars, re-bound the region, and default it to the overlap."""
+        """Redraw the bars, re-bound the region and, unless a window was chosen, set it to the overlap."""
         for bar in self.bars.values():
             self.plot.removeItem(bar)
         self.bars.clear()
@@ -262,7 +292,7 @@ class WindowBar(QWidget):
             self._set_status()
             return
         lo, hi = whole[0].timestamp(), whole[1].timestamp()
-        self._syncing = True  # setBounds clamps the region, which is not the student moving it
+        self._syncing = True  # setBounds clamps the region, which is not a user move
         try:
             self.region.setBounds([lo, hi])
         finally:
@@ -274,6 +304,7 @@ class WindowBar(QWidget):
         self._set_status()
 
     def _set_region(self, start, end) -> None:
+        """Move the region without marking the window as chosen, then fill the fields."""
         self._syncing = True
         try:
             self.region.setRegion((to_utc(start).timestamp(), to_utc(end).timestamp()))
@@ -284,7 +315,7 @@ class WindowBar(QWidget):
     # ------------------------------------------------- the window, both ways
 
     def window(self) -> tuple[pd.Timestamp, pd.Timestamp] | None:
-        """The processing window as two UTC timestamps, or None when the fields are not a window."""
+        """Return the processing window as two UTC timestamps, or None when the fields do not form one."""
         try:
             start, end = to_utc(self.start_edit.text().strip()), to_utc(self.end_edit.text().strip())
         except (ValueError, TypeError):
@@ -292,21 +323,24 @@ class WindowBar(QWidget):
         return (start, end) if end > start else None
 
     def window_text(self) -> tuple[str, str]:
+        """Return the start and end field texts."""
         return self.start_edit.text().strip(), self.end_edit.text().strip()
 
     def set_window(self, start: str, end: str) -> None:
-        """The Time Series tab's visible range (or any other caller) sets the window."""
+        """Set the window, e.g. from the Time Series tab's visible range."""
         self.start_edit.setText(start)
         self.end_edit.setText(end)
         self._fields_edited()
 
     def _region_moved(self) -> None:
+        """Mark the window as chosen when the user drags the region."""
         if self._syncing:
             return
         self._chosen = True
         self._fill_fields()
 
     def _fill_fields(self) -> None:
+        """Fill the fields from the region, rounded to the minute, and emit `window_changed`."""
         lo, hi = self.region.getRegion()
         start = pd.Timestamp(float(lo), unit="s", tz="UTC").round("min")
         end = pd.Timestamp(float(hi), unit="s", tz="UTC").round("min")
@@ -317,6 +351,7 @@ class WindowBar(QWidget):
         self.window_changed.emit(*self.window_text())
 
     def _fields_edited(self) -> None:
+        """Move the region to the typed window, or update the status if it is not a window."""
         window = self.window()
         self._chosen = True
         if window is not None and self.union() is not None:
@@ -327,12 +362,13 @@ class WindowBar(QWidget):
             self.window_changed.emit(*self.window_text())
 
     def local_text(self, when) -> str:
-        """'18:25 ACST' -- the survey's `timezone:` and the abbreviation it gives that date."""
+        """Return a time in the survey's `timezone:` with its abbreviation for that date, e.g. '18:25 ACST'."""
         tz = self.state.survey.timezone if self.state.survey else "UTC"
         local = to_utc(when).tz_convert(tz)
         return f"{local:%H:%M} {local.tzname()}"
 
     def _fill_local(self) -> None:
+        """Show the local times under the fields."""
         window = self.window()
         self.start_local.setText(self.local_text(window[0]) if window else "")
         self.end_local.setText(self.local_text(window[1]) if window else "")
@@ -340,7 +376,7 @@ class WindowBar(QWidget):
     # ------------------------------------------------------- the sync lamps
 
     def status_state(self) -> tuple[str, str]:
-        """(colour, wording) of the MATLAB sync lamps for the window as it stands."""
+        """Return the (colour, wording) of the sync lamps for the current window."""
         if not self.remote:
             return IDLE_COLOUR, "no remote selected - every product here is remote-referenced"
         remote_span, window = self.span(self.remote), self.window()
@@ -356,10 +392,11 @@ class WindowBar(QWidget):
         return WARN_COLOUR, f"remote covers {100.0 * covered / asked:.0f} % of the window - adjust it"
 
     def _set_status(self) -> None:
+        """Paint the status for the current window."""
         self._paint_status(*self.status_state())
 
     def _paint_status(self, colour: str, text: str) -> None:
-        """The status line and both lamps, in one colour."""
+        """Set the status line and both lamps in one colour."""
         self.status.setText(text)
         self.status.setStyleSheet(f"color: {colour}; font-weight: bold")
         for lamp in self.lamps:

@@ -1,4 +1,17 @@
-"""Quick apparent-resistivity / phase overlays for TF comparison."""
+# -*- coding: utf-8 -*-
+"""
+Apparent resistivity and phase overlays for transfer-function comparison
+
+`rho_phi` converts a TF object or EDI file to apparent resistivity and phase
+with 1-sigma errors. `phase_quadrants` checks that the median xy and yx
+phases sit in their physical quadrants, which flags a reversed dipole or
+coil. `plot_comparison` overlays one main TF on reference, baseline and
+other curves and optionally saves a PNG.
+
+@author: ben kay (ben@auscope.org.au)
+
+:license: MIT
+"""
 
 from __future__ import annotations
 
@@ -13,10 +26,17 @@ from mt_metadata.transfer_functions.core import TF
 
 
 def rho_phi(tf_or_path):
-    """Return (period, rho, phase_deg, rho_err, phase_err) from a TF or EDI path.
+    """Compute apparent resistivity and phase from a TF or EDI path.
 
-    All arrays are (nf, 2, 2); errors are 1-sigma, propagated from the
-    impedance errors (zeros when the file carries no variances).
+    Args:
+        tf_or_path (TF or str or Path): An mt_metadata TF object, or a path
+            to a file TF can read.
+
+    Returns:
+        tuple: ``(period, rho, phase_deg, rho_err, phase_err)``. `period` is
+        (nf,) in s; the other arrays are (nf, 2, 2), rho in ohm-m and phase
+        in degrees. Errors are 1-sigma, propagated from the impedance
+        errors, and are zero when the file carries no variances.
     """
     tf = tf_or_path
     if not isinstance(tf, TF):
@@ -42,15 +62,23 @@ QUADRANTS = {"xy": (0.0, 90.0), "yx": (-180.0, -90.0)}
 
 
 def _median_phase(phi_deg: np.ndarray, lo: float, hi: float) -> float:
-    """Median of `phi_deg` taken on a branch cut 90 deg above the quadrant's
-    centre (the interval [c - 270, c + 90)), returned in (-180, 180].
+    """Median phase taken on a branch cut 90 deg above the quadrant centre.
 
-    The cut sits halfway between the physical quadrant (centre c) and its
-    180-deg flip (centre c - 180), 90 deg from each: a physical mode with
-    phases near a +-180 wrap (yx near -180 whose noise reads +178) and a
-    flipped one are each kept on one side of it, so neither is split into
-    two clusters whose median lands between them. np.angle's own cut at
-    +-180 runs straight through the yx quadrant's edge.
+    The phases are wrapped into [c - 270, c + 90), where c is the centre of
+    the quadrant (lo, hi). The cut sits halfway between the physical
+    quadrant and its 180 deg flip, 90 deg from each, so a physical mode with
+    phases near the +/-180 wrap (yx near -180 with noise reading +178) and a
+    flipped mode each stay on one side of it and are not split into two
+    clusters with a median between them. The cut of np.angle at +/-180 runs
+    through the edge of the yx quadrant.
+
+    Args:
+        phi_deg (np.ndarray): Phases in degrees.
+        lo (float): Lower edge of the physical quadrant in degrees.
+        hi (float): Upper edge of the physical quadrant in degrees.
+
+    Returns:
+        float: Median phase in degrees, in (-180, 180].
     """
     c = 0.5 * (lo + hi)
     wrapped = np.mod(phi_deg - (c - 270.0), 360.0) + (c - 270.0)
@@ -59,28 +87,33 @@ def _median_phase(phi_deg: np.ndarray, lo: float, hi: float) -> float:
 
 
 def phase_quadrants(tf_or_path, pmin: float = 0.1, pmax: float = 10.0, min_periods: int = 5) -> dict:
-    """Median impedance phases over [pmin, pmax] s and whether they sit in the
-    physical quadrants: xy in (0, 90) deg, yx in (-180, -90) deg.
+    """Check that the median impedance phases sit in the physical quadrants.
 
-    One mode 180 deg out means an E or H channel has the wrong sign -- almost
-    always a dipole-polarity convention (see SiteConfig.flip_reversed_dipoles).
+    The physical quadrants are xy in (0, 90) deg and yx in (-180, -90) deg.
+    One mode 180 deg out means an E or H channel has the wrong sign, most
+    often a dipole-polarity convention (see SiteConfig.flip_reversed_dipoles).
 
-    The default window is 0.1-10 s, the band that carried signal at every
-    Line D and Curnamona site so far. At a noisy broadband site the
-    0.01-0.1 s band can be pure noise with random phases, whose median is
-    arbitrary and can trigger a false "180 deg out": Morocco D05 RR D13
-    read xy -90 deg there while its 0.1-10 s phases were a clean 25-49 deg.
-    Pass ``pmin=0.01, pmax=0.1`` for that band instead.
+    The default window of 0.1-10 s is a band where broadband sites normally
+    carry signal. At a noisy broadband site the 0.01-0.1 s band can be pure
+    noise with random phases, whose median is arbitrary and can report a false
+    180 deg flip while the 0.1-10 s phases sit well inside their quadrant.
+    Pass ``pmin=0.01, pmax=0.1`` to check that band.
 
-    A mode is judged only on at least `min_periods` periods in the window
-    with a finite, non-zero impedance; with fewer, its ``*_ok`` is False and
-    ``reason`` says why (a TF with almost nothing in 0.1-10 s needs a look
-    either way). No fallback to other periods: judging a band the caller did
-    not ask for is how the false alarm above happened.
+    A mode is judged on at least `min_periods` periods in the window with a
+    finite, non-zero impedance. With fewer, its ``*_ok`` is False and
+    ``reason`` says why. Only periods inside [pmin, pmax] are used.
 
-    Returns ``{"xy", "yx"}`` (median phase, deg, in (-180, 180]; NaN when not
-    judged), ``{"xy_ok", "yx_ok"}``, ``{"xy_n", "yx_n"}`` (periods used),
-    ``pmin``, ``pmax`` and ``reason`` ("" when both modes were judged).
+    Args:
+        tf_or_path (TF or str or Path): TF object or path to an EDI file.
+        pmin (float): Shortest period of the window in s.
+        pmax (float): Longest period of the window in s.
+        min_periods (int): Minimum number of usable periods per mode.
+
+    Returns:
+        dict: ``"xy"`` and ``"yx"`` (median phase in deg, in (-180, 180],
+        NaN when not judged), ``"xy_ok"`` and ``"yx_ok"`` (bool),
+        ``"xy_n"`` and ``"yx_n"`` (periods used), ``"pmin"``, ``"pmax"``
+        and ``"reason"`` (empty when both modes were judged).
     """
     period, rho, phi, _, _ = rho_phi(tf_or_path)
     out = {"pmin": float(pmin), "pmax": float(pmax)}
@@ -116,11 +149,26 @@ def plot_comparison(
     ref_label="lemimt chunks",
     baseline_label="lemimt merged",
 ):
-    """Overlay xy/yx apparent resistivity and phase.
+    """Overlay xy and yx apparent resistivity and phase.
 
-    `main` bold and coloured, `baseline` (e.g. the final merged legacy EDI)
-    black dashed, `references` (e.g. per-chunk EDIs) thin grey, `others` a
-    list of (tf_or_path, label, colour) plotted thin (xy solid, yx dashed).
+    Args:
+        main (TF or str or Path): TF drawn bold in colour, with error bars.
+        references (iterable): TFs or paths drawn thin grey, for example
+            per-chunk EDIs.
+        baseline (TF or str or Path, optional): TF drawn black dashed, for
+            example the final merged legacy EDI.
+        others (iterable): ``(tf_or_path, label, colour)`` tuples drawn thin,
+            xy solid and yx dashed.
+        title (str): Axes title.
+        out_png (str or Path, optional): If given, the figure is saved here
+            at 150 dpi and closed.
+        main_label (str): Legend label of `main`.
+        ref_label (str): Legend label of `references`.
+        baseline_label (str): Legend label of `baseline`.
+
+    Returns:
+        matplotlib.figure.Figure: The figure. The yx phase is plotted plus
+        180 deg so both modes share the 0-90 deg axis.
     """
     fig, (ax_r, ax_p) = plt.subplots(
         2, 1, figsize=(8, 9), sharex=True, height_ratios=[2, 1], layout="constrained"

@@ -1,12 +1,21 @@
-"""Unit test for `scripts/fetch_basemap.py`, with the network mocked: no tile is fetched.
+# -*- coding: utf-8 -*-
+"""
+Unit test for scripts/fetch_basemap.py
 
+Runs the script with the network mocked. `contextily.bounds2img` is replaced
+by a function that records the request and returns a synthetic 256 x 256 Web
+Mercator mosaic whose green value is the pixel's source row and whose red
+value is its source column. The mosaic covers a Mercator extent a degree
+wider than requested on every side, computed with pyproj (EPSG:4326 ->
+EPSG:3857) independently of the script's formula. Everything is written
+under the scratch directory.
+
+Usage:
     python tests/basemap_unit.py
 
-`contextily.bounds2img` is replaced by a function that records what it was
-asked for and returns a synthetic 256 x 256 Web Mercator mosaic whose green
-value is the pixel's source row and whose red value is its source column,
-over a Mercator extent a degree wider than asked on every side, computed
-here with pyproj (EPSG:4326 -> EPSG:3857) rather than the script's formula.
+@author: ben kay (ben@auscope.org.au)
+
+:license: MIT
 
 **This test fails if** (1) for a synthetic survey whose sites span 10 S to
 60 S -- wide enough that a warp linear in latitude would put the middle row
@@ -76,6 +85,7 @@ CALLS: list[dict] = []
 
 
 def load_script():
+    """Import scripts/fetch_basemap.py as a module."""
     spec = importlib.util.spec_from_file_location("fetch_basemap", SCRIPT)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -83,7 +93,15 @@ def load_script():
 
 
 def fake_bounds2img(w, s, e, n, zoom="auto", source=None, ll=False, **kwargs):
-    """A mosaic over the request plus a degree each side: green = source row, red = source column."""
+    """Record a bounds2img request and return a synthetic mosaic.
+
+    The mosaic covers the request plus a degree on each side, with green =
+    source row and red = source column.
+
+    Returns:
+        tuple[np.ndarray, tuple]: RGBA mosaic and its Mercator
+        (left, right, bottom, top) in metres.
+    """
     CALLS.append({"w": w, "s": s, "e": e, "n": n, "zoom": zoom, "source": source, "ll": ll})
     left, bottom = TO_MERCATOR.transform(w - MOSAIC_PAD_DEG, s - MOSAIC_PAD_DEG)
     right, top = TO_MERCATOR.transform(e + MOSAIC_PAD_DEG, n + MOSAIC_PAD_DEG)
@@ -95,13 +113,23 @@ def fake_bounds2img(w, s, e, n, zoom="auto", source=None, ll=False, **kwargs):
 
 
 def offline_bounds2img(*args, **kwargs):
+    """Stand-in for bounds2img without network: raises requests.ConnectionError."""
     import requests
 
     raise requests.ConnectionError("no route to server.arcgisonline.com (mocked)")
 
 
 def write_survey(name: str, sites: dict | None = None) -> Path:
-    """A survey.yaml under the scratch directory with its workspace there too."""
+    """Write a survey.yaml, with its workspace, under the scratch directory.
+
+    Args:
+        name (str): Survey and folder name.
+        sites (dict | None): Site name to (latitude, longitude); None copies
+            the curnamona survey.
+
+    Returns:
+        Path: The survey.yaml written.
+    """
     folder = SCRATCH / name
     shutil.rmtree(folder, ignore_errors=True)
     folder.mkdir(parents=True)
@@ -117,7 +145,12 @@ def write_survey(name: str, sites: dict | None = None) -> Path:
 
 
 def expected_extent(survey_yaml: Path) -> tuple[float, float, float, float]:
-    """From the YAML itself: the sites' extent padded by max(0.15 x span, 0.1 deg) per side."""
+    """Compute the expected extent from the YAML.
+
+    Returns:
+        tuple[float, float, float, float]: (west, south, east, north) of the
+        sites, padded by max(0.15 x span, 0.1 deg) on each side.
+    """
     sites = yaml.safe_load(survey_yaml.read_text(encoding="utf-8"))["sites"]
     lons = [v["longitude"] for v in sites.values() if v.get("latitude") is not None and v.get("longitude") is not None]
     lats = [v["latitude"] for v in sites.values() if v.get("latitude") is not None and v.get("longitude") is not None]
@@ -127,6 +160,7 @@ def expected_extent(survey_yaml: Path) -> tuple[float, float, float, float]:
 
 
 def run(script, survey_yaml: Path, *options: str) -> tuple[int, str, str]:
+    """Run the script's main and return (exit code, stdout, stderr)."""
     out, err = io.StringIO(), io.StringIO()
     with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
         code = script.main([str(survey_yaml), *options])
@@ -135,6 +169,17 @@ def run(script, survey_yaml: Path, *options: str) -> tuple[int, str, str]:
 
 def check_extent_and_meta(survey_yaml: Path, stdout: str, want_zoom: int,
                           provider: str = DEFAULT_PROVIDER) -> tuple[dict, np.ndarray]:
+    """Check basemap.json, basemap.png and the last bounds2img request.
+
+    Args:
+        survey_yaml (Path): The survey the script ran on.
+        stdout (str): The script's stdout.
+        want_zoom (int): Expected zoom.
+        provider (str): Expected provider name.
+
+    Returns:
+        tuple[dict, np.ndarray]: The JSON metadata and the PNG as an array.
+    """
     work = survey_yaml.parent / "work"
     meta = json.loads((work / "basemap.json").read_text(encoding="utf-8"))
     png = Image.open(work / "basemap.png")
@@ -155,7 +200,7 @@ def check_extent_and_meta(survey_yaml: Path, stdout: str, want_zoom: int,
 
 
 def longer_side_px(extent, zoom: int) -> float:
-    """The image's longer side at `zoom`: pyproj's Mercator metres over one tile pixel's."""
+    """Return the image's longer side in px at `zoom`, from pyproj's Mercator metres."""
     w, s, e, n = extent
     left, bottom = TO_MERCATOR.transform(w, s)
     right, top = TO_MERCATOR.transform(e, n)
@@ -164,7 +209,12 @@ def longer_side_px(extent, zoom: int) -> float:
 
 
 def auto_zoom_here(survey_yaml: Path, provider: str = DEFAULT_PROVIDER) -> tuple[int, int]:
-    """(base, zoom): contextily's rule, then +3 coarsened into the range and under 8000 px."""
+    """Compute the expected automatic zoom.
+
+    Returns:
+        tuple[int, int]: (base, zoom): contextily's rule, then base + 3
+        coarsened into the provider's range and under 8000 px.
+    """
     extent = w, s, e, n = expected_extent(survey_yaml)
     base = min(math.ceil(math.log2(720.0 / (e - w))), math.ceil(math.log2(720.0 / (n - s))))
     base = max(0, min(base, MAX_ZOOM[provider]))

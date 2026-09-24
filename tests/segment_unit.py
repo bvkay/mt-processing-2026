@@ -1,11 +1,21 @@
-"""Unit test for `mtproc_gui.segment` -- the segment QC engine on a synthetic hour, no Qt.
+# -*- coding: utf-8 -*-
+"""
+Unit test for mtproc_gui.segment
 
+Runs the segment QC engine on a synthetic hour, without Qt. The segment is
+1 h at 1000 Hz with four channels: hx a 50 Hz sine of 1 nT amplitude plus
+white noise (1 nT rms), hy the same samples plus independent noise a tenth
+as large, ex independent noise, ey 0.3 hx plus noise, and one 10 s gap at
+30 min. The remote is a second draw of the same design.
+
+Usage:
     python tests/segment_unit.py
 
-The segment is 1 h at 1000 Hz, four channels: hx a 50 Hz sine of 1 nT
-amplitude plus white noise (1 nT rms), hy the same samples plus independent
-noise a tenth as large, ex independent noise, ey 0.3 hx plus noise, and one
-10 s gap at 30 min. **This test fails if**
+@author: ben kay (ben@auscope.org.au)
+
+:license: MIT
+
+**This test fails if**
 
 - `psd_ladder` stage 0 (the native rate) does not show the 50 Hz line on hx
   with `line_excess` above 20 dB over its local floor, or stage 1 is missing
@@ -49,6 +59,14 @@ T0 = pd.Timestamp("2021-06-29 07:25:49+00:00")
 
 
 def synthetic(seed: int = 3) -> Segment:
+    """Build the synthetic one-hour segment described in the module docstring.
+
+    Args:
+        seed (int): Seed of the random generator.
+
+    Returns:
+        Segment: Station "SYN" with hx, hy, ex, ey and the 10 s gap zeroed.
+    """
     rng = np.random.default_rng(seed)
     t = np.arange(N) / FS
     hx = np.sin(2 * np.pi * 50.0 * t) + rng.standard_normal(N)
@@ -68,6 +86,7 @@ def synthetic(seed: int = 3) -> Segment:
 
 
 def digests(segment: Segment) -> dict[str, str]:
+    """Return the SHA-1 of each channel's bytes, keyed by channel."""
     return {c: hashlib.sha1(a.tobytes()).hexdigest() for c, a in segment.arrays.items()}
 
 
@@ -129,7 +148,7 @@ def test_remote_off_grid_is_refused() -> None:
 
 
 class _FakeStation(dict):
-    """{run_id: {comp: array}} standing in for an h5py station group."""
+    """Stand-in for an h5py station group: {run_id: {comp: array}}."""
 
 
 def test_run_slices_places_runs() -> None:

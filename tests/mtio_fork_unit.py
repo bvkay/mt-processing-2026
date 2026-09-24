@@ -1,26 +1,33 @@
-"""Unit test for the mtproc mt-io fork (branch `mtproc-fixes` of github.com/bvkay/mt-io) against stock mt-io 0.0.5.
+# -*- coding: utf-8 -*-
+"""
+Unit test for the mtproc mt-io fork against stock mt-io 0.0.5
 
-    python tests/mtio_fork_unit.py
+Tests the fork (branch `mtproc-fixes` of github.com/bvkay/mt-io). The checks
+run in a fresh process (`--worker`) that imports mt_io alone, without
+mtproc, since mtproc uses the fork's readers directly. Every check writes its
+own synthetic files (B423, EDL ASCII, a .rsp table) into a temporary folder,
+so the test needs no data drive or survey.
 
-The checks run in a fresh process (`--worker`) that imports mt_io and nothing
-of mtproc (mtproc patches nothing of mt-io; it relies on the fork). Every
-check writes its own synthetic files (B423, EDL ASCII, a .rsp table) into a
-temporary folder; nothing is read from an external data drive or from a
-survey.
-
-Which mt-io is tested: the clone of the fork at `MTPROC_FORKS/mt-io`
+The mt-io tested is the clone of the fork at `MTPROC_FORKS/mt-io`
 (MTPROC_FORKS defaults to `_scratch.DEFAULT_FORKS`) when it holds
 `src/mt_io`, run with PYTHONPATH=<clone>/src ahead of this process's own
-PYTHONPATH and src; without a clone, the installed mt_io when it already
-parses the four-digit altitude of check 1 (the fork installed). Otherwise the
-fork checks are reported as skipped.
+PYTHONPATH and src. Without a clone it is the installed mt_io, when that
+already parses the four-digit altitude of check 1 (the fork installed).
+Otherwise the fork checks are reported as skipped.
 
 The installed mt-io (what this interpreter imports: site-packages, or a
 PYTHONPATH set before the test) is run through the same checks and reported
-check by check, not tested: stock 0.0.5 fails every one (each check is live
-against the bug it documents, docs/upstream_issues.md 6, 7, 8, 18, 19, 21),
-and once the fork is installed it passes every one, so a pass there is
-reported as fixed, not as a failure.
+check by check for information. Stock 0.0.5 fails every one, as each check
+exercises the bug it documents (docs/upstream_issues.md 6, 7, 8, 18, 19,
+21), and the installed fork passes every one, so a pass there is reported as
+fixed.
+
+Usage:
+    python tests/mtio_fork_unit.py
+
+@author: ben kay (ben@auscope.org.au)
+
+:license: MIT
 
 **This test fails if**
 
@@ -73,6 +80,7 @@ CHECKS = {
 
 
 def clone_ok(path: Path) -> bool:
+    """Check whether a fork clone holds src/mt_io."""
     return (path / "src" / "mt_io" / "__init__.py").is_file()
 
 
@@ -80,6 +88,18 @@ def clone_ok(path: Path) -> bool:
 
 def _write_b423(path: Path, epoch: int = 1624510579, n: int = 2000, rate: int = 1000,
                 alt_line: str = "%Alt 119.9,m 12 2") -> Path:
+    """Write a synthetic B423 file.
+
+    Args:
+        path (Path): File to write.
+        epoch (int): Start epoch in seconds.
+        n (int): Number of records.
+        rate (int): Records per second.
+        alt_line (str): The header's altitude line.
+
+    Returns:
+        Path: `path`.
+    """
     import numpy as np
     import pandas as pd
     from mt_io.lemi.lemi423 import Read_Lemi_Data
@@ -102,6 +122,7 @@ def _write_b423(path: Path, epoch: int = 1624510579, n: int = 2000, rate: int = 
 
 
 def _write_edl(folder: Path, stamps, n: int = 60) -> list[Path]:
+    """Write synthetic EDL ASCII files (BX BY BZ EX EY) of n samples for each stamp."""
     folder.mkdir(parents=True, exist_ok=True)
     body = "\n".join(str(1000 + i) for i in range(n)) + "\n"
     out = []
@@ -114,6 +135,7 @@ def _write_edl(folder: Path, stamps, n: int = 60) -> list[Path]:
 
 
 def _write_rsp(path: Path) -> Path:
+    """Write a synthetic coil response table (.rsp)."""
     import numpy as np
 
     f = np.logspace(-3, 3, 25)
@@ -123,6 +145,7 @@ def _write_rsp(path: Path) -> Path:
 
 
 def _warnings(action):
+    """Run `action` and return (its result, the loguru WARNING messages it logged)."""
     from loguru import logger
 
     messages = []
@@ -135,6 +158,14 @@ def _warnings(action):
 
 
 def _check(tmp: Path, key: str) -> tuple[bool, str]:
+    """Run one check of CHECKS in a temporary folder.
+
+    Returns:
+        tuple[bool, str]: (passed, detail).
+
+    Raises:
+        KeyError: On an unknown check.
+    """
     import numpy as np
 
     if key == "1":
@@ -220,6 +251,7 @@ def _check(tmp: Path, key: str) -> tuple[bool, str]:
 
 
 def worker(out: Path) -> None:
+    """Run every check with the mt_io this process imports and write the results as JSON."""
     from loguru import logger
 
     import mt_io
@@ -230,15 +262,22 @@ def worker(out: Path) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             try:
                 ok, detail = _check(Path(tmp), key)
-            except Exception as error:  # a stock reader raising is that check failing
+            except Exception as error:  # a stock reader that raises fails the check
                 ok, detail = False, f"{type(error).__name__}: {str(error)[:200]}"
         results["checks"][key] = {"ok": bool(ok), "detail": detail}
     out.write_text(json.dumps(results, indent=1))
 
 
 def run_worker(pythonpath: list[Path]) -> dict:
-    """`worker` in a fresh process with PYTHONPATH = `pythonpath` (clone first, if any), this
-    process's own PYTHONPATH, then this repo's src: with `pythonpath` empty, the installed mt-io."""
+    """Run `worker` in a fresh process and return its results.
+
+    PYTHONPATH is `pythonpath` (the clone, if any), this process's own
+    PYTHONPATH, then this repo's src; with `pythonpath` empty the installed
+    mt-io is tested.
+
+    Raises:
+        RuntimeError: When the worker fails.
+    """
     env = dict(os.environ)
     inherited = [p for p in env.get("PYTHONPATH", "").split(os.pathsep) if p]
     env["PYTHONPATH"] = os.pathsep.join([str(p) for p in pythonpath] + inherited + [str(REPO / "src")])
@@ -252,6 +291,7 @@ def run_worker(pythonpath: list[Path]) -> dict:
 
 
 def report(results: dict, title: str) -> dict:
+    """Print a worker's results and return {check: passed}."""
     print(f"  {title}: mt_io {results['version']} from {results['mt_io']}")
     for key, name in CHECKS.items():
         r = results["checks"][key]
@@ -260,6 +300,7 @@ def report(results: dict, title: str) -> dict:
 
 
 def main() -> int:
+    """Test the installed mt-io (for information) and the fork; return 1 when a fork check fails."""
     installed = run_worker([])  # the installed mt-io
     clone = fork_clone("mt-io")
     failures = []

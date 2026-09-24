@@ -1,51 +1,53 @@
-"""mtpy-v2 glue for the View EDIs tab: transfer functions on one Figure.
+# -*- coding: utf-8 -*-
+"""
+Transfer function plots for the View EDIs tab
 
-`draw(figure, items, choice)` takes the rows the tab wants -- a list of
-(label, path) -- and draws them with mtpy-v2's own plotters, so the picture is
-the one MT people expect: log-log apparent resistivity over phase with mtpy's
-error bars, xy and yx (`plot_num=1`). One station goes through
-`PlotMTResponse`, several through `PlotMultipleResponses(plot_style="compare")`,
-which overlays them all on one pair of panels (xy left, yx right).
+`draw(figure, items, choice)` takes a list of (label, path) rows and draws
+them with mtpy-v2's plotters: log-log apparent resistivity over phase with
+mtpy's error bars, xy and yx (`plot_num=1`). One station is drawn with
+`PlotMTResponse`, several with `PlotMultipleResponses(plot_style="compare")`,
+which overlays them on one pair of panels (xy left, yx right). EDIs are read
+for display only.
 
-Three mtpy facts shape this module.
+The module handles four aspects of mtpy's behaviour.
 
-*mtpy makes its own figure through pyplot* -- `plt.figure(...)` inside
-`plot()` -- and with `show_plot=False` nothing exists until `.plot()` is
-called. A GUI needs the picture on the canvas it already has, so for the
-length of the call `plt.figure`, `plt.fignum_exists`, `plt.close` and
-`plt.clf` are pointed at the caller's Figure (`_mtpy_draws_on`). Nothing is
-left in pyplot's registry afterwards: no stray figure, no second window.
-mtpy also writes a few `plt.rcParams` (font size, subplot margins) as it
-plots; nothing else in this GUI draws with matplotlib, so that is harmless.
-The dark faces, text, ticks and spines are the rcParams `mtproc_gui.theme.apply`
-set before the tab's Figure was made; mtpy sets none of them (checked on
-mtpy 2.1.4: figure and every axes stay on the theme's grey, rho, phase and
-phase tensor alike), so nothing is re-coloured here after a draw.
+mtpy creates its own figure through pyplot (`plt.figure(...)` inside
+`plot()`), and with `show_plot=False` nothing exists until `.plot()` is
+called. For the duration of the call, `_mtpy_draws_on` points
+`plt.figure`, `plt.fignum_exists`, `plt.close` and `plt.clf` at the caller's
+Figure, so pyplot's registry is left without a stray figure or window. mtpy
+also sets a few `plt.rcParams` (font size, subplot margins) as it plots; the
+View EDIs canvas is the GUI's only matplotlib user. The dark faces, text,
+ticks and spines come from the rcParams `mtproc_gui.theme.apply` sets before
+the tab's Figure is made. mtpy 2.1.4 sets none of them, so the figure and
+every axes (rho, phase and phase tensor) stay on the theme's grey without
+recolouring.
 
-*A tipper is drawn whenever one is in the file.* The aurora EDIs of a survey
-with no hz sensor carry a tipper estimated from a dead channel, so it is
-nonsense: `choice` must ask for it ("tipper"), and the tab only offers that
-when the survey declares an hz channel. The phase tensor row is the same
-kind of opt-in ("pt").
+mtpy draws a tipper whenever the file holds one. The aurora EDIs of a survey
+with no hz sensor carry a tipper estimated from a dead channel, so the
+tipper is drawn only when `choice` is "tipper", and the tab offers that
+choice only when the survey declares an hz channel. The phase tensor row is
+likewise opt-in ("pt").
 
-*mtpy takes the legend text from `mt.station`*, which mt_metadata validates
-against `^[a-zA-Z0-9_-]*$` -- a file name cannot go in directly. The station
-is set to a sanitised form and the legend texts are rewritten with the tab's
-real labels afterwards.
+mtpy takes the legend text from `mt.station`, which mt_metadata validates
+against `^[a-zA-Z0-9_-]*$`, so a file name cannot be used directly. The
+station is set to a sanitised form and the legend texts are replaced with
+the tab's labels afterwards.
 
-*mtpy always folds the yx phase into 0-90.* `plot_phase`
+mtpy folds the yx phase into 0-90. `plot_phase`
 (`mtpy.imaging.mtplot_tools.plotters`) draws `phase_xy` as is and
-`phase_yx + 180` whenever it is asked for the yx curve (`yx=True`), then
-`set_phase_limits(mode="od")` clamps the axis to 0-90 (checked on mtpy
-2.1.4's source: no `phase_limits` kwarg or attribute reaches this far, and
-`PlotMTResponse`/`PlotMultipleResponses` offer no unfolded mode). `choice`
-picks xy/phase-tensor/tipper; `phase_range` (`PHASE_CHOICES`) is a second,
-independent post-processing step, below `_apply_phase_range`: the default
-leaves mtpy's fold as it is, the other undoes it by shifting every yx curve
-mtpy just drew back by -180 -- a physical yx then sits near -135 and a mode
-180 deg out of quadrant is visible as such, rather than hidden inside 0-90.
+`phase_yx + 180` for the yx curve (`yx=True`), then
+`set_phase_limits(mode="od")` clamps the axis to 0-90. In mtpy 2.1.4 no
+`phase_limits` kwarg or attribute reaches this code, and `PlotMTResponse`
+and `PlotMultipleResponses` offer no unfolded mode. `choice` selects
+rho, phase tensor or tipper; `phase_range` (`PHASE_CHOICES`) is a separate
+post-processing step in `_apply_phase_range`. The default keeps mtpy's fold;
+the unfolded choice shifts every yx curve back by -180, so a physical yx
+sits near -135 and a mode 180 deg out of quadrant shows as such.
 
-Nothing is produced here: this module only reads EDIs in order to draw them.
+@author: ben kay (ben@auscope.org.au)
+
+:license: MIT
 """
 
 from __future__ import annotations
@@ -79,7 +81,7 @@ _MT_CACHE: dict[str, MT] = {}
 
 
 def load_mt(path: Path | str) -> MT:
-    """`mtpy.MT` for `path`, read once per session (see `clear_cache`)."""
+    """Return the `mtpy.MT` for `path`, parsed once and cached (see `clear_cache`)."""
     key = str(Path(path).resolve())
     if key not in _MT_CACHE:
         mt = MT(fn=key)
@@ -89,13 +91,13 @@ def load_mt(path: Path | str) -> MT:
 
 
 def clear_cache() -> None:
-    """Forget every parsed EDI -- a job has rewritten `<workspace>/tf`."""
+    """Forget every parsed EDI, e.g. after a job has rewritten `<workspace>/tf`."""
     _MT_CACHE.clear()
 
 
 @contextmanager
 def _mtpy_draws_on(figure):
-    """Make mtpy's `plt.figure(...)` hand back `figure` instead of a new one."""
+    """Context manager that makes mtpy's `plt.figure(...)` return `figure` instead of a new one."""
     saved = (plt.figure, plt.fignum_exists, plt.close, plt.clf)
     plt.figure = lambda *a, **k: figure
     plt.fignum_exists = lambda *a, **k: False
@@ -108,16 +110,15 @@ def _mtpy_draws_on(figure):
 
 
 def _station(label: str) -> str:
-    """`label` as mt_metadata will accept it for a station id."""
+    """Return `label` sanitised to a valid mt_metadata station id."""
     return _NOT_A_STATION.sub("_", label) or "TF"
 
 
 def _relabel(plotter, labels: list[str]) -> None:
-    """Put the tab's labels back in the two resistivity legends.
+    """Replace the legend texts of the two resistivity axes with the tab's labels.
 
     `PlotMultipleResponses` writes one legend entry per station on `axr` and
-    `axr2`, in the order the stations were drawn, so the texts line up with
-    `labels` one for one.
+    `axr2` in drawing order, so the texts match `labels` one for one.
     """
     for axes in (getattr(plotter, "axr", None), getattr(plotter, "axr2", None)):
         legend = None if axes is None else axes.get_legend()
@@ -128,13 +129,12 @@ def _relabel(plotter, labels: list[str]) -> None:
 
 
 def _shift_container(container, delta: float) -> None:
-    """Move one mtpy error-bar container's y data by `delta` degrees, in place.
+    """Shift one mtpy error-bar container's y data by `delta` degrees, in place.
 
     `container.lines` is `(data_line, caplines, barlinecols)`
-    (`matplotlib.container.ErrorbarContainer`): the marker/line itself, its
-    cap `Line2D`s, and the `LineCollection`(s) drawing the error bars. All
-    three carry y values that must move together or the bars would no
-    longer sit on the shifted line.
+    (`matplotlib.container.ErrorbarContainer`): the marker/line, its cap
+    `Line2D`s and the `LineCollection`s drawing the error bars. All three are
+    shifted so the bars stay on the line.
     """
     data_line, caplines, barlinecols = container.lines
     if data_line is not None:
@@ -146,16 +146,20 @@ def _shift_container(container, delta: float) -> None:
 
 
 def _apply_phase_range(plotter, phase_range: str) -> None:
-    """Fold or unfold the yx phase curve(s) `plotter` just drew, on its own axes.
+    """Fold or unfold the yx phase curves `plotter` has drawn, and set the phase axis.
 
-    `plotter.axp` is the phase axes mtpy always makes; `plotter.axp2` exists
-    only for `PlotMultipleResponses(plot_style="compare")`'s overlay, where
-    xy and yx are drawn on separate axes (`axp` xy-only, `axp2` yx-only,
-    `plot_mt_responses.py`'s `_plot_compare`). `PlotMTResponse` (one EDI on
-    its own, `plot_num=1`) draws both on the one `axp`, xy first then yx in a
-    fixed order (`_plot_phase`'s `comps = ["xy", "yx"]`), so its two
-    containers are `axp.containers[0]` and `[1]`. Either way the yx curve(s)
-    are found without guessing from the data.
+    `plotter.axp` is the phase axes mtpy always creates. `plotter.axp2`
+    exists only for the `PlotMultipleResponses(plot_style="compare")`
+    overlay, where xy and yx are drawn on separate axes (`axp` xy only,
+    `axp2` yx only; `_plot_compare` in `plot_mt_responses.py`).
+    `PlotMTResponse` (one EDI, `plot_num=1`) draws both on `axp`, xy first
+    then yx (`_plot_phase`'s `comps = ["xy", "yx"]`), so its containers are
+    `axp.containers[0]` and `[1]`. The yx curves are therefore identified
+    from the plot structure rather than the data.
+
+    Args:
+        plotter: The mtpy plotter after `.plot()`.
+        phase_range (str): `PHASE_FOLDED` or `PHASE_UNFOLDED`.
     """
     axp = getattr(plotter, "axp", None)
     axp2 = getattr(plotter, "axp2", None)
@@ -167,9 +171,9 @@ def _apply_phase_range(plotter, phase_range: str) -> None:
                 _shift_container(container, -180.0)
         elif len(axp.containers) >= 2:  # one axes: containers are [xy, yx]
             _shift_container(axp.containers[1], -180.0)
-    # the axis is locked to the chosen range whatever the data do: mtpy's own
-    # "od" limits widen past 0-90 when a value falls outside the quadrant, and
-    # seeing that is what the unfolded choice is for
+    # the axis is locked to the chosen range regardless of the data; mtpy's
+    # "od" limits widen past 0-90 when a value falls outside the quadrant,
+    # which the unfolded choice is meant to show
     lo, hi, step = (-180, 180, 45) if phase_range == PHASE_UNFOLDED else (0, 90, 15)
     label = _PHASE_RANGE_LABEL[phase_range]
     for axes in (axp, axp2):
@@ -180,25 +184,29 @@ def _apply_phase_range(plotter, phase_range: str) -> None:
 
 
 def _apply_rho_limits(plotter, rho_limits: tuple[float | None, float | None]) -> str | None:
-    """Clamp the resistivity axes' y limits `plotter` just drew, on its own axes.
+    """Set the y limits of the resistivity axes `plotter` has drawn.
 
-    `plotter.axr` is the resistivity axes mtpy always makes; `plotter.axr2`
-    exists only for `PlotMultipleResponses(plot_style="compare")`'s overlay,
-    where xy and yx are drawn on separate resistivity axes (`axr` xy, `axr2`
-    yx -- checked on mtpy 2.1.4's `plot_mt_responses.py`: `_plot_compare`
-    builds both through `_setup_subplots(gs_master, plot_num=2)` regardless
-    of the caller's own `plot_num`, and at the end, ~line 688-691, applies
-    its own `res_limits` the same way this does -- `axr.set_ylim(...)` then,
-    when `axr2 is not None`, `axr2.set_ylim(...)` too -- which is exactly why
-    that kwarg cannot be used here: with one side blank we want mtpy's own
-    automatic value on that side, and that value exists only after `.plot()`
-    has already run). `PlotMTResponse` (one EDI on its own) makes only `axr`.
+    `plotter.axr` is the resistivity axes mtpy always creates. `plotter.axr2`
+    exists only for the `PlotMultipleResponses(plot_style="compare")`
+    overlay, where xy and yx are drawn on separate resistivity axes (`axr`
+    xy, `axr2` yx). In mtpy 2.1.4's `plot_mt_responses.py`, `_plot_compare`
+    builds both through `_setup_subplots(gs_master, plot_num=2)` whatever the
+    caller's `plot_num`, and near lines 688-691 applies its `res_limits` to
+    `axr` and, when present, `axr2`. That kwarg is not used here because a
+    blank side should keep mtpy's automatic value, which exists only after
+    `.plot()` has run. `PlotMTResponse` (one EDI) creates only `axr`.
 
-    The axes are log scale. A None side of `rho_limits` keeps whatever mtpy
-    drew there (`axes.get_ylim()`, read before either side is touched, then
-    only the given side replaced). A non-positive limit or a min at or above
-    the max is refused outright -- nothing is changed -- and a one-line
-    problem string is returned for `draw` to report; otherwise None.
+    The axes are log scale. A None side keeps the limit mtpy drew
+    (`axes.get_ylim()` is read first and only the given side replaced). A
+    non-positive limit, or a min at or above the max, leaves the axes
+    unchanged.
+
+    Args:
+        plotter: The mtpy plotter after `.plot()`.
+        rho_limits (tuple[float | None, float | None]): (min, max) in Ohm m.
+
+    Returns:
+        str | None: A one-line problem for `draw` to report, or None.
     """
     axr = getattr(plotter, "axr", None)
     if axr is None:
@@ -221,18 +229,28 @@ def _apply_rho_limits(plotter, rho_limits: tuple[float | None, float | None]) ->
 def draw(figure, items, choice: str = "rho", title: str = "", hint: str = "",
          phase_range: str = PHASE_FOLDED,
          rho_limits: tuple[float | None, float | None] = (None, None)):
-    """Draw `items` = [(label, path), ...] on `figure`; return (drawn, problems).
+    """Draw transfer functions on `figure`.
 
-    `choice` is one of `CHOICES`: "rho" is apparent resistivity over phase,
-    "pt" adds mtpy's row of phase tensor ellipses (one row per station) and
-    "tipper" adds the induction-vector panel. `phase_range` is one of
-    `PHASE_CHOICES`: `PHASE_FOLDED` (default) leaves mtpy's own yx + 180
-    fold in 0-90, `PHASE_UNFOLDED` shifts every yx curve back by -180 onto
-    a -180 to 180 axis (`_apply_phase_range`). `rho_limits` is (min, max) in
-    Ohm m, either side `None` for mtpy's own automatic value on that side
-    (`_apply_rho_limits`); an invalid pair is left unapplied and noted in
-    `problems` instead. With nothing drawable the figure is left empty with
-    `hint` written across it.
+    With nothing drawable the figure is left empty with `hint` written
+    across it.
+
+    Args:
+        figure: The matplotlib Figure to draw on; cleared first.
+        items: (label, EDI path) pairs.
+        choice (str): One of `CHOICES`. "rho" is apparent resistivity over
+            phase, "pt" adds mtpy's row of phase tensor ellipses (one row per
+            station) and "tipper" adds the induction-vector panel.
+        title (str): Figure title; defaults to the drawn labels joined by " + ".
+        hint (str): Text shown when nothing is drawn.
+        phase_range (str): One of `PHASE_CHOICES`. `PHASE_FOLDED` keeps
+            mtpy's yx + 180 fold in 0-90; `PHASE_UNFOLDED` shifts every yx
+            curve back by -180 onto a -180 to 180 axis (`_apply_phase_range`).
+        rho_limits (tuple[float | None, float | None]): (min, max) in Ohm m;
+            None on a side keeps mtpy's automatic value (`_apply_rho_limits`).
+            An invalid pair is not applied and is reported in `problems`.
+
+    Returns:
+        tuple[list[str], list[str]]: The labels drawn and the problems met.
     """
     figure.clear()
     drawn: list[str] = []

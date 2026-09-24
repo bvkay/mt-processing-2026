@@ -1,63 +1,72 @@
-"""Ingest a local and a remote site, estimate the remote-referenced TF, and
-overlay it on the legacy lemimt EDI when the survey maps one.
+# -*- coding: utf-8 -*-
+"""
+Remote-referenced processing of one local/remote pair
+
+Ingests a local and a remote site, estimates the remote-referenced TF with
+aurora, and overlays it on the legacy lemimt EDI when the survey maps one.
+
+Each site's whole deployment is ingested once: one MTH5 per site holds all its
+runs, and later runs against other partners reuse it. `start`/`end` (UTC, e.g.
+"2018-06-22 21:40") are a processing window applied to the aurora kernel
+dataset, leaving the archive whole; they keep a bad stretch out of the
+estimate (a channel that failed part-way through, say). Without them aurora
+works on the full time overlap. Long deployments are split into runs of at
+most MAX_RUN_FILES files to bound memory; at 90 min per file that is about 2
+days per run.
+
+The band options override the survey's `processing:` block for this run
+only, so two band layouts can be compared without editing the YAML.
+`--notch` is a comma-separated list of Hz (`--notch ""` clears the
+survey's). Each site's raw archive (`<site>.h5`, unfiltered) is ingested if
+it is missing. The archive processed from is chosen by
+`mtproc.ingest.processing_archive`: the filtered variant
+(`<site>_f<hash>.h5`, built from the raw archive when it is missing or its
+recorded hash does not match the current `filters.yaml`), or the raw archive
+with `--no-filters`, which shows whether a filter was worth declaring.
+`--tag` adds a suffix to the output name so such runs keep separate files.
+`--dry-run` prints everything the run resolved to (band kwargs, both sites'
+raw and variant archive status, window, product stem) and exits without
+opening a file or building a variant.
+
+Time masks (`<survey>/masks.yaml`, declared per site on the GUI's
+Cross-powers tab) are applied from both sites of the pair: the local and
+remote entries are joined (`mtproc.masks.union_masks`). A remote-referenced
+estimate uses both stations' samples, so an interval that is bad at either
+one is left out. A stacked remote (`STK_...`) has no entry of its own; the
+remote is looked up by its name (`mtproc.masks.remote_masks`), so its masks
+apply whether or not data_root is mounted. `--no-masks` ignores the file for
+both sites.
+
+The estimator flags (--taper ... --tolerance) are advanced options: each
+changes aurora's STFT or robust regression on every decimation level for
+this run only (`mtproc.process.process_station(tweaks=...)`, whose docstring
+gives the default in use for each). The flags given become tweaks; with none
+the run uses the defaults, and the resolution prints "tweaks: none".
+
+Outputs: <workspace>/mth5/<site>.h5, <workspace>/tf/<stem>.edi,
+<workspace>/tf/<stem>_vs_lemimt.png and <workspace>/tf/<stem>.json, where
+<stem> is <local>_rr-<remote>_<YYYYMMDD-HHMM> (the local time this run
+started, taken from the machine clock at the top of `main` and formatted
+once) plus the --tag suffix when given. The stem uses the run's start rather
+than the processing window, since two runs of the same pair over the same
+window would otherwise overwrite each other's EDI. The window, and
+everything else about the run (archives and their mtimes, the band scheme
+and estimator tweaks used, both sites' declared filters, the full argv, the
+phase-quadrant verdict and the package versions), is in the `.json` sidecar
+next to the EDI. A short summary also goes into the EDI's INFO block
+(`processing_parameters`).
 
 Usage:
     python scripts/process_rr.py <survey.yaml> <local> <remote> [start] [end]
         [--min-period S] [--max-period S] [--per-decade N] [--notch "50,150"]
-        [--no-filters] [--tag SUFFIX] [--dry-run]
+        [--no-filters] [--no-masks] [--tag SUFFIX] [--dry-run]
         [--taper {boxcar,hamming,hann,dpss}] [--overlap PCT] [--no-prewhiten]
         [--min-windows N] [--max-iterations N] [--redescending-iterations N]
         [--r0 X] [--u0 X] [--tolerance X]
 
-Each site's whole deployment is ingested once (one MTH5 per site holds all its
-runs; later runs against other partners reuse it). `start`/`end` (UTC, e.g.
-"2018-06-22 21:40") are a *processing window* applied to the aurora kernel
-dataset, not to the archive — use them to keep a bad stretch out of the
-estimate (Burra35's Ex died 16.5 h in). Without them aurora works on the full
-time overlap. Long deployments are split into runs of at most MAX_RUN_FILES
-files to bound memory; at 90 min per file that is still ~2 days per run.
+@author: ben kay (ben@auscope.org.au)
 
-The band options override the survey's `processing:` block **for this run
-only**, so two band layouts can be compared without editing the YAML;
-`--notch` is a comma-separated list of Hz (`--notch ""` clears the survey's).
-Each site's raw archive (`<site>.h5`, never filtered) is ingested once if it
-is missing, then the site actually processed from is
-`mtproc.ingest.processing_archive`: its filtered variant (`<site>_f<hash>.h5`,
-built from the raw archive on demand when it is missing or its recorded hash
-does not match the current `filters.yaml`) normally, or the raw archive
-itself with `--no-filters` -- which is how you find out whether a filter was
-worth declaring. `--tag` adds a suffix to the output name so those runs do
-not overwrite each other, and `--dry-run` prints everything this run resolved
-to — band kwargs, both sites' raw and variant archive status, window, product
-stem — and exits without opening a single file (it never builds a variant).
-
-Time masks (`<survey>/masks.yaml`, declared per site on the GUI's
-Cross-powers tab) are applied from BOTH sites of the pair: the local site's
-and the remote site's entries, joined (`mtproc.masks.union_masks`) -- a
-remote-referenced estimate uses both stations' samples, so an interval that
-is bad at either one is left out. A stacked remote (`STK_...`) has no entry
-of its own; the remote is judged by its name (`mtproc.masks.remote_masks`),
-so its masks apply whether or not data_root is mounted.
-`--no-masks` ignores the file for both sites.
-
-The estimator flags (--taper ... --tolerance) are **advanced**: each changes
-aurora's STFT or robust regression on every decimation level for this run
-only (`mtproc.process.process_station(tweaks=...)`, whose docstring gives the
-in-use default of each). Only the flags given become tweaks; with none the
-run is exactly the default one, and the resolution says "tweaks: none".
-
-Outputs: <workspace>/mth5/<site>.h5, <workspace>/tf/<stem>.edi,
-<workspace>/tf/<stem>_vs_lemimt.png and <workspace>/tf/<stem>.json, where
-<stem> is <local>_rr-<remote>_<YYYYMMDD-HHMM> (the LOCAL time this run
-started, the machine clock at the top of `main`, formatted once and reused)
-plus the --tag suffix when one was asked for. The processing window does not
-appear in the name -- two runs of the same pair with the same window would
-overwrite each other's EDI, while a run's own start, to the minute, never does.
-The window (and everything else about the run: archives and their mtimes, the
-band scheme and estimator tweaks actually used, both sites' declared filters,
-the full argv, the phase-quadrant verdict and the package versions in play)
-is in the `.json` sidecar next to the EDI instead; a short summary of the same
-facts also goes into the EDI's own INFO block (`processing_parameters`).
+:license: MIT
 """
 
 import argparse
@@ -76,7 +85,7 @@ import pandas as pd
 import yaml
 from loguru import logger
 
-from mtproc.bands import lemimt_band_scheme
+from mtproc.bands import build_band_scheme
 from mtproc.compare import phase_quadrants, plot_comparison
 from mtproc.ingest import default_archive_path, filters_hash, ingest_site, processing_archive, variant_path, variant_ready
 from mtproc.masks import load_masks, remote_masks, union_masks
@@ -90,9 +99,10 @@ BAND_KEYS = ("min_period", "max_period", "periods_per_decade", "notch_frequencie
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """Build the command-line parser of process_rr.py."""
     p = argparse.ArgumentParser(
         prog="process_rr.py",
-        description=__doc__.split("\n\nUsage:")[0],
+        description=next(line for line in __doc__.strip().splitlines() if line.strip()),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     p.add_argument("survey_yaml")
@@ -132,7 +142,15 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def tweaks_from(args) -> dict:
-    """The estimator flags actually given, as `process_station(tweaks=...)` keys; {} for none."""
+    """Collect the estimator flags given on the command line.
+
+    Args:
+        args (argparse.Namespace): Parsed arguments.
+
+    Returns:
+        dict: The given flags as `process_station(tweaks=...)` keys; {} when
+        none were given.
+    """
     given = {
         "taper": args.taper,
         "overlap_pct": args.overlap,
@@ -148,11 +166,12 @@ def tweaks_from(args) -> dict:
 
 
 def parse_notch(text: str) -> tuple:
-    """'50, 150' -> (50.0, 150.0); '' -> () (no notches at all)."""
+    """Parse a --notch value: '50, 150' -> (50.0, 150.0); '' -> () (no notches)."""
     return tuple(float(part) for part in str(text).split(",") if part.strip())
 
 
 def reference_edi(survey_yaml: Path, site: str):
+    """Return the reference EDI mapped to a site in reference_edis.yaml, or None."""
     ref_yaml = Path(survey_yaml).parent / "reference_edis.yaml"
     if not ref_yaml.exists():
         return None
@@ -161,10 +180,22 @@ def reference_edi(survey_yaml: Path, site: str):
 
 
 def clean_tag(tag) -> str:
-    """The tag as it goes into a file name: leading dashes/underscores and outer
-    whitespace dropped, inner whitespace to '-'; ValueError on a path separator.
-    A tag typed as "-mask_test" would otherwise be read by argparse as an option
-    (pass it as --tag=-mask_test) and would put a stray dash in the stem."""
+    """Clean a --tag value for use in a file name.
+
+    Outer whitespace and leading dashes/underscores are dropped and inner
+    whitespace becomes '-'. A tag such as "-mask_test" is passed as
+    --tag=-mask_test, since argparse reads it as an option otherwise, and
+    loses its leading dash here.
+
+    Args:
+        tag (str | None): The tag as given.
+
+    Returns:
+        str: The cleaned tag, "" for None.
+
+    Raises:
+        ValueError: When the tag holds a path separator.
+    """
     text = "-".join(str(tag or "").split()).lstrip("-_").rstrip("_")
     if any(c in text for c in "/\:"):
         raise ValueError(f"tag {tag!r} must not hold a path separator")
@@ -172,14 +203,21 @@ def clean_tag(tag) -> str:
 
 
 def run_stem(local: str, remote: str, started, suffix=None) -> str:
-    """<local>_rr-<remote>_<YYYYMMDD-HHMM>[_<suffix>] (`suffix` via `clean_tag`).
+    """Build the product stem <local>_rr-<remote>_<YYYYMMDD-HHMM>[_<suffix>].
 
     The stamp is `started` (local time, the machine clock at the top of
-    `main`, formatted once there and reused everywhere), not the processing
-    window: two runs of the same pair over the same window would overwrite
-    each other's EDI if the window were the only thing in the name besides
-    the pair. A run's own start, to the minute, never repeats. The window
-    itself lives in the `.json` sidecar next to the EDI, not in the file name.
+    `main`) rather than the processing window, since two runs of the same
+    pair over the same window would otherwise overwrite each other's EDI.
+    The window is recorded in the `.json` sidecar next to the EDI.
+
+    Args:
+        local (str): Local site.
+        remote (str): Remote site.
+        started: Start time of the run.
+        suffix (str | None): Tag, cleaned with `clean_tag`.
+
+    Returns:
+        str: The stem.
     """
     stem = f"{local}_rr-{remote}_{pd.Timestamp(started).strftime('%Y%m%d-%H%M')}"
     suffix = clean_tag(suffix)
@@ -189,14 +227,22 @@ def run_stem(local: str, remote: str, started, suffix=None) -> str:
 
 
 def archive_status(survey: Survey, site: str, raw_sites: dict, use_filters: bool) -> dict | None:
-    """{"raw", "variant", "variant_state"} for `site`, read-only -- never builds anything.
+    """Report a site's raw and variant archive status without building anything.
 
-    None for a site not in `raw_sites` (a stacked/virtual remote, which has no
-    raw archive of its own -- `resolve` handles that case separately).
-    `variant` is None and `variant_state` "no filters used" with
-    `use_filters=False`, or "none declared" when the site's `filters.yaml`
-    entry is empty; otherwise `variant_path` and `variant_state` "ready" (the
-    raw archive exists and `variant_ready`) or "to build (<hash>)".
+    Args:
+        survey (Survey): The survey.
+        site (str): Site name.
+        raw_sites (dict): Site name to raw-data folder.
+        use_filters (bool): False with --no-filters.
+
+    Returns:
+        dict | None: {"raw", "variant", "variant_state"}. `variant` is None
+        and `variant_state` "no filters used" with `use_filters=False`, or
+        "none declared" when the site's `filters.yaml` entry is empty;
+        otherwise `variant_path` and "ready" (the raw archive exists and
+        `variant_ready`) or "to build (<hash>)". None for a site not in
+        `raw_sites`, such as a stacked remote without a raw archive, which
+        `resolve` handles separately.
     """
     if site not in raw_sites:
         return None
@@ -213,27 +259,35 @@ def archive_status(survey: Survey, site: str, raw_sites: dict, use_filters: bool
 
 
 def resolve(args, started) -> dict:
-    """Everything this run decided, before anything is opened.
+    """Resolve everything the run needs before any file is opened.
 
     The band kwargs are the survey's `processing:` block with the command
-    line's overrides applied, filled out from `lemimt_band_scheme`'s own
-    defaults so `--dry-run` always prints a number for each. `started` is the
-    local wall-clock instant `main` began (`dt.datetime.now().astimezone()`),
-    captured once there and threaded through here so the product stem and,
-    later, the sidecar agree on exactly when this run started.
+    line's overrides applied, filled out from the defaults of
+    `build_band_scheme` so `--dry-run` prints a number for each. `started`
+    is the local wall-clock instant `main` began
+    (`dt.datetime.now().astimezone()`), passed in so the product stem and the
+    sidecar agree on the start time.
 
-    `local_archive`/`remote_archive` are each site's RAW archive path
-    (`default_archive_path`) -- read-only, so `--dry-run` never builds
-    anything; `local_status`/`remote_status` (`archive_status`) say whether a
-    filtered variant is ready, needs building, or is not in play. `main`
-    resolves the archive actually processed from (`mtproc.ingest.processing_archive`,
-    which does build) once `--dry-run` has returned, and overwrites these two
-    entries with what was actually used before the sidecar is written.
+    `local_archive`/`remote_archive` are each site's raw archive path
+    (`default_archive_path`), so `--dry-run` builds nothing;
+    `local_status`/`remote_status` (`archive_status`) say whether a filtered
+    variant is ready, needs building, or is not used. After the `--dry-run`
+    return, `main` resolves the archive processed from
+    (`mtproc.ingest.processing_archive`, which builds a missing variant) and
+    overwrites these two entries before the sidecar is written.
 
     `masks_local`/`masks_remote` are each site's `masks.yaml` entries
-    (`load_masks`, and `remote_masks` for the remote: [] for a stack, named
-    `STK_...`, which has none of its own) and `masks` their union in start order, what `process_station` is
-    handed; all three are [] and `masks_ignored` True with `--no-masks`.
+    (`load_masks`, and `remote_masks` for the remote, which gives [] for a
+    stack named `STK_...`), and `masks` is their union in start order, as
+    passed to `process_station`. With `--no-masks` all three are [] and
+    `masks_ignored` is True.
+
+    Args:
+        args (argparse.Namespace): Parsed arguments.
+        started (datetime.datetime): Start of the run.
+
+    Returns:
+        dict: The resolution, printed by `print_resolution`.
     """
     survey = Survey.from_yaml(args.survey_yaml)
     scheme_kwargs = dict(survey.processing)
@@ -245,7 +299,7 @@ def resolve(args, started) -> dict:
     ):
         if value is not None:
             scheme_kwargs[key] = value
-    defaults = {n: p.default for n, p in inspect.signature(lemimt_band_scheme).parameters.items()}
+    defaults = {n: p.default for n, p in inspect.signature(build_band_scheme).parameters.items()}
     for key in BAND_KEYS:
         scheme_kwargs.setdefault(key, defaults[key])
 
@@ -256,8 +310,8 @@ def resolve(args, started) -> dict:
     use_filters = not args.no_filters
     local_h5 = default_archive_path(survey, args.local)
     # a stacked synthetic remote (scripts/build_stack.py) has no raw folder:
-    # its archive is used as it is, filters or no filters -- it is a product,
-    # never a `processing_archive` variant
+    # its archive is used as it is, with or without filters, since it is a
+    # product rather than a `processing_archive` variant
     stacked = survey.workspace / "mth5" / f"{args.remote}.h5"
     virtual = args.remote not in raw_sites and stacked.exists()
     remote_h5 = stacked if virtual else default_archive_path(survey, args.remote)
@@ -288,11 +342,11 @@ def resolve(args, started) -> dict:
         "stem": run_stem(args.local, args.remote, started, args.tag),
         "scheme_kwargs": scheme_kwargs,
         # aurora estimates a TF row for every output channel it is asked for;
-        # asking for hz on a broadband site (no sensor, an open input) made a
-        # nonsense tipper, so only the channels the survey declares are asked
-        # for. A site with no `channels:` declaration keeps aurora's default.
+        # hz on a broadband site (no sensor, an open input) gives a meaningless
+        # tipper, so the channels the survey declares are requested. A site
+        # without a `channels:` declaration keeps aurora's default.
         "output_channels": output_channels(survey, args.local),
-        # only the advanced estimator flags given on the command line
+        # the advanced estimator flags given on the command line
         "tweaks": tweaks_from(args),
         "masks_local": masks_local,
         "masks_remote": masks_remote,
@@ -302,8 +356,17 @@ def resolve(args, started) -> dict:
 
 
 def output_channels(survey, site: str) -> list[str] | None:
-    """The TF output channels for `site`: the electrics it declares, plus hz only
-    when the survey lists an hz channel (never on the broadband deployments)."""
+    """Return the TF output channels of a site.
+
+    Args:
+        survey (Survey): The survey.
+        site (str): Site name.
+
+    Returns:
+        list[str] | None: The declared electrics, plus hz when the site
+        declares an hz channel (the broadband deployments do not); None when
+        the site declares no channels, which keeps aurora's default.
+    """
     declared = survey.site(site).channels
     if not declared:
         return None
@@ -312,17 +375,18 @@ def output_channels(survey, site: str) -> list[str] | None:
 
 
 def quadrant_window(sample_rate: float) -> tuple[float, float]:
-    """(pmin, pmax) s for `phase_quadrants`, picked from the local site's sample rate.
+    """Pick the (pmin, pmax) window in s for `phase_quadrants` from the sample rate.
 
     0.1-10 s at 100 Hz and above (the broadband deployments this window was
     tuned on); 30-3000 s below that. The 0.1-10 s band is pure noise on a
-    10 Hz long-period deployment and raised a false "180 deg out ... declare
-    flip" on Stuart Shelf ST19 and ST20.
+    10 Hz long-period deployment and can raise a false "180 deg out ...
+    declare flip" there.
     """
     return (0.1, 10.0) if sample_rate >= 100.0 else (30.0, 3000.0)
 
 
 def _package_version(name: str) -> str:
+    """Return an installed package's version, or "not installed"."""
     try:
         return importlib.metadata.version(name)
     except importlib.metadata.PackageNotFoundError:
@@ -330,9 +394,15 @@ def _package_version(name: str) -> str:
 
 
 def mtproc_version() -> str:
-    """This checkout's `git describe`, or "uncommitted <short sha>" when the tree has local changes."""
+    """Return this checkout's `git describe`.
+
+    Returns:
+        str: The description, "uncommitted <short sha>" when the tree has
+        local changes, or "unknown" when git fails.
+    """
 
     def git(*args: str) -> str:
+        """Run git in the repository and return its stripped stdout."""
         return subprocess.run(["git", *args], cwd=REPO, capture_output=True,
                               text=True, check=True).stdout.strip()
 
@@ -346,7 +416,7 @@ def mtproc_version() -> str:
 
 
 def versions() -> dict:
-    """mtproc's own version plus the four libraries doing the actual estimation/IO."""
+    """Return the versions of mtproc and of aurora, mth5, mt_metadata and mt_io."""
     return {
         "mtproc": mtproc_version(),
         "aurora": _package_version("aurora"),
@@ -357,7 +427,7 @@ def versions() -> dict:
 
 
 def _archive_info(path) -> dict:
-    """{"path", "mtime"} for a sidecar archive entry; mtime None when the file is not there."""
+    """Build a sidecar archive entry {"path", "mtime"}; mtime is None when the file is missing."""
     path = Path(path)
     mtime = None
     if path.exists():
@@ -366,18 +436,24 @@ def _archive_info(path) -> dict:
 
 
 def _utc_iso(t) -> str | None:
+    """Format a time as a UTC ISO string, or None."""
     return None if t is None else pd.Timestamp(t, tz="UTC").isoformat()
 
 
 def _declared_filters(survey, site: str, raw_sites) -> list | None:
-    """`site`'s declared `filters.yaml` entries, or None for a virtual/stacked remote
-    (it has no raw folder and so no declaration of its own -- see `main`'s own guard)."""
+    """Return a site's declared `filters.yaml` entries.
+
+    Returns:
+        list | None: The entries, or None for a virtual or stacked remote,
+        which has no raw folder and so no declaration of its own.
+    """
     if site not in raw_sites:
         return None
     return survey.site(site).filters or []
 
 
 def _quadrant_verdict(quadrant: dict, flipped: list[str]) -> str:
+    """Summarise the phase-quadrant result as one line for the sidecar."""
     if flipped:
         return f"flipped: {' and '.join(flipped)} 180 deg out of quadrant"
     if quadrant.get("reason"):
@@ -387,13 +463,24 @@ def _quadrant_verdict(quadrant: dict, flipped: list[str]) -> str:
 
 def build_sidecar(res: dict, args, started, finished, edi_path: Path, png_path: Path,
                    quadrant: dict, flipped: list[str]) -> dict:
-    """Everything about this run, for the `.json` sidecar written next to the EDI.
+    """Build the `.json` sidecar describing this run.
 
-    `quadrant` is `mtproc.compare.phase_quadrants`'s own return and `flipped`
-    the modes `main` judged out of quadrant from it -- both computed by the
-    caller, so this stays a pure dict-builder: a unit test can push a fake TF
-    through `phase_quadrants` alone and hand the result straight in, without
-    building a real aurora run.
+    `quadrant` and `flipped` are computed by the caller, so the function is a
+    pure dict builder; a unit test can pass a fake TF through
+    `phase_quadrants` and hand the result in without an aurora run.
+
+    Args:
+        res (dict): Output of `resolve`, with the archives processed from.
+        args (argparse.Namespace): Parsed arguments.
+        started (datetime.datetime): Start of the run.
+        finished (datetime.datetime): End of the run.
+        edi_path (Path): EDI written.
+        png_path (Path): Comparison figure written.
+        quadrant (dict): Return of `mtproc.compare.phase_quadrants`.
+        flipped (list[str]): Modes judged out of quadrant.
+
+    Returns:
+        dict: The sidecar content.
     """
     survey = res["survey"]
     raw_sites = res["raw_sites"]
@@ -409,8 +496,8 @@ def build_sidecar(res: dict, args, started, finished, edi_path: Path, png_path: 
         "remote_archive": _archive_info(res["remote_archive"]),
         "survey_yaml": {"path": res["survey_yaml"], "name": Path(res["survey_yaml"]).name},
         "band_scheme": dict(res["scheme_kwargs"]),
-        # the full effective set, defaults filled in -- so the sidecar says
-        # "taper: hann" even on a run that gave no --taper at all
+        # the full effective set, defaults filled in, so the sidecar says
+        # "taper: hann" on a run without --taper too
         "tweaks": {**ESTIMATOR_DEFAULTS, **res["tweaks"]},
         "filters": {
             local: _declared_filters(survey, local, raw_sites),
@@ -437,18 +524,24 @@ def build_sidecar(res: dict, args, started, finished, edi_path: Path, png_path: 
 
 
 def write_sidecar(path: Path, sidecar: dict) -> None:
+    """Write the sidecar as indented JSON."""
     path.write_text(json.dumps(sidecar, indent=2, default=str) + "\n", encoding="utf-8")
 
 
 def edi_info_lines(sidecar: dict) -> list[str]:
-    """A handful of `key=value` lines for the EDI's own INFO block.
+    """Build a few `key=value` lines for the EDI's INFO block.
 
     `tf.station_metadata.transfer_function.processing_parameters` is a plain
-    list of strings mt_metadata's edi writer dumps verbatim into `>INFO`
-    (checked against mt_metadata 1.0.10: `station_metadata.comments` is
-    *not* wired into the write path -- only into reading an EDI back in --
-    so that route was tried and dropped for this one). The sidecar JSON
-    carries everything else; this is a short pointer to it, not a copy.
+    list of strings that mt_metadata's edi writer writes unchanged into
+    `>INFO`. In mt_metadata 1.0.10, `station_metadata.comments` is used when
+    reading an EDI but is absent from the write path. The lines point to the
+    sidecar JSON, which holds the full record.
+
+    Args:
+        sidecar (dict): Output of `build_sidecar`.
+
+    Returns:
+        list[str]: The INFO lines.
     """
     tw = sidecar["tweaks"]
     return [
@@ -462,9 +555,13 @@ def edi_info_lines(sidecar: dict) -> list[str]:
 
 
 def _print_archive_status(label: str, status: dict | None) -> None:
-    """"<label> archive: raw: <path>, variant: ready | to build (<hash>) | none declared |
-    no filters used (--no-filters)"; "(no raw folder)" when `archive_status` returned
-    None -- a virtual/stacked remote, or `raw_sites` itself could not be read."""
+    """Print one archive status line.
+
+    The line is "<label> archive: raw: <path>, variant: ready | to build
+    (<hash>) | none declared | no filters used (--no-filters)", or "(no raw
+    folder)" when `archive_status` returned None (a virtual or stacked
+    remote, or unreadable `raw_sites`).
+    """
     if status is None:
         print(f"{label} archive: (no raw folder)")
         return
@@ -472,7 +569,7 @@ def _print_archive_status(label: str, status: dict | None) -> None:
 
 
 def print_resolution(res: dict) -> None:
-    """`key: value` lines — what --dry-run prints, and what the log opens with."""
+    """Print the resolution as `key: value` lines, as --dry-run and the log show it."""
     for key in ("survey_yaml", "local", "remote", "local_archive", "remote_archive",
                 "virtual_remote", "ignore_filters", "start", "end", "window",
                 "started", "tag", "stem"):
@@ -504,6 +601,11 @@ def print_resolution(res: dict) -> None:
 
 
 def main(args) -> None:
+    """Process one pair and write the EDI, comparison figure and sidecar.
+
+    Args:
+        args (argparse.Namespace): Parsed arguments from `build_parser`.
+    """
     started = dt.datetime.now().astimezone()
     res = resolve(args, started)
     survey = res["survey"]
@@ -537,7 +639,7 @@ def main(args) -> None:
     res["local_archive"], res["remote_archive"] = local_h5, remote_h5
 
     stem = res["stem"]
-    scheme = lemimt_band_scheme(survey.sample_rate, **res["scheme_kwargs"])
+    scheme = build_band_scheme(survey.sample_rate, **res["scheme_kwargs"])
     masks = res["masks"]  # both sites' masks.yaml intervals, joined (`resolve`)
     if res["masks_ignored"]:
         logger.info(f"{local}, {remote}: masks.yaml ignored (--no-masks)")
@@ -567,8 +669,8 @@ def main(args) -> None:
     )
     q = phase_quadrants(tf, pmin=pmin, pmax=pmax)
     msg = f"{local}: median phases {q['pmin']:g}-{q['pmax']:g} s xy {q['xy']:+.0f} deg, yx {q['yx']:+.0f} deg"
-    # a mode with too few usable periods is not judged (nan): that is "undetermined",
-    # not "flipped" -- only a judged mode outside its quadrant is a sign error
+    # a mode with too few usable periods is not judged (nan) and counts as
+    # undetermined; a judged mode outside its quadrant is a sign error
     flipped = [m for m in ("xy", "yx") if not q[f"{m}_ok"] and q[f"{m}_n"] >= 5]
     if flipped:
         logger.error(
@@ -601,9 +703,8 @@ def main(args) -> None:
     logger.info(f"wrote {sidecar_path}")
     print(f"sidecar: {sidecar_path}")
 
-    # a short pointer to the sidecar, in the EDI's own INFO block -- see
-    # edi_info_lines' docstring for why this is `processing_parameters`
-    # and not `station_metadata.comments`
+    # a short pointer to the sidecar in the EDI's INFO block; the docstring of
+    # edi_info_lines explains the use of `processing_parameters`
     try:
         tf.station_metadata.transfer_function.processing_parameters.extend(edi_info_lines(sidecar))
         tf.write(fn=edi_path, file_type="edi")

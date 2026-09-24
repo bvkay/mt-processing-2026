@@ -1,10 +1,20 @@
-"""Decimation and frequency-band schemes for aurora processing.
+# -*- coding: utf-8 -*-
+"""
+Decimation and frequency-band schemes for aurora processing
 
-`lemimt_band_scheme` lays out bands lemimt-style: an even spread of periods in
-log space (~10 per decade) from `min_period` out to `max_period`, across
-cascaded factor-4 decimation levels. Each level covers one factor-4 slice of
-frequency, so band positions relative to the FFT harmonics are identical at
-every level (lowest edge sits a safe ~6 harmonics above DC by construction).
+`build_band_scheme` lays out bands in the lemimt manner: an even spread of
+periods in log space (about 10 per decade) from `min_period` out to
+`max_period`, across cascaded factor-4 decimation levels. Each level covers
+one factor-4 slice of frequency, so band positions relative to the FFT
+harmonics are identical at every level, and the lowest edge sits about 6
+harmonics above DC.
+
+The returned dictionary is passed as keyword arguments to aurora's
+``ConfigCreator.create_from_kernel_dataset``.
+
+@author: ben kay (ben@auscope.org.au)
+
+:license: MIT
 """
 
 from __future__ import annotations
@@ -15,7 +25,18 @@ import numpy as np
 def _apply_notches(
     bands: np.ndarray, notch_frequencies, notch_fraction: float, df: float
 ) -> np.ndarray:
-    """Trim band edges away from notch lines; drop slivers narrower than one FC bin."""
+    """Trim band edges away from notch lines.
+
+    Args:
+        bands (np.ndarray): (n, 2) array of band edges in Hz.
+        notch_frequencies (iterable of float): Notch line frequencies in Hz.
+        notch_fraction (float): Half-width of the guard around each line, as
+            a fraction of the line frequency.
+        df (float): FFT harmonic spacing of the level in Hz.
+
+    Returns:
+        np.ndarray: The trimmed bands. Pieces narrower than `df` are dropped.
+    """
     for f0 in notch_frequencies:
         lo, hi = f0 * (1 - notch_fraction), f0 * (1 + notch_fraction)
         trimmed = []
@@ -31,7 +52,7 @@ def _apply_notches(
     return bands
 
 
-def lemimt_band_scheme(
+def build_band_scheme(
     sample_rate: float,
     min_period: float = 0.005,
     max_period: float = 5000.0,
@@ -41,20 +62,41 @@ def lemimt_band_scheme(
     notch_frequencies: tuple = (),
     notch_fraction: float = 0.08,
 ) -> dict:
-    """Build kwargs for aurora's ConfigCreator.create_from_kernel_dataset.
+    """Build keyword arguments for aurora's ConfigCreator.create_from_kernel_dataset.
 
-    `notch_frequencies` (Hz, e.g. mains at 50 and its harmonics) carve a
-    guard of +-`notch_fraction` out of any band touching them, so no band
-    integrates energy from those lines.
-    Returns {"band_edges", "decimation_factors", "num_samples_window"}.
+    Bands are spaced evenly in log period on each decimation level. Any band
+    touching one of `notch_frequencies` has a guard of +/-`notch_fraction`
+    carved out of it, so no band integrates energy from those lines.
 
-    Raises ValueError, naming the level and the band, when a band of the
-    even layout is narrower than one FFT harmonic spacing of its level (the
-    lowest band of a level spans k_min (factor**(1/n) - 1) harmonics): such a
-    band may hold no harmonic at all, and aurora then stops in mt_metadata
-    with a bare IndexError (docs/upstream_issues.md 20), while with any
-    notch listed `_apply_notches` drops it silently as a sliver. At 10 Hz a
-    `min_period` of 2 s did both: 13 of 41 periods left, or the crash.
+    Args:
+        sample_rate (float): Sample rate of the run in Hz.
+        min_period (float): Shortest period in s. The top band edge is
+            capped at a quarter of the sample rate.
+        max_period (float): Longest period in s.
+        periods_per_decade (float): Number of bands per decade of period.
+        window (int): FFT window length in samples, the same on every level.
+        factor (int): Decimation factor between levels.
+        notch_frequencies (tuple of float): Lines to avoid in Hz, for
+            example mains at 50 Hz and its harmonics.
+        notch_fraction (float): Half-width of each notch guard as a fraction
+            of the line frequency.
+
+    Returns:
+        dict: ``{"band_edges", "decimation_factors", "num_samples_window"}``,
+        with ``band_edges`` keyed by decimation level.
+
+    Raises:
+        ValueError: If `max_period` does not exceed `min_period`, if the
+            lowest band edge sits below FFT harmonic 1.5, or if a band of
+            the even layout is narrower than one FFT harmonic spacing of its
+            level. The last message names the level and the band and
+            suggests a fix. The lowest band of a level spans
+            k_min (factor**(1/n) - 1) harmonics; a narrower band may hold no
+            harmonic at all, and aurora then stops in mt_metadata with a bare
+            IndexError (docs/upstream_issues.md 20), while with any notch
+            listed `_apply_notches` drops it as a sliver. At 10 Hz a
+            `min_period` of 2 s triggers both cases: 13 of 41 periods remain,
+            or aurora fails.
     """
     f_top = min(1.0 / min_period, 0.25 * sample_rate)
     f_floor = 1.0 / max_period

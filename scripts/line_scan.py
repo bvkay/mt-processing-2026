@@ -1,39 +1,34 @@
-"""Per-hour narrow-line scan: a table and figure for declaring a notch's `extra` lines by hand.
+# -*- coding: utf-8 -*-
+"""
+Per-hour narrow-line scan: a table and figure for declaring a notch's `extra` lines by hand
 
 Besides 50 Hz and its harmonics, a broadband survey can carry narrow
-interharmonic lines from a grid-wide source -- at Morocco Atlas Mountains,
-50 +- 12.55 Hz and 50 +- 15.7 Hz (34.3, 37.4, 62.55, 65.7 Hz), sometimes also
-40.55, 59.45, 98.05, 99.0 Hz, and at D10 a 10 Hz comb that switches on at
-dusk. They are stable in frequency (+-0.05 Hz) but intermittent in time and
-appear at different sites at different hours -- hovering over a PSD site by
-site is not a practical way to find them. This scans every site's archive an
-hour at a time (`mtproc.timefreq.narrow_lines`, resolution fine enough to
-separate lines a few Hz apart) and writes a table and a figure so a student
-can read off which lines are worth declaring as a notch's `extra:` frequencies
-and which hours they are worth masking.
+interharmonic lines from a grid-wide source: pairs at 50 Hz plus and minus a
+fixed offset of a few to about 15 Hz, other lines between the harmonics, or a
+comb that switches on at dusk. They are stable in frequency (+-0.05 Hz) but
+intermittent in time and appear at different sites at different hours, so they
+are hard to find by inspecting PSDs site by site. The script scans every
+site's archive an hour at a time (`mtproc.timefreq.narrow_lines`, with a
+resolution fine enough to separate lines a few Hz apart) and writes a table
+and a figure that show which lines to declare as a notch's `extra:`
+frequencies and which hours to mask.
 
-Reads each archive directly with h5py, read-only, one hour of one channel at
-a time (never a whole channel): mth5's on-disk layout is
-`Experiment/Surveys/<survey>/Stations/<site>/<run>/<channel>`, with the real
-data-bearing runs the groups named `sr<rate>_<NNNN>` (mth5/aurora's own
-auxiliary station-level groups -- Features, Fourier_Coefficients,
-Transfer_Functions -- do not start with "sr" and are skipped); a run's start
-is its `time_period.start` attribute and its rate its `sample_rate`
-attribute, both written by `mth5` at ingest. Excess-over-floor dB is scale
-invariant to a frequency-independent gain (the line and its local floor both
-scale by the same factor), so this reads raw counts straight off the archive
--- no calibration, no `mtproc.ingest`/`mtproc.timefreq.load_station` needed,
-which is also why it can afford to read a whole record a hyperslab at a time
-instead of loading a channel whole.
-
-Usage:
-    python scripts/line_scan.py <survey.yaml> [SITE ...] [--hours-step 1.0]
-                                [--fmin 5] [--fmax 500] [--min-db 6]
-                                [--channels hx hy ex ey]
+Each archive is read directly with h5py, read-only, one hour of one channel
+at a time. mth5's on-disk layout is
+`Experiment/Surveys/<survey>/Stations/<site>/<run>/<channel>`, and the
+data-bearing runs are the groups named `sr<rate>_<NNNN>`; the auxiliary
+station-level groups of mth5 and aurora (Features, Fourier_Coefficients,
+Transfer_Functions) do not start with "sr" and are skipped. A run's start is
+its `time_period.start` attribute and its rate its `sample_rate` attribute,
+both written by `mth5` at ingest. Excess-over-floor dB is invariant to a
+frequency-independent gain (the line and its local floor scale by the same
+factor), so the scan reads raw counts straight from the archive without
+calibration, `mtproc.ingest` or `mtproc.timefreq.load_station`, one
+hyperslab at a time.
 
 SITE defaults to every site with an archive under `<workspace>/mth5`. A site
 whose archive is missing or cannot be opened (archives may still be building
-while this runs) is reported and skipped, never a crash.
+while this runs) is reported and skipped.
 
 Writes, per site, under `<workspace>/qc/`:
 
@@ -43,15 +38,25 @@ Writes, per site, under `<workspace>/qc/`:
                         frequency on a log y axis, marker size ~ excess dB,
                         mains harmonics hollow, everything else filled
     lines_summary.txt   appended, one block per site: every line seen in at
-                        least 2 hours (grouped to 0.15 Hz -- narrower than
+                        least 2 hours (grouped to 0.15 Hz, narrower than
                         the 0.5 Hz line-to-line separation `narrow_lines`
-                        itself enforces, so this only merges repeat sightings
-                        of the *same* physical line across hours, never two
-                        distinct nearby lines), its frequency, the channels
-                        it appeared on, "hours present / hours scanned", and
-                        its max excess dB -- mains harmonics listed last
+                        enforces, so grouping merges repeat sightings of
+                        the same physical line across hours and keeps
+                        distinct nearby lines apart), its frequency, the
+                        channels it appeared on, "hours present / hours
+                        scanned", and its max excess dB; mains harmonics
+                        are listed last
 
 The same per-site block is printed to the console as it is written.
+
+Usage:
+    python scripts/line_scan.py <survey.yaml> [SITE ...] [--hours-step 1.0]
+                                [--fmin 5] [--fmax 500] [--min-db 6]
+                                [--channels hx hy ex ey]
+
+@author: ben kay (ben@auscope.org.au)
+
+:license: MIT
 """
 
 from __future__ import annotations
@@ -80,12 +85,13 @@ DPI = 150
 DEFAULT_CHANNELS = ("hx", "hy", "ex", "ey")
 MIN_TRAILING_S = 600.0  # a trailing partial hour under this is dropped, not scanned
 GROUP_TOL_HZ = 0.15  # frequency tolerance for "the same line" across hours (grouping the summary)
-MIN_HOURS_FOR_SUMMARY = 2  # a line seen in only 1 hour is not worth a summary row
+MIN_HOURS_FOR_SUMMARY = 2  # a line seen in fewer hours gets no summary row
 CSV_COLUMNS = ("site", "run", "channel", "hour_start_utc", "f_hz", "excess_db", "mains_harmonic")
 
 
 def parse_args(argv=None) -> argparse.Namespace:
-    p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    """Parse the command line of line_scan.py."""
+    p = argparse.ArgumentParser(description=next(line for line in __doc__.strip().splitlines() if line.strip()))
     p.add_argument("survey_yaml", help="path to the survey's survey.yaml")
     p.add_argument(
         "sites", nargs="*",
@@ -120,10 +126,18 @@ def default_sites(survey: Survey) -> list[str]:
 
 
 def _run_ids(station: h5py.Group) -> list[str]:
-    """Data-bearing run group names ("sr<rate>_<NNNN>"), earliest `time_period.start` first.
+    """Return the data-bearing run groups of a station, earliest first.
 
-    mth5/aurora also write auxiliary station-level groups (Features,
-    Fourier_Coefficients, Transfer_Functions); none of those start with "sr".
+    Runs are the groups named "sr<rate>_<NNNN>", sorted by their
+    `time_period.start`. The auxiliary station-level groups of mth5 and
+    aurora (Features, Fourier_Coefficients, Transfer_Functions) do not start
+    with "sr".
+
+    Args:
+        station (h5py.Group): Station group of the archive.
+
+    Returns:
+        list[str]: Run group names.
     """
     ids = [k for k in station.keys() if k.startswith("sr") and isinstance(station[k], h5py.Group)]
     ids.sort(key=lambda k: str(station[k].attrs["time_period.start"]))
@@ -140,13 +154,31 @@ def scan_archive(
     fmax: float,
     min_db: float,
 ) -> tuple[list[dict], int, list[str]]:
-    """Scan one site's archive hour by hour; returns (rows, hours scanned, channels present).
+    """Scan one site's archive for narrow lines, block by block.
 
-    Opens `h5_path` read-only and never reads more than one hour of one
-    channel at a time (`run[channel][i0:i1]` is an HDF5 hyperslab read, not a
-    load of the whole dataset). `hours_scanned` counts hour-blocks, not
-    channel-hours -- one per block regardless of how many channels it holds
-    -- since every run here carries the same channel set start to end.
+    Opens `h5_path` read-only and reads one block of one channel at a time
+    (`run[channel][i0:i1]` is an HDF5 hyperslab read). `hours_scanned` counts
+    blocks, one per block whatever the number of channels, since every run
+    carries the same channel set from start to end. A trailing partial block
+    under MIN_TRAILING_S is dropped.
+
+    Args:
+        h5_path (Path): The site's MTH5.
+        survey_name (str): Survey id in the MTH5.
+        site (str): Station name.
+        channels_wanted (list[str]): Channels to scan, where present.
+        hours_step (float): Block length in hours.
+        fmin (float): Low edge of the scan band in Hz.
+        fmax (float): High edge of the scan band in Hz.
+        min_db (float): Smallest excess over the local floor to report.
+
+    Returns:
+        tuple[list[dict], int, list[str]]: One row per detected line (the
+        CSV_COLUMNS), the number of blocks scanned and the channels present.
+
+    Raises:
+        KeyError: When the archive has no group for the station.
+        ValueError: When the station has no sr* run groups.
     """
     rows: list[dict] = []
     hours_scanned = 0
@@ -182,7 +214,7 @@ def scan_archive(
                 i1 = min(i0 + block_n, n)
                 is_trailing_partial = (i1 - i0) < block_n
                 if is_trailing_partial and (i1 - i0) < min_block_n:
-                    break  # under 10 min left in this run -- dropped, not scanned
+                    break  # under 10 min left in this run: dropped
                 hour_start = t0 + pd.Timedelta(seconds=i0 / fs)
                 hours_scanned += 1
                 for c in chans:
@@ -202,10 +234,19 @@ def scan_archive(
 
 
 def line_figure(site: str, channels: list[str], df: pd.DataFrame, min_db: float, out: Path, dpi: int = DPI) -> None:
-    """One panel per channel: hour (UTC) on x, frequency on a log y axis.
+    """Plot the detected lines, one panel per channel.
 
-    Marker size grows with excess dB above `min_db`; a mains harmonic is
-    drawn hollow (open circle), everything else filled.
+    Hour start (UTC) is on x and frequency on a log y axis. Marker size
+    grows with excess dB above `min_db`; a mains harmonic is drawn hollow
+    (open circle), other lines filled.
+
+    Args:
+        site (str): Site name for the title.
+        channels (list[str]): Channels to plot, one panel each.
+        df (pd.DataFrame): Detected lines with the CSV_COLUMNS.
+        min_db (float): Detection threshold in dB.
+        out (Path): Output figure.
+        dpi (int): Figure resolution.
     """
     fig, axes = plt.subplots(
         len(channels), 1, figsize=(11.0, 2.6 * len(channels)), sharex=True, layout="constrained",
@@ -220,10 +261,10 @@ def line_figure(site: str, channels: list[str], df: pd.DataFrame, min_db: float,
             ax.text(0.5, 0.5, "no lines", transform=ax.transAxes, ha="center", va="center", color="0.5")
             continue
         # run boundaries do not always land on a whole second, so hour_start_utc
-        # mixes "...+00:00" and "...123456+00:00" ISO strings within one column --
-        # pandas' fast fixed-format path infers a format from the first rows and
-        # then chokes on a later one with microseconds; format="ISO8601" parses
-        # each string on its own terms instead
+        # mixes "...+00:00" and "...123456+00:00" ISO strings within one column;
+        # pandas' fixed-format path infers a format from the first rows and then
+        # fails on a later one with microseconds, while format="ISO8601" parses
+        # each string separately
         t = pd.to_datetime(sub["hour_start_utc"], format="ISO8601")
         size = 10.0 + 4.0 * np.clip(sub["excess_db"] - min_db, 0.0, None)
         mains = sub["mains_harmonic"].astype(bool)
@@ -247,11 +288,20 @@ def line_figure(site: str, channels: list[str], df: pd.DataFrame, min_db: float,
 
 
 def group_lines(df: pd.DataFrame, tol_hz: float = GROUP_TOL_HZ) -> list[dict]:
-    """Chain-cluster every row by frequency (consecutive gap <= tol_hz merges), across hour and channel.
+    """Group detected lines by frequency across hours and channels.
 
-    Returns one dict per group: f_hz (mean), channels (sorted set), hours_present
-    (distinct (run, hour_start_utc) pairs the group was seen in, on any channel),
-    max_db, mains (True if any member was flagged a mains harmonic).
+    Rows are chain-clustered by frequency: a gap of at most `tol_hz` between
+    consecutive frequencies joins them.
+
+    Args:
+        df (pd.DataFrame): Detected lines with the CSV_COLUMNS.
+        tol_hz (float): Largest frequency step within a group.
+
+    Returns:
+        list[dict]: One dict per group with f_hz (mean), channels (sorted),
+        hours_present (distinct (run, hour_start_utc) pairs, on any
+        channel), max_db, and mains (True if any member was flagged a mains
+        harmonic).
     """
     if df.empty:
         return []
@@ -279,7 +329,18 @@ def group_lines(df: pd.DataFrame, tol_hz: float = GROUP_TOL_HZ) -> list[dict]:
 
 
 def summary_block(site: str, channels_present: list[str], hours_scanned: int, df: pd.DataFrame) -> str:
-    """The per-site text block: printed to the console and appended to lines_summary.txt."""
+    """Build the per-site summary block printed and appended to lines_summary.txt.
+
+    Args:
+        site (str): Site name.
+        channels_present (list[str]): Channels scanned.
+        hours_scanned (int): Number of blocks scanned.
+        df (pd.DataFrame): Detected lines with the CSV_COLUMNS.
+
+    Returns:
+        str: The block: lines seen in at least MIN_HOURS_FOR_SUMMARY hours,
+        mains harmonics last.
+    """
     out = [
         f"=== {site} ===",
         f"scanned: {' '.join(channels_present) or '(no requested channel present)'}, "
@@ -307,6 +368,11 @@ def summary_block(site: str, channels_present: list[str], hours_scanned: int, df
 
 
 def main(argv=None) -> None:
+    """Scan the sites and write the CSV, figure and summary of each.
+
+    Args:
+        argv (list[str] | None): Command-line arguments; sys.argv when None.
+    """
     args = parse_args(argv)
     survey = Survey.from_yaml(args.survey_yaml)
     qc_dir = survey.workspace / "qc"

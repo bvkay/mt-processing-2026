@@ -1,21 +1,27 @@
-"""The Metadata tab's editing: the New survey dialog, the sites-block rewrite, cell text.
+# -*- coding: utf-8 -*-
+"""
+Editing support for the Metadata tab
 
-Kept out of `tabs/metadata.py` so the tab stays a table. Nothing here reads a
-B423 file or computes anything: `start_new_survey` queues `scripts/new_survey.py`
-on `state.runner` and starts it immediately (`JobRunner.run_now`), rather than
-blocking the window on a `subprocess.run` -- one of the jobs exempt from the
-"Add to queue"/"Run queue" split, since it is not a processing job (see its
-docstring). `handle_new_survey_finished` -- wired to `state.runner.job_finished`
-by `MetadataTab` once, in `__init__` -- opens the survey.yaml it wrote once it
-is done, or reports its failure; progress meanwhile shows in the console
-strip through the runner's own `log_line`, like any other job's.
-`rewrite_sites_block` writes the table's edits into `survey.yaml` the way
-`scripts/burra_notes_to_yaml.py`'s `write_sites_block` does -- only the
-`sites:` block is rewritten (`yaml.safe_dump`, two-space indent), everything
-above it is kept byte for byte -- and, beyond that function, any top-level
-key after the block is kept byte for byte too, as are the file's line endings
-and every per-site key the table does not show. Comments *inside* the sites
-block are lost, as they are when the generator scripts rewrite it.
+Holds the New survey dialog, the rewrite of the `sites:` block of
+survey.yaml, and the conversion between YAML values and table cell text.
+
+`start_new_survey` queues `scripts/new_survey.py` on `state.runner` and
+starts it immediately with `JobRunner.run_now`, so the window stays
+responsive while it runs. `handle_new_survey_finished`, connected to
+`state.runner.job_finished` by `MetadataTab`, opens the survey.yaml the job
+wrote or reports its failure. Progress shows in the console strip through
+the runner's `log_line`.
+
+`rewrite_sites_block` writes the table's edits into survey.yaml in the same
+way as `write_sites_block` in `scripts/burra_notes_to_yaml.py`: only the
+`sites:` block is rewritten (`yaml.safe_dump`, two-space indent). The text
+above the block and any top-level keys after it are kept unchanged, as
+are the file's line endings and every per-site key the table does not show.
+Comments inside the `sites:` block are lost, as with the generator scripts.
+
+@author: ben kay (ben@auscope.org.au)
+
+:license: MIT
 """
 
 from __future__ import annotations
@@ -41,13 +47,16 @@ TABLE_FILTER = "Site table (*.csv *.xlsx *.xls);;All files (*)"
 
 
 def ask_yes_no(parent, title: str, text: str) -> bool:
-    """A Yes/No question with No the default (the smoke test replaces this function)."""
+    """Ask a Yes/No question with No as the default; True for Yes.
+
+    The GUI smoke test replaces this function.
+    """
     answer = QMessageBox.question(parent, title, text, QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
     return answer == QMessageBox.Yes
 
 
 def format_cell(column: str, value) -> str:
-    """A YAML value as the table shows it: numbers to 10 significant digits, a dash for none."""
+    """Format a YAML value for the table: numbers to 10 significant digits, "-" for None."""
     if value is None:
         return "-"
     if SITE_TABLE_COLUMNS.get(column) is float:
@@ -56,10 +65,10 @@ def format_cell(column: str, value) -> str:
 
 
 # The EDL electric chain's declared gain column (`SiteConfig.electric_gain`): the site's effective
-# number as text, typed over on an EDL row only; Save writes the site's own key only when the number
-# differs from the survey default's, as for channels. Hardwired at the field terminal junction box;
-# for a survey whose PR6-24 configs were not kept, known only from the field notes -- not a PR6-24
-# pre-amplifier setting.
+# number as text, editable on an EDL row only; Save writes the site's own key only when the number
+# differs from the survey default, as for channels. The gain is hardwired at the field terminal
+# junction box and, for a survey whose PR6-24 configs were not kept, is known from the field notes;
+# it is separate from the PR6-24 pre-amplifier setting.
 ELECTRIC_GAIN = "electric_gain"
 ELECTRIC_GAIN_TIP = "extra gain of the electric chain beyond the reader's own (the x10 terminal box), declared from the field notes"
 ELECTRIC_GAIN_ARCHIVE_TIP = "archive built with the old gain - Delete archive then Build MTH5 to change it"
@@ -67,11 +76,22 @@ ELECTRIC_GAIN_NOT_EDL = "PR6-24 (EDL) sites only"
 
 
 def electric_gain_cell(item_class, gain, instrument: str, archived: bool):
-    """A site's electric_gain cell: `item_class(text, editable=True)` on an EDL row, else a read-only "-".
+    """Build a site's electric_gain cell.
 
-    The text is the site's effective gain (default 1.0, no filter), to 10
-    significant digits. Greyed with `ELECTRIC_GAIN_ARCHIVE_TIP` when an
-    archive exists: it keeps the gain it was built with until rebuilt.
+    On an EDL row the cell is editable and shows the site's effective gain
+    (default 1.0, no filter) to 10 significant digits; on any other row it
+    is a read-only "-". When an archive exists the cell is greyed with
+    `ELECTRIC_GAIN_ARCHIVE_TIP`, since the archive keeps the gain it was
+    built with until rebuilt.
+
+    Args:
+        item_class: Table item class.
+        gain (float | None): The site's effective gain.
+        instrument (str): The site's instrument key.
+        archived (bool): Whether the site's archive exists.
+
+    Returns:
+        The table item.
     """
     if instrument != "edl":
         item = item_class("-")
@@ -86,12 +106,21 @@ def electric_gain_cell(item_class, gain, instrument: str, archived: bool):
 
 
 def electric_gain_edit(survey, site: str, text: str | None, shown: str | None):
-    """An electric_gain cell's text -> the site's key to write: a number, None to drop it, or UNCHANGED.
+    """Work out the site's electric_gain value to write from an edited cell.
 
-    UNCHANGED when the cell reads the same number it was loaded with
-    (`shown`) or is not editable (no `shown`); None when it reads the survey
-    default's number, so the default applies again; else the number. Raises
-    ValueError naming the site for text that is not a number.
+    Args:
+        survey: The open `mtproc.survey.Survey`.
+        site (str): Site name, used in the error message.
+        text (str | None): The cell text now.
+        shown (str | None): The cell text as loaded; None for a read-only cell.
+
+    Returns:
+        `UNCHANGED` when the cell reads the number it was loaded with or is
+        not editable; None when it reads the survey default, so the site's
+        key is dropped; otherwise the number.
+
+    Raises:
+        ValueError: If the text is not a number.
     """
     if text is None or shown is None or text == shown:
         return UNCHANGED
@@ -102,7 +131,7 @@ def electric_gain_edit(survey, site: str, text: str | None, shown: str | None):
     try:
         if new == float(shown):
             return UNCHANGED
-    except ValueError:  # loaded with something unparsable: any valid number is a change
+    except ValueError:  # loaded text is not a number: any valid number is a change
         pass
     default = survey.defaults.get(ELECTRIC_GAIN)
     default = 1.0 if default is None else float(default)
@@ -110,9 +139,17 @@ def electric_gain_edit(survey, site: str, text: str | None, shown: str | None):
 
 
 def parse_cell(column: str, text: str):
-    """A cell's text -> the YAML value; None (blank or a dash) drops the site's own key.
+    """Parse a cell's text into its YAML value.
 
-    Raises ValueError for a number column that does not read as a number.
+    Args:
+        column (str): Column name from `SITE_TABLE_COLUMNS`.
+        text (str): The cell text.
+
+    Returns:
+        The value; None for a blank or "-" cell, which drops the site's key.
+
+    Raises:
+        ValueError: If a number column does not read as a number.
     """
     text = text.strip()
     if text in ("", "-"):
@@ -121,12 +158,20 @@ def parse_cell(column: str, text: str):
 
 
 def rewrite_sites_block(yaml_path: str | Path, edits: dict[str, dict]) -> None:
-    """Apply {site: {key: value, or None to drop the key}} to survey.yaml's `sites:` block.
+    """Apply per-site edits to the `sites:` block of a survey.yaml.
 
-    The block runs from the top-level `sites:` line to the next top-level key
-    (a comment or blank line right above that key stays with it); the text
-    before and after it is written back unchanged, with the file's own line
-    endings. A file with no `sites:` key gets one at the end.
+    The block runs from the top-level `sites:` line to the next top-level
+    key; comments or blank lines directly above that key stay with it. The
+    text before and after the block is written back unchanged with the
+    file's own line endings. A file with no `sites:` key gets one at the end.
+
+    Args:
+        yaml_path (str | Path): The survey.yaml.
+        edits (dict[str, dict]): {site: {key: value}}; a value of None drops
+            the key.
+
+    Raises:
+        ValueError: If the file has more than one top-level `sites:` key.
     """
     path = Path(yaml_path)
     with open(path, encoding="utf-8", newline="") as f:
@@ -162,14 +207,20 @@ def rewrite_sites_block(yaml_path: str | Path, edits: dict[str, dict]) -> None:
 
 
 class NewSurveyDialog(QDialog):
-    """scripts/new_survey.py's arguments: folders, name, instrument, channels, time zone, site table.
+    """Dialog for the arguments of scripts/new_survey.py.
 
-    The workspace (archives, TFs, figures) defaults to `<data folder>/work`,
-    beside the raw data -- a 100-site survey's archives run to hundreds of GB
-    -- and follows the data folder until it is typed over or browsed to.
-    "channels recorded", beside the instrument, offers that instrument's
-    presets (`mtproc.survey.CHANNEL_PRESETS`, its default preselected) and
-    becomes `--channels`, the survey's `defaults: channels:`.
+    Collects the data folder, workspace, survey name, instrument, channels
+    recorded, time zone and optional site table. The workspace (archives,
+    TFs, figures) defaults to `<data folder>/work` beside the raw data, since
+    a 100-site survey's archives run to hundreds of GB, and follows the data
+    folder until it is typed over or browsed to. "channels recorded" offers
+    the instrument's presets (`mtproc.survey.CHANNEL_PRESETS`, its default
+    preselected) and becomes `--channels`, the survey's
+    `defaults: channels:`.
+
+    Args:
+        surveys_dir (Path): Folder the survey's own folder is created in.
+        parent (QWidget | None): Qt parent.
     """
 
     def __init__(self, surveys_dir: Path, parent=None):
@@ -200,7 +251,7 @@ class NewSurveyDialog(QDialog):
         buttons.accepted.connect(self._accept)
         buttons.rejected.connect(self.reject)
 
-        instrument_row = QHBoxLayout()  # one row: the channels a survey records depend on the instrument
+        instrument_row = QHBoxLayout()  # instrument and channels share a row: the presets depend on the instrument
         instrument_row.addWidget(self.instrument_combo)
         instrument_row.addWidget(QLabel("channels recorded", self))
         instrument_row.addWidget(self.channels_combo, 1)
@@ -230,43 +281,49 @@ class NewSurveyDialog(QDialog):
         self._show_out()
 
     def _fill_channels(self, instrument: str) -> None:
-        """The instrument's channel presets, its default selected."""
+        """Fill the channels combo with the instrument's presets, its default selected."""
         self.channels_combo.clear()
         self.channels_combo.addItems(list(CHANNEL_PRESETS.get(instrument, {})))
         if instrument in CHANNEL_PRESETS:
             self.channels_combo.setCurrentText(default_preset(instrument))
 
     def _pick_folder(self) -> None:
+        """Browse for the data folder."""
         path = QFileDialog.getExistingDirectory(self, "Folder of site folders", self.folder_edit.text())
         if path:
             self.folder_edit.setText(path)
 
     def _pick_workspace(self) -> None:
+        """Browse for the workspace folder, which then stops following the data folder."""
         path = QFileDialog.getExistingDirectory(self, "Workspace folder", self.workspace_edit.text())
         if path:
             self.workspace_edit.setText(path)
             self.workspace_edit.setModified(True)  # chosen: it no longer follows the data folder
 
     def _pick_table(self) -> None:
+        """Browse for the site table."""
         path, _ = QFileDialog.getOpenFileName(self, "Site table", self.folder_edit.text(), TABLE_FILTER)
         if path:
             self.table_edit.setText(path)
 
     def _folder_changed(self, text: str) -> None:
-        """The name follows the folder's, and the workspace is <folder>/work, until typed over."""
+        """Update the name to the folder's and the workspace to <folder>/work, unless typed over."""
         if not self.name_edit.isModified():
             self.name_edit.setText(Path(text.strip()).name if text.strip() else "")
         if not self.workspace_edit.isModified():
             self.workspace_edit.setText(str(Path(text.strip()) / "work") if text.strip() else "")
 
     def out_path(self) -> Path:
+        """`<surveys_dir>/<name>/survey.yaml`."""
         return self.surveys_dir / self.name_edit.text().strip() / "survey.yaml"
 
     def _show_out(self) -> None:
+        """Show the path the survey.yaml will be written to."""
         name = self.name_edit.text().strip()
         self.out_label.setText(f"writes {self.out_path()}" if name else "")
 
     def _accept(self) -> None:
+        """Accept when the data folder exists and a name is given; otherwise warn."""
         if not Path(self.folder_edit.text().strip()).is_dir():
             QMessageBox.warning(self, "New survey", "Pick the folder that holds the site folders.")
         elif not self.name_edit.text().strip():
@@ -275,6 +332,7 @@ class NewSurveyDialog(QDialog):
             self.accept()
 
     def values(self) -> dict:
+        """Return the dialog's values; empty optional fields are None."""
         return {
             "data_root": self.folder_edit.text().strip(),
             "workspace": self.workspace_edit.text().strip() or None,
@@ -287,7 +345,17 @@ class NewSurveyDialog(QDialog):
 
 
 def new_survey_argv(state, values: dict, out: Path, force: bool) -> list[str]:
-    """The scripts/new_survey.py command line for the dialog's values."""
+    """Build the scripts/new_survey.py command line.
+
+    Args:
+        state: The shared `mtproc_gui.app.State`.
+        values (dict): `NewSurveyDialog.values()`.
+        out (Path): The survey.yaml to write.
+        force (bool): Add `--force` to overwrite an existing file.
+
+    Returns:
+        list[str]: The command line.
+    """
     argv = [state.python_exe, state.script("new_survey.py"), values["data_root"],
             "--name", values["name"], "--instrument", values["instrument"],
             "--timezone", values["timezone"], "--out", str(out)]
@@ -301,26 +369,30 @@ def new_survey_argv(state, values: dict, out: Path, force: bool) -> list[str]:
 
 
 def is_new_survey_job(job) -> bool:
-    """True for a job whose argv names scripts/new_survey.py (not some other job on the queue)."""
+    """True for a job whose argv runs scripts/new_survey.py."""
     return len(job.argv) > 1 and Path(job.argv[1]).name == "new_survey.py"
 
 
 def start_new_survey(parent, state, values: dict, out: Path) -> bool:
-    """Queue scripts/new_survey.py on state.runner and start it immediately.
+    """Queue scripts/new_survey.py on `state.runner` and start it immediately.
 
-    Not a processing job -- it never opens an MTH5 archive -- so it skips the
-    "Add to queue"/"Run queue" split the processing jobs follow: it is added
-    and started here in one call (`JobRunner.run_now`, which leaves any job
-    already queued waiting for Run queue), right after `MetadataTab.new_survey`
-    closes the dialog, rather than left queued for a press of "Run queue".
-    Its progress reaches the console strip the way any job's does, through
-    the runner's own `log_line`; `handle_new_survey_finished`, wired to
-    `state.runner.job_finished` by `MetadataTab` once, in `__init__`, opens
-    the survey.yaml it wrote once it is done. An existing survey.yaml is
-    overwritten (--force) only after a Yes. A job already running is refused
-    here -- tell the student to wait -- rather than queued behind it, so
-    there is never more than one new-survey job in flight. Returns True if
-    the job was queued.
+    The job opens no MTH5 archive, so it is added and started in one call
+    with `JobRunner.run_now`, which leaves any queued job waiting for Run
+    queue. `MetadataTab.new_survey` calls this after the dialog closes. The
+    job's output reaches the console strip through the runner's `log_line`,
+    and `handle_new_survey_finished` opens the survey.yaml it wrote. An
+    existing survey.yaml is overwritten (`--force`) only after the user
+    answers Yes. While another job is running the request is refused with a
+    message, so one new-survey job runs at a time.
+
+    Args:
+        parent (QWidget): Parent of the message boxes.
+        state: The shared `mtproc_gui.app.State`.
+        values (dict): `NewSurveyDialog.values()`.
+        out (Path): The survey.yaml to write.
+
+    Returns:
+        bool: True if the job was started.
     """
     if state.runner.running:
         QMessageBox.information(
@@ -338,11 +410,16 @@ def start_new_survey(parent, state, values: dict, out: Path) -> bool:
 
 
 def handle_new_survey_finished(parent, state, index: int, ok: bool) -> None:
-    """state.runner.job_finished slot: open the survey.yaml a new-survey job wrote, or report its failure.
+    """Open the survey.yaml a finished new-survey job wrote, or report its failure.
 
-    Every finished job fires this signal, including a processing run queued
-    from the Process tab, so anything that is not new_survey.py
-    (`is_new_survey_job`) is ignored here.
+    Connected to `state.runner.job_finished`, which fires for every job;
+    jobs other than new_survey.py (`is_new_survey_job`) are ignored.
+
+    Args:
+        parent (QWidget): Parent of the message boxes.
+        state: The shared `mtproc_gui.app.State`.
+        index (int): The finished job's index.
+        ok (bool): Whether the job succeeded.
     """
     job = state.runner.jobs[index] if 0 <= index < len(state.runner.jobs) else None
     if job is None or not is_new_survey_job(job):

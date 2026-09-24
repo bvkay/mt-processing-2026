@@ -1,17 +1,23 @@
-"""The Time Series tab's tree: every site, and under each archived site its windows.
+# -*- coding: utf-8 -*-
+"""
+Site tree of the Time Series tab
 
 `SiteTree` is a `QTreeWidget` with one bold, collapsed row per site in
-`State.all_sites()`. A site with an archive is expandable; its window rows
-(`mtproc_gui.windows.window_list` over `mtproc_gui.archive.load_grid`, labelled
-by their UTC start) are made the first time it is expanded. The archive
-read runs in a `ReadThread` under `State.archive_lock` -- one at a time,
-sites expanded meanwhile wait their turn -- with a "reading the archive..."
-row in the meantime. A site without an archive is greyed with one disabled
-row saying how to get one (the tab's Build MTH5 button); `refresh_site`
-looks at the archive again once a job has built it. A click on a site row
-toggles it open or shut; a click on a window row emits
-`window_clicked(station, start, end)`, and the tab loads it. That is the
-MATLAB app's tree, with archive windows where it had raw files.
+`State.all_sites()`, whose child rows are the site's archive windows rather
+than raw files. A site with an archive is expandable; its window rows
+(`mtproc_gui.windows.window_list` over `mtproc_gui.archive.load_grid`,
+labelled by their UTC start) are built the first time it is expanded. The
+archive read runs in a `ReadThread` under `State.archive_lock`, one site at
+a time, with sites expanded meanwhile queued and a "reading the archive..."
+row shown until the read returns. A site without an archive is greyed, with
+one disabled row pointing to the tab's Build MTH5 button; `refresh_site`
+checks the archive again once a job has built it. Clicking a site row
+expands or collapses it; clicking a window row emits
+`window_clicked(station, start, end)` and the tab loads that window.
+
+@author: ben kay (ben@auscope.org.au)
+
+:license: MIT
 """
 
 from __future__ import annotations
@@ -32,12 +38,17 @@ GREY = QBrush(QColor("#909090"))
 
 
 def _windows_for(path, survey_name: str, station: str):
-    """What the read thread runs: the station's windows from its run grid."""
+    """Return the station's windows from its run grid; run in the read thread."""
     return window_list(load_grid(path, survey_name, station))
 
 
 class SiteTree(QTreeWidget):
-    """Sites as bold collapsed rows; archived ones expand to their windows."""
+    """Sites as bold collapsed rows; archived sites expand to their windows.
+
+    Args:
+        state: The shared `mtproc_gui.app.State`.
+        parent (QWidget | None): Qt parent.
+    """
 
     window_clicked = Signal(str, object, object)  # (station, start, end)
 
@@ -76,7 +87,7 @@ class SiteTree(QTreeWidget):
             self._show_archive(site)
 
     def _show_archive(self, site: str) -> None:
-        """Make `site`'s row say whether it has an archive: expandable, or grey with the Build MTH5 hint."""
+        """Show whether `site` has an archive: expandable, or grey with the Build MTH5 hint."""
         item, has = self._items[site], self.state.has_archive(site)
         self._archived[site] = has
         item.takeChildren()
@@ -92,8 +103,15 @@ class SiteTree(QTreeWidget):
             child.setFlags(Qt.NoItemFlags)
 
     def refresh_site(self, site: str, expand: bool = False) -> None:
-        """Look at `site`'s archive again (a job built it): a row whose answer changed is rebuilt,
-        so a new archive drops the placeholder and becomes expandable; `expand` lists its windows."""
+        """Check `site`'s archive again, e.g. after a job built it.
+
+        A row whose archive state changed is rebuilt, so a new archive
+        replaces the placeholder and becomes expandable.
+
+        Args:
+            site (str): Site name.
+            expand (bool): Expand the row and read its windows.
+        """
         if site not in self._items:
             return
         if self.state.has_archive(site) != self._archived.get(site):
@@ -104,10 +122,11 @@ class SiteTree(QTreeWidget):
             self._items[site].setExpanded(True)  # `_expanded` reads its windows
 
     def site_items(self) -> list[QTreeWidgetItem]:
+        """Return the site rows."""
         return [self.topLevelItem(i) for i in range(self.topLevelItemCount())]
 
     def window_items(self, site: str) -> list[QTreeWidgetItem]:
-        """The window rows under `site` (none until it has been expanded and read)."""
+        """Return the window rows under `site`; empty until it has been expanded and read."""
         item = self._items.get(site)
         if item is None:
             return []
@@ -115,7 +134,7 @@ class SiteTree(QTreeWidget):
         return [r for r in rows if r.data(0, WINDOW_ROLE) is not None]
 
     def select_site(self, site: str) -> None:
-        """Highlight `site`'s row (a choice made on another tab); nothing is loaded."""
+        """Highlight `site`'s row after a choice on another tab, without loading anything."""
         item, current = self._items.get(site), self.currentItem()
         if item is None or current is item or (current is not None and current.parent() is item):
             return  # already on that site, or on one of its windows: leave the highlight there
@@ -125,6 +144,7 @@ class SiteTree(QTreeWidget):
     # ----------------------------------------------------------- clicks
 
     def _clicked(self, item: QTreeWidgetItem, _column: int) -> None:
+        """Emit `window_clicked` for a window row; toggle a site row."""
         window = item.data(0, WINDOW_ROLE)
         if window is not None:
             self.window_clicked.emit(item.parent().data(0, SITE_ROLE), *window)
@@ -132,7 +152,7 @@ class SiteTree(QTreeWidget):
             item.setExpanded(not item.isExpanded())
 
     def _expanded(self, item: QTreeWidgetItem) -> None:
-        """First expansion of an archived site: put a placeholder up and read its windows."""
+        """On the first expansion of an archived site, show a placeholder and queue its read."""
         site = item.data(0, SITE_ROLE)
         if site is None or site in self._filled or not self.state.has_archive(site):
             return
@@ -151,7 +171,7 @@ class SiteTree(QTreeWidget):
         if self._thread is not None or not self._queue or self.state.survey is None:
             return
         if lock.busy and lock.holder is not self:
-            return  # the segment worker is loading: `changed` brings us back here
+            return  # the segment worker is loading: `changed` calls this again
         site = self._queue.pop(0)
         path = self.state.archive_path(site)
         thread = ReadThread(_windows_for, (site, path), path, self.state.survey.name, site, parent=self)
@@ -159,27 +179,29 @@ class SiteTree(QTreeWidget):
         thread.failed.connect(self._on_failed)
         thread.finished.connect(self._read_done)
         thread.finished.connect(thread.deleteLater)
-        self._thread = thread  # before acquire: its `changed` re-enters _kick, which must see it
+        self._thread = thread  # set before acquire, since its `changed` re-enters _kick
         lock.acquire(self)
         thread.start()
 
     def _read_done(self) -> None:
+        """Release the archive lock after a read."""
         self._thread = None
         self.state.archive_lock.release(self)  # its `changed` runs _kick for the next site
 
     def wait_for_read(self) -> None:
-        """Block until the read in flight returns and start no other (the window is closing)."""
+        """Block until the read in flight returns, dropping queued reads; used on window close."""
         self._queue.clear()
         if self._thread is not None:
             self._thread.wait()
 
     def _current(self, tag) -> QTreeWidgetItem | None:
-        """The site row a read was for, unless the survey changed under it."""
+        """Return the site row a read was for, or None if the survey has changed since."""
         site, path = tag
         item = self._items.get(site)
         return item if item is not None and path == self.state.archive_path(site) else None
 
     def _on_windows(self, tag, windows) -> None:
+        """Replace the placeholder with the site's window rows."""
         item = self._current(tag)
         if item is None:
             return
@@ -191,6 +213,7 @@ class SiteTree(QTreeWidget):
         self._filled.add(tag[0])
 
     def _on_failed(self, tag, message: str) -> None:
+        """Replace the placeholder with the read error."""
         item = self._current(tag)
         if item is None:
             return

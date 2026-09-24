@@ -1,26 +1,39 @@
-"""Metadata tab: start or pick a survey, read and edit what is declared in it.
+# -*- coding: utf-8 -*-
+"""
+Metadata tab
 
-Drives `surveys/<name>/survey.yaml` (via `mtproc.survey.Survey`) and nothing
-else -- no processing. One row per site: the field-sheet numbers as declared,
-its recorder (read-only "instrument": `Survey.instrument_of`, the site's own
-`instrument:` or what its folder holds), the site's usual remote-reference partner (`remote:`, what the Process/Spectra/
-Coherence tabs preselect), its channels (`channels_column`), on a PR6-24 (EDL)
-row its declared electric chain gain (`metadata_edit.electric_gain_cell`,
-"-" on any other recorder's), the recorder facts
-`scripts/new_survey.py` read from the B423 headers (serial, firmware, start,
-end -- read-only), whether the raw folder and the MTH5 archive are actually
-there, and whether the site has a declared noise filter list
-(`<survey>/filters.yaml`, folded into `Survey.site()`, edited on Filter Data).
+Creates or opens a survey and shows and edits what `surveys/<name>/survey.yaml`
+declares, through `mtproc.survey.Survey`. The table has one row per site
+with:
 
-The `metadata_edit.EDITABLE` columns are edited in place (double-click, or
-"Import site table..." from a CSV/XLSX); "Save survey.yaml" writes only the
+* the field-sheet numbers as declared;
+* the recorder, read-only (`Survey.instrument_of`: the site's own
+  `instrument:` or what its folder holds);
+* the site's usual remote-reference partner (`remote:`), which the Process,
+  Spectra and Coherence tabs preselect;
+* its channels (`channels_column`);
+* on a PR6-24 (EDL) row, the declared electric chain gain
+  (`metadata_edit.electric_gain_cell`), "-" for other recorders;
+* the recorder facts `scripts/new_survey.py` read from the B423 headers
+  (serial, firmware, start, end), read-only;
+* whether the raw folder and the MTH5 archive exist;
+* whether the site has a declared noise filter list (`<survey>/filters.yaml`,
+  merged into `Survey.site()` and edited on the Filter Data tab).
+
+The `metadata_edit.EDITABLE` columns are edited in place, by double-click or
+with "Import site table..." from a CSV or XLSX. "Save survey.yaml" writes the
 changed cells into the `sites:` block (`metadata_edit.rewrite_sites_block`)
-and reopens the survey -- asking first when a script wrote the file
+and reopens the survey, asking first when the file was written by a script
 (`generated_by:`, shown as a yellow line). "New survey..." queues
-`scripts/new_survey.py` on `state.runner` and opens what it wrote once the
-job finishes (`metadata_edit.start_new_survey`, `handle_new_survey_finished`).
+`scripts/new_survey.py` on `state.runner` and opens the survey it wrote when
+the job finishes (`metadata_edit.start_new_survey`,
+`handle_new_survey_finished`).
 
-Selecting a row sets `State.site`, which is what the other tabs preselect.
+Selecting a row sets `State.site`, which the other tabs preselect.
+
+@author: ben kay (ben@auscope.org.au)
+
+:license: MIT
 """
 
 from __future__ import annotations
@@ -44,11 +57,17 @@ NUMBERS = {"latitude", "longitude", "elevation", "dipole_length_ex", "dipole_len
 
 
 class SortableItem(QTableWidgetItem):
-    """A cell that sorts on `key` (or on its text) and displays `text` verbatim.
+    """A table cell that sorts on `key`, or its text, and displays `text` as given.
 
-    Qt's own numeric sorting would need the number in the display role, which
-    rounds a latitude to six digits on screen; the key keeps the YAML value
-    shown as written. A number cell sorts on the number its text reads as.
+    Qt's numeric sorting needs the number in the display role, which rounds a
+    latitude to six digits on screen; a separate key keeps the YAML value
+    shown as written. A number cell sorts on the number its text parses to.
+
+    Args:
+        text (str): Display text.
+        key: Sort key; None sorts on the text.
+        editable (bool): Make the cell editable.
+        number (bool): Sort on the text parsed as a float.
     """
 
     def __init__(self, text: str, key=None, editable: bool = False, number: bool = False):
@@ -58,6 +77,7 @@ class SortableItem(QTableWidgetItem):
         self.setFlags(flags | Qt.ItemIsEditable if editable else flags)
 
     def sort_key(self):
+        """Return the value the cell sorts on."""
         if self.number:
             try:
                 return float(self.text())
@@ -66,6 +86,7 @@ class SortableItem(QTableWidgetItem):
         return self.text() if self.key is None else self.key
 
     def __lt__(self, other: "SortableItem") -> bool:
+        """Compare sort keys, falling back to their text for mixed types."""
         try:
             return self.sort_key() < other.sort_key()
         except TypeError:
@@ -73,11 +94,17 @@ class SortableItem(QTableWidgetItem):
 
 
 def _yes_no(flag: bool) -> SortableItem:
+    """Return a "yes"/"no" cell that sorts yes after no."""
     return SortableItem("yes" if flag else "no", 1 if flag else 0)
 
 
 class MetadataTab(QWidget):
-    """The survey's sites as a sortable, editable table; row selection sets `State.site`."""
+    """The survey's sites as a sortable, editable table; selecting a row sets `State.site`.
+
+    Args:
+        state: The shared `mtproc_gui.app.State`.
+        parent (QWidget | None): Qt parent.
+    """
 
     open_requested = Signal()
 
@@ -86,7 +113,7 @@ class MetadataTab(QWidget):
         self.state = state
         self._syncing = False
         self._shown: dict[tuple[str, str], str] = {}  # (site, column) -> the text loaded
-        # where "New survey..." writes <name>/survey.yaml (the smoke test points it at scratch)
+        # where "New survey..." writes <name>/survey.yaml; the smoke test points it at a scratch folder
         self.surveys_dir = state.repo_root / "surveys"
 
         self.path_edit = QLineEdit(self)
@@ -154,7 +181,7 @@ class MetadataTab(QWidget):
     # ------------------------------------------------------------ filling
 
     def reload(self) -> None:
-        """Rebuild the table from `State.survey`; any unsaved edit is dropped."""
+        """Rebuild the table from `State.survey`, discarding unsaved edits."""
         survey = self.state.survey
         self.table.setSortingEnabled(False)
         self.table.setRowCount(0)
@@ -219,21 +246,29 @@ class MetadataTab(QWidget):
             self.select_site(self.state.site)
 
     def _set_enabled(self, loaded: bool) -> None:
+        """Enable Import and Save when a survey is loaded."""
         self.import_button.setEnabled(loaded)
         self.save_button.setEnabled(loaded)
 
     def _status(self, text: str, colour: str | None = None) -> None:
+        """Show a status message, optionally coloured."""
         self.status_label.setStyleSheet(f"color: {colour}" if colour else "")
         self.status_label.setText(text)
 
     # ------------------------------------------------------------ editing
 
     def pending(self) -> dict[str, dict]:
-        """{site: {column: value}} for every editable cell that no longer reads as it was loaded.
+        """Collect the edited cells.
 
-        None means "drop the site's own key" (blank, a dash, the default's channels or electric-gain
-        number), so the survey's default applies again. Raises ValueError naming a cell whose number
-        does not parse, channels or electric-gain included.
+        Returns:
+            dict[str, dict]: {site: {column: value}} for every editable cell
+            whose value differs from the loaded one. A value of None drops
+            the site's key (a blank or "-" cell, or channels or electric gain
+            equal to the survey default), so the default applies again.
+
+        Raises:
+            ValueError: If a number cell, including electric gain, does not
+                parse; the message names the site and column.
         """
         edits: dict[str, dict] = {}
         for row in range(self.table.rowCount()):
@@ -250,16 +285,17 @@ class MetadataTab(QWidget):
                     edits.setdefault(site, {})[key] = value
             value = channels_column.edit(self.state.survey, self.table.item(row, COLUMNS.index("channels")),
                                          self._shown.get((site, "channels")), site)
-            if value is not channels_column.UNCHANGED:  # its own rule: a key only off the default's set
+            if value is not channels_column.UNCHANGED:  # a key is written only when it differs from the default
                 edits.setdefault(site, {})["channels"] = value
             gain = self.table.item(row, COLUMNS.index(metadata_edit.ELECTRIC_GAIN))
             value = metadata_edit.electric_gain_edit(self.state.survey, site, gain.text() if gain else None,
                                                       self._shown.get((site, metadata_edit.ELECTRIC_GAIN)))
-            if value is not channels_column.UNCHANGED:  # the same rule: a key only off the default's number
+            if value is not channels_column.UNCHANGED:  # likewise for the electric gain
                 edits.setdefault(site, {})[metadata_edit.ELECTRIC_GAIN] = value
         return edits
 
     def _show_pending(self) -> None:
+        """Show the number of unsaved changes, or the parse error."""
         try:
             n = sum(len(v) for v in self.pending().values())
         except ValueError as exc:
@@ -268,7 +304,11 @@ class MetadataTab(QWidget):
         self._status(f"{n} unsaved change(s) - press Save survey.yaml" if n else "")
 
     def save(self) -> bool:
-        """Write the changed cells into the sites block, then reopen the survey; False if nothing was written."""
+        """Write the changed cells into the `sites:` block, then reopen the survey.
+
+        Returns:
+            bool: True if the file was written.
+        """
         survey, path = self.state.survey, self.state.survey_yaml
         if survey is None:
             return False
@@ -288,7 +328,7 @@ class MetadataTab(QWidget):
             return False
         try:
             metadata_edit.rewrite_sites_block(path, edits)
-        except Exception as exc:  # a malformed file is reported, never half-written
+        except Exception as exc:  # a malformed file is reported and left unwritten
             QMessageBox.critical(self, "Could not save", f"{path}\n\n{exc}")
             return False
         site = self.state.site
@@ -299,15 +339,23 @@ class MetadataTab(QWidget):
         return True
 
     def _choose_site_table(self) -> None:
+        """Ask for a site table file and import it."""
         start = str(self.state.survey_yaml.parent) if self.state.survey_yaml else ""
         path, _ = QFileDialog.getOpenFileName(self, "Import site table", start, metadata_edit.TABLE_FILTER)
         if path:
             self.import_site_table(path)
 
     def import_site_table(self, path) -> tuple[int, int]:
-        """Merge a site table's columns into the table (only the columns it has, only matching sites).
+        """Merge a site table's columns into the table for the sites it matches.
 
-        Nothing is written (Save does); returns (sites matched, sites in the file).
+        Only the columns the file has are changed; the file is written by
+        Save.
+
+        Args:
+            path: CSV or XLSX site table.
+
+        Returns:
+            tuple[int, int]: (sites matched, sites in the file).
         """
         try:
             rows, ignored = read_site_table(path)
@@ -330,7 +378,7 @@ class MetadataTab(QWidget):
         return matched, len(rows)
 
     def new_survey(self) -> None:
-        """The New survey dialog, then scripts/new_survey.py on state.runner (metadata_edit.start_new_survey)."""
+        """Show the New survey dialog, then run scripts/new_survey.py through `metadata_edit.start_new_survey`."""
         dialog = metadata_edit.NewSurveyDialog(self.surveys_dir, self)
         accepted, values, out = dialog.exec(), dialog.values(), dialog.out_path()
         dialog.deleteLater()
@@ -340,6 +388,7 @@ class MetadataTab(QWidget):
     # ------------------------------------------------------------- slots
 
     def _selection_changed(self) -> None:
+        """Set `State.site` from the selected row."""
         if self._syncing:
             return
         rows = self.table.selectionModel().selectedRows()
@@ -350,7 +399,7 @@ class MetadataTab(QWidget):
             self.state.set_site(item.text())
 
     def select_site(self, name: str) -> None:
-        """Highlight `name` (called when another tab changes the selection)."""
+        """Select `name`'s row after another tab changes the site."""
         if not name:
             return
         self._syncing = True

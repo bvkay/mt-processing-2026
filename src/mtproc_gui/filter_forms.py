@@ -1,23 +1,39 @@
-"""One small form per declared filter kind, for the Filter Data tab.
+# -*- coding: utf-8 -*-
+"""
+Filter entry forms of the Filter Data tab
 
-One widget per kind in `mtproc.noise` (`replace` is `mtproc.ingest._replace_channels`
-at ingest): `load(opts)` shows one entry of `<survey>/filters.yaml` and
-`spec()` gives it back as the single-key dict the YAML wants. `LABELS` holds
-the students' names for the kinds; channels show as Bx, By, Ex, Ey and are
-written hx, hy, ex, ey -- or the site's own recorder's names (E1 .. Bz on a
-LEMI-424), which the tab passes in (`set_channels`). `replace` is LEMI-423's. The defaults are the code's: notch 50 Hz, 9
-harmonics, q 30, 2 passes (`mains_notch`); cp 12 s, 10 min windows, all four
-channels, ey as the reference; hp and lp order 4. The library has no default
-cutoff; the forms start at 0.001 Hz (1000 s) for a high-pass and 100 Hz for
-a low-pass. A `channels` list is written for notch, mains, hp and lp only
-when it leaves a channel out, so a list saved before the option existed reads
-back unchanged. The notch form also says how long it rings at a step of the
-mains amplitude (+-4.6 q / (pi f0) s per pass). mains starts at
-`mains_subtract`'s defaults (50 Hz, 9 harmonics, 1 s blocks, steps over 0.3
-of the level) and says the band it takes (+-1/block Hz). burst starts at
-`mtproc.noise`'s defaults (12 x MAD, 0.05 s, pad 0.1 s, taper 0.05 s, the electrics as reference, every channel) and writes
-its reference and channels always; flip starts with no channel ticked (it
-has no default) and writes the ticked ones.
+One form widget per filter kind in `mtproc.noise`, plus `replace`, which
+`mtproc.noise._replace_from_donors` applies inside `apply_filters_arrays` when
+`mtproc.ingest.build_variant` builds the site's filtered variant. `load(opts)`
+shows one entry of `<survey>/filters.yaml` and `spec()` returns it as the
+single-key dict the YAML holds. `LABELS` holds the display names of the kinds.
+Channels show as Bx, By, Ex, Ey and are written hx, hy, ex, ey, or in the site
+recorder's own names (E1 .. Bz on a LEMI-424), which the tab passes in through
+`set_channels`. `replace` takes the donor channel from another site's raw archive over the run's span.
+
+Defaults follow the library:
+
+* notch: 50 Hz, 9 harmonics, q 30, 2 passes (`mains_notch`). The form also
+  shows how long the notch rings at a step of the mains amplitude,
+  +-4.6 q / (pi f0) s per pass.
+* mains: `mains_subtract`'s defaults, 50 Hz, 9 harmonics, 1 s blocks, steps
+  over 0.3 of the level. The form shows the band it removes, +-1/block Hz.
+* hp and lp: order 4. The library has no default cutoff; the forms start at
+  0.001 Hz (1000 s) for a high-pass and 100 Hz for a low-pass.
+* cp: 12 s, 10 min windows, all four channels, ey as the reference.
+* burst: `mtproc.noise`'s defaults, 12 x MAD, 0.05 s, pad 0.1 s, taper
+  0.05 s, the electrics as reference and every channel filled. The
+  reference and channels are always written.
+* flip: no default; starts with no channel ticked and writes the ticked
+  ones.
+
+For notch, mains, hp and lp, a `channels` list is written only when it
+leaves a channel out, so an entry saved without the key reads back
+unchanged.
+
+@author: ben kay (ben@auscope.org.au)
+
+:license: MIT
 """
 
 from __future__ import annotations
@@ -32,7 +48,7 @@ from PySide6.QtWidgets import (
 from mtproc_gui import theme
 from mtproc_gui.channels import kind, roles
 
-CHANNELS = ("ex", "ey", "hx", "hy")  # until a site says otherwise; a written list: electrics first
+CHANNELS = ("ex", "ey", "hx", "hy")  # default until a site's channels are set; written electrics first
 MAGNETIC = ("hx", "hy")
 LABELS = {
     "notch": "50 Hz + harmonics",
@@ -47,21 +63,26 @@ LABELS = {
 
 
 def _spin(value: float, lo: float, hi: float, decimals: int, step: float) -> QDoubleSpinBox:
-    # a number box as wide as the pane reads badly
+    """Return a float spin box capped at 140 px wide."""
     return QDoubleSpinBox(decimals=decimals, minimum=lo, maximum=hi, singleStep=step, value=value,
                           maximumWidth=140)
 
 
 def _int_spin(value: int, lo: int, hi: int) -> QSpinBox:
+    """Return an integer spin box capped at 140 px wide."""
     return QSpinBox(minimum=lo, maximum=hi, value=value, maximumWidth=140)
 
 
 def _names(chans) -> str:
+    """Return channel labels in stack order, space separated."""
     return " ".join(theme.label(c) for c in theme.channel_order(chans))
 
 
 class ChannelBoxes(QWidget):
-    """One check box per channel (Bx By Ex Ey on a LEMI-423), all ticked by default; `changed` on any toggle."""
+    """One check box per channel (Bx By Ex Ey on a LEMI-423), all ticked by default.
+
+    Emits `changed` on any toggle.
+    """
 
     changed = Signal()
 
@@ -73,7 +94,11 @@ class ChannelBoxes(QWidget):
         self.set_channels(CHANNELS)
 
     def set_channels(self, names) -> None:
-        """The site's channels: boxes in the stack order, a written list electrics first (ex ey hx hy)."""
+        """Set the site's channels.
+
+        Boxes are shown in stack order; `get` returns electrics first
+        (ex ey hx hy). Rebuilds the boxes only when the set changes.
+        """
         names = tuple(sorted(n for n in names if kind(n) == "electric")) + tuple(
             sorted(n for n in names if kind(n) == "magnetic"))
         if names == self.names:
@@ -90,6 +115,7 @@ class ChannelBoxes(QWidget):
         self.row.addStretch(1)
 
     def set(self, chans) -> None:
+        """Tick the listed channels without emitting `changed`; None ticks all."""
         wanted = [str(c).lower() for c in (self.names if chans is None else chans)]
         for comp, box in self.boxes.items():
             box.blockSignals(True)
@@ -97,16 +123,23 @@ class ChannelBoxes(QWidget):
             box.blockSignals(False)
 
     def get(self) -> list[str]:
+        """Return the ticked channels, electrics first."""
         return [c for c in self.names if self.boxes[c].isChecked()]
 
 
 class _Form(QWidget):
-    """A title in the students' words, then a grid of (label or widget, widget) rows and a note."""
+    """Base form: a title, a grid of (label or widget, widget) rows and a note.
+
+    Subclasses set `kind` and implement `load(opts)`, which shows one
+    filters.yaml entry, and `spec()`, which returns it as `{kind: opts}`.
+    `changed` is emitted on any edit.
+    """
 
     kind = ""
     changed = Signal()
 
     def _grid(self, rows, note: str) -> QGridLayout:
+        """Lay out the title, the rows and the note label."""
         grid = QGridLayout(self)
         title = QLabel(f"<b>{LABELS[self.kind]}</b> ({self.kind})", self)
         grid.addWidget(title, 0, 0, 1, 2)
@@ -120,17 +153,18 @@ class _Form(QWidget):
         return grid
 
     def set_channels(self, names) -> None:
-        """The site's channels, for a form that has channel boxes."""
+        """Set the site's channels on a form that has channel boxes."""
         if hasattr(self, "channels"):
             self.channels.set_channels(names)
 
 
 class ReplaceForm(_Form):
-    """`- replace: {hx: A06}` -- borrow a magnetic channel from another site.
+    """Form for `- replace: {hx: A06}`, which takes a magnetic channel from another site.
 
-    The MATLAB app's "replace mag channel: Bx/By + donor". The donor's raw
-    files covering this run are read with the donor's own coil calibration and
-    the run is trimmed to the span the donor covers.
+    Replaces the site's Bx or By with the same channel of a donor site. When
+    the variant is built, the donor's channel is read from the donor's raw
+    archive over the run's span (`mtproc.ingest._donor_channel`), which
+    needs a donor run covering the whole run on the same sample grid.
     """
 
     kind = "replace"
@@ -153,7 +187,7 @@ class ReplaceForm(_Form):
                          "Applied first at ingest, wherever it sits in the list.")
 
     def set_donors(self, names) -> None:
-        """Every other site with a raw folder can donate a coil."""
+        """Fill the donor combos with the sites that have a raw folder, keeping the current choice."""
         for combo in self.donors.values():
             previous = combo.currentText()
             combo.blockSignals(True)
@@ -189,7 +223,7 @@ class ReplaceForm(_Form):
 
 
 class NotchForm(_Form):
-    """`- notch: {...}` -- zero-phase IIR comb at f0 and its harmonics."""
+    """Form for `- notch: {...}`, a zero-phase IIR comb at f0 and its harmonics."""
 
     kind = "notch"
 
@@ -203,7 +237,7 @@ class NotchForm(_Form):
         self.extra.setMaximumWidth(360)
         self.extra.setPlaceholderText("extra lines, comma-separated Hz (e.g. 75, 125)")
         self.channels = ChannelBoxes(self)
-        self.ringing = QLabel(self, wordWrap=True)  # read-only: the notch's ringing at a step of the mains
+        self.ringing = QLabel(self, wordWrap=True)  # the notch's ringing at a step of the mains
         self._grid([("mains (Hz)", self.f0), ("harmonics", self.harmonics), ("q", self.q),
                     ("passes", self.passes), ("", self.ringing), ("extra lines (Hz)", self.extra),
                     ("channels", self.channels)],
@@ -218,7 +252,7 @@ class NotchForm(_Form):
         self._ringing()
 
     def _ringing(self) -> None:
-        """A second-order notch's impulse response decays as exp(-pi f0 t / q); 4.6 time constants is 1 %."""
+        """Show the ringing time: a second-order notch decays as exp(-pi f0 t / q), and 4.6 time constants is 1 %."""
         seconds = 4.6 * self.q.value() / (math.pi * self.f0.value())
         self.ringing.setText(f"rings about +-{seconds:.2f} s per pass at a step in the mains amplitude")
 
@@ -261,7 +295,7 @@ class NotchForm(_Form):
 
 
 class MainsForm(_Form):
-    """`- mains: {...}` -- subtract a fitted model of the mains that steps where its amplitude steps."""
+    """Form for `- mains: {...}`, which subtracts a fitted mains model that restarts where the amplitude steps."""
 
     kind = "mains"
 
@@ -280,6 +314,7 @@ class MainsForm(_Form):
         self._explain()
 
     def _explain(self) -> None:
+        """Update the note with the band removed around each harmonic."""
         self.note.setText(
             "Subtracts the mains (f0 and its harmonics, fitted block by block on the tracked grid phase) "
             "instead of filtering it out. Where the mains amplitude steps by more than the step fraction "
@@ -311,7 +346,12 @@ class MainsForm(_Form):
 
 
 class ButterForm(_Form):
-    """`- hp: {...}` or `- lp: {...}` -- a zero-phase Butterworth high- or low-pass."""
+    """Form for `- hp: {...}` or `- lp: {...}`, a zero-phase Butterworth high- or low-pass.
+
+    Args:
+        kind (str): "hp" or "lp".
+        parent (QWidget | None): Qt parent.
+    """
 
     def __init__(self, kind: str, parent=None):
         super().__init__(parent)
@@ -327,6 +367,7 @@ class ButterForm(_Form):
         self._explain()
 
     def _explain(self) -> None:
+        """Update the note with the cutoff period and where the filter belongs in the list."""
         period = 1.0 / self.cutoff.value()
         if self.kind == "hp":
             self.note.setText(f"Removes every period longer than about {period:g} s from the archive, the MT "
@@ -355,7 +396,7 @@ class ButterForm(_Form):
 
 
 class CpForm(_Form):
-    """`- cp: {...}` -- stack the cycles of a periodic interferer and subtract."""
+    """Form for `- cp: {...}`, which stacks the cycles of a periodic interferer and subtracts them."""
 
     kind = "cp"
 
@@ -371,8 +412,8 @@ class CpForm(_Form):
         self._grid([("period (s)", self.period_s), ("window (minutes)", self.window_minutes),
                     ("channels", self.channels), ("", self.refine), ("reference", self.reference)],
                    "Refinement is only needed when the declared period is not known to ~0.1 ms "
-                   "(Burra's interrupter: 12.0000 s). A drift leaks into the median cycle: "
-                   "high-pass first.")
+                   "(a crystal-locked interrupter holds e.g. 12.0000 s). A drift leaks into the "
+                   "median cycle: high-pass first.")
         self.channels.changed.connect(self.changed)
         self.refine.toggled.connect(lambda _on: self.changed.emit())
         self.reference.currentIndexChanged.connect(lambda _i: self.changed.emit())
@@ -380,7 +421,7 @@ class CpForm(_Form):
             widget.valueChanged.connect(lambda _v: self.changed.emit())
 
     def _fill_reference(self) -> None:
-        """The reference combo: the site's channels, the one playing Ey (`channels.roles`) by default."""
+        """Fill the reference combo with the site's channels; the channel playing Ey (`channels.roles`) is the default."""
         self.reference.blockSignals(True)
         self.reference.clear()
         for comp in theme.channel_order(self.channels.names):
@@ -389,6 +430,7 @@ class CpForm(_Form):
         self.reference.blockSignals(False)
 
     def set_channels(self, names) -> None:
+        """Set the site's channels and refill the reference combo when they change."""
         before = self.channels.names
         super().set_channels(names)
         if self.channels.names != before:
@@ -425,7 +467,7 @@ class CpForm(_Form):
 
 
 class BurstForm(_Form):
-    """`- burst: {...}` -- find short transients on the reference channels and set them to the local level."""
+    """Form for `- burst: {...}`, which finds short transients on the reference channels and sets them to the local level."""
 
     kind = "burst"
 
@@ -443,7 +485,7 @@ class BurstForm(_Form):
                     ("detect on", self.reference), ("set to the local level", self.channels)],
                    "A burst is where a 'detect on' channel's 50 ms mean of |x - its 1 s level| stands this "
                    "many times above its running 60 s MAD, for longer than the shortest burst (a lone "
-                   "spike or sferic never counts). Put it after the 50 Hz notch: on C23 the bursts are the "
+                   "spike or sferic never counts). Put it after the 50 Hz notch: the bursts include the "
                    "notch ringing at steps of the mains amplitude.")
         for widget in (self.threshold, self.min_len_s, self.pad_s, self.taper_s):
             widget.valueChanged.connect(lambda _v: self.changed.emit())
@@ -451,12 +493,13 @@ class BurstForm(_Form):
         self.channels.changed.connect(self.changed)
 
     def _electrics(self) -> list[str]:
-        """Tick the site's electric channels as the reference (the default); returns them."""
+        """Tick the site's electric channels as the reference, the default, and return them."""
         electrics = [c for c in self.reference.names if kind(c) == "electric"]
         self.reference.set(electrics)
         return electrics
 
     def set_channels(self, names) -> None:
+        """Set the site's channels on both box rows; reset the reference to the electrics when they change."""
         before = self.reference.names
         super().set_channels(names)
         self.reference.set_channels(names)
@@ -490,7 +533,7 @@ class BurstForm(_Form):
 
 
 class FlipForm(_Form):
-    """`- flip: {channels: [ey]}` -- a channel wired with reversed polarity, times -1."""
+    """Form for `- flip: {channels: [ey]}`, which multiplies a channel wired with reversed polarity by -1."""
 
     kind = "flip"
 
@@ -505,6 +548,7 @@ class FlipForm(_Form):
         self.channels.changed.connect(self.changed)
 
     def set_channels(self, names) -> None:
+        """Set the site's channels, unticked."""
         before = self.channels.names
         super().set_channels(names)
         if self.channels.names != before:
@@ -518,14 +562,28 @@ class FlipForm(_Form):
 
 
 def make_forms(parent) -> dict:
-    """{kind: form} for every kind, in the Add menu's order."""
+    """Build one form per filter kind.
+
+    Args:
+        parent (QWidget): Parent of the forms.
+
+    Returns:
+        dict: Kind to form, in the Add menu's order.
+    """
     forms = (NotchForm(parent), MainsForm(parent), ButterForm("hp", parent), ButterForm("lp", parent),
              CpForm(parent), BurstForm(parent), FlipForm(parent), ReplaceForm(parent))
     return {form.kind: form for form in forms}
 
 
 def summarise(entry: dict) -> str:
-    """One line for the list widget, in the students' words, e.g. `50 Hz + harmonics: 50 Hz x9, ...`."""
+    """Summarise a filters.yaml entry in one line for the list widget.
+
+    Args:
+        entry (dict): A single-key `{kind: opts}` entry.
+
+    Returns:
+        str: E.g. `50 Hz + harmonics: 50 Hz x9, q 30, 2 passes`.
+    """
     kind, opts = next(iter(entry.items()))
     opts = opts or {}
     scoped = f" on {_names(opts['channels'])}" if opts.get("channels") and kind != "cp" else ""

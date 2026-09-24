@@ -1,19 +1,28 @@
-"""The Metadata tab's "channels" column: the cell, its combo-box editor, the save rule.
+# -*- coding: utf-8 -*-
+"""
+Channels column of the Metadata tab
 
-Which of the recorder's columns had a sensor attached is a per-survey
-logistics decision (`mtproc.survey.CHANNEL_PRESETS`): the survey declares it
-once in `defaults: channels:` and a site that differs -- a dedicated remote
-with magnetics only, a deployment that carried a Bz coil -- has its own
-`channels:`. The cell shows the site's effective set as its preset's label
-(`mtproc.survey.preset_label`, e.g. "Ex Ey Bx By"), or the list itself when
-it is no preset. Double-click or F2 opens a combo of the site's instrument's
-presets (`Survey.instrument_of`) plus "custom...", which asks for a list (`ask_channels`). Save
-writes the site's `channels:` only when the set differs from the survey
-default, and drops the key when it is the default's again (`edit`); the tab's
-rule that only changed cells are written holds as for every other column.
+Holds the cell, its combo-box editor and the rule for saving it. The set of
+recorder columns that carried a sensor is declared per survey
+(`mtproc.survey.CHANNEL_PRESETS`) once in `defaults: channels:`; a site that
+differs, such as a dedicated remote with magnetics only or a deployment with
+a Bz coil, has its own `channels:` key.
+
+The cell shows the site's effective set as its preset label
+(`mtproc.survey.preset_label`, e.g. "Ex Ey Bx By"), or the list itself when it
+matches no preset. Double-click or F2 opens a combo of the presets of the
+site's instrument (`Survey.instrument_of`) plus "custom...", which asks for a
+list (`ask_channels`). On save, `edit` writes the site's `channels:` when the
+set differs from the survey default and drops the key when it matches the
+default again; as for every other column, only changed cells are written.
+
 Ingest applies the set, so on a site whose archive exists the cell is greyed
-with `ARCHIVE_TIP` as its tooltip: the archive keeps the set it was built
-with until it is deleted and built again. Nothing here computes anything.
+with `ARCHIVE_TIP` as its tooltip. The archive keeps the set it was built
+with until it is deleted and built again.
+
+@author: ben kay (ben@auscope.org.au)
+
+:license: MIT
 """
 
 from __future__ import annotations
@@ -31,7 +40,17 @@ UNCHANGED = object()  # `edit`'s answer for a cell whose set is the one loaded
 
 
 def cell(item_class, channels: list[str] | None, instrument: str, archived: bool):
-    """The site's cell: `item_class(label, editable=True)`, greyed with ARCHIVE_TIP when `archived`."""
+    """Build the site's channels cell.
+
+    Args:
+        item_class: Table item class, called as `item_class(label, editable=True)`.
+        channels (list[str] | None): The site's effective channel set.
+        instrument (str): The site's instrument key.
+        archived (bool): Grey the cell and set `ARCHIVE_TIP` as its tooltip.
+
+    Returns:
+        The table item.
+    """
     item = item_class(preset_label(channels, instrument), editable=True)
     if archived:
         item.setForeground(QColor(DISABLED))
@@ -40,18 +59,25 @@ def cell(item_class, channels: list[str] | None, instrument: str, archived: bool
 
 
 def _same(a: list[str] | None, b: list[str] | None) -> bool:
-    """The same set of channels (order and case ignored; None, "every column", only equals None)."""
+    """True if two channel sets are equal, ignoring order and case; None ("every column") equals only None."""
     if a is None or b is None:
         return a is b
     return sorted(str(c).lower() for c in a) == sorted(str(c).lower() for c in b)
 
 
 def edit(survey, item, shown: str | None, site: str | None = None):
-    """A channels cell -> the site's `channels:` to write: a list, None to drop the key, or UNCHANGED.
+    """Work out the site's `channels:` value to write from an edited cell.
 
-    UNCHANGED when the cell's set is the one loaded (`shown`); None when the
-    new set is the survey default's, so the site's own key goes and the
-    default applies again; otherwise the list.
+    Args:
+        survey: The open `mtproc.survey.Survey`.
+        item: The channels cell, or None.
+        shown (str | None): The cell text as loaded.
+        site (str | None): Site name, used to look up its instrument.
+
+    Returns:
+        `UNCHANGED` when the cell's set is the one loaded; None when the new
+        set equals the survey default, so the site's key is dropped;
+        otherwise the list of channel names.
     """
     if item is None or shown is None or item.text() == shown:
         return UNCHANGED
@@ -63,7 +89,7 @@ def edit(survey, item, shown: str | None, site: str | None = None):
 
 
 def ask_channels(parent, current: str) -> str | None:
-    """The "custom..." prompt: the typed list, or None when cancelled or blank."""
+    """Prompt for a custom channel list; return the typed text, or None when cancelled or blank."""
     text, ok = QInputDialog.getText(
         parent, "Channels recorded",
         "Channels with a sensor, comma separated, as the reader names them (e.g. ex, ey, hx, hy, hz):",
@@ -72,10 +98,14 @@ def ask_channels(parent, current: str) -> str | None:
 
 
 class ChannelsDelegate(QStyledItemDelegate):
-    """The channels column's editor: the row's instrument's presets plus "custom...".
+    """Editor of the channels column: the presets of the row's instrument plus "custom...".
 
-    A choice commits at once. "custom..." asks for a list; a list that is a
-    preset's set comes back as that preset's label, any other as "a, b, c".
+    A choice commits at once. "custom..." asks for a list; a list matching a
+    preset comes back as that preset's label, any other as "a, b, c".
+
+    Args:
+        state: The shared `mtproc_gui.app.State`.
+        parent (QObject | None): Qt parent.
     """
 
     def __init__(self, state, parent=None):
@@ -83,7 +113,7 @@ class ChannelsDelegate(QStyledItemDelegate):
         self.state = state
 
     def _instrument(self, index) -> str:
-        """The instrument of the row's site (column 0), else the survey's."""
+        """Return the instrument of the row's site (column 0), else the survey's."""
         survey = self.state.survey
         if survey is None:
             return "lemi423"
@@ -112,7 +142,7 @@ class ChannelsDelegate(QStyledItemDelegate):
         if combo.currentText() == CUSTOM:
             loaded, instrument = combo.property("loaded"), combo.property("instrument")
             channels = channels_from_label(loaded, instrument)
-            # the prompt is the combo's child, so the editor keeps its focus while it is open
+            # the prompt is the combo's child, so the editor keeps focus while it is open
             typed = ask_channels(combo, ", ".join(channels or []))
             names = channels_from_label(typed, instrument) if typed else None
             label = preset_label(names, instrument) if names else loaded  # cancelled or no name: as loaded

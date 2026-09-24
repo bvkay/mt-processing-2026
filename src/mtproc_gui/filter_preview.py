@@ -1,24 +1,31 @@
-"""The Filter Data tab's preview engine: the loaded window through the filter list, off the GUI thread.
+# -*- coding: utf-8 -*-
+"""
+Filter preview engine of the Filter Data tab
 
-The list being edited is applied to the window loaded on the Time Series
-tab (or the tab's own chooser) and drawn over the raw, every time the list
-or a form value changes, so the cleaned time series and the filtered PSD
-are visible, not just the raw ones.
+Applies the filter list being edited to the window loaded on the Time Series
+tab (or the Filter Data tab's own chooser) off the GUI thread, each time the
+list or a form value changes. The result is drawn over the raw data so the
+cleaned time series and the filtered PSD can be compared with the raw ones.
 
-- `compute_preview` (no Qt) copies nothing it does not have to: the window's
-  arrays go through `mtproc.noise.apply_filters_arrays` -- the function ingest
-  delegates to, so the preview is the archive's filter, not a lookalike --
-  on four threads, and `mtproc.timefreq.psd_ladder` runs on the raw and on the
-  filtered arrays (a copy per channel, one thread each), as the Spectra tab's
-  ladder does. The raw ladder is computed once per window and reused.
-- `FilterPreview` (on the tab) runs it in one `PreviewWorker` at a time; the
-  latest request wins and a result that is no longer the latest is dropped,
-  as `segment_store` does. A `replace` donor with an archive has its window
-  over the same span read first (`mtproc_gui.segment.load_segment`) under
-  `State.archive_lock`; a donor without one is a provenance line.
+* `compute_preview` has no Qt dependency and copies only what it must. The
+  window's arrays go through `mtproc.noise.apply_filters_arrays`, the same
+  function ingest calls, on four threads. `mtproc.timefreq.psd_ladder` then
+  runs on the raw and the filtered arrays, one float32 copy and one thread
+  per channel, as on the Spectra tab. The raw ladder is computed once per
+  window and reused.
+* `FilterPreview` runs one `PreviewWorker` at a time. The latest request
+  wins and a result that is no longer the latest is dropped, as in
+  `segment_store`. For a `replace` filter whose donor has an archive, the
+  donor's window over the same span is read first
+  (`mtproc_gui.segment.load_segment`) under `State.archive_lock`; a donor
+  without an archive is reported as a provenance line.
 
-The views that draw a `PreviewResult` are `mtproc_gui.filter_views`. What is
-computed is drawn and thrown away; nothing here writes a file.
+`mtproc_gui.filter_views` draws a `PreviewResult`. Results are held in memory
+for display and not written to disk.
+
+@author: ben kay (ben@auscope.org.au)
+
+:license: MIT
 """
 
 from __future__ import annotations
@@ -41,9 +48,19 @@ WORKERS = 4  # threads for the filters (scipy releases the GIL) and the ladders
 
 @dataclass
 class PreviewResult:
-    """One preview: the raw window, what the list made of it, and both PSD ladders."""
+    """One preview: the raw window, the filtered arrays and both PSD ladders.
 
-    segment: object  # the loaded `Segment`, never modified
+    Attributes:
+        segment: The loaded `Segment`, unmodified.
+        filters (list): The filter entries applied.
+        filtered (dict | None): float32 array per channel; None with no filters.
+        raw_stages (list): PSD ladder of the raw window.
+        filtered_stages (list | None): PSD ladder of the filtered window.
+        provenance (list[str]): Provenance lines from the filters and donors.
+        elapsed_s (float): Compute time in seconds.
+    """
+
+    segment: object  # the loaded `Segment`, left unmodified
     filters: list
     filtered: dict | None  # float32 per channel; None with no filters
     raw_stages: list
@@ -53,7 +70,17 @@ class PreviewResult:
 
 
 def ladder(arrays: dict, segment) -> list:
-    """`psd_ladder` of each channel on its own float32 copy, one thread each, merged stage by stage."""
+    """Compute the PSD ladder of every channel and merge it stage by stage.
+
+    Each channel runs `psd_ladder` on its own float32 copy in its own thread.
+
+    Args:
+        arrays (dict): Channel name to samples.
+        segment: The `Segment` giving the gaps and sample rate.
+
+    Returns:
+        list: (sample rate, frequencies, {channel: PSD}) per ladder stage.
+    """
     comps = theme.channel_order(arrays)
 
     def one(comp):
@@ -72,7 +99,19 @@ def ladder(arrays: dict, segment) -> list:
 
 
 def compute_preview(segment, filters, donors=None, raw_stages=None, notes=()) -> PreviewResult:
-    """The window through `filters` (`apply_filters_arrays`) and both ladders; `segment` is not modified."""
+    """Filter a window and compute the raw and filtered PSD ladders.
+
+    Args:
+        segment: The loaded `Segment`; left unmodified.
+        filters (list): filters.yaml entries, applied with `apply_filters_arrays`.
+        donors (dict | None): Donor site to channel arrays for `replace`.
+        raw_stages (list | None): Raw ladder from an earlier call on the same
+            window; computed when None.
+        notes: Extra provenance lines placed first.
+
+    Returns:
+        PreviewResult: The preview.
+    """
     t0 = time.time()
     if raw_stages is None:
         raw_stages = ladder(segment.arrays, segment)
@@ -87,7 +126,11 @@ def compute_preview(segment, filters, donors=None, raw_stages=None, notes=()) ->
 
 
 class PreviewWorker(QThread):
-    """Read any replace donor's window (signal `loaded`), then `compute_preview`."""
+    """Worker thread that reads replace donors' windows, then runs `compute_preview`.
+
+    Emits `loaded` once the donor archives are closed, then `result` or
+    `failed` with the request's serial number.
+    """
 
     loaded = Signal()  # the donors' archives are closed again
     result = Signal(int, object)  # (serial, PreviewResult)
@@ -99,6 +142,7 @@ class PreviewWorker(QThread):
         self.reads, self.raw_stages, self.survey = reads, raw_stages, survey_name
 
     def run(self) -> None:
+        """Read donors on the window's sample grid, then compute the preview."""
         seg = self.segment
         try:
             donors, notes = {}, []
@@ -122,7 +166,12 @@ class PreviewWorker(QThread):
 
 
 class FilterPreview(QObject):
-    """One preview worker at a time; the latest request wins."""
+    """Runs one preview worker at a time; the latest request wins.
+
+    Args:
+        state: The shared `mtproc_gui.app.State`.
+        parent (QObject | None): Qt parent.
+    """
 
     started = Signal(str)  # "previewing... (notch, cp)"
     ready = Signal(object)  # PreviewResult
@@ -140,19 +189,22 @@ class FilterPreview(QObject):
 
     @property
     def busy(self) -> bool:
+        """True while a worker runs or a request waits."""
         return self._thread is not None or self._pending is not None
 
     def request(self, segment, filters) -> None:
+        """Queue a preview of `segment` through a copy of `filters`, replacing any pending request."""
         self._serial += 1
         self._pending = (self._serial, segment, copy.deepcopy(list(filters)))
         self._kick()
 
     def clear(self) -> None:
-        """Forget the result; a worker in flight is dropped on return."""
+        """Forget the result; the result of a worker in flight is dropped on return."""
         self._serial += 1
         self._pending = self.result = None
 
     def _kick(self) -> None:
+        """Start the pending request if no worker runs and the archive lock allows the donor reads."""
         if self._thread is not None or self._pending is None or self.state.survey is None:
             return
         serial, segment, filters = self._pending
@@ -160,7 +212,7 @@ class FilterPreview(QObject):
         reads = [(s, self.state.archive_path(s)) for s in donors if self.state.has_archive(s)]
         lock = self.state.archive_lock
         if reads and lock.busy and lock.holder is not self:
-            return  # `changed` brings us back here
+            return  # `changed` calls this again
         self._pending = None
         raw = self._raw[1] if self._raw is not None and self._raw[0] is segment else None
         thread = PreviewWorker(serial, segment, filters, reads, raw, self.state.survey.name, self)
@@ -175,6 +227,7 @@ class FilterPreview(QObject):
         self.started.emit(f"previewing... ({', '.join(next(iter(f)) for f in filters) or 'no filters'})")
 
     def _finish(self, serial: int) -> bool:
+        """Release the worker and the lock, start any pending request; True if `serial` is the latest."""
         self._thread = None
         self.state.archive_lock.release(self)
         self._kick()
@@ -191,7 +244,7 @@ class FilterPreview(QObject):
             self.failed.emit(message)
 
     def wait(self) -> None:
-        """Block until the worker in flight returns and start no other (the window is closing)."""
+        """Block until the worker in flight returns, dropping any pending request; used on window close."""
         self._pending = None
         if self._thread is not None:
             self._thread.wait()

@@ -1,14 +1,24 @@
-"""Unit test for scripts/campaign.py: plan, overlap rule, stacks, resume, dry-run counts, runner, filter check.
+# -*- coding: utf-8 -*-
+"""
+Unit test for scripts/campaign.py
 
+Checks the plan parser, the overlap rule, the stacks, resume, the dry-run
+counts, the runner, the filter check, product parsing and the masks
+signature. Everything runs on a synthetic survey in a temporary workspace,
+without an archive or aurora: five sites on a line with designed record
+spans, A 0-48 h, B 2-50 h, C 4-46 h (group G1) and D 40-90 h, E 44-94 h
+(group G2), so A/B/C overlap each other by 42-46 h and D/E by 46 h while no
+G1-G2 pair reaches 12 h or half of either record. The "raw archives" are
+empty files, of which the campaign reads the mtimes. The runner test starts
+real child processes (python one-liners that copy a synthetic EDI and print
+`wrote <path>`).
+
+Usage:
     python tests/campaign_unit.py
 
-Everything runs on a synthetic survey in a temporary workspace (no archive,
-no aurora): five sites on a line with designed record spans, A 0-48 h,
-B 2-50 h, C 4-46 h (group G1) and D 40-90 h, E 44-94 h (group G2), so
-A/B/C overlap each other by 42-46 h and D/E by 46 h while no G1-G2 pair
-reaches 12 h or half of either record. The "raw archives" are empty files
-(only their mtimes are read). The runner test starts real child processes
-(python one-liners that copy a synthetic EDI and print `wrote <path>`).
+@author: ben kay (ben@auscope.org.au)
+
+:license: MIT
 
 **This test fails if**
 
@@ -104,11 +114,22 @@ SPANS_H = {"A": (0, 48), "B": (2, 50), "C": (4, 46), "D": (40, 90), "E": (44, 94
 
 
 def iso(h: float) -> str:
+    """Return T0 plus h hours as an ISO UTC string."""
     return (T0 + pd.Timedelta(hours=h)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def make_survey(root: Path, spans=SPANS_H, filters=None) -> Path:
-    """A survey.yaml (+ filters.yaml) with sites on a line 5 km apart and empty raw archives."""
+    """Write a survey.yaml (+ filters.yaml) with sites on a line 5 km apart and empty raw archives.
+
+    Args:
+        root (Path): Survey folder.
+        spans (dict): Site to (start, end) hours after T0.
+        filters (dict | None): filters.yaml content; a 50 Hz notch per site
+            when None.
+
+    Returns:
+        Path: The survey.yaml.
+    """
     sites = {}
     for k, (s, (a, b)) in enumerate(spans.items()):
         sites[s] = {"latitude": 31.0 + 0.045 * k, "longitude": -5.5, "start": iso(a), "end": iso(b)}
@@ -127,6 +148,7 @@ def make_survey(root: Path, spans=SPANS_H, filters=None) -> Path:
 
 
 def make_plan(root: Path, groups=None, configs=None, runner=None, sites=None) -> Path:
+    """Write a synthetic campaign plan; the keyword arguments override its groups, configs, runner and sites."""
     groups = groups or {"G1": ["A", "B", "C"], "G2": ["D", "E"]}
     plan = {"name": "syn", "sites": sites or [s for g in groups.values() for s in g],
             "exclude": {"Z": "a copy of A"}, "groups": groups,
@@ -142,6 +164,7 @@ def make_plan(root: Path, groups=None, configs=None, runner=None, sites=None) ->
 
 
 def synthetic_edi(path: Path) -> Path:
+    """Write a smooth synthetic EDI (100 ohm m, 45 deg) to `path`."""
     p = np.logspace(-2, 3, 31)
     z = np.zeros((p.size, 2, 2), dtype=complex)
     amp = np.sqrt(100.0 / (0.2 * p))
@@ -157,6 +180,7 @@ def synthetic_edi(path: Path) -> Path:
 
 
 def quiet(fn, *a, **k):
+    """Call fn with stdout captured; return (its result, the captured text)."""
     buf = io.StringIO()
     with contextlib.redirect_stdout(buf):
         out = fn(*a, **k)
@@ -250,6 +274,11 @@ def test_dry_run_counts() -> None:
 
 def _fake_job(c, run_id: str, local: str, remote: str, edi_src: Path, seconds: float, trace: Path,
               fail: bool = False, deps=()) -> cp.Job:
+    """Build an rr job whose child sleeps, copies an EDI into <workspace>/tf and prints `wrote <path>`.
+
+    The child appends its start and end times to `trace`, and with `fail`
+    exits with an error before copying.
+    """
     tag = c.plan.tag("default")
     dest = c.survey.workspace / "tf" / f"{local}_rr-{remote}_20260923-2300_{tag}.edi"
     code = (
@@ -269,6 +298,7 @@ def _fake_job(c, run_id: str, local: str, remote: str, edi_src: Path, seconds: f
 
 
 def _max_concurrency(trace: Path) -> int:
+    """Return the largest number of fake jobs running at once, from their trace file."""
     events = []
     for line in trace.read_text().splitlines():
         kind, t = line.split()
@@ -365,6 +395,7 @@ def test_runner_and_resume() -> None:
 
 
 def _comment(specs, comps=("ex", "ey", "hx", "hy"), fs=1000.0) -> str:
+    """Build a run comment as ingest does, from apply_filters_arrays' own provenance lines."""
     rng = np.random.default_rng(0)
     arrays = {c: rng.normal(0.0, 1.0, int(4 * fs)) for c in comps}
     _, lines = apply_filters_arrays(arrays, fs, specs, tag="unit")
@@ -402,7 +433,7 @@ def test_filter_check() -> None:
 
 def test_parse_products() -> None:
     esc = "\x1b"
-    log = "\n".join([  # verbatim shape of scripts/process_rr.py's log (loguru colours it)
+    log = "\n".join([  # the exact shape of scripts/process_rr.py's log (loguru colours it)
         "stem: C18_rr-C19_20260923-2300_lineC-default",
         f"{esc}[1m2026-09-23T22:56:54.847749+0800 | INFO | mtproc.process | process_station | line: 255 | "
         f"wrote D:\\W\\tf\\C18_rr-C19_x.edi{esc}[0m",
@@ -438,6 +469,7 @@ def test_inputs_masks_both_sites() -> None:
     assert "--no-masks" not in job.cmd, job.cmd
 
     def mask(h0: float) -> dict:
+        """Build a 30 min all-band mask from h0 hours after T0."""
         return {"start": iso(h0), "end": iso(h0 + 0.5), "bands": "all", "reason": "test", "found_by": "time"}
 
     (root / "masks.yaml").write_text(yaml.safe_dump({"B": [mask(10)]}), encoding="utf-8")
@@ -457,6 +489,7 @@ def test_inputs_masks_both_sites() -> None:
 
 
 def main() -> int:
+    """Run every test; return 1 when any failed."""
     print(__doc__.split("**This test fails if**")[1].strip())
     print()
     tests = [test_plan_parser, test_overlap_rule, test_stacks, test_dry_run_counts, test_runner_and_resume,

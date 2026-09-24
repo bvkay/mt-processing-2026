@@ -1,18 +1,24 @@
-""""Copy to sites..." dialog for the Filter Data tab: one site's filter list onto others.
+# -*- coding: utf-8 -*-
+"""
+Copy-filters dialog of the Filter Data tab
 
-A survey can have 100+ sites where most want the same notch declaration
-(50 Hz + harmonics plus the same interharmonic extra lines); typing it per
-site invites typos. The student still chooses the target sites -- nothing
-is applied automatically.
+Copies one site's filter list onto other sites. A survey can have more than
+100 sites, most of which share the same notch declaration (50 Hz and
+harmonics plus the same interharmonic lines); the user ticks the target
+sites in the dialog.
 
-`CopyFiltersDialog` shows the source site's list (a title line, no
-explanatory paragraph) over a checkable list of every other site in the
-survey, each row a check box
-(the site's name) beside a grey label of what that site declares today
-("none", or `short_labels()` of its list, e.g. "notch, cp"), "Select all" /
-"Clear", a Replace/Append radio pair and OK/Cancel. `selected_sites()` and
-`append()` read the choice back; the Filter Data tab does the writing
-(`mtproc_gui.tabs.filters._write_filters`) and the logging.
+`CopyFiltersDialog` shows a title line naming the source site's list above a
+checkable list of every other site in the survey. Each row is a check box
+with the site's name beside a grey label of what that site declares now
+("none", or `short_labels()` of its list, e.g. "notch, cp"). Below are
+"Select all" and "Clear" buttons, a Replace/Append radio pair and OK/Cancel.
+`selected_sites()` and `append()` read the choice back; the Filter Data tab
+writes the files (`mtproc_gui.tabs.filters._write_filters`) and logs the
+change.
+
+@author: ben kay (ben@auscope.org.au)
+
+:license: MIT
 """
 
 from __future__ import annotations
@@ -27,13 +33,21 @@ from mtproc_gui import theme
 
 
 def short_labels(entries: list[dict] | None) -> str:
-    """"notch, cp" -- the kinds of an entries list, in declared order; "none" if empty."""
+    """Return the kinds of a filter list in declared order, e.g. "notch, cp", or "none" if empty."""
     kinds = [next(iter(entry)) for entry in entries or []]
     return ", ".join(kinds) if kinds else "none"
 
 
 class CopyFiltersDialog(QDialog):
-    """Tick sites to copy `site`'s filter list onto; Replace (default) or Append; OK/Cancel."""
+    """Dialog for ticking the sites that receive `site`'s filter list.
+
+    Args:
+        site (str): The source site.
+        entries (list[dict]): The source site's filter entries.
+        others (dict[str, list[dict]]): Every other site and its current
+            filter entries.
+        parent (QWidget | None): Qt parent.
+    """
 
     def __init__(self, site: str, entries: list[dict], others: dict[str, list[dict]], parent=None):
         super().__init__(parent)
@@ -89,16 +103,19 @@ class CopyFiltersDialog(QDialog):
         layout.addWidget(buttons)
 
     def _select_all(self) -> None:
+        """Tick every site."""
         for box in self.boxes.values():
             box.setChecked(True)
 
     def _clear(self) -> None:
+        """Untick every site."""
         for box in self.boxes.values():
             box.setChecked(False)
 
     def selected_sites(self) -> list[str]:
-        """The ticked sites, in the list's (alphabetical) order."""
+        """Return the ticked sites in alphabetical order."""
         return [name for name, box in self.boxes.items() if box.isChecked()]
 
     def append(self) -> bool:
+        """True if Append is chosen; False for Replace (the default)."""
         return self.append_radio.isChecked()

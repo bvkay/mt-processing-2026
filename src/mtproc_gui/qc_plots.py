@@ -1,33 +1,39 @@
-"""pyqtgraph helpers for the three QC tabs, and the ladder controls two of them share.
+# -*- coding: utf-8 -*-
+"""
+Plot helpers for the QC tabs
 
-Drawing only -- the numbers are a `mtproc_gui.segment.SegmentQC`, computed by
-`mtproc.timefreq` in the store's worker; the colours are `mtproc_gui.theme`'s:
+pyqtgraph helpers for the Spectra, Spectrogram and Coherence tabs, and the
+ladder controls shared by the last two. The values drawn come from a
+`mtproc_gui.segment.SegmentQC`, computed by `mtproc.timefreq` in the segment
+store's worker; colours come from `mtproc_gui.theme`.
 
-- `draw_psd`       PSD ladders on one log-log plot, each stage over the
-                   decade its resolution suits, as `scripts/psd_qc.py` draws
-                   figure 05 (2-500 Hz from the 1000 Hz stage, 0.2-2 Hz from
-                   the 100 Hz stage, and so on: `stage_bands`), the remote's
-                   coil in grey underneath (a "before" ladder dashed light
-                   grey under it all), the view locked to what was drawn
-                   (y: below the anti-alias roll-off, `Y_EXTENT_HZ`) and
-                   faint dashed lines at the Schumann resonances and at
-                   50 Hz and its harmonics (`mark_frequencies`).
-- `PeriodImage`    one plot holding a period-against-time image (a
-                   spectrogram in dB) as a `PColorMeshItem` whose rows sit at
-                   the true log-period bin edges -- the levels' bins are not
-                   evenly spaced in log period -- with a colour bar the
-                   student can drag to change the levels.
-- `draw_bands`     the band lines of one pair against time, coherence 0-1,
-                   plus the "All frequencies" curve: their mean, for display.
-- `lock_view`      the view starts at an extent with no padding and can never
-                   be panned or zoomed out past it (the Time Series rule).
-- `LadderControls` the base window and step (`SegmentStore.win_s`,
-                   `step_s`) as two spinboxes and a Recompute button; the
-                   Spectrogram and Coherence tabs each show one and they
-                   follow each other through `ladder_changed`.
+* `draw_psd`: PSD ladders on one log-log plot, each stage over the decade
+  its resolution suits, as `scripts/psd_qc.py` draws figure 05 (2-500 Hz from
+  the 1000 Hz stage, 0.2-2 Hz from the 100 Hz stage, and so on;
+  `stage_bands`). A remote coil is drawn grey underneath and an optional
+  "before" ladder dashed light grey beneath everything. The view is locked
+  to what was drawn, with the y extent taken below the anti-alias roll-off
+  (`Y_EXTENT_HZ`), and faint dashed lines mark the Schumann resonances and
+  50 Hz and its harmonics (`mark_frequencies`).
+* `PeriodImage`: one plot holding a period-against-time image (a spectrogram
+  in dB) as a `PColorMeshItem` whose rows sit at the true log-period bin
+  edges, since the ladder's bins are not evenly spaced in log period. The
+  colour bar can be dragged to change the levels.
+* `draw_bands`: the band lines of one pair against time, coherence 0-1, plus
+  the "All frequencies" curve, their mean.
+* `lock_view`: sets the view to an extent with no padding and prevents
+  panning or zooming out past it, as on the Time Series tab.
+* `LadderControls`: the base window and step (`SegmentStore.win_s`,
+  `step_s`) as two spin boxes and a Recompute button. The Spectrogram and
+  Coherence tabs each show one; they stay in step through
+  `ladder_changed`.
 
-Time is minutes since the window's start on the Spectrogram and Coherence
-tabs (a QC window is 1-3 h); the Time Series tab keeps seconds.
+Time on the Spectrogram and Coherence tabs is in minutes since the window's
+start (a QC window is 1-3 h); the Time Series tab uses seconds.
+
+@author: ben kay (ben@auscope.org.au)
+
+:license: MIT
 """
 
 from __future__ import annotations
@@ -43,11 +49,11 @@ from mtproc_gui.plots import AXIS_WIDTH
 
 PLACEHOLDER = "load a window from the tree on the Time Series tab"
 STAGE_LO = 0.002  # a stage is drawn from fs * STAGE_LO up to the stage above's low edge
-# the PSD's y extent is taken inside this band -- psd_qc.py's YLIM_PCTL_HZ: the
-# anti-alias roll-off above 400 Hz would drag the axis ~10 decades below any real data
+# the PSD's y extent is taken inside this band, as psd_qc.py's YLIM_PCTL_HZ; the
+# anti-alias roll-off above 400 Hz would drag the axis ~10 decades below the data
 Y_EXTENT_HZ = (0.003, 400.0)
 BAND_COLOURS = theme.BAND_COLOURS
-# colour-scale choices for the spectrogram (the MATLAB app's wide / robust / tight / full)
+# colour-scale choices for the spectrogram: (low, high) percentile clips
 SCALES = {
     "robust (2-98 %)": (2.0, 98.0),
     "wide (1-99 %)": (1.0, 99.0),
@@ -57,7 +63,7 @@ SCALES = {
 
 
 def window_title(qc) -> str:
-    """'D02  2021-06-29 12:55:49 to 14:55:49 UTC (2.00 h)  remote E08'."""
+    """Return a QC window's title, e.g. 'S01  2021-06-29 12:55:49 to 14:55:49 UTC (2.00 h)  remote S02'."""
     end = qc.t0 + pd_timedelta(qc.duration_s)
     text = f"{qc.station}  {qc.t0:%Y-%m-%d %H:%M:%S} to {end:%H:%M:%S} UTC ({qc.duration_s / 3600:.2f} h)"
     text += f"  remote {qc.remote}" if qc.remote else "  no remote"
@@ -65,20 +71,27 @@ def window_title(qc) -> str:
 
 
 def pd_timedelta(seconds: float):
+    """Return `seconds` as a pandas Timedelta rounded to the microsecond."""
     import pandas as pd
 
     return pd.Timedelta(microseconds=round(seconds * 1e6))
 
 
 def time_label(t0) -> str:
+    """Return the x-axis label "minutes since <t0> UTC"."""
     return f"minutes since {t0:%Y-%m-%d %H:%M:%S} UTC"
 
 
 def lock_view(plot: pg.PlotWidget, x=None, y=None) -> None:
-    """Show exactly (lo, hi) on each axis given, and never let the view pan or zoom out past it.
+    """Show exactly (lo, hi) on each given axis and prevent panning or zooming out past it.
 
-    In view coordinates: on a log axis that is log10 of the value, which is
-    how pyqtgraph's ViewBox holds a log range.
+    Ranges are in view coordinates; on a log axis that is log10 of the value,
+    as pyqtgraph's ViewBox holds a log range.
+
+    Args:
+        plot (pg.PlotWidget): The plot.
+        x (tuple[float, float] | None): x range, or None to leave x free.
+        y (tuple[float, float] | None): y range, or None to leave y free.
     """
     limits = {}
     if x is not None:
@@ -94,7 +107,11 @@ def lock_view(plot: pg.PlotWidget, x=None, y=None) -> None:
 
 
 def stage_bands(stages) -> list[tuple[float, float]]:
-    """(low, high) Hz drawn from each stage: `fs * STAGE_LO` up to the stage above's low edge."""
+    """Return the (low, high) Hz band drawn from each stage.
+
+    Each stage covers `fs * STAGE_LO` up to the low edge of the stage above;
+    the first stage reaches its Nyquist frequency.
+    """
     bands, hi = [], None
     for fs, _freqs, _psd in stages:
         top = fs / 2.0 if hi is None else hi
@@ -105,7 +122,7 @@ def stage_bands(stages) -> list[tuple[float, float]]:
 
 
 def psd_plot(parent, title: str) -> pg.PlotWidget:
-    """An empty log-log PSD plot titled `title`, with a legend bottom left."""
+    """Return an empty log-log PSD plot titled `title`, with a legend bottom left."""
     plot = pg.PlotWidget(parent=parent)
     plot.setLogMode(x=True, y=True)
     plot.showGrid(x=True, y=True, alpha=theme.GRID_ALPHA * 0.7)
@@ -113,7 +130,7 @@ def psd_plot(parent, title: str) -> pg.PlotWidget:
     plot.setLabel("left", "PSD (units²/Hz)")
     plot.setLabel("bottom", "frequency (Hz)")
     plot.getAxis("left").setWidth(AXIS_WIDTH)  # the two panels are x-linked by pixel
-    for side in ("left", "bottom"):  # a log axis must not read "(x1e-06)"
+    for side in ("left", "bottom"):  # no SI prefix such as "(x1e-06)" on a log axis
         plot.getAxis(side).enableAutoSIPrefix(False)
     # bottom left: an MT PSD falls with frequency, so that corner is the emptiest
     plot.addLegend(offset=(10, -10), brush=pg.mkBrush(31, 31, 31, 210), labelTextColor=theme.TEXT)
@@ -122,14 +139,25 @@ def psd_plot(parent, title: str) -> pg.PlotWidget:
 
 
 def draw_psd(plot: pg.PlotWidget, stages, curves, labelled: bool = False, before=None) -> list:
-    """`curves` = [(comp, legend name), ...] on `plot`, stage by stage; returns [(comp, item)] drawn.
+    """Draw PSD ladders on `plot`, stage by stage.
 
-    Each comp in its theme colour (a remote coil grey and underneath), named
-    once in the legend; `before`, a second ladder of the same channels (the
-    Filter Data tab's raw window), goes under it all dashed light grey, out
-    of the legend (the tab says what grey means). The view is locked to the extent of everything drawn --
-    positive finite values only; in y only inside `Y_EXTENT_HZ` -- and the
-    frequency marks go on, their text labels only where `labelled`.
+    Each channel is drawn in its theme colour (a remote coil grey and
+    underneath) and named once in the legend. `before`, a second ladder of
+    the same channels such as the Filter Data tab's raw window, is drawn
+    beneath everything, dashed light grey and left out of the legend. The
+    view is locked to the extent of the positive finite values drawn, with
+    the y extent taken inside `Y_EXTENT_HZ`, and the frequency marks are
+    added.
+
+    Args:
+        plot (pg.PlotWidget): The plot; cleared first.
+        stages: PSD ladder as (fs, freqs, {channel: PSD}) per stage.
+        curves: (channel, legend name) pairs to draw.
+        labelled (bool): Label the frequency marks.
+        before: Optional second ladder drawn underneath.
+
+    Returns:
+        list: (channel, curve item) for every curve drawn.
     """
     plot.clear()
     f_lo, f_hi, p_lo, p_hi = np.inf, -np.inf, np.inf, -np.inf
@@ -161,10 +189,10 @@ def draw_psd(plot: pg.PlotWidget, stages, curves, labelled: bool = False, before
 
 
 def mark_frequencies(plot: pg.PlotWidget, nyquist: float, labelled: bool) -> None:
-    """Faint dashed lines at the Schumann resonances and at 50 Hz and its harmonics up to `nyquist`.
+    """Add faint dashed lines at the Schumann resonances and at 50 Hz and its harmonics up to `nyquist`.
 
-    The lines are named "Schumann" and "mains"; the first of each kind
-    carries the text label when `labelled` (one label per tab, not per line).
+    The lines are named "Schumann" and "mains". When `labelled`, the first
+    line of each kind carries a text label.
     """
     mains = [theme.MAINS_HZ * k for k in range(1, int(nyquist // theme.MAINS_HZ) + 1)]
     groups = (("Schumann", theme.SCHUMANN_COLOUR, "Schumann", theme.SCHUMANN_HZ),
@@ -184,7 +212,7 @@ def mark_frequencies(plot: pg.PlotWidget, nyquist: float, labelled: bool) -> Non
 
 
 def percentile_levels(image: np.ndarray, scale: str) -> tuple[float, float]:
-    """Colour levels at `SCALES[scale]`'s percentiles of the finite image values."""
+    """Return colour levels at the `SCALES[scale]` percentiles of the finite image values."""
     finite = image[np.isfinite(image)]
     if finite.size == 0:
         return (0.0, 1.0)
@@ -195,7 +223,7 @@ def percentile_levels(image: np.ndarray, scale: str) -> tuple[float, float]:
 
 
 def _edges(centres: np.ndarray) -> np.ndarray:
-    """Cell edges around `centres` (already in the axis's own coordinates), n + 1 of them."""
+    """Return the n + 1 cell edges around `centres`, given in the axis's own coordinates."""
     c = np.asarray(centres, dtype=float)
     if c.size == 1:
         step = 1.0
@@ -205,7 +233,16 @@ def _edges(centres: np.ndarray) -> np.ndarray:
 
 
 class PeriodImage:
-    """A plot with one period-against-time image and its colour bar."""
+    """A plot with one period-against-time image and its colour bar.
+
+    Args:
+        parent (QWidget): Parent of the plot.
+        title (str): Prefix of the y-axis label "<title> period (s)".
+        bar_label (str): Colour bar label.
+        cmap (str): pyqtgraph colour map name.
+        limits: Colour bar limits, or None.
+        rounding (float): Colour bar level rounding.
+    """
 
     def __init__(self, parent, title: str, bar_label: str, cmap: str = "viridis",
                  limits=None, rounding: float = 0.1):
@@ -224,10 +261,16 @@ class PeriodImage:
         self.drawn = False
 
     def set(self, t, periods, image, levels, span: float) -> None:
-        """Draw `image` (t x period) with cells at the true bin edges and `levels` as the colour range.
+        """Draw an image with cells at the true bin edges.
 
-        `t` is in the plot's x unit and `span` is the window's length in it:
-        the view is locked to [0, span] in x and to the period range in y.
+        The view is locked to [0, span] in x and to the period range in y.
+
+        Args:
+            t: Cell centres in the plot's x unit.
+            periods: Period of each row in seconds.
+            image: Values shaped (time, period).
+            levels (tuple[float, float]): Colour range.
+            span (float): Window length in the x unit.
         """
         x_edges = _edges(t)
         y_edges = _edges(np.log10(periods))
@@ -239,7 +282,7 @@ class PeriodImage:
         self.drawn = True
 
     def clear(self) -> None:
-        """Hide the image (a PColorMeshItem cannot be given no data)."""
+        """Hide the image; a PColorMeshItem cannot be set to no data."""
         self.mesh.setVisible(False)
         self.drawn = False
 
@@ -248,6 +291,7 @@ class PeriodImage:
 
 
 def band_plot(parent, title: str) -> pg.PlotWidget:
+    """Return an empty band plot with y locked to 0-1."""
     plot = pg.PlotWidget(parent=parent)
     plot.setMinimumHeight(110)
     plot.setLabel("left", title)
@@ -258,11 +302,17 @@ def band_plot(parent, title: str) -> pg.PlotWidget:
 
 
 def draw_bands(plot: pg.PlotWidget, curves: dict) -> int:
-    """`curves[label] = (t, values)`, one line per band in `BAND_COLOURS` order; returns the lines drawn.
+    """Draw one line per band, then the "All frequencies" mean over them.
 
-    Over them, thick and white, the "All frequencies" curve: the mean of the
-    band lines at each time, drawn and thrown away (the bands of one pair
-    share one time grid, `compute_segment_qc`'s).
+    The mean is the band lines' mean at each time, drawn thick and white;
+    the bands of one pair share the time grid of `compute_segment_qc`.
+
+    Args:
+        plot (pg.PlotWidget): The plot; cleared first.
+        curves (dict): Band label to (t, values), drawn in `BAND_COLOURS` order.
+
+    Returns:
+        int: The number of band lines drawn.
     """
     plot.clear()
     drawn, rows, t = 0, [], None
@@ -281,7 +331,7 @@ def draw_bands(plot: pg.PlotWidget, curves: dict) -> int:
 
 
 def band_legend(labels) -> str:
-    """Rich text naming each band in its line colour, then "All frequencies", for a label above the plots."""
+    """Return rich text naming each band in its line colour, then "All frequencies"."""
     parts = [f'<span style="color:{BAND_COLOURS[k % len(BAND_COLOURS)]}"><b>&#9644;</b> {label}</span>'
              for k, label in enumerate(labels)]
     parts.append(f'<span style="color:{theme.ALL_FREQ_COLOUR}"><b>&#9644;&#9644;</b> '
@@ -290,13 +340,13 @@ def band_legend(labels) -> str:
 
 
 def link_x_ranges(plots) -> None:
-    """Keep every plot in `plots` on one x range, by plain copy.
+    """Keep every plot in `plots` on one x range by copying range changes.
 
-    pyqtgraph's `setXLink` lines linked views up by screen pixel, which is
-    right for a stack of equal-width plots and wrong for a grid of small
-    plots beside one wide image (each gets a range shifted and stretched
-    by its own width). Here a range change on any plot is copied to the
-    others, guarded against re-entry.
+    pyqtgraph's `setXLink` aligns linked views by screen pixel, which suits a
+    stack of equal-width plots but shifts and stretches the range of plots of
+    different widths, such as small plots beside one wide image. Here a
+    range change on any plot is copied to the others, guarded against
+    re-entry.
     """
     busy = [False]
 
@@ -321,7 +371,12 @@ def link_x_ranges(plots) -> None:
 
 
 class LadderControls(QWidget):
-    """Base window and step spinboxes plus Recompute, bound to the store's ladder."""
+    """Base window and step spin boxes plus Recompute, bound to the segment store's ladder.
+
+    Args:
+        state: The shared `mtproc_gui.app.State`.
+        parent (QWidget | None): Qt parent.
+    """
 
     def __init__(self, state, parent=None):
         super().__init__(parent)
@@ -345,9 +400,11 @@ class LadderControls(QWidget):
         store.ladder_changed.connect(self._follow)
 
     def recompute(self) -> None:
+        """Set the store's ladder from the spin boxes and request the QC again."""
         self.state.segment_store.set_ladder(self.win_spin.value(), self.step_spin.value())
         self.state.request_qc()
 
     def _follow(self, win_s: float, step_s: float) -> None:
+        """Show the store's ladder after a change from another tab."""
         self.win_spin.setValue(win_s)
         self.step_spin.setValue(step_s)

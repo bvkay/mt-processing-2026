@@ -1,43 +1,48 @@
-"""Time Series tab: pick a window of a site from the tree, see it in full.
+# -*- coding: utf-8 -*-
+"""
+Time Series tab
 
-The MATLAB App Designer app's Time Series tab, which the students know: a
-tree on the left of every site in the metadata, and under an archived site
-its windows (`mtproc_gui.site_tree`, 2 h at 1000 Hz, 4 h at 500 Hz -- see
-`mtproc_gui.windows`). Clicking a window makes it `State.selection`, which asks
-the `SegmentStore` for it; the store hands the local `Segment` over as soon
-as it is read (`segment_loaded`, about a second for 2 h of D02) and this tab
-draws it at the full sample rate on the right, one x-linked pyqtgraph plot
-per channel in the physical units of `scripts/site_qc.py`'s figure 01 with
-the offset the segment removed added back, gaps as holes, while the store
-goes on to the remote and the QC that the Spectra, Spectrogram and Coherence
-tabs draw. Clicking a window of another site loads that one instead.
+Selects a window of a site from the tree and shows it at full resolution,
+as a stack of channel plots. The tree on the
+left lists every site in the metadata and, under an archived site, its
+windows (`mtproc_gui.site_tree`; 2 h at 1000 Hz, 4 h at 500 Hz, see
+`mtproc_gui.windows`). Clicking a window makes it `State.selection`, which
+requests it from the `SegmentStore`. The store emits the local `Segment` as
+soon as it is read (`segment_loaded`),
+and the tab draws it at the full sample rate: one x-linked pyqtgraph plot
+per channel in the physical units of figure 01 of `scripts/site_qc.py`, with
+the removed offset added back and gaps drawn as holes. Meanwhile the store
+reads the remote and computes the QC drawn on the Spectra, Spectrogram and
+Coherence tabs. Clicking a window of another site loads that one instead.
 
-The plots are the MATLAB app's stack: Bx, By, Ex, Ey top to bottom,
-magnetics blue and electrics red (`mtproc_gui.theme`; any recorder's names,
-e.g. Bx By Bz E1 E2 E3 E4 on a LEMI-424 -- `mtproc_gui.channels`), no gap between them,
-one shared x axis whose tick labels are on the bottom plot only, and the
-vertical grid only.
+The plots are stacked Bx, By, Ex, Ey top to bottom,
+magnetics blue and electrics red (`mtproc_gui.theme`), or the recorder's own
+names such as Bx By Bz E1 E2 E3 E4 on a LEMI-424 (`mtproc_gui.channels`),
+with no gap between plots, one shared x axis with tick labels on the bottom
+plot only, and a vertical grid only.
 
-The x axis is seconds since the window's start (the UTC start is in the
-label). Wheel-zoom and drag along x only, never outside the window and never
-narrower than 20 samples; each y axis follows whatever is visible, at the
-whole window and at every zoom (the noise envelope at 2 h, single samples
-when zoomed in). The **processing
-window** is the visible range: zoom to the stretch you want and "Use
-visible range as processing window" sends its UTC start and end to the
-Process tab, and on to `scripts/process_rr.py` -- how the MATLAB app did it.
-`State.goto_time` brings the view to +-5 minutes around a moment another
-tab points at, inside the loaded window. Nothing is computed here.
+The x axis is seconds since the window's start, with the UTC start in the
+label. Wheel zoom and drag act along x only, within the window and down to
+20 samples; each y axis follows the visible data at every zoom, from the
+noise envelope over 2 h to single samples. The visible range is the
+processing window: "Use visible range as processing window" sends its UTC
+start and end to the Process tab for `scripts/process_rr.py`.
+`State.goto_time` shows +-5 minutes around a time another tab
+points at, within the loaded window.
 
-**Build MTH5**, under the tree, is for a site the tree shows without an
-archive: enabled only while such a site's row is selected and no job runs, it
-runs `scripts/ingest_site.py <survey.yaml> <site>` on `state.runner` at once
-(`JobRunner.run_now`: the student is waiting to look at the data, and it is
-one job, not the processing queue), says "building <site>.h5 ..." here while
-the console strip shows the script's log, and when the job succeeds the
-site's row is looked at again (`SiteTree.refresh_site`) and opened on its
-windows. An archive deleted on the Filter Data tab (`State.archive_changed`)
-puts the row back to "no MTH5 yet".
+Build MTH5, below the tree, ingests a site the tree shows without an
+archive. It is enabled while such a site's row is selected and no job runs.
+It runs `scripts/ingest_site.py <survey.yaml> <site>` on `state.runner`
+immediately (`JobRunner.run_now`, a single utility job outside the
+processing queue) and shows "building <site>.h5 ..." while the console strip
+shows the script's log. When the job succeeds the site's row is refreshed
+(`SiteTree.refresh_site`) and expanded to its windows. An archive deleted on
+the Filter Data tab (`State.archive_changed`) returns the row to
+"no MTH5 yet".
+
+@author: ben kay (ben@auscope.org.au)
+
+:license: MIT
 """
 
 from __future__ import annotations
@@ -57,21 +62,26 @@ from mtproc_gui.plots import clear_layout, follow_visible_y, stack_plots
 from mtproc_gui.site_tree import SITE_ROLE, SiteTree
 
 WINDOW_FMT = "%Y-%m-%d %H:%M"
-MIN_SPAN_SAMPLES = 20  # the narrowest x range the student can zoom to
+MIN_SPAN_SAMPLES = 20  # the narrowest x range the view can zoom to
 GOTO_HALF_SPAN_S = 5 * 60.0  # `goto_time` shows this much either side
 PICK_HINT = "pick a site in the tree, then one of its windows"
 INGEST_SCRIPT = "ingest_site.py"
 
 
 def ingested_site(argv) -> str | None:
-    """The site a job's argv ingests with scripts/ingest_site.py (the argument after the survey.yaml)."""
+    """Return the site a job ingests with scripts/ingest_site.py (the argument after the survey.yaml), or None."""
     names = [Path(str(a)).name for a in argv]
     at = names.index(INGEST_SCRIPT) if INGEST_SCRIPT in names else -1
     return str(argv[at + 2]) if 0 <= at < len(argv) - 2 else None
 
 
 class TimeSeriesTab(QWidget):
-    """Tree of sites and windows on the left; the loaded window's channels on the right."""
+    """Tree of sites and windows on the left; the loaded window's channels on the right.
+
+    Args:
+        state: The shared `mtproc_gui.app.State`.
+        parent (QWidget | None): Qt parent.
+    """
 
     processing_window_selected = Signal(str, str)
 
@@ -130,32 +140,33 @@ class TimeSeriesTab(QWidget):
         self.state.goto_time.connect(self.goto_time)
         self.state.runner.queue_changed.connect(self._update_build)  # a job started or ended
         self.state.runner.job_finished.connect(self._job_finished)
-        # an archive deleted on the Filter Data tab: its row goes back to "no MTH5 yet"
+        # an archive built or deleted elsewhere: the row is refreshed
         self.state.archive_changed.connect(lambda site: (self.tree.refresh_site(site), self._update_build()))
 
     # --------------------------------------------------------- the tree
 
     def reload(self) -> None:
-        """A survey was opened: list its sites, show nothing."""
+        """List the sites of a newly opened survey and clear the plots."""
         self.tree.reload()
         self.clear_plots()
         self.hint_label.setText(PICK_HINT if self.state.survey is not None else "")
         self._update_build()
 
     def wait_for_read(self) -> None:
+        """Block until the tree's archive read finishes; used on window close."""
         self.tree.wait_for_read()
 
     # ------------------------------------------------------ Build MTH5
 
     def selected_site(self) -> str | None:
-        """The site of the tree's current row (a site row, or a row under one)."""
+        """Return the site of the tree's current row (a site row or a row under one)."""
         item = self.tree.currentItem()
         while item is not None and item.data(0, SITE_ROLE) is None:
             item = item.parent()
         return None if item is None else item.data(0, SITE_ROLE)
 
     def _update_build(self) -> None:
-        """Build MTH5 is enabled only on a site with raw data and no archive, while no job runs."""
+        """Enable Build MTH5 for a selected site with raw data and no archive while no job runs."""
         site, state = self.selected_site(), self.state
         why = ("select a site in the tree" if site is None
                else "archive exists" if state.has_archive(site)
@@ -167,7 +178,11 @@ class TimeSeriesTab(QWidget):
                                             "(scripts/ingest_site.py)")
 
     def build_mth5(self) -> int | None:
-        """scripts/ingest_site.py <survey.yaml> <site>, started at once; returns the job's index."""
+        """Start scripts/ingest_site.py <survey.yaml> <site> immediately.
+
+        Returns:
+            int | None: The job's index, or None when Build MTH5 is disabled.
+        """
         site = self.selected_site()
         if not self.build_button.isEnabled() or site is None:
             return None
@@ -178,14 +193,14 @@ class TimeSeriesTab(QWidget):
         return index
 
     def _job_finished(self, index: int, ok: bool) -> None:
-        """An ingest_site.py job ended: on success its site's row lists its windows."""
+        """After an ingest_site.py job, refresh the site's row and expand it on success."""
         site = ingested_site(self.state.runner.jobs[index].argv)
         if site is None:
             return
         if ok:
             self.tree.refresh_site(site, expand=True)
             self.hint_label.setText(f"built {site}.h5 - pick one of its windows in the tree")
-            self.state.archive_changed.emit(site)  # the Filter Data tab's chooser lists it too
+            self.state.archive_changed.emit(site)  # so the Filter Data tab's chooser lists it
         else:
             self.hint_label.setText(f"could not build {site}.h5 - the console strip says why")
         self._update_build()
@@ -193,15 +208,16 @@ class TimeSeriesTab(QWidget):
     # ------------------------------------------------------ the loading
 
     def _selection_changed(self, selection) -> None:
+        """Clear the plots for a new selection and show that it is loading."""
         if selection is None:
             self.clear_plots()
         elif self.segment is None or not self._matches(self.segment):
-            self.clear_plots()  # the old window goes as soon as another is asked for
+            self.clear_plots()  # the old window is cleared as soon as another is requested
             station, start, end = selection
             self.hint_label.setText(f"loading {station} {start:%Y-%m-%d %H:%M} to {end:%H:%M} UTC...")
 
     def _matches(self, segment) -> bool:
-        """Is `segment` the selected station over the selected window (to half a sample)?"""
+        """True if `segment` is the selected station over the selected window, to half a sample."""
         selection = self.state.selection
         if selection is None or segment.station != selection[0]:
             return False
@@ -210,22 +226,25 @@ class TimeSeriesTab(QWidget):
                 and abs((segment.end - selection[2]).total_seconds()) <= tol)
 
     def _on_started(self, what: str) -> None:
+        """Show a busy progress bar while the window loads."""
         self.progress.setRange(0, 0)  # busy: the load reports no percentage
         self.progress.setFormat(f"loading {what}")
         self.progress.setVisible(True)
 
     def _on_progress(self, percent: int, message: str) -> None:
+        """Show the QC progress."""
         if percent > 0:
             self.progress.setRange(0, 100)
             self.progress.setValue(percent)
             self.progress.setFormat(f"QC: {message} %p%")
 
     def _on_failed(self, message: str) -> None:
+        """Report a failed load."""
         self.progress.setVisible(False)
         self.hint_label.setText(f"could not load the window: {message}")
 
     def _on_segment(self, segment) -> None:
-        """The store read the local segment: draw it if it is still the selection."""
+        """Draw the local segment read by the store if it is still the selection."""
         if not self._matches(segment):
             return
         self.draw(segment)
@@ -233,13 +252,14 @@ class TimeSeriesTab(QWidget):
     # ------------------------------------------------------- the plots
 
     def clear_plots(self) -> None:
+        """Remove the plots and forget the segment."""
         self.segment = None
         self.plots, self.comps, self._display = [], [], {}
         clear_layout(self.plot_box.layout())
         self.use_button.setEnabled(False)
 
     def draw(self, segment) -> None:
-        """The segment's channels at the full rate, offsets back, gaps as holes."""
+        """Draw the segment's channels at the full rate, offsets added back and gaps as holes."""
         self.clear_plots()
         self.segment = segment
         self.comps = theme.channel_order(segment.arrays)
@@ -261,7 +281,7 @@ class TimeSeriesTab(QWidget):
             box = plot.getViewBox()
             box.setMouseEnabled(x=True, y=False)
             box.setLimits(xMin=0.0, xMax=duration, maxXRange=duration, minXRange=MIN_SPAN_SAMPLES / fs)
-            follow_visible_y(plot)  # y fits what is on screen, at the whole window and at every zoom
+            follow_visible_y(plot)  # y fits the visible data at every zoom
         self.plots[0].setXRange(0.0, duration, padding=0)
         self.use_button.setEnabled(True)
         gaps = f", {len(segment.gaps)} gap(s)" if segment.gaps else ""
@@ -271,7 +291,7 @@ class TimeSeriesTab(QWidget):
         )
 
     def visible_seconds(self) -> tuple[float, float]:
-        """The x range on screen, seconds since the window start."""
+        """Return the visible x range in seconds since the window start."""
         return tuple(float(v) for v in self.plots[0].getViewBox().viewRange()[0])
 
     # ---------------------------------------------------- the windows
@@ -290,7 +310,7 @@ class TimeSeriesTab(QWidget):
             self.plots[0].setXRange(lo, hi, padding=0)
 
     def use_as_processing_window(self) -> None:
-        """Push the visible x range to the Process tab as `start`/`end` for process_rr.py."""
+        """Emit the visible x range as the processing window's UTC start and end for the Process tab."""
         if self.segment is None or not self.plots:
             return
         lo, hi = self.visible_seconds()

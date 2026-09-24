@@ -1,7 +1,18 @@
-"""Unit test for mt-io's Orange Box reader (`mt_io.uoa.orange`) on the format as decoded
-for Stuart Shelf 2009 trip 3 -- no mtproc module involved, mt-io is the reader.
+# -*- coding: utf-8 -*-
+"""
+Unit test for the Orange Box reader of mt-io
 
+Tests `mt_io.uoa.orange` directly on the format as decoded for Stuart Shelf
+2009 trip 3. Synthetic files check the byte layout, channel mapping, gains,
+sample rate and the refusal of files that do not join; one real station
+(ST61) is compared with the legacy converter's output.
+
+Usage:
     python tests/orangebox_unit.py
+
+@author: ben kay (ben@auscope.org.au)
+
+:license: MIT
 
 The Orange Box (Adelaide/Flinders "High Frequency Magnetometer", HFM<n>) writes one
 binary file an hour, HFM<n>-NNN.BIN:
@@ -60,7 +71,17 @@ RNG = np.random.default_rng(2009)
 
 
 def write_orange_bin(path: Path, counts: np.ndarray, start: pd.Timestamp, fp: int = FP) -> pd.Timestamp:
-    """Write `counts` (n x 8, unsigned as recorded) as one Orange Box file; return the end stamp written."""
+    """Write one Orange Box file.
+
+    Args:
+        path (Path): File to write.
+        counts (np.ndarray): n x 8 counts, unsigned as recorded.
+        start (pd.Timestamp): Start stamp of the header.
+        fp (int): Filter point; the sample rate is 1e7 / (512 fp).
+
+    Returns:
+        pd.Timestamp: The end stamp written in the trailer.
+    """
     n = counts.shape[0]
     end = start + pd.Timedelta(seconds=round(n / (1e7 / (512 * fp))))
     rec = np.zeros((n, 21), dtype=np.uint8)
@@ -79,6 +100,7 @@ def write_orange_bin(path: Path, counts: np.ndarray, start: pd.Timestamp, fp: in
 
 
 def synthetic_counts(n: int) -> np.ndarray:
+    """Draw n x 8 random unsigned counts in the range of each channel's width."""
     c = np.empty((n, 8), dtype=np.int64)
     for ch in (0, 1, 2, 6, 7):
         c[:, ch] = RNG.integers(0, 2**24, n)

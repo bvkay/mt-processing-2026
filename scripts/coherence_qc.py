@@ -1,24 +1,30 @@
-"""Band-averaged coherence QC for a local/remote pair, on the processing bands.
+# -*- coding: utf-8 -*-
+"""
+Band-averaged coherence QC for a local/remote pair, on the processing bands
 
-The general form of examples/03_coherence_d02.py. Plots, on the TF plots'
-period axis:
+Plots, on the period axis of the TF plots:
 
 - local E-H coherence (ex-hy, ey-hx): signal quality at the local site
 - local-vs-remote magnetics coherence (hx, hy): what the remote reference sees
 - local-vs-stack magnetics coherence (hx, hy), when --stack is given
 
-If a stack is doing its job its curves sit above the single remote's wherever
-sensor noise matters; the dead band should dip in everything.
+A working stack has curves above those of the single remote wherever sensor
+noise matters; the dead band dips in every curve.
 
-Reads the MTH5s already in <workspace>/mth5 (ingest first). Local and remote
-each use whichever of their runs overlaps the other the most (`best_overlap_runs`);
-a station split into several runs (e.g. by a file-timing anomaly) is not
-reduced to its single longest run before checking overlap. When --stack is
-given, the stack's run is chosen to best overlap the local run already chosen
-against the remote, not re-optimised against the stack independently.
+Reads the MTH5s already in <workspace>/mth5, so ingest first. Local and
+remote each use the run that overlaps the other the most
+(`best_overlap_runs`), so a station split into several runs (e.g. by a
+file-timing anomaly) is compared on its best-overlapping run rather than its
+longest. With --stack, the stack's run is the one that best overlaps the
+local run chosen against the remote. The figure goes to
+<workspace>/qc/<local>_rr-<remote>_band_coherence.png unless --out is given.
 
 Usage:
     python scripts/coherence_qc.py <survey.yaml> <local> <remote> [--stack NAME] [--out PNG]
+
+@author: ben kay (ben@auscope.org.au)
+
+:license: MIT
 """
 
 import argparse
@@ -34,13 +40,14 @@ from loguru import logger
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "src"))
 
-from mtproc.bands import lemimt_band_scheme
+from mtproc.bands import build_band_scheme
 from mtproc.qc import align, band_coherence, best_overlap_runs, load_channel, run_periods
 from mtproc.survey import Survey
 
 
 def parse_args(argv=None) -> argparse.Namespace:
-    p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    """Parse the command line of coherence_qc.py."""
+    p = argparse.ArgumentParser(description=next(line for line in __doc__.strip().splitlines() if line.strip()))
     p.add_argument("survey_yaml", help="path to the survey's survey.yaml")
     p.add_argument("local", help="local station name (MTH5 in <workspace>/mth5)")
     p.add_argument("remote", help="remote-reference station name")
@@ -50,6 +57,11 @@ def parse_args(argv=None) -> argparse.Namespace:
 
 
 def station_h5(survey: Survey, station: str) -> Path:
+    """Return <workspace>/mth5/<station>.h5.
+
+    Raises:
+        FileNotFoundError: When the station has no MTH5.
+    """
     h5 = survey.workspace / "mth5" / f"{station}.h5"
     if not h5.exists():
         raise FileNotFoundError(f"no MTH5 for station {station!r}: {h5}")
@@ -57,13 +69,33 @@ def station_h5(survey: Survey, station: str) -> Path:
 
 
 def station_channels(survey: Survey, station: str, comps: list[str], run: str) -> dict:
-    """Load the named components from one specific run of a station."""
+    """Load the named components from one run of a station.
+
+    Args:
+        survey (Survey): The survey.
+        station (str): Station name.
+        comps (list[str]): Component names, e.g. ["hx", "hy"].
+        run (str): Run id.
+
+    Returns:
+        dict: Channel by (station, component).
+    """
     h5 = station_h5(survey, station)
     return {(station, comp): load_channel(h5, survey.name, station, run, comp) for comp in comps}
 
 
 def best_run_against(period: tuple, mth5_path: Path, survey_name: str, station: str) -> tuple[str, float]:
-    """Run id of `station` whose time period overlaps a fixed (start, end) the most."""
+    """Find the run of a station that overlaps a fixed period the most.
+
+    Args:
+        period (tuple): (start, end) timestamps.
+        mth5_path (Path): The station's MTH5.
+        survey_name (str): Survey id in the MTH5.
+        station (str): Station name.
+
+    Returns:
+        tuple[str, float]: Run id and overlap in seconds.
+    """
     best_run, best_overlap = None, -1.0
     for run_id, (s, e) in run_periods(mth5_path, survey_name, station).items():
         overlap = (min(e, period[1]) - max(s, period[0])).total_seconds()
@@ -73,9 +105,14 @@ def best_run_against(period: tuple, mth5_path: Path, survey_name: str, station: 
 
 
 def main(argv=None) -> None:
+    """Plot the band-averaged coherences of a local/remote pair.
+
+    Args:
+        argv (list[str] | None): Command-line arguments; sys.argv when None.
+    """
     args = parse_args(argv)
     survey = Survey.from_yaml(args.survey_yaml)
-    scheme = lemimt_band_scheme(survey.sample_rate, **survey.processing)
+    scheme = build_band_scheme(survey.sample_rate, **survey.processing)
 
     local_h5 = station_h5(survey, args.local)
     remote_h5 = station_h5(survey, args.remote)

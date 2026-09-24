@@ -1,7 +1,9 @@
-"""The one-hour LEMI-424 and EDL samples the instrument tests share -- a helper, not a test.
+# -*- coding: utf-8 -*-
+"""
+One-hour LEMI-424 and EDL samples shared by the instrument tests
 
-Cut from two real stations, read only, into the scratch folder (never the
-whole station):
+A helper module for the tests. It cuts one hour from each of two real
+stations into the scratch folder, reading the sources read-only:
 
     samples/MBJ21     LEMI-424, a 2024 WA-MT site: its deployment
                       `.inf` and the first 3600 lines (2024-10-25 00:00:00 to
@@ -11,11 +13,15 @@ whole station):
                       010/EGFLP02_190110000000.{BX,BY,BZ,EX,EY}
 
 `mixed_survey()` puts both beside a synthetic LEMI-423 site (S01, written by
-`tests/new_survey_unit.py`'s `write_b423`) in `mixed_root/`, runs
+`write_b423` in `tests/new_survey_unit.py`) in `mixed_root/` and runs
 `scripts/new_survey.py` over it into `mixed/survey.yaml` (workspace
-`mixed_root/work`), and `ensure_archives()` ingests MBJ21 and EGFLP02 into
-that workspace when their archives are missing -- the survey the GUI smoke
-test opens. A missing source drive is an error, not a skip.
+`mixed_root/work`). `ensure_archives()` ingests MBJ21 and EGFLP02 into that
+workspace when their archives are missing. This is the survey the GUI smoke
+test opens. A missing source drive stops the calling test with a FAIL.
+
+@author: ben kay (ben@auscope.org.au)
+
+:license: MIT
 """
 
 from __future__ import annotations
@@ -39,7 +45,17 @@ SYNTHETIC_SITE = "S01"
 
 
 def make_samples(root: Path = SCRATCH / "samples") -> dict[str, Path]:
-    """{site: folder} of the two one-hour samples, cut from the sources when not already there."""
+    """Return the folders of the two one-hour samples, cutting them if needed.
+
+    Args:
+        root (Path): Folder that holds the samples.
+
+    Returns:
+        dict[str, Path]: Sample folder by site name (MBJ21, EGFLP02).
+
+    Raises:
+        SystemExit: When a source station folder is not mounted.
+    """
     for source in (LEMI424_SOURCE, EDL_SOURCE):
         if not source.is_dir():
             raise SystemExit(f"FAIL: {source} is not mounted: the instrument samples cannot be made")
@@ -60,7 +76,14 @@ def make_samples(root: Path = SCRATCH / "samples") -> dict[str, Path]:
 
 
 def mixed_root() -> Path:
-    """`mixed_root/`: S01 (synthetic LEMI-423, three 2 s files) + the two samples; `work/` kept."""
+    """Rebuild the site folders of `mixed_root/`.
+
+    Writes S01 (synthetic LEMI-423, three 2 s files) and copies in the two
+    samples. The `work/` folder is kept.
+
+    Returns:
+        Path: MIXED_ROOT.
+    """
     sys.path.insert(0, str(REPO / "tests"))
     from new_survey_unit import SITES, write_b423
 
@@ -77,7 +100,15 @@ def mixed_root() -> Path:
 
 
 def mixed_survey(*extra: str) -> subprocess.CompletedProcess:
-    """scripts/new_survey.py over `mixed_root()` into MIXED_YAML (--force), its output captured."""
+    """Run scripts/new_survey.py over `mixed_root()` into MIXED_YAML with --force.
+
+    Args:
+        *extra (str): Further command-line arguments for new_survey.py.
+
+    Returns:
+        subprocess.CompletedProcess: The finished run, with stdout and stderr
+        captured as text.
+    """
     root = mixed_root()
     return subprocess.run([sys.executable, str(REPO / "scripts" / "new_survey.py"), str(root), "--name", "mixed",
                            "--out", str(MIXED_YAML), "--force", *extra],
@@ -85,7 +116,17 @@ def mixed_survey(*extra: str) -> subprocess.CompletedProcess:
 
 
 def ensure_archives(sites=("MBJ21", "EGFLP02")) -> dict[str, Path]:
-    """The mixed survey's archives of `sites`, ingested (`mtproc.ingest.ingest_site`) when missing."""
+    """Return the mixed survey's archives of `sites`, ingesting missing ones.
+
+    Builds the mixed survey first if MIXED_YAML does not exist. Missing
+    archives are written with `mtproc.ingest.ingest_site`.
+
+    Args:
+        sites (tuple[str, ...]): Site names.
+
+    Returns:
+        dict[str, Path]: Archive path by site name.
+    """
     sys.path.insert(0, str(REPO / "src"))
     from mtproc.ingest import default_archive_path, ingest_site
     from mtproc.survey import Survey

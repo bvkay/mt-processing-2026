@@ -1,45 +1,53 @@
-"""Synthetic (stacked) remote-reference stations.
+# -*- coding: utf-8 -*-
+"""
+Synthetic (stacked) remote-reference stations
 
-Builds a virtual station whose hx/hy are the mean of several concurrent
-sites' magnetic counts. Each member is read from `mtproc.ingest.processing_archive`
-(the site's filtered variant, built on demand from its raw archive when it
-declares filters in `<survey>/filters.yaml`, else the raw archive itself --
-written by `scripts/ingest_site.py` or the GUI's "Build MTH5"), so the stack
-takes each member exactly as processing sees it, and none of that is applied
-again here. No calibration is applied or declared: the RR estimator is invariant to any
-linear transform of the remote channels, so only coherence with the true
-field matters. Sample grids must align exactly (GPS-locked 1 ms grids): every
-member's run start must sit on the common grid to 1e-3 of a sample; this is
-asserted, not assumed.
+`build_synthetic_remote` writes a virtual station whose hx and hy are the
+mean of several concurrent sites' magnetic counts. Each member is read
+through `mtproc.ingest.processing_archive`: the site's filtered variant,
+built on demand from its raw archive when the site declares filters in
+`<survey>/filters.yaml`, else the raw archive written by
+`scripts/ingest_site.py` or the GUI "Build MTH5" button. The stack takes
+each member as processing sees it and applies no further filters. No
+calibration is applied or declared, since the remote-reference estimator is
+invariant to any linear transform of the remote channels and only coherence
+with the true field matters. Sample grids must align exactly (GPS-locked
+1 ms grids): every member's run start must sit on the common grid to within
+1e-3 of a sample, and this is checked.
 
 The members are streamed: every weighting and the member check read each
-member's hx/hy in `WEIGHT_CHUNK_S` chunks (the last one partial) straight
-from the archive's HDF5 datasets, and only the two output coils are held
-whole (float64; 2 GB for 36 h at 1000 Hz). Sample positions are integer
-arithmetic from each run's start; no time coordinate is ever built.
+member's hx and hy in `WEIGHT_CHUNK_S` chunks (the last one partial) from
+the archive's HDF5 datasets, and only the two output coils are held whole
+(float64; 2 GB for 36 h at 1000 Hz). Sample positions are computed as
+integers from each run's start, without a time coordinate.
 
 Two weightings (`build_synthetic_remote(weighting=...)`):
 
-- ``"none"`` (the default, unchanged): each coil is the plain mean of its
-  members' counts. One dead coil poisons it -- check the members first
-  (`check_members`, `scripts/build_stack.py --check`) and leave dead ones out.
-- ``"coherence"``: per member, per `WEIGHT_CHUNK_S` chunk, per coil, the
+- ``"none"`` (the default): each coil is the plain mean of its members'
+  counts. One dead coil corrupts it, so check the members first
+  (`check_members`, `scripts/build_stack.py --check`) and leave dead ones
+  out.
+- ``"coherence"``: per member, per `WEIGHT_CHUNK_S` chunk and per coil, the
   weight is the band-averaged squared coherence of that member's coil with
-  the mean of the *other* members' same coil over `WEIGHT_BAND_S`
-  (`member_coherence`: the `mtproc.timefreq` cascade and band line, no
-  spectral maths of its own); the weights are normalised per chunk to sum
-  to one, a member under `WEIGHT_FLOOR` in a chunk is dropped from it and the
-  rest renormalised (`coherence_weights`). Each member's median is removed
-  first, or a weight change between chunks would step the members' DC
-  offsets (tens of millions of counts) into the stack. The rule and the mean
-  weights go into the run's comments, each coil's per-chunk weights into
-  its channel's comments.
+  the mean of the other members' same coil over `WEIGHT_BAND_S`
+  (`member_coherence`, using the `mtproc.timefreq` cascade and band
+  averaging). The weights are normalised per chunk to sum to one; a member
+  under `WEIGHT_FLOOR` in a chunk is dropped from it and the rest
+  renormalised (`coherence_weights`). Each member's median is removed
+  first, since otherwise a weight change between chunks would step the
+  members' DC offsets (tens of millions of counts) into the stack. The rule
+  and the mean weights are written to the run comments, and each coil's
+  per-chunk weights to its channel comments.
 
-Leave-one-out needs at least three live coils to say *which* member is bad:
-with two, each member's reference is the other one and coherence is
-symmetric, so their weights come out equal whatever either records. The
-absolute `WEIGHT_FLOOR` also assumes fewer than 1 / 0.05 = 20 members (with
-more, an average member is already under it).
+Leave-one-out needs at least three live coils to identify a bad member:
+with two, each member's reference is the other and coherence is symmetric,
+so both get equal weights whatever either records. The absolute
+`WEIGHT_FLOOR` also assumes fewer than 1 / 0.05 = 20 members; with more, an
+average member is already under it.
+
+@author: ben kay (ben@auscope.org.au)
+
+:license: MIT
 """
 
 from __future__ import annotations
@@ -61,30 +69,42 @@ WEIGHTINGS = ("none", "coherence")
 WEIGHT_CHUNK_S = 600.0
 WEIGHT_BAND_S = (0.1, 10.0)
 WEIGHT_FLOOR = 0.05
-# the member check's bands: the two decades separately, then the weight band
+# bands of the member check: the two decades separately, then the weight band
 CHECK_BANDS_S = ((0.1, 1.0), (1.0, 10.0), WEIGHT_BAND_S)
-# how far (in samples) a member's run start may sit off the common grid
+# largest offset, in samples, of a member's run start from the common grid
 GRID_TOL = 1e-3
 COILS = ("hx", "hy")
 
 
 class _Span(NamedTuple):
-    """The common span: first sample (ns since the epoch, UTC), sample count, rate."""
+    """Common span of the members.
+
+    Attributes:
+        t0 (int): First sample, ns since the epoch, UTC.
+        n (int): Number of samples.
+        fs (float): Sample rate in Hz.
+    """
 
     t0: int
     n: int
     fs: float
 
     def iso(self, j: int) -> str:
-        """Sample j's time as the stack's metadata has always written it."""
+        """Return the time of sample j in the ISO format of the stack metadata."""
         return _iso(self.t0 + int(round(j * (1e9 / self.fs))))
 
 
 class _Coil:
     """One member's coil on the common span, read from its HDF5 dataset on demand.
 
-    ``coil[a:b]`` (and ``coil[a:b:step]``) is samples a..b of the span, read
-    from the dataset at the member's own offset `i0`; nothing is held.
+    ``coil[a:b]`` and ``coil[a:b:step]`` return samples a..b of the span,
+    read from the dataset at the member's offset `i0`. No samples are
+    cached.
+
+    Args:
+        data: h5py dataset of the coil.
+        i0 (int): Index in `data` of the span's first sample.
+        n (int): Number of samples in the span.
     """
 
     def __init__(self, data, i0: int, n: int):
@@ -96,7 +116,7 @@ class _Coil:
 
 
 def _ns(t) -> int | None:
-    """A time (string, Timestamp; naive = UTC) as ns since the epoch, UTC; None stays None."""
+    """Convert a time (string or Timestamp, naive taken as UTC) to ns since the epoch; None passes through."""
     if t is None:
         return None
     ts = pd.Timestamp(t)
@@ -105,29 +125,44 @@ def _ns(t) -> int | None:
 
 
 def _iso(ns: int) -> str:
-    """ISO UTC to the microsecond, as the stack's metadata and comments have always carried it."""
+    """Format ns since the epoch as ISO UTC to the microsecond, the format of the stack metadata."""
     return str(np.datetime_as_string(np.datetime64(int(ns), "ns"), unit="us")) + "+00:00"
 
 
 def _text(comment) -> str:
+    """Return the text of an mt_metadata Comment or a plain value, "" for None."""
     value = getattr(comment, "value", comment)
     return "" if value is None else str(value)
 
 
 def _chunks(n: int, w: int) -> list[tuple[int, int]]:
-    """(first, stop) sample pairs covering [0, n) in pieces of `w`, the last one partial."""
+    """Return (first, stop) sample pairs covering [0, n) in pieces of `w`, the last one partial."""
     return [(s, min(s + w, n)) for s in range(0, n, w)]
 
 
 def _member_run(survey: Survey, site: str, lo: int | None, hi: int | None, stack: ExitStack) -> dict:
-    """Open `site`'s processing archive read-only (closed by `stack`); pick its run overlapping [lo, hi) most.
+    """Open a site's processing archive and pick the run overlapping [lo, hi) most.
 
-    Returns {"run", "start" (ns), "n", "fs", "hx", "hy" (the h5py datasets)}.
-    `processing_archive` resolves the path -- the site's filtered variant
-    (built from its raw archive on demand, if it is missing or stale) when it
-    declares filters, its raw archive otherwise -- so the member is always
-    taken exactly as processing would see it, current by construction; the
-    stack itself applies nothing further.
+    Opens the archive read-only; `stack` closes it. `processing_archive`
+    resolves the path: the site's filtered variant (built from its raw
+    archive on demand when missing or stale) when the site declares
+    filters, its raw archive otherwise. The member is therefore taken as
+    processing sees it.
+
+    Args:
+        survey (Survey): The survey.
+        site (str): Member site.
+        lo (int or None): Window start, ns since the epoch.
+        hi (int or None): Window end, ns since the epoch.
+        stack (ExitStack): Owner of the open archive.
+
+    Returns:
+        dict: ``run``, ``start`` (ns), ``n``, ``fs``, ``overlap``,
+        ``comment`` and ``hx``, ``hy`` (the h5py datasets).
+
+    Raises:
+        ValueError: If the site has no archive, no run with hx and hy, a run
+            whose hx and hy differ in grid, or no run overlapping the window.
     """
     try:
         path = processing_archive(survey, site)
@@ -180,17 +215,26 @@ def _member_run(survey: Survey, site: str, lo: int | None, hi: int | None, stack
 
 
 def _per_comp(members) -> dict[str, list[str]]:
+    """Return the member lists per coil from a list (both coils) or a {coil: list} dict."""
     per_comp = members if isinstance(members, dict) else {"hx": list(members), "hy": list(members)}
     return {c: list(v) for c, v in per_comp.items()}
 
 
 def _open_members(survey: Survey, per_comp: dict, start, end, name: str, stack: ExitStack):
-    """(sorted member list, {coil: {member: _Coil}} in `per_comp` order, _Span).
+    """Open every member and compute the common span.
 
-    Each member's run is the one overlapping [start, end) most; the common
-    span is those runs' intersection with [start, end), on the grid of the
-    latest-starting run. Every member's run start must sit on that grid to
-    `GRID_TOL` of a sample and every rate must be the same, or it raises.
+    Each member's run is the one overlapping [start, end) most. The common
+    span is the intersection of those runs with [start, end), on the grid
+    of the latest-starting run.
+
+    Returns:
+        tuple: ``(members, coils, span)``: the sorted member list,
+        ``{coil: {member: _Coil}}`` in `per_comp` order, and the `_Span`.
+
+    Raises:
+        ValueError: If the sample rates differ, a run start lies more than
+            `GRID_TOL` of a sample off the common grid, or the members do
+            not overlap in [start, end).
     """
     all_members = sorted(set(per_comp["hx"]) | set(per_comp["hy"]))
     lo, hi = _ns(start), _ns(end)
@@ -226,10 +270,10 @@ def _open_members(survey: Survey, per_comp: dict, start, end, name: str, stack: 
 
 
 def _median(a, n: int | None = None) -> float:
-    """A member's DC offset: the median of an even subsample of its first `n` samples.
+    """Estimate a member's DC offset as the median of an even subsample of its first `n` samples.
 
-    Exact enough and far cheaper; on an archived coil the subsample is one
-    strided read of the HDF5 dataset.
+    The subsample keeps at most about a million samples; on an archived
+    coil it is one strided read of the HDF5 dataset.
     """
     n = a.size if n is None else n
     step = max(1, n // 1_000_000)
@@ -242,25 +286,35 @@ def member_coherence(
     bands=(WEIGHT_BAND_S,),
     chunk_s: float = WEIGHT_CHUNK_S,
 ) -> tuple[np.ndarray, dict[tuple[float, float], np.ndarray]]:
-    """Each member's band-averaged squared coherence with the mean of the others, per chunk.
+    """Compute each member's band-averaged squared coherence with the mean of the others, per chunk.
 
-    `arrays` is one coil, {member: 1-D array or archived coil}, all on the
-    same sample grid; each chunk is read from it on its own. Each member's
-    median (over the whole span) is removed, the leave-one-out mean of the
-    others is formed chunk by chunk, and each chunk's pair goes through
-    `mtproc.timefreq.cascade` on the ladder the whole span plans
-    (`levels_plan` with window = step = `chunk_s`, periods from the shortest
-    band edge to the longest), which gives every level exactly one window,
-    the chunk; each band's value is `band_from_levels`: the mean of the
-    band's log-period bins on each level, averaged over the levels reaching
-    the band. (Over 0.1-10 s at 1000 Hz that is levels 0, 1 and 2 -- 0.1-1,
-    1-4 and 4-10 s -- weighted equally.) Level 0 is what a whole-span cascade
-    gives; the decimated levels see the chunk's own edges rather than its
-    neighbours' samples (the FIR's reach, about 200 input samples a side).
+    Each member's median over the whole span is removed, the leave-one-out
+    mean of the others is formed chunk by chunk, and each chunk's pair goes
+    through `mtproc.timefreq.cascade` on the ladder planned for the whole
+    span (`levels_plan` with window = step = `chunk_s`, periods from the
+    shortest band edge to the longest), which gives every level exactly one
+    window, the chunk. Each band's value is `band_from_levels`: the mean of
+    the band's log-period bins on each level, averaged over the levels
+    reaching the band. Over 0.1-10 s at 1000 Hz these are levels 0, 1 and 2
+    (0.1-1, 1-4 and 4-10 s), weighted equally. Level 0 matches a whole-span
+    cascade; the decimated levels see the chunk's own edges rather than its
+    neighbours' samples (the FIR reaches about 200 input samples each side).
 
-    Returns (the chunks' first sample indices, {band: gamma2[member, chunk]})
-    with members in `arrays` order. Samples after the last whole chunk are in
-    no chunk (the stack gives them the last chunk's weights).
+    Args:
+        arrays (dict): One coil, ``{member: 1-D array or _Coil}``, all on
+            the same sample grid. Each chunk is read separately.
+        sample_rate (float): Sample rate in Hz.
+        bands (tuple): ``(pmin_s, pmax_s)`` period bands.
+        chunk_s (float): Chunk length in s.
+
+    Returns:
+        tuple: ``(chunk_starts, {band: gamma2[member, chunk]})`` with members
+        in `arrays` order. Samples after the last whole chunk belong to no
+        chunk; the stack gives them the last chunk's weights.
+
+    Raises:
+        ValueError: With fewer than two members, or when a `chunk_s` chunk
+            cannot carry the band ladder on this record.
     """
     members = list(arrays)
     if len(members) < 2:
@@ -286,7 +340,7 @@ def member_coherence(
     pair = ("member", "others")
     logger.info(f"coherence of {len(members)} members over {n_chunks} chunks of {chunk_s:g} s, "
                 f"ladder levels {list(plan['level'])}")
-    # the cascade logs its ladder on every call: once per member per chunk is noise
+    # the cascade logs its ladder on every call, so its logging is off inside the loop
     logger.disable("mtproc.timefreq")
     try:
         for k in range(n_chunks):
@@ -309,13 +363,21 @@ def member_coherence(
 
 
 def coherence_weights(gamma2: np.ndarray, floor: float = WEIGHT_FLOOR) -> np.ndarray:
-    """gamma2[member, chunk] -> weights[member, chunk], each chunk summing to one.
+    """Convert coherences to stack weights, each chunk summing to one.
 
-    Normalise each chunk's gamma2 to sum to one; a member whose normalised
-    weight is under `floor` is dropped (weight 0) and the rest renormalised.
-    A NaN gamma2 counts as 0. A chunk where every gamma2 is 0/NaN keeps equal
-    weights, and one where every member would be dropped (possible only with
-    more than 1/floor members) keeps its undropped weights -- both logged.
+    Each chunk's gamma2 is normalised to sum to one; a member whose
+    normalised weight is under `floor` gets weight 0 and the rest are
+    renormalised. A NaN gamma2 counts as 0. A chunk where every gamma2 is 0
+    or NaN gets equal weights, and a chunk where every member would be
+    dropped (possible only with more than 1/floor members) keeps its
+    undropped weights; both cases are logged.
+
+    Args:
+        gamma2 (np.ndarray): Coherence, shape (member, chunk).
+        floor (float): Smallest normalised weight kept.
+
+    Returns:
+        np.ndarray: Weights, shape (member, chunk).
     """
     g = np.nan_to_num(np.clip(np.asarray(gamma2, dtype="float64"), 0.0, 1.0), nan=0.0)
     n_members = g.shape[0]
@@ -337,7 +399,7 @@ def coherence_weights(gamma2: np.ndarray, floor: float = WEIGHT_FLOOR) -> np.nda
 
 
 def _mean_stack(arrays: dict, sample_rate: float) -> np.ndarray:
-    """One coil's plain mean of its members' counts (float64), chunk by chunk."""
+    """Return one coil's plain mean of its members' counts (float64), computed chunk by chunk."""
     n = min(a.size for a in arrays.values())
     acc_all = np.zeros(n, dtype="float64")
     for s, e in _chunks(n, int(round(WEIGHT_CHUNK_S * sample_rate))):
@@ -349,11 +411,15 @@ def _mean_stack(arrays: dict, sample_rate: float) -> np.ndarray:
 
 
 def _coherence_stack(arrays: dict, sample_rate: float) -> tuple[np.ndarray, dict]:
-    """One coil's coherence-weighted stack (medians removed) and its weight record.
+    """Build one coil's coherence-weighted stack, medians removed.
 
-    Two passes over the members: `member_coherence` for the weights, then the
-    weighted sum chunk by chunk (the partial last chunk takes the last whole
-    chunk's weights).
+    Makes two passes over the members: `member_coherence` for the weights,
+    then the weighted sum chunk by chunk. The partial last chunk takes the
+    last whole chunk's weights.
+
+    Returns:
+        tuple: ``(stack, info)`` with ``info`` holding ``members``,
+        ``chunk_starts``, ``bands``, ``gamma2`` and ``weights``.
     """
     members = list(arrays)
     n = min(a.size for a in arrays.values())
@@ -364,7 +430,7 @@ def _coherence_stack(arrays: dict, sample_rate: float) -> tuple[np.ndarray, dict
     last = len(starts) - 1
     acc = np.zeros(n, dtype="float64")
     for k, (s, e) in enumerate(_chunks(n, int(round(WEIGHT_CHUNK_S * sample_rate)))):
-        kk = min(k, last)  # the tail rides with the last whole chunk
+        kk = min(k, last)  # the tail uses the last whole chunk's weights
         for i, m in enumerate(members):
             if weights[i, kk] > 0:
                 acc[s:e] += weights[i, kk] * (np.asarray(arrays[m][s:e], dtype="float64") - offsets[m])
@@ -374,7 +440,13 @@ def _coherence_stack(arrays: dict, sample_rate: float) -> tuple[np.ndarray, dict
 
 
 def _weights_comments(infos: dict, t0: str) -> tuple[str, dict[str, str]]:
-    """(run comment: rule + mean weights, {coil: channel comment with per-chunk weights})."""
+    """Build the comments of a coherence-weighted stack.
+
+    Returns:
+        tuple: ``(run_comment, {coil: channel_comment})``. The run comment
+        states the rule and the mean weights; each channel comment lists the
+        per-chunk weights in per mille.
+    """
     lo, hi = WEIGHT_BAND_S
     n_chunks = len(next(iter(infos.values()))["chunk_starts"])
     summary = []
@@ -409,13 +481,24 @@ def _weights_comments(infos: dict, t0: str) -> tuple[str, dict[str, str]]:
 
 
 def check_members(survey: Survey, members, start, end, name: str = "check") -> dict:
-    """{coil: {"members", "chunk_starts", "bands": {band: gamma2[member, chunk]}}}; writes nothing.
+    """Check the members of a stack before building it.
 
-    The member check before stacking: each member's coil against the plain
-    mean of the other members' same coil, per `WEIGHT_CHUNK_S` chunk, in
-    `CHECK_BANDS_S`, on the same common span `build_synthetic_remote` would
-    stack, each member read from its archive exactly as processing sees it.
-    A dead coil sits near 0 in every band.
+    Each member's coil is compared with the plain mean of the other
+    members' same coil, per `WEIGHT_CHUNK_S` chunk, in `CHECK_BANDS_S`, on
+    the common span `build_synthetic_remote` would stack. Members are read
+    as processing sees them, and nothing is written. A dead coil sits near
+    0 in every band.
+
+    Args:
+        survey (Survey): The survey.
+        members (list or dict): Member sites, as for `build_synthetic_remote`.
+        start: Window start.
+        end: Window end.
+        name (str): Label for log lines.
+
+    Returns:
+        dict: ``{coil: {"members", "chunk_starts", "bands"}}`` with
+        ``bands`` mapping each band to gamma2[member, chunk].
     """
     per_comp = _per_comp(members)
     out = {}
@@ -438,25 +521,42 @@ def build_synthetic_remote(
     weighting: str = "none",
     weights_out: dict | None = None,
 ) -> Path:
-    """Stack members' archived hx/hy counts into a virtual station MTH5.
+    """Stack members' archived hx and hy counts into a virtual station MTH5.
 
-    Each member is read from ``<workspace>/mth5/<member>.h5`` (a member
-    without one raises: build it first), taking the run that overlaps
-    [start, end) most, exactly as processing sees it -- the declared filters
-    were applied at ingest and are not applied again. The common span is
-    those runs' intersection with [start, end), streamed in
-    `WEIGHT_CHUNK_S` chunks.
+    Each member is read from its processing archive
+    (`mtproc.ingest.processing_archive`), taking the run that overlaps
+    [start, end) most, as processing sees it; the declared filters were
+    applied at ingest. The common span is the intersection of those runs
+    with [start, end), streamed in `WEIGHT_CHUNK_S` chunks. With
+    ``weighting="none"`` each coil is the plain mean of its members over the
+    common span; with ``"coherence"`` it is the chunk-wise
+    coherence-weighted sum described in the module docstring.
 
-    `members` is a list of sites used for both coils, or a dict
-    ``{"hx": [...], "hy": [...]}`` with a member list per coil — the
-    coherence-selected stack: a site whose hy is dead can still lend its hx
-    (Burra01), and vice versa (Burra37). With ``weighting="none"`` (the
-    default) each coil is the plain mean of its members over the common span;
-    with ``"coherence"`` it is the chunk-wise coherence-weighted sum the
-    module docstring describes. `weights_out`, when a dict is given, receives
-    ``{coil: {"members", "chunk_starts", "bands", "gamma2", "weights"}}``
-    from a coherence-weighted build (nothing from an unweighted one or a
-    reused archive).
+    Args:
+        survey (Survey): The survey.
+        members (list or dict): Sites used for both coils, or
+            ``{"hx": [...], "hy": [...]}`` with a member list per coil, for
+            a coherence-selected stack in which a site with a dead hy still
+            contributes its hx, and vice versa.
+        start: Window start.
+        end: Window end.
+        name (str): Station id of the virtual station.
+        out_path (Path, optional): Output file; default
+            ``<workspace>/mth5/<name>.h5``.
+        overwrite (bool): Replace an existing file. When False, an existing
+            file is returned as it is.
+        weighting (str): ``"none"`` or ``"coherence"``.
+        weights_out (dict, optional): Receives
+            ``{coil: {"members", "chunk_starts", "bands", "gamma2",
+            "weights"}}`` from a coherence-weighted build; left unchanged for
+            an unweighted build or a reused file.
+
+    Returns:
+        Path: The MTH5 file.
+
+    Raises:
+        ValueError: If `weighting` is unknown, a member has no archive, or
+            the members' grids or spans do not match.
     """
     if weighting not in WEIGHTINGS:
         raise ValueError(f"weighting {weighting!r} is not one of {WEIGHTINGS}")
@@ -512,8 +612,7 @@ def build_synthetic_remote(
 
         run_group = station_group.add_run("sr1000_0001")
         for comp in COILS:
-            # the virtual station carries no filters (the channel is written
-            # without any): RR is calibration-invariant
+            # the channel is written with no filters, since RR is calibration-invariant
             ch = run_group.add_channel(
                 comp,
                 "magnetic",
@@ -527,7 +626,7 @@ def build_synthetic_remote(
             ch.metadata.units = "digital counts"
             ch.metadata.measurement_azimuth = 0.0 if comp == "hx" else 90.0
             if comp in chan_comments:
-                # the Comment's value: a plain string would be parsed on "|"
+                # set the Comment's value, since a plain string is parsed on "|"
                 ch.metadata.comments.value = chan_comments[comp]
             ch.write_metadata()
             total[comp] = None  # release the float64 coil once it is written
