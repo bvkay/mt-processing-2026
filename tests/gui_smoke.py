@@ -1,30 +1,54 @@
-"""Smoke test for the mtproc_gui desktop GUI (run headless).
+# -*- coding: utf-8 -*-
+"""
+Smoke test for the mtproc_gui desktop GUI (run headless)
 
+Drives the main window over the survey in surveys/curnamona_cube and checks
+every tab against values computed here. The flow under test: a tree of
+sites on the Time Series tab, a window under a site, one
+click loads it, and the Spectra, Spectrogram and Coherence tabs show that
+window. The test then goes through the Process, Metadata, Filter Data, View
+EDIs and Cross-powers tabs, the survey tools (New survey, Import site table,
+Build MTH5, the basemap fetch) and a mixed LEMI-423 / LEMI-424 / EDL survey.
+
+It opens three archives, D02.h5, E08.h5 and A07.h5, read-only (through the
+GUI and, for the independent check, through h5py), and for (28)-(31) the
+scratch survey's MBJ21.h5 and EGFLP02.h5. `JobRunner.run_now` is wrapped at
+the class level before the window is built: a call naming fetch_basemap.py
+or ingest_site.py is recorded (`DIVERTED`) instead of started, and every
+other call (New survey's) runs as usual, so the test runs offline and writes
+no archive. The filter, metadata and mask round trips write to a copy of
+the survey folder in the scratch directory, the New survey check writes
+under the scratch directory too, and the files written into
+`surveys/curnamona_cube/work/qc/` are PNGs.
+
+Usage:
     QT_QPA_PLATFORM=offscreen python tests/gui_smoke.py
 
-The flow under test is the MATLAB app's: a tree of sites on the Time Series
-tab, a window under a site, one click loads it, and the Spectra, Spectrogram
-and Coherence tabs show that window. **This test fails if**
+@author: ben kay (ben@auscope.org.au)
+
+:license: MIT
+
+**This test fails if**
 
 (1)  the window cannot be built, or its tabs are not, in order, Metadata,
-     Time Series, Spectra, Spectrogram, Coherence, Filter Data, Process,
-     Cross-powers, View EDIs; or the Metadata table does not show 59 sites with a `remote`
-     column reading E08 for D02, and a `channels` column reading "Ex Ey Bx
-     By" (the survey default [ex, ey, hx, hy] as its preset's label) for D02
-     and for A07 -- both archived, so both cells drawn in the disabled grey
-     #7a7a7a with the tooltip "archive built with the old set - Delete
-     archive then Build MTH5 to change it" -- and for A02 (no archive) with
-     no tooltip and not in that grey; or the dark theme is not on: the
+     Time Series, Spectra, Spectrogram, Coherence, Filter Data, Cross-powers,
+     Process, View EDIs; or the Metadata table does not show 59 sites with a
+     `remote` column reading E08 for D02, and a `channels` column reading
+     "Ex Ey Bx By" (the survey default [ex, ey, hx, hy] as its preset's
+     label) for D02 and for A07 (both archived, so both cells drawn in the
+     disabled grey #7a7a7a with the tooltip "archive built with the old set -
+     Delete archive then Build MTH5 to change it") and for A02 (no archive)
+     with no tooltip and not in that grey; or the dark theme is not on: the
      application palette's Window colour is not #2b2b2b (`theme.WINDOW`),
      its Base not #1f1f1f, or the style not Fusion (behind the theme's
      proxy); or an unticked, unlabelled QCheckBox has no pixel at least 64
-     lightness levels above the window grey -- Fusion alone draws its
-     outline from the window grey, darkened, and the box disappears;
+     lightness levels above the window grey (Fusion alone draws its outline
+     from the window grey, darkened, and the box disappears);
 (2)  the Time Series tree does not have 59 site rows, bold and collapsed, of
-     which exactly three -- A07, D02, E08, the archived ones -- are
-     expandable (an indicator and no rows yet) while every other row holds
-     one disabled child reading "no MTH5 yet - select the site and press
-     Build MTH5"; or a real mouse click on D02's row does not expand it;
+     which exactly three (A07, D02, E08, the archived ones) are expandable
+     (an indicator and no rows yet) while every other row holds one disabled
+     child reading "no MTH5 yet - select the site and press Build MTH5"; or
+     a real mouse click on D02's row does not expand it;
 (3)  expanding D02 does not, within 30 s, yield 21 window rows, the first
      labelled with D02's record start as the runs' `time_period.start` attrs
      give it ("2021-06-29 06:55 UTC (2.0 h)") and the last "(1.3 h)";
@@ -33,24 +57,26 @@ and Coherence tabs show that window. **This test fails if**
      at that record start + 6 h, four channel plots with finite data over the
      whole window and x limits [0, 7200] s, the hint naming D02; or one click
      starts more than one worker (`qc_started` once); or the four plots are
-     not the MATLAB app's stack: channels hx, hy, ex, ey top to bottom, left
+     not stacked as follows: channels hx, hy, ex, ey top to bottom, left
      labels starting "Bx (", "By (", "Ex (", "Ey (", curve pens #4fc3f7
      (`theme.B_COLOUR`) on the first two and #ff5252 (`theme.E_COLOUR`) on
      the last two, a background brush of #1f1f1f, bottom tick values hidden
      on the upper three and shown on the bottom one, the vertical grid on
      and the horizontal grid off on all four, and no gap between them (each
      plot's top edge at the one above's bottom edge);
-(5)  the INDEPENDENT check fails: ex over the first 60 s of that window, as
-     the Segment holds it (float32, offset removed) plus the Segment's offset,
-     and as the ex plot (the third) shows it, is not `allclose` (atol 1e-6
-     of the spread) to the same 60,000 samples read here with h5py alone --
-     D02.h5 opened read-only, the record start from the earliest run's
-     `time_period.start` attr, the sample rate from the `ex` dataset's
+(5)  the independent check fails: ex over the first 60 s of that window, as
+     the Segment holds it (float32, offset removed) plus the Segment's
+     offset, and as the ex plot (the third) shows it, is not `allclose`
+     (atol 1e-6 of the spread) to the same 60,000 samples read here with
+     h5py alone: D02.h5 opened read-only, the record start from the earliest
+     run's `time_period.start` attr, the sample rate from the `ex` dataset's
      `sample_rate` attr, the run covering the window found from the runs'
      `time_period` attrs and its `ex` dataset sliced by sample offset from
-     that run's start, divided by the Segment's gain; nothing from
-     `mtproc_gui.segment` or `mtproc_gui.archive` places these samples in time. This catches an off-by-one, wrong-run or
-     wrong-t0 bug (the window starts 16,200,999 samples into the second run);
+     that run's start, divided by the Segment's gain. The attrs and h5py
+     alone place these samples in time, independently of
+     `mtproc_gui.segment` and `mtproc_gui.archive`. This catches an
+     off-by-one, wrong-run or wrong-t0 bug (the window starts 16,200,999
+     samples into the second run);
 (6)  the archive lock does not serialise: A07 expanded right after the click,
      while the store holds the lock for its load phase, must wait (no tree
      thread, A07 queued), then get its window rows once the store's load
@@ -60,13 +86,12 @@ and Coherence tabs show that window. **This test fails if**
      stages (two, at 1000 and 100 Hz) carry hx and r_hx, finite, whose
      (hx, r_hx) band curve has a median above 0.5 in the 0.1-1 s band, and
      whose spectrogram grids for all four channels are finite with at least
-     20 time columns; or the three QC tabs do not draw it, in the MATLAB
-     app's layout:
-     Spectra -- two panels titled "By-Ex (Zxy)" over "Bx-Ey (Zyx)", each
+     20 time columns; or the three QC tabs do not draw it in this layout:
+     Spectra: two panels titled "By-Ex (Zxy)" over "Bx-Ey (Zyx)", each
      with six finite positive curves (two stages each of the magnetic
      channel in #4fc3f7, the electric in #ff5252 and the remote's coil in
      #bdbdbd), bottom tick values on the lower panel only; each panel's
-     ViewBox limits equal to the data extent computed HERE from the curves'
+     ViewBox limits equal to the data extent computed here from the curves'
      own data (log10 of the smallest and largest positive frequency, and of
      the smallest and largest positive PSD at 0.003-400 Hz, below the
      anti-alias roll-off) and the view starting exactly there; a setRange a
@@ -74,11 +99,11 @@ and Coherence tabs show that window. **This test fails if**
      panel five dashed "Schumann" lines at 7.83, 14.3, 20.8, 27.3, 33.8 Hz
      and ten dashed "mains" lines at 50, 100, ... 500 Hz (Nyquist), and on
      the tab exactly one "Schumann" and one "50 Hz + harmonics" text label;
-     Spectrogram -- four meshes each more than 80 per cent finite, labelled
+     Spectrogram: four meshes each more than 80 per cent finite, labelled
      Bx, By, Ex, Ey top to bottom, bottom tick values on the lowest only,
      each x limited to [0, 120] min with a 120 min maximum span, and a
      setXRange(-10, 200) clamped to [0, 120] on all four;
-     Coherence -- the two aligned columns: "By-Ex (Zxy)", "Bx-Ey (Zyx)",
+     Coherence: the two aligned columns, "By-Ex (Zxy)", "Bx-Ey (Zyx)",
      "Bx-By (magnetic)", "Ex-Ey (electric)" in rows 1-4 of column 0 and
      "rBy-Ex (Zxy, remote)", "rBx-Ey (Zyx, remote)", "Bx-rBx", "By-rBy" in
      rows 1-4 of column 1, as the panels' left axis labels; no coherogram
@@ -89,7 +114,7 @@ and Coherence tabs show that window. **This test fails if**
      only; once the tab is shown every panel's x view exactly [0, 120] min
      (1e-9, no padding) with x limits [0, 120] and y view and limits
      [0, 1], and a setXRange(-10, 200) on one panel leaving every panel on
-     [0, 120]; and a click on a RIGHT-column panel at 15 min (900 s)
+     [0, 120]; and a click on a right-column panel at 15 min (900 s)
      putting the cursor at 15 min on all eight;
      or any of the three is not labelled with D02, the window's start and
      end (12:55:49 to 14:55:49 UTC) and remote E08;
@@ -97,7 +122,7 @@ and Coherence tabs show that window. **This test fails if**
      E08 (the hint names E08, the Segment is E08's, x limits reset to
      [0, 7200]) and, on its `qc_ready`, relabel the three QC tabs to E08
      (no remote is declared for E08) and leave the Coherence tab's right
-     column out -- four panels, the local pairs only;
+     column out (four panels, the local pairs only);
 (9)  the visible range set to 600-1800 s and the "Use visible range as
      processing window" button do not fill the Process tab's window fields
      with E08's window start + 10 min and + 30 min (to the minute);
@@ -110,94 +135,94 @@ and Coherence tabs show that window. **This test fails if**
      with its output in the shared log; a job whose output names an
      existing .edi path does not put it in the Products list; or "Show in
      View EDIs" does not front the View EDIs tab with that EDI and the D02
-     lemimt reference ticked and drawn -- one mtpy error-bar container per
+     lemimt reference ticked and drawn: one mtpy error-bar container per
      station on the xy resistivity axes, finite and positive, apparent
      resistivities at 1 s within a factor of 3;
-(13) the Process tab is not laid out as the MATLAB Process Data tab, or
+(13) the Process tab is not laid out as stated below, or
      does not do all of this for D02. Layout, from the widgets' positions:
      station combo, remote combo and summary left to right on row 1; below
      them the window bar; below that the buttons "Add to queue", "Run
      queue", "Reset queue", "Build stack" left to right on one row, and no
      "Timing check", "Site QC figures" or "Fetch basemap" button anywhere on
-     the tab (nor the attributes or queue methods behind them, removed at the
-     owner's request); below them the Aurora options,
-     their "Advanced (aurora estimator)" block collapsed; below those
-     the queue table; the site map right of the table and below the bar,
-     the stack builder under the map and the Products list under that; in
-     the bar, the status line centred (3 px) between the two lamps and above
-     the plot, the start field left of the plot and the end field right of
-     it. Behaviour: the declared-filters line (`RunOptions.describe_filters`)
-     must read "D02 declares: none | E08 (remote) declares: none" (neither
-     declares anything) and, called directly for A07 (a saved `replace`, no
-     `A07_f<hash>.h5` variant built) "A07 declares: replace (filtered
-     archive will be built first, from the raw archive)"; preselect remote E08 from `survey.yaml`; draw a site map
-     of 59 points with D02 green, E08 blue and a distance label within 2 km
-     of the D02-E08 separation computed here from the YAML coordinates by
-     the spherical law of cosines (a different formula from the haversine
-     under test); show both recorded spans on the window bar and default the
-     region to their overlap; with `<workspace>/basemap.json` and
-     `basemap.png` present (fetched by `scripts/fetch_basemap.py`; without
-     them this check is skipped with a printed reason) the map must hold one
-     `pg.ImageItem` below the dots whose rect in view coordinates equals the
-     JSON's lon_min..lon_max, lat_min..lat_max (1e-9), whose top data row is
-     the PNG's first (north) row and bottom data row its last; the credit
-     must be the map plot's TOOLTIP, "Basemap: <provider> - <attribution>"
-     from basemap.json (its "(C)" as the copyright sign), with no visible
-     label under the map (the grey line is hidden, and no visible QLabel on
-     the tab carries the attribution); the map's ViewBox
-     limits must be the JSON's extent (x and y limits lon_min..lon_max,
-     lat_min..lat_max, maximum ranges their widths, 1e-9) and a setRange a
-     degree beyond every side must leave the view inside that extent (the
-     aspect lock may crop one axis, never widen it); every
-     site name must sit on a translucent dark box (the SURFACE grey, alpha
-     between 100 and 230) drawn above the basemap and below the dots;
-     the summary must read "Distance to remote:"
-     within 0.1 km of that law-of-cosines figure, "Overlap available:" within
-     0.05 h (and its days within 0.005) of the D02-E08 overlap computed HERE
-     from the two archives' run `time_period` attrs with h5py, "Window
-     length:" within 0.05 h of the region, and "Recommended remote: E08"
-     (D02's declared remote) with that same distance and overlap; both lamps,
-     as drawn (the pixel at each one's centre), green (hue 90-150) under
-     "remote covers the whole window"; a region set programmatically (start
-     + 5 h to start + 9 h) must show in both fields, both local labels (ACST
-     is UTC+9:30) and "Window length: 4.0 h"; with D08 as the remote (a site
-     whose span, from its B423 file names read HERE, ends inside D02's) the
+     the tab (nor the attributes or queue methods behind them); below them
+     the Aurora options, their "Advanced (aurora estimator)" block
+     collapsed; below those the queue table; the site map right of the
+     table and below the bar, the stack builder under the map and the
+     Products list under that; in the bar, the status line centred (3 px)
+     between the two lamps and above the plot, the start field left of the
+     plot and the end field right of it. Behaviour: the declared-filters
+     line (`RunOptions.describe_filters`) must read "D02 declares: none |
+     E08 (remote) declares: none" (neither declares anything) and, called
+     directly for A07 (a saved `replace`, no `A07_f<hash>.h5` variant
+     built) "A07 declares: replace (filtered archive will be built first,
+     from the raw archive)"; preselect remote E08 from `survey.yaml`; draw a
+     site map of 59 points with D02 green, E08 blue and a distance label
+     within 2 km of the D02-E08 separation computed here from the YAML
+     coordinates by the spherical law of cosines (a different formula from
+     the haversine under test); show both recorded spans on the window bar
+     and default the region to their overlap; with
+     `<workspace>/basemap.json` and `basemap.png` present (fetched by
+     `scripts/fetch_basemap.py`; without them this check is skipped with a
+     printed reason) the map must hold one `pg.ImageItem` below the dots
+     whose rect in view coordinates equals the JSON's lon_min..lon_max,
+     lat_min..lat_max (1e-9), whose top data row is the PNG's first (north)
+     row and bottom data row its last; the credit must be the map plot's
+     tooltip, "Basemap: <provider> - <attribution>" from basemap.json (its
+     "(C)" as the copyright sign), with no visible label under the map (the
+     grey line is hidden, and no visible QLabel on the tab carries the
+     attribution); the map's ViewBox limits must be the JSON's extent (x and
+     y limits lon_min..lon_max, lat_min..lat_max, maximum ranges their
+     widths, 1e-9) and a setRange a degree beyond every side must leave the
+     view inside that extent (the aspect lock may crop one axis); every
+     site name must sit on a translucent dark box (the SURFACE
+     grey, alpha between 100 and 230) drawn above the basemap and below the
+     dots; the summary must read "Distance to remote:" within 0.1 km of that
+     law-of-cosines figure, "Overlap available:" within 0.05 h (and its days
+     within 0.005) of the D02-E08 overlap computed here from the two
+     archives' run `time_period` attrs with h5py, "Window length:" within
+     0.05 h of the region, and "Recommended remote: E08" (D02's declared
+     remote) with that same distance and overlap; both lamps, as drawn (the
+     pixel at each one's centre), green (hue 90-150) under "remote covers
+     the whole window"; a region set programmatically (start + 5 h to
+     start + 9 h) must show in both fields, both local labels (ACST is
+     UTC+9:30) and "Window length: 4.0 h"; with D08 as the remote (a site
+     whose span, from its B423 file names read here, ends inside D02's) the
      summary's distance must follow to D02-D08 by the law of cosines, a
      region dragged 2 h either side of D08's end must turn both lamps amber
      (hue 25-50) at 45-55 % covered, and one wholly after it red (hue under
      15 or over 345) with "no overlap", while the recommendation still names
      E08; back on E08, with `state.runner.add` wrapped to record every argv
-     while `run_queue` does nothing (the jobs are queued, never run): the
-     two finished jobs of (12) must be rows showing their label under
+     while `run_queue` does nothing (the jobs are queued and left waiting):
+     the two finished jobs of (12) must be rows showing their label under
      Station and "-" under Remote, Window and Options; "Add to queue" must
      record process_rr.py D02 E08 with that window and **no** band options
      while they are the survey's and add a row reading Station D02, Remote
      E08, Window "<start> to <end>", Options "defaults", Status "queued";
-     then `--min-period 0.01 --no-filters`, in the argv and in the new row's
-     Options, once the spinbox and the checkbox are moved, and none again
-     when they are put back; with the advanced block untouched no estimator
-     flag (--taper ... --tolerance), then, with it expanded and the taper
-     set to hamming (hann is the in-use default, so it
-     emits no flag) and r0 to 2.0, exactly `--taper hamming --r0 2.0` at the
-     end of the argv and "--taper hamming --r0 2.0" in the row's Options, and none
-     again once they are put back; the row-3 "Build stack" button must record a
-     build_stack.py argv naming the survey, the default stack name STKD02,
-     the window and both chosen members (A02, A03), which the map then
-     paints orange; "Reset queue" must leave the table with no rows and the
-     runner with no jobs; then, with the runner real again and D02/E08 still
-     the pair, queuing a trivial job through the tab's own `_queue()` (what
-     every button, including Add to queue, calls) must leave it "queued" and
-     the runner idle -- `status_label` reading "1 job(s) queued - press Run
-     queue" -- until "Run queue" is pressed, after which it runs to
+     then `--min-period 0.01 --no-filters`, in the argv and in the new
+     row's Options, once the spinbox and the checkbox are moved, and none
+     again when they are put back; with the advanced block untouched no
+     estimator flag (--taper ... --tolerance), then, with it expanded and
+     the taper set to hamming (hann is the in-use default, so it emits no
+     flag) and r0 to 2.0, exactly `--taper hamming --r0 2.0` at the end of
+     the argv and "--taper hamming --r0 2.0" in the row's Options, and none
+     again once they are put back; the row-3 "Build stack" button must
+     record a build_stack.py argv naming the survey, the default stack name
+     STKD02, the window and both chosen members (A02, A03), which the map
+     then paints orange; "Reset queue" must leave the table with no rows and
+     the runner with no jobs; then, with the runner real again and D02/E08
+     still the pair, queuing a trivial job through the tab's own `_queue()`
+     (what every button, including Add to queue, calls) must leave it
+     "queued" and the runner idle (`status_label` reading "1 job(s) queued -
+     press Run queue") until "Run queue" is pressed, after which it runs to
      completion; a trivial job whose argv names fetch_basemap.py, run for
      real, must make the map load the basemap again (a new ImageItem) when
      it finishes (skipped with the basemap check); and for E08, which
-     declares no remote, the recommendation
-     must be the NEAREST (`distance_km`, computed HERE by the law of cosines)
-     among the raw sites whose overlap with E08 is within 1 h of the longest
-     (a further tie going to the first by name), the longest itself computed
-     HERE from the archives' run `time_period` attrs (h5py) for the archived
-     sites and the B423 file names for the rest;
+     declares no remote, the recommendation must be the nearest
+     (`distance_km`, computed here by the law of cosines) among the raw
+     sites whose overlap with E08 is within 1 h of the longest (a further
+     tie going to the first by name), the longest itself computed here from
+     the archives' run `time_period` attrs (h5py) for the archived sites and
+     the B423 file names for the rest;
 (14) any of the Spectra, Spectrogram or Coherence tabs still carries a
      label containing "What to look for" (a PDF explains it instead);
      the Filter Data tab's rule box is not touched;
@@ -210,68 +235,69 @@ and Coherence tabs show that window. **This test fails if**
      delete D02's key and leave A07's; and the Metadata tab, on that same
      copy (whose `generated_by: scripts/site_table_to_yaml.py` came over with
      it), does not edit and save its `survey.yaml`: the yellow line must be
-     visible and read "survey.yaml is generated by scripts/site_table_to_yaml.py:
-     regenerating will overwrite edits made here"; channels,
-     electric_gain, serial, firmware, start and end must be the six
-     columns right after remote; exactly the eleven columns latitude,
-     longitude, elevation, dipole_length_ex, dipole_length_ey, azimuth_ex,
-     azimuth_ey, remote, timing, channels and notes must be editable --
-     electric_gain, the EDL electric chain's declared gain, must read "-",
-     read-only, with the tooltip "PR6-24 (EDL) sites only" on every row of
-     this LEMI-423 copy, and its save rule (`metadata_edit.electric_gain_edit`)
-     on an EDL survey whose default is 10.0 must leave "10.0" typed over "10"
-     unchanged, write 1.0 for "1" and 5.0 for "5" typed over "10", drop the
-     site's key for "10" typed over "1", and refuse "abc"; D02's
-     dipole_length_ex typed as 51.25 and Save pressed must ask the Yes/No
-     question once, naming the script, and answered No leave the file
-     byte-identical; pressed again and answered Yes, every byte above the
-     `sites:` line and every byte from the copy's trailing `workspace:` key on
-     must be unchanged, the file must keep its line count and differ in
-     exactly one line -- inside D02's entry (the nearest two-space key above
-     it is "D02:"), "dipole_length_ex: <old>" become "dipole_length_ex:
-     51.25" -- and the reopened survey and the table must both read 51.25;
+     visible and read "survey.yaml is generated by
+     scripts/site_table_to_yaml.py: regenerating will overwrite edits made
+     here"; channels, electric_gain, serial, firmware, start and end must be
+     the six columns right after remote; exactly the eleven columns
+     latitude, longitude, elevation, dipole_length_ex, dipole_length_ey,
+     azimuth_ex, azimuth_ey, remote, timing, channels and notes must be
+     editable; electric_gain, the EDL electric chain's declared gain, must
+     read "-", read-only, with the tooltip "PR6-24 (EDL) sites only" on
+     every row of this LEMI-423 copy, and its save rule
+     (`metadata_edit.electric_gain_edit`) on an EDL survey whose default is
+     10.0 must leave "10.0" typed over "10" unchanged, write 1.0 for "1" and
+     5.0 for "5" typed over "10", drop the site's key for "10" typed over
+     "1", and refuse "abc"; D02's dipole_length_ex typed as 51.25 and Save
+     pressed must ask the Yes/No question once, naming the script, and
+     answered No leave the file unchanged; pressed again and answered Yes,
+     every byte above the `sites:` line and every byte from the copy's
+     trailing `workspace:` key on must be unchanged, the file must keep its
+     line count and differ in exactly one line, inside D02's entry (the
+     nearest two-space key above it is "D02:"), where
+     "dipole_length_ex: <old>" becomes "dipole_length_ex: 51.25"; and the
+     reopened survey and the table must both read 51.25;
 (16) the View EDIs tab, rebuilt on mtpy-v2, does not do all of this with
      the curnamona EDIs: with D02_rr-E08.edi and "D02 (lemimt)" ticked, the
      embedded canvas's figure must carry at least two axes, one mtpy
-     error-bar container per station on each of them, and BOTH labels in the
-     resistivity legends (that is what says the overlay is two stations and
-     not one drawn twice); the Phase group's default "0 to 90 deg" must leave
-     the yx phase axes' y limits exactly (0, 90), locked whatever the data do, with every plotted yx value
-     in 0-90 for both EDIs (mtpy's own `phase_yx + 180` fold); "-180 to 180
-     deg" must redraw with the yx axes' y limits exactly (-180, 180) and
-     every yx value in -180 to -90, the physical quadrant, for both EDIs; and
-     switching back to "0 to 90 deg" must restore the (0, 90) limits; the
-     Apparent resistivity group's min and max fields, blank by default, must
-     leave both resistivity axes (xy and yx) on mtpy's own automatic scale
-     until a field's `editingFinished` fires; typed 10 and 1000 must, after
-     the debounce, clamp both axes' y limits to exactly (10, 1000); clearing
-     max alone must put the low limit back to 10 and the high back to
-     whatever mtpy drew automatically (checked against a draw with both
-     fields blank); and typed 1000 and 10 (min >= max) must leave both axes
-     at that same automatic scale and put "rho limits ignored" on the status
-     line -- this fails if the fields do not clamp the resistivity axes, or
-     if a bad pair is silently applied; making
-     A07's EDI the tree's current row with
-     quick view on must bring one more draw within 2 s whose figure title
-     names A07's file and whose xy axes now holds three containers, while
-     the two ticked rows stay ticked; "plus phase tensor" must add axes to
-     that figure, at least one of them labelled with mtpy's phi_min; the
-     "plus tipper" radio must be disabled with the tooltip "no hz sensor on
-     this survey", since curnamona declares channels [ex, ey, hx, hy] and
-     the aurora tipper comes from an open Bz input; quick view off with
-     nothing ticked must leave the figure with no axes at all and a hint
-     drawn on it; and the arrow-key path must work -- a
+     error-bar container per station on each of them, and both labels in
+     the resistivity legends (which shows the overlay is two stations and
+     not one drawn twice); the Phase group's default "0 to 90 deg" must
+     leave the yx phase axes' y limits exactly (0, 90), locked whatever the
+     data do, with every plotted yx value in 0-90 for both EDIs (mtpy's own
+     `phase_yx + 180` fold); "-180 to 180 deg" must redraw with the yx axes'
+     y limits exactly (-180, 180) and every yx value in -180 to -90, the
+     physical quadrant, for both EDIs; and switching back to "0 to 90 deg"
+     must restore the (0, 90) limits; the Apparent resistivity group's min
+     and max fields, blank by default, must leave both resistivity axes (xy
+     and yx) on mtpy's own automatic scale until a field's
+     `editingFinished` fires; typed 10 and 1000 must, after the debounce,
+     clamp both axes' y limits to exactly (10, 1000); clearing max alone
+     must put the low limit back to 10 and the high back to whatever mtpy
+     drew automatically (checked against a draw with both fields blank);
+     and typed 1000 and 10 (min >= max) must leave both axes at that same
+     automatic scale and put "rho limits ignored" on the status line, so
+     fields that leave the resistivity axes unclamped, or a bad pair
+     applied silently, fail this; making A07's EDI the tree's current row
+     with quick view on must bring one more draw within 2 s whose figure
+     title names A07's file and whose xy axes now holds three containers,
+     while the two ticked rows stay ticked; "plus phase tensor" must add
+     axes to that figure, at least one of them labelled with mtpy's
+     phi_min; the "plus tipper" radio must be disabled with the tooltip "no
+     hz sensor on this survey", since curnamona declares channels
+     [ex, ey, hx, hy] and the aurora tipper comes from an open Bz input;
+     quick view off with nothing ticked must leave the figure with no axes
+     at all and a hint drawn on it; and the arrow-key path must work: a
      QTest.keyClick(tree, Qt.Key_Down) moves the current row on and brings
      one more draw within 2 s, and five key clicks in quick succession move
-     five rows but are debounced into at most two draws, not five;
+     five rows but are debounced into at most two draws;
 (17) the screenshots cannot be grabbed to `work/qc/`: gui_timeseries.png
      (tree and window), gui_timeseries_3s.png (a 3 s zoom), gui_spectra.png,
      gui_spectrogram.png, gui_coherence.png, gui_metadata.png,
      gui_process.png, gui_filters.png (the preview of (26), notch + cp on
-     D02's fifth window), gui_edis.png -- nine in all; or any
-     exception is raised inside a Qt slot on the way (PySide6 prints those
-     and carries on; `sys.excepthook` collects them here); or the real
-     `surveys/curnamona_cube/survey.yaml` is not byte-identical at the end;
+     D02's fifth window), gui_edis.png, nine in all; or any exception is
+     raised inside a Qt slot on the way (PySide6 prints those and carries
+     on; `sys.excepthook` collects them here); or the real
+     `surveys/curnamona_cube/survey.yaml` is not identical at the end;
 (18) the console strip (`window.console`) does not sit in a `QSplitter` below
      `window.tabs` (its top at or below the tab widget's bottom), is not
      read-only, or is not a monospace font; or, freshly built with nothing
@@ -282,26 +308,26 @@ and Coherence tabs show that window. **This test fails if**
      its stdout;
 (19) once the segment QC of (7) is ready, the console strip does not also
      carry a line starting "[segment] " (the store's `qc_started`, for the
-     window clicked in (4)) and at least one line containing "mtproc.timefreq"
-     (the ladder -- `cascade` and `psd_ladder` both call `logger.info`) --
-     the sink must reach a line logged from the segment store's worker
-     thread, not only the GUI thread's;
-(20) "Add to queue" -- and every other button that queues a job -- starts
-     the job by itself: with the runner real again (not the (13) interception)
-     and D02/E08 already the pair, a job queued through the Process tab's own
-     `_queue()` is not left "queued" with the runner idle and
+     window clicked in (4)) and at least one line containing
+     "mtproc.timefreq" (the ladder: `cascade` and `psd_ladder` both call
+     `logger.info`), a line logged from the segment store's worker thread
+     as well as the GUI thread's;
+(20) "Add to queue", or any other button that queues a job, starts the job
+     by itself: with the runner real again (the (13) interception undone)
+     and D02/E08 already the pair, a job queued through the Process tab's
+     own `_queue()` is not left "queued" with the runner idle and
      `status_label` reading "1 job(s) queued - press Run queue" until "Run
-     queue" is pressed, after which it does not run to completion; or, with a
-     job queued that way and waiting, `JobRunner.run_now` (what New survey,
-     the basemap fetch and Build MTH5 call) does not start its own job at
-     once while the waiting job stays "queued" -- before, during and after
-     that run, the runner idle at the end; or a job started with `run_now`
-     from inside a `job_finished` slot (what a finished New survey does when
-     its survey has no basemap) does not run to "done" with the runner idle
-     after it;
-(21) "Import site table..." (its `import_site_table`) with a two-row CSV --
-     A03: dipole_length_ey 48 and notes "moved 20 m east"; B02:
-     dipole_length_ey 51.5 and an EMPTY notes cell -- does not change exactly
+     queue" is pressed, after which it does not run to completion; or, with
+     a job queued that way and waiting, `JobRunner.run_now` (what New
+     survey, the basemap fetch and Build MTH5 call) does not start its own
+     job at once while the waiting job stays "queued" before, during and
+     after that run, the runner idle at the end; or a job started with
+     `run_now` from inside a `job_finished` slot (what a finished New survey
+     does when its survey has no basemap) does not run to "done" with the
+     runner idle after it;
+(21) "Import site table..." (its `import_site_table`) with a two-row CSV
+     (A03: dipole_length_ey 48 and notes "moved 20 m east"; B02:
+     dipole_length_ey 51.5 and an empty notes cell) does not change exactly
      those three cells of the copy's table (every other cell, 59 sites by 20
      columns, reading as before), read "2 of 2 sites matched", and on Save
      (answered Yes) change exactly those three keys of the copy's parsed
@@ -309,7 +335,7 @@ and Coherence tabs show that window. **This test fails if**
 (22) the Metadata tab's "New survey..." button, its dialog filled with the
      synthetic data root that `tests/new_survey_unit.py` builds (S01 and S02,
      in a scratch folder) and accepted: the click does not return once the
-     job is queued on state.runner and started (not blocked for the scan --
+     job is queued on state.runner and started (not blocked for the scan:
      the dialog is closed and the job's "$ ..." command line, naming
      new_survey.py, already in the console strip before the wait below), or,
      waited out (job_finished, 60 s, app.processEvents pumped throughout so
@@ -318,17 +344,18 @@ and Coherence tabs show that window. **This test fails if**
      with the table showing two rows whose serial and firmware cells read
      "36" and "2.1" for S01 and "112" and "2.3" for S02, the yellow line
      naming scripts/new_survey.py, and the console strip also carrying the
-     script's "wrote ..." line; nor does the name default to the folder's, the
-     dialog's workspace field to `<data folder>/work` (that path in the job's
-     `--workspace` and in the written survey.yaml's `workspace:`), or the
-     survey's opening (its workspace has no basemap.json) run
+     script's "wrote ..." line; nor does the name default to the folder's,
+     the dialog's workspace field to `<data folder>/work` (that path in the
+     job's `--workspace` and in the written survey.yaml's `workspace:`), or
+     the survey's opening (its workspace has no basemap.json) run
      `<python> scripts/fetch_basemap.py <the new survey.yaml>` through
-     `run_now`; nor does the dialog's "channels recorded" combo offer exactly
-     the LEMI-423 presets "Ex Ey Bx By", "Ex Ey Bx By Bz", "Bx By (magnetics
-     only)", "Bx By Bz" in that order with "Ex Ey Bx By" preselected, and,
-     set to "Ex Ey Bx By Bz", put `--channels "Ex Ey Bx By Bz"` in the job's
-     argv, `defaults: channels: [ex, ey, hx, hy, hz]` in the written
-     survey.yaml and "Ex Ey Bx By Bz" in S01's and S02's channels cells;
+     `run_now`; nor does the dialog's "channels recorded" combo offer
+     exactly the LEMI-423 presets "Ex Ey Bx By", "Ex Ey Bx By Bz", "Bx By
+     (magnetics only)", "Bx By Bz" in that order with "Ex Ey Bx By"
+     preselected, and, set to "Ex Ey Bx By Bz", put
+     `--channels "Ex Ey Bx By Bz"` in the job's argv,
+     `defaults: channels: [ex, ey, hx, hy, hz]` in the written survey.yaml
+     and "Ex Ey Bx By Bz" in S01's and S02's channels cells;
 (23) the Process tab's site map, on screen in the 1400 x 900 window, is less
      than 340 px tall;
 (24) the basemap is not fetched on survey open exactly when it is missing:
@@ -344,34 +371,34 @@ and Coherence tabs show that window. **This test fails if**
      disabled while a job runs (a 2 s sleep started with `run_now`) and
      enabled again after it; pressed on A02, does not call `run_now` with
      exactly `<python> scripts/ingest_site.py <survey.yaml> A02` (recorded,
-     never run) and put "building A02.h5 ..." in the tab's hint; or a
+     not run) and put "building A02.h5 ..." in the tab's hint; or a
      finished job whose argv names ingest_site.py for A02 (a `python -c`
-     that only prints, run through the real runner) does not -- with
-     `state.has_archive` made to answer True for A02 -- turn A02's row
+     that only prints, run through the real runner) does not, with
+     `state.has_archive` made to answer True for A02, turn A02's row
      expandable and open (no "no MTH5 yet" child, the grey dropped, a read of
      its windows started) and the hint "built A02.h5 ..."; nor, once
      has_archive answers truthfully again, does `refresh_site("A02")` put the
-     "no MTH5 yet" row back. surveys/curnamona_cube/work/mth5/A02.h5 must not
-     exist at the end; a filtered variant's own file (D02_fdeadbeef.h5,
-     dropped in and removed again here) must not show up in
-     `archived_sites`, `stacked_remotes` or `remote_choices` -- it is
-     another archive of D02, not a site or a stacked remote of its own;
+     "no MTH5 yet" row back; or surveys/curnamona_cube/work/mth5/A02.h5
+     exists at the end; or a filtered variant's own file (D02_fdeadbeef.h5,
+     dropped in and removed again here) shows up in `archived_sites`,
+     `stacked_remotes` or `remote_choices` (it is another archive of D02,
+     neither a site nor a stacked remote of its own);
 (26) the Filter Data tab does not preview the filter list on the loaded
      window. On a scratch copy of the survey folder (its workspace the real
      one), with the tab in front: choosing D02 in the tab's own site combo
-     and D02's fifth window in its window combo -- no trip to the Time Series
-     tab -- must within 60 s load that window through the segment store (a
+     and D02's fifth window in its window combo (the Time Series tab left
+     alone) must within 60 s load that window through the segment store (a
      Segment for D02 whose t0 is D02's record start + 8 h, the attrs' start
      of (3); the selection the same) and run the preview on that very
-     Segment: with no filters the raw-only view -- four time-series panels,
+     Segment: with no filters the raw-only view, four time-series panels,
      each with exactly one visible curve, in its channel colour, and the two
      PSD panels with solid curves only. Then:
      adding "50 Hz + harmonics" with the form's defaults (50 Hz, 9
      harmonics) must bring, after the debounce, a preview whose filtered
      arrays differ from the raw on every channel while the store's raw
      arrays keep their SHA-1; whose Ex `line_excess` at 50 Hz on the 1000 Hz
-     stage -- computed HERE with `mtproc.timefreq.line_excess` from the
-     result's raw and filtered ladders -- drops by more than 15 dB; whose
+     stage (computed here with `mtproc.timefreq.line_excess` from the
+     result's raw and filtered ladders) drops by more than 15 dB; whose
      time-series view has 4 panels each holding a visible light grey curve
      (`theme.RAW_COLOUR`) and a visible curve in its channel colour, both
      over the whole window (7.2 M samples); and whose PSD view has the panels
@@ -390,17 +417,18 @@ and Coherence tabs show that window. **This test fails if**
      with the list "50 Hz + harmonics" then "cathodic protection stack"
      (12 s) the preview's elapsed time is printed (the timing) and
      gui_filters.png shot with it on screen; the archive note must be empty
-     and Delete archive hidden (D02's list was never saved, so `filters.yaml`
-     still declares nothing for it and there is no variant file); switching
-     to A07 (whose real `filters.yaml` entry -- a `replace` -- is saved, but
-     which has no `A07_f<hash>.h5` yet) must read "filtered archive for this
-     list: not built yet (built when processing starts)" with Delete archive
-     still hidden (no variant file to delete), and switching back must read
-     empty again;
+     and Delete archive hidden (D02's list was left unsaved, so
+     `filters.yaml` still declares nothing for it and there is no variant
+     file); switching to A07 (whose real `filters.yaml` entry, a `replace`,
+     is saved, but which has no `A07_f<hash>.h5` yet) must read "filtered
+     archive for this list: not built yet (built when processing starts)"
+     with Delete archive still hidden (no variant file to delete), and
+     switching back must read empty again;
      "burst removal (short transients)" added after them (the form's
      defaults) must re-run the preview with a last provenance line starting
      "burst:";
-     "mains" added after it likewise, its line "mains:", its row LABELS["mains"];
+     "mains" added after it likewise, its line "mains:", its row
+     LABELS["mains"];
      and removing every filter must bring the raw-only view back (the
      result's `filtered` None, one visible curve per panel in its channel
      colour, no dashed PSD curve);
@@ -413,18 +441,18 @@ and Coherence tabs show that window. **This test fails if**
      gains one), keep every byte above the `sites:` line and from the
      trailing `workspace:` key on, and `Survey.site("A02").channels` must
      read [hx, hy] while A03's stays the default; choosing "Ex Ey Bx By"
-     again and saving must remove A02's key and leave the file
-     byte-identical to before the first save; and "custom..." with the
-     prompt answering "hx, hy, ex, ey, tx" (`channels_column.ask_channels`
+     again and saving must remove A02's key and leave the file identical to
+     what it was before the first save; and "custom..." with the prompt
+     answering "hx, hy, ex, ey, tx" (`channels_column.ask_channels`
      replaced) must set the cell to "hx, hy, ex, ey, tx" and make the tab's
      pending edits exactly {A02: {channels: [hx, hy, ex, ey, tx]}}, while
      "ex ey hx hy hz" typed the same way must come back as the preset
      "Ex Ey Bx By Bz" (nothing saved in either case);
-(28) the mixed survey -- `tests/instrument_samples.py`: scripts/new_survey.py
-     over a scratch data root holding a synthetic LEMI-423 site (S01) and one
-     real hour each of a LEMI-424 (MBJ21) and an Earth Data PR6-24 (EGFLP02),
-     whose archives `ingest_site` writes into the scratch workspace when they
-     are missing (tests/ingest_unit.py writes them too) -- opened with
+(28) the mixed survey of `tests/instrument_samples.py` (scripts/new_survey.py
+     over a scratch data root holding a synthetic LEMI-423 site, S01, and
+     one real hour each of a LEMI-424, MBJ21, and an Earth Data PR6-24,
+     EGFLP02, whose archives `ingest_site` writes into the scratch workspace
+     when they are missing, as tests/ingest_unit.py does), opened with
      `window.open_survey`, does not show on the Metadata tab an "instrument"
      column right after "site", read-only, reading lemi423 for S01, lemi424
      for MBJ21 and edl for EGFLP02 (three values); or the Time Series tree
@@ -438,9 +466,9 @@ and Coherence tabs show that window. **This test fails if**
      bx by bz e1 e2 e3 e4 top to bottom, left labels starting "Bx (", "By (",
      "Bz (", "E1 (", "E2 (", "E3 (", "E4 (", pens #4fc3f7 on the three
      magnetics and #ff5252 on the four electrics, whose E1 curve equals
-     (atol 1e-6 of its spread) the 12th column of the sample file read HERE
-     with numpy -- a LEMI-424 has no filter chain, so the archive holds the
-     recorded values; or its `qc_ready` does not follow within 60 s with the
+     (atol 1e-6 of its spread) the 12th column of the sample file read here
+     with numpy (a LEMI-424 has no filter chain, so the archive holds the
+     recorded values); or its `qc_ready` does not follow within 60 s with the
      Spectra panels titled "By-E1 (Zxy)" and "Bx-E2 (Zyx)", each holding
      finite positive curves in exactly one magnetic and one electric pen (no
      remote), the Coherence tab's local panels labelled "By-E1 (Zxy)",
@@ -449,18 +477,18 @@ and Coherence tabs show that window. **This test fails if**
 (31) a click on EGFLP02's window does not draw five panels, hx hy hz ex ey,
      labelled "Bx (", "By (", "Bz (", "Ex (", "Ey (", pens blue, blue, blue,
      red, red, whose Ex curve equals the sample's EX file (recorded
-     microvolts) read HERE with numpy and divided by -500 (the reader's
+     microvolts) read here with numpy and divided by -500 (the reader's
      -50 m dipole times the x10 terminal box, so mV/km; atol 1e-6 of the
      spread); or its `qc_ready` does not bring Spectra panels titled "By-Ex
      (Zxy)" and "Bx-Ey (Zyx)" with finite positive curves. Four screenshots
      of (30) and (31) go to the instrument scratch folder, not `work/qc/`.
 (32) the Filter Data tab's window combo does not mark the loaded window's
-     row -- bold, the theme's accent colour, suffixed "(loaded)" -- as the
-     one and only marked row; or the mark does not move when another
-     window is chosen (the old row plain again); or a site shown with
-     nothing of it loaded has a marked row. The opened popup is saved as
+     row (bold, the theme's accent colour, suffixed "(loaded)") as the one
+     and only marked row; or the mark does not move when another window is
+     chosen (the old row plain again); or a site shown with nothing of it
+     loaded has a marked row. The opened popup is saved as
      `work/qc/gui_filter_window_popup.png` (not counted in (17)).
-(33) "Copy to sites..." -- **this fails if the copy does not write the
+(33) "Copy to sites...": **this fails if the copy does not write the
      ticked sites' lists as the source's, or touches an unticked site, or
      Append replaces**. With D02's list non-empty (criterion 26 leaves it
      with notch, cp, burst; a notch is added here if it does not), opening
@@ -469,70 +497,183 @@ and Coherence tabs show that window. **This test fails if**
      while every other site's entry (including D02's own) is unchanged;
      Append onto E08 with a one-filter list must grow E08's list by that one
      entry, its own entries first and in order; and accepting with nothing
-     ticked must leave the file's bytes unchanged.
-(34) the Cross-powers tab -- **this fails if the tab does not compute over
+     ticked must leave the file unchanged.
+(34) the Cross-powers tab: **this fails if the tab does not compute over
      the whole local-remote overlap by default, or the chunk impedances do
-     not sit within a factor 3 of the processed EDI's, or masking does not
-     write and reload**. On a fresh scratch copy of the survey
-     (`make_survey_copy`, as (26) redirects its saves; a masks.yaml left
-     there removed first), with D02's fourth window (record start + 6 h to
-     + 8 h, the attrs' start of (3)) loaded through `state.set_selection` and
-     the tab in front: its site combo on D02 must preset remote E08 (D02's
-     declared remote) and its window combo list D02's 21 QC windows after a
-     first, current entry -- the tree's window must not displace it -- the
-     whole overlap, equal within a sample to the span computed HERE from the
-     two archives' run attrs with h5py (the later first start, the earlier
-     last sample plus one sample: 2021-06-29 06:55:49 to 2021-07-01
-     00:11:53.754 UTC, 41.3 h). With the band nearest 0.1 s chosen, Compute
-     on it must within 120 s give the chunk count computed HERE from that
-     span (whole 600 s chunks, plus the tail when it is 300 s or more: 248),
-     the first chunk starting at the span's start within a sample and the
-     last ending not after the span's end nor 300 s or more before it; zxy
-     and zyx of shape [chunks, bands], at least 95 % of the chunks with an
-     estimate at the band and the medians of their |Zxy| and |Zyx| within a
-     factor 3 of the EDI's (below); the |Z| plot holding one spot per chunk
-     with a finite estimate, per mode; the time panel's x range covering
-     every chunk start on its UTC date axis and its title naming both dates.
-     Then, on that fourth QC window picked in the combo, Compute must within
-     120 s give 12 chunks, the first starting at the
-     window's start, zxy, zyx, coh_xy and coh_yx of shape [12, bands], every
-     chunk finite with n_windows > 0 at that band, and the medians of the
-     chunks' |Zxy| and |Zyx| there within a factor 3 of the values of
-     surveys/curnamona_cube/work/tf/D02_rr-E08.edi (read HERE with
-     mt_metadata, at its period nearest the band's); the |Z| plot must hold
-     12 spots per mode. The label beside the band combo must then name the
+     not sit within a factor 3 of the processed EDI's, or a band is not drawn
+     on its own grid, or a new chunk length or a window inside the computed
+     one reads the archives again, or masking does not write and reload**.
+     On a fresh scratch copy of the survey (`make_survey_copy`, as (26)
+     redirects its saves; a masks.yaml left there removed first), with D02's
+     fourth window (record start + 6 h to + 8 h, the attrs' start of (3))
+     loaded through `state.set_selection` and the tab in front: a
+     400-character status line and a 200-character band label must leave the
+     tab's minimum width exactly what it was (both elide; the status tooltip
+     holds the whole text). The status line sits on a row of its own under
+     the controls, and what (34) asserts of it is the visible text: the
+     label's own elided text, which must equal the whole text elided here
+     (`QFontMetrics.elidedText` at the label's width). Its site combo on D02
+     must preset remote E08 (D02's declared remote) and its window combo
+     list D02's 21 QC windows after a first, current entry (the tree's
+     window leaves it current), the whole overlap, equal within a sample to
+     the span computed here from the two archives' run attrs with h5py (the
+     later first start, the earlier last sample plus one sample:
+     2021-06-29 06:55:49 to 2021-07-01 00:11:53.754 UTC, 41.3 h). With the
+     band nearest 0.1 s chosen, Compute on it must within 120 s start
+     exactly one compute (`tab.computes`), say "computed in" on the status
+     line and give the base chunk count computed here from that span (whole
+     600 s chunks, plus the tail when it is 300 s or more: 248), the first
+     base chunk starting at the span's start within a sample and the last
+     ending not after the span's end nor 300 s or more before it; the band's
+     `band_view` on the base grid (multiple 1, its starts and ends the base
+     grid's) with zxy, zyx, coh_xy, coh_yx and n_windows of shape [248], at
+     least 95 % of the chunks with an estimate and the medians of their
+     |Zxy| and |Zyx| within a factor 3 of the EDI's (below); the |Z| plot
+     holding one spot per chunk with a finite estimate, per mode, and no
+     span bar; "all bands" enabled; the time panel's x range covering every
+     chunk start on its UTC date axis and its title naming both dates.
+     On that same result, a band of level 5 (131 s windows; at 1000 Hz and
+     600 s chunks `level_multiples` gives m = 2) must read "(20 min chunks)"
+     in the band combo and end its label " · 124 chunks of 20 min", and be
+     drawn on its own grid: 124 chunks of two base chunks, at least 90 % with
+     an estimate, exactly one spot per mode per chunk with a finite log10
+     |Z| (the per-chunk arrays of `bin_windows` hold nothing at level 5, so a
+     tab drawing them shows no spot); a band of level 9 (m = 448 > 248) must
+     read "(no chunk)", end its label " · no chunk (needs 74.7 h)", draw no
+     spot, say "no chunk" in the |Z| plot's title and "no chunk at this
+     band" in the count label, without an exception. **The deep band**: the
+     first band of level 7 (2097 s windows, hop 1048.576 s, m = 28: chunks
+     of 4.7 h) must hold the chunk count computed here, 9: 8 whole groups of
+     28 base chunks, plus the 24-chunk remainder because it holds at least 4
+     windows of the level's grid by centre (13, counted here from k x hop off
+     the epoch), the last ending at the last base chunk's end and chunk 1
+     starting at base chunk 28's start; read "(4.7 h chunks)" in the combo,
+     end its label " · level 7 · 9 chunks of 4.7 h", draw one spot per
+     finite chunk and mode on the |Z| plot with one span bar per mode whose
+     left + right reach equals each chunk's span, and have "all bands"
+     disabled with a tooltip saying a time cut would cut "4.7 h from every
+     band". A rubber band round chunk 4's spot must select {4} on level 7;
+     stepping on with the next-band arrow must keep it over the other
+     level-7 bands and clear it at the first level-8 band with "selection
+     of 1 chunk(s) cleared" on the status line. "all bands" ticked at the
+     0.1 s band must show unticked (and disabled) at the deep band; chunk 4
+     selected again must give one mask from that grid's start of chunk 4 to
+     its end, bands the band's [pmin, pmax], not all, the status line
+     reading "1 mask over 4.7 h, band <period> s only"; `masked_chunks` must
+     then read 2 for chunk 4 (every window centred in it overlaps it), 1 for
+     chunks 3 and 5 (each holds a window centred within one hop of the
+     mask's edge whose 2 x hop span reaches into it, and windows further off
+     that do not) and 0 elsewhere, and the |Z| and both polar plots draw
+     exactly that: hollow, a lighter fill (opaque, of a higher HSL lightness
+     than the series colour and not it) and filled (the series colour
+     itself); the count label "3 of 9 chunks of 4.7 h masked (2 partly)";
+     the tab shot to work/qc/gui_crosspower_deep.png. Back at the 0.1 s band
+     "all bands" must be enabled and ticked again (as set there); a rubber
+     band round base chunk 4 x 28 + 3 = 115 masked there must be an
+     all-band mask over exactly that base chunk, which leaves level-5 chunk
+     57 (base chunks 114-115) partly masked and drawn with the lighter fill;
+     "Unmask selected" on level-7 chunk 4 must then cut the band's own mask
+     out entirely and leave the all-band one, named on the status line by
+     its start with "Remove"; Remove on every row empties the list. The
+     chunk combo set to 1 min must regroup the same window store
+     (`result["store"]` the same object, within 5 s, no compute started, the
+     visible status line starting "regrouped to 1 min chunks in" and showing
+     "no archive read") into the base chunk count computed here from the
+     span (whole minutes from the minute at or before its start, plus the
+     tail when it is 30 s or more), and draw one spot per mode per finite
+     chunk at the 0.1 s band (level 2, m = 1) and one per finite chunk at a
+     level-3 band (m = 2 at 1 min); back at 10 min it must hold 248 base
+     chunks again, still with no compute started.
+     Then the fourth QC window picked in the combo, inside the stored
+     overlap, must be regrouped at once from the same store (no compute
+     started, "regrouped to a QC window (2.0 h)" and "no archive read" on
+     the visible status line, 12 base chunks over the window rounded out to
+     whole minutes: from the minute at or before its start to the minute at
+     or after its end, 12:55:00 to 14:56:00 UTC, the result's ``start`` and
+     ``end`` saying so, as the store's shallow levels come in 60 s bins);
+     Compute on it must within 120 s start one compute and give 12 base
+     chunks, the first starting at the window's start, the band's zxy, zyx,
+     coh_xy and coh_yx of shape [12], every chunk finite with n_windows > 0
+     at that band, the medians of the chunks' |Zxy| and |Zyx| there within a
+     factor 3 of the values of surveys/curnamona_cube/work/tf/D02_rr-E08.edi
+     (read here with mt_metadata, at its period nearest the band's), and the
+     regrouped chunks 1-11 within a median `REGROUP_TOL` (1e-6) relative of
+     the computed ones in both modes (chunk 0, from the minute before the
+     window's start when regrouped and from the start itself when computed
+     alone, is printed only); the |Z| plot must hold 12 spots per mode.
+     **A window picked while a compute runs**: with the QC window's own store
+     kept, the whole overlap picked (outside that store: one compute starts
+     by itself) and the QC window picked again before it returns (regrouped
+     from the QC store at once), the overlap's store must, on its return, be
+     kept and drawn over the QC window the combo shows rather than over the
+     whole overlap (result kind QC, range the window's start and end, 12
+     base chunks from the minute at or before its start, the new store, the
+     overlap's, in the result, "picked meanwhile" on the visible status
+     line); then Compute on the QC window with the overlap picked before it
+     returns (regrouped from the overlap store at once) must leave the
+     overlap drawn from the overlap store, 248 base chunks, the QC store
+     dropped ("dropped" and "drawn from the stored windows" on the visible
+     status line), one compute more each time. The QC window picked again
+     (regrouped from the overlap store) must name the span drawn, not the
+     one asked for, on the visible status line (with "rounded out to whole
+     minutes") and in the |Z| plot's title: "2021-06-29 12:55:00 to
+     2021-06-29 14:56:00 UTC", the window's start and end rounded out to
+     whole minutes here. **A change of remote**: A07 picked (archived, its
+     span covering D02's) must clear the drawing (no result, no spot) and
+     say "window picked for D02 rr A07: press Compute", keeping the store,
+     the QC window and the compute count; the whole overlap picked then must
+     still draw nothing and start no compute. Compute on the QC window, with
+     E08 picked back before it returns, must redraw D02 rr E08 at once from
+     the overlap's store ("regrouped to a QC window (2.0 h) of D02 rr E08
+     from the stored windows" first on the status line); on its return the
+     A07 store must be kept aside ("not drawn: the pair shown changed
+     meanwhile" on the visible status line, one compute more) and leave the
+     tab's store the overlap's; the chunk combo set to 5 min must then
+     regroup D02 rr E08 from that store: the drawn pair E08, the result's
+     store the overlap's, the base chunk count computed here over the
+     rounded window (whole 5 min from 12:55:00 to 14:56:00, plus a tail of
+     150 s or more: 24), "D02 rr E08" in the |Z| title; a tab regrouping
+     whatever store it last received draws A07, or no chunk. Back at 10 min,
+     A07 picked again must draw the kept A07 store at once (12 chunks,
+     nothing computed) and E08 picked again the overlap's. Compute on the QC
+     window then gives it its own store again. **A compute queued behind a
+     covering one**: the whole overlap picked (outside that store: one
+     compute starts) and QC window 5 picked before it returns (outside it
+     too: its compute queued) must, on the overlap's return, leave exactly
+     one compute more, nothing queued or running, and QC window 5 drawn from
+     the overlap's store (result kind QC, range QC window 5's start and end,
+     the first base chunk at the minute at or before its start), "kept: the
+     overlap store covers it" on the visible status line; a tab that runs
+     the queued compute counts two and replaces the overlap's store with QC
+     window 5's. Compute on the fourth QC window then gives the rest of (34)
+     its fresh 12 chunks. The label beside the band combo must then name the
      combo's current band: "band <its index + 1> of <the band count>", its
-     period (`tab.band_periods`, 4 significant digits) and "level <its level>"
-     (band_table's, read HERE); the next-band arrow must move the combo one
-     band on and the previous-band arrow one back, the label following each
-     time; at the first band the previous arrow must be disabled and the next
-     enabled, at the last band the next arrow disabled; the band brought back
-     must be drawn again with 12 spots per mode. A rubber band over chunks 3
-     and 4 on the |Z| plot
-     (the ViewBox's `selected` signal with a rectangle computed HERE from
-     their start times, `crosspower_rect`) must select exactly {3, 4}; the
-     "all bands" box must start unticked (a time-panel mask covers the shown
-     band only, like a polar one); ticked, "Mask selected" must add one mask,
-     chunk 3's start to chunk 4's end, bands all, found_by time; "Save masks" must write the copy's masks.yaml holding
-     exactly that one D02 entry (read HERE with yaml); the tab moved to E08
-     and back to D02 must list it again from the file; Compute on the same
-     window again must draw chunks 3 and 4 hollow (no brush) and the ten
-     others filled, on the |Z| plot and on both polar plots; and the real
-     survey folder's masks.yaml, if any, must be left byte for byte as it was. The compute times are printed and
-     the tab shot to work/qc/gui_crosspower_overlap.png (the whole overlap)
-     and gui_crosspower.png (the QC window), neither counted in (17).
-
-It opens three archives, D02.h5, E08.h5 and A07.h5, read-only (through the
-GUI and, for the independent check, through h5py) -- and, for (28)-(31), the
-scratch survey's MBJ21.h5 and EGFLP02.h5 -- runs no script that
-writes an archive and never goes online: `JobRunner.run_now` is wrapped, at
-the class level before the window is built, so that a call naming
-fetch_basemap.py or ingest_site.py is only recorded (`DIVERTED`) and never
-started, while every other call (New survey's) runs as it would. It
-never writes the real `surveys/curnamona_cube/filters.yaml`
-or `survey.yaml` (the round trips use a copy in the scratch directory; the
-New survey check writes only under the scratch directory too), and writes
-only PNGs into `surveys/curnamona_cube/work/qc/`.
+     period (`tab.band_periods`, 4 significant digits), "level <its level>"
+     (band_table's, read here) and its grid (" · <n> chunks of
+     <m x 10 min>", or " · no chunk (needs"), the next-band arrow must move
+     the combo one band on and the previous-band arrow one back, the label
+     following each time; at the first band the previous arrow must be
+     disabled and the next enabled, at the last band the next arrow
+     disabled; the band brought back must be drawn again with 12 spots per
+     mode. A rubber band over chunks 3 and 4 on the |Z| plot (the ViewBox's
+     `selected` signal with a rectangle computed here round their spots, at
+     the chunks' centres, `crosspower_rect`) must select exactly {3, 4}; the
+     "all bands" box must be unticked (a time-panel mask covers the shown
+     band only unless asked); ticked, "Mask selected" must add one mask,
+     chunk 3's start to chunk 4's end, bands all, found_by time; "Save masks"
+     must write the copy's masks.yaml holding exactly that one D02 entry
+     (read here with yaml); the tab moved to E08 and back to D02 must list
+     it again from the file; Compute on the same window again must draw
+     chunks 3 and 4 hollow (no brush) and the ten others filled, on the |Z|
+     plot and on both polar plots, and the count label read "2 of 12 chunks
+     masked" (both fully masked: a count summing `masked_chunks`' 0/1/2
+     codes says 4); and the real survey folder's masks.yaml, if any, must be
+     left unchanged. The compute times are printed and the tab shot to
+     work/qc/gui_crosspower_overlap.png (the whole overlap),
+     gui_crosspower_deep.png (the deep band) and gui_crosspower.png (the QC
+     window), none counted in (17); the level-5 band and the two 1 min bands
+     to the scratch copy's folder (gui_crosspower_level5.png,
+     gui_crosspower_60s_level2.png and gui_crosspower_60s_level3.png).
 """
 
 from __future__ import annotations
@@ -586,7 +727,7 @@ OTHER = "E08"  # the site whose second window is clicked in (8)
 ARCHIVED = ["A07", "D02", "E08"]
 EXPECTED_SITES = 59
 EXPECTED_CHANNELS = ("hx", "hy", "ex", "ey")  # top to bottom: magnetics first
-# the MATLAB app's look, stated here rather than taken from the theme's helpers
+# the expected look, stated here rather than taken from the theme's helpers
 WINDOW_GREY, SURFACE_GREY = "#2b2b2b", "#1f1f1f"
 PANEL_LOOK = [("Bx", theme.B_COLOUR), ("By", theme.B_COLOUR), ("Ex", theme.E_COLOUR), ("Ey", theme.E_COLOUR)]
 SPECTRA_PANELS = ["By-Ex (Zxy)", "Bx-Ey (Zyx)"]
@@ -595,7 +736,7 @@ MAINS = [50.0 * k for k in range(1, 11)]  # to Nyquist at 1000 Hz
 Y_EXTENT_HZ = (0.003, 400.0)  # below the anti-alias roll-off, psd_qc.py's rule
 WINDOW_MIN = 120.0  # the QC window in minutes, the Spectrogram and Coherence x unit
 EXPECTED_TABS = ["Metadata", "Time Series", "Spectra", "Spectrogram", "Coherence",
-                 "Filter Data", "Process", "Cross-powers", "View EDIs"]
+                 "Filter Data", "Cross-powers", "Process", "View EDIs"]
 WINDOW_SAMPLES = 7_200_000
 WINDOW_INDEX = 3  # the fourth window of D02
 N_WINDOWS_D02 = 21
@@ -658,14 +799,14 @@ NEW_SURVEY_CHANNELS = "Ex Ey Bx By Bz"  # (22): the dialog's channels combo, mov
 SLOT_ERRORS: list[str] = []
 REAL_YAML = b""  # surveys/curnamona_cube/survey.yaml as the test found it
 
-# never online, never an archive written: these two scripts are recorded, not run
+# offline, with no archive written: these two scripts are recorded, not run
 NEVER_RUN = {"fetch_basemap.py", "ingest_site.py"}
 DIVERTED: list[list[str]] = []
 _real_run_now = JobRunner.run_now
 
 
 def _diverting_run_now(self, label, argv, **details):
-    """`JobRunner.run_now`, except that a job naming one of NEVER_RUN is only recorded."""
+    """Run `JobRunner.run_now`, or only record a job naming one of NEVER_RUN in `DIVERTED`."""
     argv = [str(a) for a in argv]
     if any(Path(a).name in NEVER_RUN for a in argv):
         DIVERTED.append(argv)
@@ -677,11 +818,12 @@ JobRunner.run_now = _diverting_run_now
 
 
 def fetches() -> list[list[str]]:
+    """Return the recorded fetch_basemap.py argvs."""
     return [argv for argv in DIVERTED if Path(argv[1]).name == "fetch_basemap.py"]
 
 
 def _record_slot_error(exc_type, exc, tb) -> None:
-    """An exception inside a Qt slot is printed by PySide6, not raised: keep it, fail at the end."""
+    """Keep an exception raised inside a Qt slot (PySide6 prints it and carries on) for the final check."""
     import traceback
 
     text = "".join(traceback.format_exception(exc_type, exc, tb))
@@ -700,6 +842,7 @@ def pump(app: QApplication, seconds: float = 0.05) -> None:
 
 
 def wait_until(app: QApplication, predicate, timeout: float, what: str) -> None:
+    """Pump events until `predicate()` holds; raise AssertionError naming `what` after `timeout` s."""
     end = time.time() + timeout
     while time.time() < end:
         app.processEvents()
@@ -710,8 +853,11 @@ def wait_until(app: QApplication, predicate, timeout: float, what: str) -> None:
 
 
 def curve_data(plot, index: int = 0):
-    """(x, y) given to a curve on a pyqtgraph PlotWidget -- the data behind the
-    downsampled picture, not the few hundred points drawn (`getOriginalDataset`)."""
+    """Return the (x, y) given to a curve on a pyqtgraph PlotWidget.
+
+    The data behind the downsampled picture (`getOriginalDataset`), rather
+    than the few hundred points drawn.
+    """
     items = plot.getPlotItem().listDataItems()
     assert len(items) > index, f"a plot has {len(items)} curves, wanted index {index}"
     x, y = items[index].getOriginalDataset()
@@ -719,9 +865,11 @@ def curve_data(plot, index: int = 0):
 
 
 def edi_curves(axes):
-    """[(period, value)] of the data line inside each of a matplotlib axes'
-    error-bar containers -- one container per station, in the order mtpy drew
-    them, so an overlay of two EDIs gives two curves."""
+    """Return [(period, value)] of the data line inside each error-bar container of a matplotlib axes.
+
+    One container per station, in the order mtpy drew them, so an overlay of
+    two EDIs gives two curves.
+    """
     out = []
     for container in axes.containers:
         line = container.lines[0]
@@ -731,20 +879,24 @@ def edi_curves(axes):
 
 
 def legend_labels(axes) -> list[str]:
+    """Return the texts of a matplotlib axes' legend, or [] without one."""
     legend = axes.get_legend()
     return [] if legend is None else [t.get_text() for t in legend.get_texts()]
 
 
 def wait_for_draw(app, tab, before: int, timeout: float = 2.0) -> float:
-    """Seconds until the View EDIs tab has drawn again (its debounce is ~150 ms)."""
+    """Return the seconds until the View EDIs tab has drawn again (its debounce is ~150 ms)."""
     start = time.time()
     wait_until(app, lambda: tab.draws > before, timeout, "a View EDIs redraw")
     return time.time() - start
 
 
 def record_start_and_rate(site: str):
-    """(t0, fs) of `site` from the archive's attrs alone: the earliest run's
-    `time_period.start` and the `ex` dataset's `sample_rate`."""
+    """Return (t0, fs) of `site` from the archive's attrs alone.
+
+    t0 is the earliest run's `time_period.start` and fs the `ex` dataset's
+    `sample_rate`.
+    """
     with h5py.File(WORK / "mth5" / f"{site}.h5", "r") as f:
         surveys = f["Experiment/Surveys"]
         station = next(surveys[s]["Stations"][site] for s in surveys if site in surveys[s]["Stations"])
@@ -755,12 +907,16 @@ def record_start_and_rate(site: str):
 
 
 def independent_ex(site: str, start: pd.Timestamp, seconds: float) -> np.ndarray:
-    """ex counts over [start, start + seconds) read straight from the archive with h5py.
+    """Return ex counts over [start, start + seconds) read straight from the archive with h5py.
 
     The run whose `time_period` attrs cover `start` is sliced by sample
     offset from that run's own start at the dataset's `sample_rate` attr.
-    Nothing from `mtproc_gui.segment` or `mtproc_gui.archive` is used, so a wrong
-    grid there cannot move this read along with it.
+    The read uses h5py and the attrs alone, independent of
+    `mtproc_gui.segment` and `mtproc_gui.archive`, so a wrong grid there
+    shows as a mismatch.
+
+    Raises:
+        AssertionError: When no run covers `start`.
     """
     with h5py.File(WORK / "mth5" / f"{site}.h5", "r") as f:
         surveys = f["Experiment/Surveys"]
@@ -782,7 +938,7 @@ def independent_ex(site: str, start: pd.Timestamp, seconds: float) -> np.ndarray
 
 
 def click(app, tree, item: QTreeWidgetItem) -> None:
-    """A real left click on the text of a tree row."""
+    """Click the text of a tree row with a real left mouse click."""
     tree.scrollToItem(item)
     pump(app, 0.1)
     rect = tree.visualItemRect(item)
@@ -792,17 +948,22 @@ def click(app, tree, item: QTreeWidgetItem) -> None:
 
 
 def qc_labels(window) -> list[str]:
+    """Return the title labels of the Spectra, Spectrogram and Coherence tabs."""
     return [tab.title_label.text() for tab in (window.spectra_tab, window.spectrogram_tab, window.coherence_tab)]
 
 
 def assert_labelled(window, *needles: str) -> None:
+    """Check that the title label of each QC tab contains every one of `needles`."""
     for name, text in zip(("Spectra", "Spectrogram", "Coherence"), qc_labels(window)):
         for needle in needles:
             assert needle in text, f"{name} label {text!r} lacks {needle!r}"
 
 
 def law_of_cosines_km(lat1, lon1, lat2, lon2) -> float:
-    """Great-circle distance by the spherical law of cosines -- NOT the haversine under test."""
+    """Return the great-circle distance in km by the spherical law of cosines.
+
+    A different formula from the haversine under test.
+    """
     import math
 
     p1, p2 = math.radians(lat1), math.radians(lat2)
@@ -813,7 +974,7 @@ def law_of_cosines_km(lat1, lon1, lat2, lon2) -> float:
 
 
 def archive_span(site: str):
-    """(earliest run start, latest run end) of `site` from its runs' `time_period` attrs, h5py only."""
+    """Return (earliest run start, latest run end) of `site` from its runs' `time_period` attrs, with h5py."""
     with h5py.File(WORK / "mth5" / f"{site}.h5", "r") as f:
         surveys = f["Experiment/Surveys"]
         station = next(surveys[s]["Stations"][site] for s in surveys if site in surveys[s]["Stations"])
@@ -823,30 +984,31 @@ def archive_span(site: str):
 
 
 def raw_span(site_dir: Path):
-    """A site's raw record from its B423 file names: first epoch to last epoch + the median spacing."""
+    """Return a site's raw record from its B423 file names: first epoch to last epoch + the median spacing."""
     epochs = np.sort([int(f.stem) for f in Path(site_dir).rglob("*.B423")])
     return (pd.Timestamp(int(epochs[0]), unit="s", tz="UTC"),
             pd.Timestamp(int(epochs[-1] + np.median(np.diff(epochs))), unit="s", tz="UTC"))
 
 
 def lamp_hue(lamp) -> int:
-    """Hue (0-359; -1 for a grey) of the pixel at a lamp's centre, as the lamp is drawn."""
+    """Return the hue (0-359; -1 for a grey) of the pixel at a lamp's centre, as the lamp is drawn."""
     image = lamp.grab().toImage()
     return image.pixelColor(image.width() // 2, image.height() // 2).hsvHue()
 
 
 def number(text: str, prefix: str, unit: str) -> float:
-    """41.3 from ("Overlap available: 41.3 h (1.72 days)", "Overlap available: ", " h")."""
+    """Return the number between `prefix` and the first `unit` after it in `text`, which starts with `prefix`."""
     assert text.startswith(prefix), (text, prefix)
     return float(text[len(prefix):].split(unit)[0])
 
 
 def table_row(table, row: int) -> list[str]:
+    """Return the texts of one table row."""
     return [table.item(row, column).text() for column in range(table.columnCount())]
 
 
 def click_plot(app, plot, x: float) -> None:
-    """A left click on a pyqtgraph plot at x (in the plot's own unit), through its scene."""
+    """Click a pyqtgraph plot at x (in the plot's own unit) through its scene's click signal."""
     box = plot.getViewBox()
     y_mid = float(np.mean(box.viewRange()[1]))
     scene_pos = box.mapViewToScene(QPointF(float(x), y_mid))
@@ -856,13 +1018,13 @@ def click_plot(app, plot, x: float) -> None:
 
 
 def panel_position(tab, pair):
-    """(row, column) of a Coherence band panel in the tab's grid."""
+    """Return the (row, column) of a Coherence band panel in the tab's grid."""
     row, column, _rs, _cs = tab.grid.getItemPosition(tab.grid.indexOf(tab.band_plots[pair]))
     return row, column
 
 
 def hint_labels(tab) -> list[str]:
-    """Every label on a tab whose text carries the old "What to look for" paragraph."""
+    """Return every label on a tab whose text carries the "What to look for" paragraph."""
     return [w.text() for w in tab.findChildren(QLabel) if HINT_TEXT in w.text()]
 
 
@@ -870,7 +1032,7 @@ SHOTS: list[Path] = []
 
 
 def shoot(app, window, name: str, tab) -> Path:
-    """(14) grab one tab to work/qc/gui_<name>.png."""
+    """Grab one tab, in front, to work/qc/gui_<name>.png, one of the screenshots of (17)."""
     SHOT_DIR.mkdir(parents=True, exist_ok=True)
     window.tabs.setCurrentWidget(tab)
     pump(app, 0.4)
@@ -881,14 +1043,14 @@ def shoot(app, window, name: str, tab) -> Path:
 
 
 def metadata_cells(table) -> dict[tuple[str, str], str]:
-    """Every cell of the Metadata table as {(site, column): text}."""
+    """Return every cell of the Metadata table as {(site, column): text}."""
     columns = [table.horizontalHeaderItem(c).text() for c in range(table.columnCount())]
     return {(table.item(r, 0).text(), columns[c]): table.item(r, c).text()
             for r in range(table.rowCount()) for c in range(table.columnCount())}
 
 
 def sites_changes(before: dict, after: dict) -> dict:
-    """{(site, key): new value} for every per-site key that differs between two parsed sites blocks."""
+    """Return {(site, key): new value} for every per-site key that differs between two parsed sites blocks."""
     out = {}
     for site in set(before) | set(after):
         old, new = before.get(site) or {}, after.get(site) or {}
@@ -897,12 +1059,16 @@ def sites_changes(before: dict, after: dict) -> dict:
 
 
 def answering(answer: bool, asked: list):
-    """A stand-in for `metadata_edit.ask_yes_no` that records the question and answers it."""
+    """Return a stand-in for `metadata_edit.ask_yes_no` that records the question and answers it."""
     return lambda _parent, _title, text: asked.append(text) or answer
 
 
 def make_survey_copy() -> Path:
-    """A copy of the survey folder whose workspace points at the real one."""
+    """Copy the survey folder's YAML files to the scratch directory, the workspace pointing at the real one.
+
+    Returns:
+        Path: The copy's survey.yaml.
+    """
     SCRATCH.mkdir(parents=True, exist_ok=True)
     for name in ("survey.yaml", "filters.yaml", "reference_edis.yaml"):
         shutil.copy2(SURVEY_DIR / name, SCRATCH / name)
@@ -926,7 +1092,7 @@ EDL_EX_GAIN = -50.0 * 10.0  # the reader's dipole filter (-L, L = 50 m) times th
 
 
 def check_panels(app, ts, look, truth_comp, truth) -> None:
-    """The Time Series stack against `look` [(comp, label, pen)] and one curve against `truth` (numpy, HERE)."""
+    """Check the Time Series stack against `look` [(comp, label, pen)] and one curve against `truth` (read here)."""
     pump(app, 0.2)
     assert ts.comps == [c for c, _l, _p in look], f"Time Series panels {ts.comps}"
     for (comp, name, want_pen), plot in zip(look, ts.plots):
@@ -941,7 +1107,7 @@ def check_panels(app, ts, look, truth_comp, truth) -> None:
 
 
 def check_spectra(spectra, titles) -> None:
-    """Both Spectra panels titled `titles`, each with finite positive curves in one magnetic and one electric pen."""
+    """Check both Spectra panels: titled `titles`, with finite positive curves in one magnetic and one electric pen."""
     for (key, plot), title in zip(spectra.plots.items(), titles):
         assert plot.getPlotItem().titleLabel.text == title, (key, plot.getPlotItem().titleLabel.text, title)
         items = plot.getPlotItem().listDataItems()
@@ -953,7 +1119,7 @@ def check_spectra(spectra, titles) -> None:
 
 
 def mixed_instruments(app, window) -> None:
-    """(28)-(31): a LEMI-424 and an EDL site through the tree, the Time Series tab and the QC tabs."""
+    """Check (28)-(31): a LEMI-424 and an EDL site through the tree, the Time Series tab and the QC tabs."""
     t = time.time()
     paths = instrument_samples.ensure_archives()
     print(f"(28) mixed survey {instrument_samples.MIXED_YAML}; archives {[p.name for p in paths.values()]} "
@@ -1033,25 +1199,38 @@ def mixed_instruments(app, window) -> None:
 CROSSPOWER_EDI = WORK / "tf" / "D02_rr-E08.edi"
 CROSSPOWER_PERIOD_S = 0.1  # the band nearest this is computed
 CROSSPOWER_MASKED = (3, 4)  # the chunks the rubber band goes round
+REGROUP_TOL = 1e-6  # median relative |Z| difference, a QC window regrouped from the overlap's store vs
+# computed alone, chunks 1-11: the same windows, only the blocks' medians and FIR margins differ
 
 
-def crosspower_rect(starts_s: np.ndarray, chunks) -> "QRectF":
-    """The rubber band (view coordinates of the time panel's |Z| plot, x in epoch seconds, y in
-    log10) round the spots of `chunks`: from 60 s before the first's start to 60 s after the last's."""
+def crosspower_rect(centres_s: np.ndarray, chunks) -> "QRectF":
+    """Return a rubber band round the spots of `chunks` on the time panel's |Z| plot.
+
+    In view coordinates (x in epoch seconds, y in log10), from 60 s before
+    the first chunk's centre, where its spot is drawn, to 60 s after the
+    last's.
+    """
     from PySide6.QtCore import QRectF
 
-    lo, hi = starts_s[min(chunks)] - 60.0, starts_s[max(chunks)] + 60.0
+    lo, hi = centres_s[min(chunks)] - 60.0, centres_s[max(chunks)] + 60.0
     return QRectF(lo, -10.0, hi - lo, 20.0)
 
 
 def crosspower_check(app, window) -> None:
-    """(34): the whole overlap by default; compute, compare with the EDI, the band label and arrows,
-    select, mask, save, reload, hollow -- on a copy of the survey."""
+    """Check criterion (34) on a copy of the survey.
+
+    The whole overlap by default; compute and compare with the EDI; the band
+    grids; the deep band's chunks, selection and masks; regrouping without
+    reading; computes returning after another window or pair was picked; the
+    band label and arrows; select, mask, save, reload, hollow.
+    """
     import re
 
     import pyqtgraph as pg
     from mt_metadata.transfer_functions.core import TF
-    from mtproc.crosspower import band_table
+    from mtproc.crosspower import band_table, band_view, level_multiples, masked_chunks
+    from mtproc.masks import iso
+    from PySide6.QtGui import QColor, QFontMetrics
     from mtproc_gui.tabs.crosspower import OVERLAP, QC
 
     print("(34) the Cross-powers tab, on a copy of the survey folder:")
@@ -1068,6 +1247,26 @@ def crosspower_check(app, window) -> None:
     state.set_selection(SITE, start, end)  # what a click on the tree's fourth D02 window does
     window.tabs.setCurrentWidget(tab)
     tab.select_site(SITE)
+
+    # the status line and the band label elide: the tab's minimum width is the same with long texts in both
+    tab.layout().activate()
+    narrow = tab.minimumSizeHint().width()
+    saved = tab.status.text(), tab.band_label.text()
+    tab.status.setText("x" * 400)
+    tab.band_label.setText("y" * 200)
+    tab.layout().activate()
+    widened = tab.minimumSizeHint().width()
+    assert widened == narrow and tab.status.toolTip() == "x" * 400, (narrow, widened)
+    tab.status.setText(saved[0])
+    tab.band_label.setText(saved[1])
+
+    def visible_status() -> str:
+        """The status line as the label paints it (its own elided text), which must equal the whole text
+        elided here with the label's font at the label's width."""
+        painted = QLabel.text(tab.status)
+        here = QFontMetrics(tab.status.font()).elidedText(tab.status.text(), Qt.ElideRight, tab.status.width())
+        assert painted == here, (painted, here, tab.status.width())
+        return painted
 
     def entries():
         return [combo.itemData(k) or (None, None, None) for k in range(combo.count())]
@@ -1103,72 +1302,435 @@ def crosspower_check(app, window) -> None:
         pump(app, 0.2)
         return time.time() - began
 
+    computes = tab.computes
     took_all = compute("the chunk impedances over the whole overlap")
+    assert tab.computes == computes + 1 and "computed in" in tab.status.text(), (tab.computes, tab.status.text())
     r = tab.result
     total_s = (here[1] - here[0]).total_seconds()
     want_n = int(total_s // 600.0) + (1 if total_s % 600.0 >= 300.0 else 0)
-    n_all = len(r["chunk_starts"])
-    first, last = r["chunk_starts"][0], r["chunk_ends"][-1]
+    n_all = len(r["base_starts"])
+    first, last = r["base_starts"][0], r["base_ends"][-1]
     assert n_all == want_n, (n_all, want_n, total_s)
     assert abs(first - here[0]) <= sample, (first, here[0])
     assert last <= here[1] + sample and (here[1] - last).total_seconds() < 300.0, (last, here[1])
-    for key in ("zxy", "zyx"):
-        assert r[key].shape == (n_all, periods.size), (key, r[key].shape)
-    has = (r["n_windows"][:, j] > 0) & np.isfinite(r["zxy"][:, j]) & np.isfinite(r["zyx"][:, j])
+    v = band_view(r, j)  # level 2: one chunk per base chunk
+    assert v["multiple"] == 1 and (v["starts"] == r["base_starts"]).all() and (v["ends"] == r["base_ends"]).all()
+    for key in ("zxy", "zyx", "coh_xy", "coh_yx", "n_windows"):
+        assert v[key].shape == (n_all,), (key, v[key].shape)
+    has = (v["n_windows"] > 0) & np.isfinite(v["zxy"]) & np.isfinite(v["zyx"])
     assert has.sum() >= 0.95 * n_all, (int(has.sum()), n_all)
-    ratios_all = {mode: float(np.median(np.abs(r[f"z{mode}"][has, j])) / abs(z_edi[a, b]))
+    ratios_all = {mode: float(np.median(np.abs(v[f"z{mode}"][has])) / abs(z_edi[a, b]))
                   for mode, (a, b) in (("xy", (0, 1)), ("yx", (1, 0)))}
     for mode, ratio in ratios_all.items():
         assert 1 / 3 < ratio < 3, ("whole overlap", mode, ratio, periods[j], edi.period[k])
     z_plot = tab.time_plots[0]
-    spots = [len(item.scatter.points()) for item in z_plot.getPlotItem().listDataItems()]
-    with np.errstate(divide="ignore", invalid="ignore"):
-        want_spots = [int(((r["n_windows"][:, j] > 0) & np.isfinite(np.log10(np.abs(r[f"z{mode}"][:, j])))).sum())
-                      for mode in ("xy", "yx")]
-    assert spots == want_spots, (spots, want_spots)
+
+    def spots_per_mode():
+        return [len(item.scatter.points()) for item in z_plot.getPlotItem().listDataItems()]
+
+    def finite_groups(jj):
+        view = band_view(tab.result, jj)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            return view, [int(((view["n_windows"] > 0) & np.isfinite(np.log10(np.abs(view[f"z{mode}"])))).sum())
+                          for mode in ("xy", "yx")]
+
+    spots = spots_per_mode()
+    assert spots == finite_groups(j)[1], (spots, finite_groups(j)[1])
     x0, x1 = z_plot.getViewBox().viewRange()[0]
-    assert x0 <= first.timestamp() and x1 >= r["chunk_starts"][-1].timestamp(), (x0, x1, first, last)
+    assert x0 <= first.timestamp() and x1 >= r["base_starts"][-1].timestamp(), (x0, x1, first, last)
     axis = tab.time_plots[-1].getAxis("bottom")
     assert isinstance(axis, pg.DateAxisItem), type(axis)
     title = z_plot.getPlotItem().titleLabel.text
     assert first.date() != last.date() and f"{first:%Y-%m-%d}" in title and f"{last:%Y-%m-%d}" in title, title
     ticks = [s for spacing, values in axis.tickValues(x0, x1, axis.width())
              for s in axis.tickStrings(values, 1.0, spacing)]
+    assert tab.all_bands.isEnabled(), "all bands off at a band shown per base chunk"
     SHOT_DIR.mkdir(parents=True, exist_ok=True)
     shot_all = SHOT_DIR / "gui_crosspower_overlap.png"
     assert tab.grab().save(str(shot_all)), f"could not save {shot_all}"
     print(f"    whole overlap by default (the tree's window loaded): {here[0]} to {here[1]} "
-          f"({total_s / 3600:.1f} h) as the attrs give it; {n_all} chunks of 600 s, {first} to {last}, "
+          f"({total_s / 3600:.1f} h) as the attrs give it; {n_all} base chunks of 600 s, {first} to {last}, "
           f"computed in {took_all:.1f} s; {int(has.sum())} with an estimate at {periods[j]:.4g} s, median |Z| / "
           f"EDI's xy {ratios_all['xy']:.3f}, yx {ratios_all['yx']:.3f}; {spots} spots; axis ticks {ticks}; "
+          f"tab minimum width {narrow} px with a 400-character status and a 200-character band label; "
           f"{shot_all.name} saved")
 
-    combo.setCurrentIndex(qc_index())
+    def bars(plot):
+        return [item for item in plot.getPlotItem().items if isinstance(item, pg.ErrorBarItem)]
+
+    multiples = level_multiples(tab.scheme, fs, 600.0)
+    assert multiples[5] == 2 and multiples[7] == 28 and multiples[9] == 448, multiples
+    assert not bars(z_plot), "a bar drawn at a band shown per base chunk"
+    j5 = int(np.flatnonzero(level == 5)[0])
+    j9 = int(np.flatnonzero(level == 9)[0])
+    tab.band_combo.setCurrentIndex(tab.band_combo.findData(j5))
+    pump(app, 0.1)
+    view5, want5 = finite_groups(j5)
+    assert view5["multiple"] == 2 and len(view5["starts"]) == n_all // 2 == 124, (view5["multiple"],
+                                                                                  len(view5["starts"]))
+    assert min(want5) >= 0.9 * len(view5["starts"]) and spots_per_mode() == want5, (spots_per_mode(), want5)
+    assert tab.band_combo.currentText().endswith("(20 min chunks)"), tab.band_combo.currentText()
+    assert tab.band_label.text().endswith(" · 124 chunks of 20 min"), tab.band_label.text()
+    tab.grab().save(str(SCRATCH / "gui_crosspower_level5.png"))  # the scratch folder: not counted, not the survey's
+    tab.band_combo.setCurrentIndex(tab.band_combo.findData(j9))
+    pump(app, 0.1)
+    assert tab.band_combo.currentText().endswith("(no chunk)"), tab.band_combo.currentText()
+    assert tab.band_label.text().endswith(" · no chunk (needs 74.7 h)"), tab.band_label.text()
+    assert len(band_view(tab.result, j9)["starts"]) == 0 and sum(spots_per_mode()) == 0, spots_per_mode()
+    assert "no chunk" in z_plot.getPlotItem().titleLabel.text and tab.count_label.text().startswith(
+        "no chunk at this band"), (z_plot.getPlotItem().titleLabel.text, tab.count_label.text())
+
+    tab.band_combo.setCurrentIndex(tab.band_combo.findData(j))
+    pump(app, 0.05)
+    tab.all_bands.setChecked(True)  # the user's choice at a base-chunk band: shown off (unticked) at the deep band
+    # the deep band: level 7 (2097 s windows, hop 1048.576 s) on chunks of 28 base chunks (4.7 h). Its chunk
+    # count here: the whole groups of 28, plus the remainder when it holds MIN_WINDOWS (4) windows of the
+    # level's grid (windows k * hop from the epoch lying inside the overlap, by centre)
+    jd = int(np.flatnonzero(level == 7)[0])
+    hop = 64 * 4**7 / fs
+    n_whole, rest = divmod(n_all, 28)
+    lo_s, hi_s = r["base_starts"][0].timestamp(), r["base_ends"][-1].timestamp()
+    k0, k1 = int(np.ceil(lo_s / hop)), int(np.floor((hi_s - 2 * hop) / hop))
+    centres = (np.arange(k0, k1 + 1) + 1.0) * hop
+    in_rest = int(((centres >= r["base_starts"][28 * n_whole].timestamp()) & (centres < hi_s)).sum()) if rest else 0
+    want_deep = n_whole + (1 if in_rest >= 4 else 0)
+    tab.band_combo.setCurrentIndex(tab.band_combo.findData(jd))
+    pump(app, 0.1)
+    view_d, want_d = finite_groups(jd)
+    assert view_d["multiple"] == 28 and len(view_d["starts"]) == want_deep, (view_d["multiple"],
+                                                                             len(view_d["starts"]), want_deep)
+    assert view_d["ends"][-1] == r["base_ends"][-1] and view_d["starts"][1] == r["base_starts"][28], view_d["starts"]
+    assert tab.band_combo.currentText().endswith("(4.7 h chunks)"), tab.band_combo.currentText()
+    assert tab.band_label.text().endswith(f" · level 7 · {want_deep} chunks of 4.7 h"), tab.band_label.text()
+    assert spots_per_mode() == want_d and min(want_d) >= want_deep - 1, (spots_per_mode(), want_d)
+    spans_s = (np.asarray(view_d["ends"].asi8) - np.asarray(view_d["starts"].asi8)) / 1e9
+    for bar, (item, _x, _y, idx, _c) in zip(bars(z_plot), tab.items[z_plot]):  # a bar over each chunk's span
+        assert np.allclose(bar.opts["left"] + bar.opts["right"], spans_s[idx]), (bar.opts["left"], spans_s)
+    assert len(bars(z_plot)) == 2, bars(z_plot)
+    assert not tab.all_bands.isEnabled() and "4.7 h from every band" in tab.all_bands.toolTip(), (
+        tab.all_bands.toolTip())
+    assert not tab.all_bands.isChecked() and tab.all_bands_wanted, "all bands shown ticked while off at a deep band"
+    g = 4
+    centres_d = (np.asarray(view_d["starts"].asi8, dtype=float) + np.asarray(view_d["ends"].asi8, dtype=float)) / 2e9
+    z_plot.getViewBox().selected.emit(crosspower_rect(centres_d, (g,)))
+    pump(app, 0.1)
+    assert tab.selected == {g} and tab.selected_level == 7, (tab.selected, tab.selected_level)
+    stepped = []
+    while level[tab.band()] == 7:  # the next band on, while it is on level 7 the selection stays
+        assert tab.selected == {g}, (tab.band(), tab.selected)
+        tab.next_band.click()
+        pump(app, 0.05)
+        stepped.append(int(level[tab.band()]))
+    assert stepped[-1] == 8 and tab.selected == set() and "selection of 1 chunk(s) cleared" in tab.status.text(), (
+        stepped, tab.selected, tab.status.text())
+    cleared_line = tab.status.text()
+    tab.band_combo.setCurrentIndex(tab.band_combo.findData(jd))
+    pump(app, 0.1)
+    z_plot.getViewBox().selected.emit(crosspower_rect(centres_d, (g,)))
+    tab.mask_button.click()  # "all bands" was ticked at the 0.1 s band: here the mask covers the band only
+    pump(app, 0.1)
+    _p, pmin_d, pmax_d = tab.band_periods(jd)
+    mask_line = tab.status.text()
+    assert mask_line.startswith(f"1 mask over 4.7 h, band {_p:.4g} s only"), mask_line
+    assert len(tab.masks) == 1, tab.masks
+    deep_mask = tab.masks[0]
+    assert (pd.Timestamp(deep_mask["start"]), pd.Timestamp(deep_mask["end"])) == (
+        view_d["starts"][g], view_d["ends"][g]), (deep_mask, view_d["starts"][g], view_d["ends"][g])
+    assert deep_mask["bands"] != "all" and np.allclose(deep_mask["bands"], [pmin_d, pmax_d]), deep_mask
+    codes = masked_chunks(tab.result, tab.masks, jd)
+    # chunk g fully masked (every window centred in it overlaps it); g - 1 and g + 1 partly: each holds a
+    # window centred within one hop of the mask's edge, whose 2 x hop span reaches into the mask, and others
+    # centred further off that do not
+    assert codes[g] == 2 and codes[g - 1] == 1 and codes[g + 1] == 1, codes
+    assert (np.delete(codes, [g - 1, g, g + 1]) == 0).all(), codes
+
+    def looks(plot):
+        """Return, per chunk index drawn on `plot`, its looks.
+
+        'hollow' (no brush), 'filled' (the series colour), 'lighter' (opaque,
+        another colour of a higher HSL lightness than the series colour) or
+        'other'.
+        """
+        out = {}
+        for item, _x, _y, idx, colour in tab.items[plot]:
+            series = QColor(colour)
+            for spot, i in zip(item.scatter.points(), idx):
+                brush, got = spot.brush(), spot.brush().color()
+                look = ("hollow" if brush.style() == Qt.NoBrush else
+                        "filled" if got == series else
+                        "lighter" if got.alpha() == 255 and got.lightness() > series.lightness() else "other")
+                out.setdefault(int(i), set()).add(look)
+        return out
+
+    for plot in (z_plot, *tab.polar_plots.values()):
+        drawn = looks(plot)
+        want_looks = {i: {("filled", "lighter", "hollow")[int(codes[i])]} for i in drawn}
+        assert drawn == want_looks, (plot.panel, drawn, want_looks)
+    assert tab.count_label.text().startswith(f"3 of {want_deep} chunks of 4.7 h masked (2 partly);"), (
+        tab.count_label.text())
+    shot_deep = SHOT_DIR / "gui_crosspower_deep.png"
+    assert tab.grab().save(str(shot_deep)), f"could not save {shot_deep}"
+
+    # an all-band mask over one base chunk inside deep chunk g, made at the 0.1 s band (all bands on again)
+    tab.band_combo.setCurrentIndex(tab.band_combo.findData(j))
+    pump(app, 0.1)
+    assert tab.all_bands.isEnabled() and tab.all_bands.isChecked(), "all bands not back ticked at a base-chunk band"
+    c = 28 * g + 3
+    centres_b = (np.asarray(r["base_starts"].asi8, dtype=float) + np.asarray(r["base_ends"].asi8, dtype=float)) / 2e9
+    z_plot.getViewBox().selected.emit(crosspower_rect(centres_b, (c,)))
+    pump(app, 0.1)
+    assert tab.selected == {c}, tab.selected
+    tab.mask_button.click()
+    cut = next(m for m in tab.masks if m["bands"] == "all")
+    assert (pd.Timestamp(cut["start"]), pd.Timestamp(cut["end"])) == (r["base_starts"][c], r["base_ends"][c]), cut
+    # partly masked at level 5 (20 min chunks): chunk c // 2 holds base chunk c and one more
+    tab.band_combo.setCurrentIndex(tab.band_combo.findData(j5))
+    pump(app, 0.1)
+    codes5 = masked_chunks(tab.result, tab.masks, j5)
+    assert codes5[c // 2] == 1 and looks(z_plot)[c // 2] == {"lighter"}, (codes5[c // 2], looks(z_plot)[c // 2])
+    # Unmask on the deep band: the band's own mask is cut out, the all-band one left and named
+    tab.band_combo.setCurrentIndex(tab.band_combo.findData(jd))
+    pump(app, 0.1)
+    z_plot.getViewBox().selected.emit(crosspower_rect(centres_d, (g,)))
+    tab.unmask_button.click()
+    pump(app, 0.1)
+    assert tab.masks == [cut], tab.masks
+    assert iso(cut["start"]) in tab.status.text() and "Remove" in tab.status.text(), tab.status.text()
+    unmask_line = tab.status.text()
+    tab.table.selectAll()
+    tab.remove_button.click()
+    assert tab.masks == [], tab.masks
+    print(f"    level 5 at {periods[j5]:.4g} s: {len(view5['starts'])} chunks of 20 min, {want5} spots (xy, yx) "
+          f"== finite chunks, \"{tab.band_combo.itemText(tab.band_combo.findData(j5))}\"; level 9 at "
+          f"{periods[j9]:.4g} s: \"{tab.band_combo.itemText(tab.band_combo.findData(j9))}\", no spot")
+    print(f"    deep band {periods[jd]:.4g} s (level 7): \"{tab.band_label.text()}\" ({n_whole} whole chunks of 28, "
+          f"the remainder's {in_rest} windows {'kept' if in_rest >= 4 else 'joined'}), {want_d} spots, a bar over "
+          f"each chunk's span; all bands off (\"{tab.all_bands.toolTip()[:60]}...\"); selection kept over "
+          f"{len(stepped) - 1} band(s) of level 7, then \"{cleared_line}\"; chunk {g} masked "
+          f"{deep_mask['start']} to {deep_mask['end']}, bands {deep_mask['bands']} (box shown unticked, status "
+          f"\"{mask_line[:48]}\"): codes "
+          f"{codes[g - 1:g + 2].tolist()} drawn lighter / hollow / lighter; {shot_deep.name} saved; an all-band "
+          f"mask over base chunk {c} leaves level-5 chunk {c // 2} partly masked (lighter); Unmask at level 7: "
+          f"\"{unmask_line}\"")
+    tab.band_combo.setCurrentIndex(tab.band_combo.findData(j))
+    pump(app, 0.05)
+    tab.all_bands.setChecked(False)  # unticked at a band where it is on (the box a user can click)
+
+    store = tab.result["store"]
+    computes = tab.computes
+    began = time.time()
+    tab.chunk_combo.setCurrentIndex(tab.chunk_combo.findData(60.0))
+    pump(app, 0.1)
+    rebin_s = time.time() - began
+    s0 = pd.Timestamp(here[0]).floor("60s")
+    whole, tail = divmod((here[1] - s0).total_seconds(), 60.0)
+    want60 = int(whole) + (1 if tail >= 30.0 else 0)
+    assert tab.result["store"] is store and tab.result["chunk_s"] == 60.0 and rebin_s < 5.0, rebin_s
+    regroup_line = visible_status()  # what happened first: the elision takes the pair and archives
+    assert tab.computes == computes and regroup_line.startswith("regrouped to 1 min chunks in ") and (
+        "no archive read" in regroup_line), (tab.computes, regroup_line, tab.status.text())
+    status_px, status_chars = tab.status.width(), len(regroup_line.rstrip("\N{HORIZONTAL ELLIPSIS}"))
+    assert len(tab.result["base_starts"]) == want60, (len(tab.result["base_starts"]), want60)
+    j3 = int(np.flatnonzero(level == 3)[0])
+    drawn60 = {}
+    for jj, m_want in ((j, 1), (j3, 2)):
+        tab.band_combo.setCurrentIndex(tab.band_combo.findData(jj))
+        pump(app, 0.1)
+        view, want = finite_groups(jj)
+        assert view["multiple"] == m_want and spots_per_mode() == want and min(want) > 0, (
+            jj, view["multiple"], spots_per_mode(), want)
+        drawn60[jj] = (len(view["starts"]), want)
+        tab.grab().save(str(SCRATCH / f"gui_crosspower_60s_level{level[jj]}.png"))
+    tab.chunk_combo.setCurrentIndex(tab.chunk_combo.findData(600.0))
+    tab.band_combo.setCurrentIndex(tab.band_combo.findData(j))
+    pump(app, 0.1)
+    assert len(tab.result["base_starts"]) == n_all and tab.result["store"] is store, len(tab.result["base_starts"])
+    assert tab.computes == computes, tab.computes
+    print(f"    1 min chunks regrouped in {rebin_s:.2f} s (same store, no compute started): {want60} chunks, band "
+          f"{periods[j]:.4g} s {drawn60[j][1]} spots of {drawn60[j][0]}, level 3 at {periods[j3]:.4g} s "
+          f"{drawn60[j3][1]} of {drawn60[j3][0]} chunks of 2 min; the status line, {status_px} px wide, shows "
+          f"{status_chars} of its {len(tab.status.text())} characters: \"{regroup_line}\"")
+
+    combo.setCurrentIndex(qc_index())  # inside the stored overlap: regrouped, nothing read
+    pump(app, 0.1)
+    regrouped = tab.result
+    assert regrouped is not None and regrouped["store"] is store and tab.computes == computes, tab.computes
+    seen = visible_status()
+    assert "regrouped to a QC window (2.0 h)" in seen and "no archive read" in seen, seen
+    # the window rounded out to whole minutes (the store's minute bins): 12:55:49-14:55:49 drawn as 12:55:00-14:56:00
+    edge0, edge1 = start.floor("60s"), end.ceil("60s")
+    assert len(regrouped["base_starts"]) == 12 and regrouped["base_starts"][0] == edge0, regrouped["base_starts"]
+    assert (regrouped["start"], regrouped["end"], regrouped["base_ends"][-1]) == (edge0, edge1, edge1), (
+        regrouped["start"], regrouped["end"])
     took = compute("the chunk impedances")
+    assert tab.computes == computes + 1, tab.computes
     r = tab.result
-    n_chunks = len(r["chunk_starts"])
-    assert n_chunks == 12 and r["chunk_starts"][0] == start, (n_chunks, r["chunk_starts"][0], start)
+    n_chunks = len(r["base_starts"])
+    assert n_chunks == 12 and r["base_starts"][0] == start, (n_chunks, r["base_starts"][0], start)
+    v = band_view(r, j)
     for key in ("zxy", "zyx", "coh_xy", "coh_yx"):
-        assert r[key].shape == (12, periods.size), (key, r[key].shape)
-    assert (r["n_windows"][:, j] > 0).all(), r["n_windows"][:, j]
+        assert v[key].shape == (12,), (key, v[key].shape)
+    assert (v["n_windows"] > 0).all(), v["n_windows"]
     for key in ("zxy", "zyx", "coh_xy", "coh_yx", "h_amp", "e_amp"):
-        assert np.isfinite(r[key][:, j]).all(), (key, r[key][:, j])
-    ratios = {mode: float(np.median(np.abs(r[f"z{mode}"][:, j])) / abs(z_edi[a, b]))
+        assert np.isfinite(v[key]).all(), (key, v[key])
+    ratios = {mode: float(np.median(np.abs(v[f"z{mode}"]))) / abs(z_edi[a, b])
               for mode, (a, b) in (("xy", (0, 1)), ("yx", (1, 0)))}
     for mode, ratio in ratios.items():
         assert 1 / 3 < ratio < 3, (mode, ratio, periods[j], edi.period[k])
-    spots = [len(item.scatter.points()) for item in z_plot.getPlotItem().listDataItems()]
+    vr = band_view(regrouped, j)
+    step = {mode: float(np.median(np.abs(vr[f"z{mode}"][1:] / v[f"z{mode}"][1:] - 1.0))) for mode in ("xy", "yx")}
+    assert max(step.values()) < REGROUP_TOL, step
+    # chunk 0: computed alone it starts at the window's start (record start + 6 h, 49 s into a minute),
+    # regrouped from the overlap's store at the minute before it (the whole first minute bin); printed, not asserted
+    step0 = float(np.abs(vr["zxy"][0] / v["zxy"][0] - 1.0))
+    spots = spots_per_mode()
     assert spots == [12, 12], spots
-    print(f"    D02 rr E08, {n_chunks} chunks of 600 s at {periods[j]:.4g} s (level {level[j]}): computed in "
-          f"{took:.1f} s; median |Z| / EDI's at {edi.period[k]:.4g} s: xy {ratios['xy']:.3f}, yx {ratios['yx']:.3f}")
+    print(f"    D02 rr E08, {n_chunks} chunks of 600 s at {periods[j]:.4g} s (level {level[j]}): regrouped from the "
+          f"overlap's store, then computed in {took:.1f} s; the two differ by a median {step['xy']:.1e} (xy), "
+          f"{step['yx']:.1e} (yx) over chunks 1-11 (chunk 0, regrouped from the minute before the start: {step0:.1e} in xy); "
+          f"median |Z| / EDI's at {edi.period[k]:.4g} s: "
+          f"xy {ratios['xy']:.3f}, yx {ratios['yx']:.3f}")
+
+    # a window picked while a compute runs: the compute that returns is drawn over the combo's window or dropped.
+    # Nothing is pumped between the picks, so the compute's result (a queued signal) arrives after both
+    qc_store, computes = tab.store, tab.computes
+    combo.setCurrentIndex(0)  # the whole overlap, outside the QC store: computed by itself
+    combo.setCurrentIndex(qc_index())  # picked while it runs: regrouped from the QC store at once
+    assert tab.result["kind"] == QC and tab.result["store"] is qc_store, tab.result["kind"]
+    began = time.time()
+    wait_until(app, lambda: tab.store is not qc_store, 120, "the overlap's store, computed by itself")
+    pump(app, 0.2)
+    race_s = time.time() - began
+    rr, overlap_store = tab.result, tab.store
+    assert tab.computes == computes + 1 and tab.store_key[2] == OVERLAP, (tab.computes, tab.store_key)
+    assert rr["kind"] == QC and rr["store"] is overlap_store, (rr["kind"], rr["store"] is overlap_store)
+    assert (pd.Timestamp(rr["range"][0]), pd.Timestamp(rr["range"][1])) == (start, end), rr["range"]
+    assert len(rr["base_starts"]) == 12 and rr["base_starts"][0] == edge0, rr["base_starts"]  # whole minutes
+    race_line = visible_status()
+    assert "picked meanwhile" in race_line, (race_line, tab.status.text())
+    tab.compute_button.click()  # the QC window read again, and the overlap picked before it returns
+    combo.setCurrentIndex(0)
+    assert tab.result["kind"] == OVERLAP and tab.result["store"] is overlap_store, tab.result["kind"]
+    wait_until(app, lambda: tab._thread is None and "dropped" in tab.status.text(), 120, "the QC compute dropped")
+    pump(app, 0.2)
+    assert tab.computes == computes + 2 and tab.store is overlap_store, (tab.computes, tab.store is overlap_store)
+    assert tab.result["kind"] == OVERLAP and len(tab.result["base_starts"]) == n_all, (
+        tab.result["kind"], len(tab.result["base_starts"]))
+    dropped_line = visible_status()
+    assert "dropped" in dropped_line and "drawn from the stored windows" in dropped_line, (
+        dropped_line, tab.status.text())
+    combo.setCurrentIndex(qc_index())  # regrouped from the overlap store: the span drawn is named
+    pump(app, 0.1)
+    drawn_at = f"{edge0:%Y-%m-%d %H:%M:%S} to {edge1:%Y-%m-%d %H:%M:%S} UTC"
+    lead_line = visible_status()
+    assert edge0 < start and drawn_at in lead_line and "rounded out to whole minutes" in lead_line, (
+        drawn_at, lead_line, tab.status.text())
+    assert drawn_at in z_plot.getPlotItem().titleLabel.text, z_plot.getPlotItem().titleLabel.text
+
+    # a change of remote, and another pair's compute returning over the drawing of the pair shown
+    far = "A07"  # archived, its span covering D02's
+    overlap_store, computes = tab.store, tab.computes
+
+    def set_remote(name):
+        tab.remote_combo.setCurrentIndex(tab.remote_combo.findData(name))
+        assert tab.remote_combo.currentData() == name, (name, tab.remote_combo.currentData())
+
+    set_remote(far)
+    pump(app, 0.1)
+    ask = f"window picked for {SITE} rr {far}: press Compute"
+    assert tab.result is None and sum(spots_per_mode()) == 0 and tab.status.text() == ask, (
+        tab.result is None, spots_per_mode(), tab.status.text())
+    assert tab.store is overlap_store and combo.currentIndex() == qc_index() and tab.computes == computes
+    combo.setCurrentIndex(0)  # a window of a pair with no store: nothing drawn, nothing computed
+    pump(app, 0.1)
+    assert tab.result is None and tab.status.text() == ask and tab.computes == computes, tab.status.text()
+    combo.setCurrentIndex(qc_index())
+    tab.compute_button.click()  # D02 rr A07 over the QC window, and E08 back before it returns
+    set_remote(REMOTE)
+    assert tab.result["remote"] == REMOTE and tab.result["store"] is overlap_store, tab.result["remote"]
+    assert tab.status.text().startswith("regrouped to a QC window (2.0 h) of D02 rr E08 from the stored windows"), (
+        tab.status.text())
+    wait_until(app, lambda: tab._thread is None and tab.computes == computes + 1
+               and "not drawn: the pair shown changed meanwhile" in tab.status.text(), 120, "D02 rr A07's compute")
+    pump(app, 0.2)
+    assert tab.result is not None and tab.result["remote"] == REMOTE, "the drawing of D02 rr E08 left"
+    far_line = visible_status()
+    assert "not drawn: the pair shown changed meanwhile" in far_line, (far_line, tab.status.text())
+    tab.chunk_combo.setCurrentIndex(tab.chunk_combo.findData(300.0))  # regroups the drawing's own store
+    pump(app, 0.1)
+    whole5, tail5 = divmod((edge1 - edge0).total_seconds(), 300.0)
+    want5 = int(whole5) + (1 if tail5 >= 150.0 else 0)
+    r5 = tab.result
+    assert r5 is not None and (r5["station"], r5["remote"]) == (SITE, REMOTE) and r5["store"] is overlap_store, (
+        None if r5 is None else (r5["remote"], r5["store"] is overlap_store))
+    assert len(r5["base_starts"]) == want5 and r5["base_starts"][0] == edge0, (len(r5["base_starts"]), want5)
+    assert f"{SITE} rr {REMOTE}" in z_plot.getPlotItem().titleLabel.text and tab.computes == computes + 1
+    assert tab.store is overlap_store and tab.spare is not None and tab.spare[1][1] == far, "A07's store not kept aside"
+    far_store = tab.spare[0]
+    tab.chunk_combo.setCurrentIndex(tab.chunk_combo.findData(600.0))
+    set_remote(far)  # its store, kept aside, covers the QC window: drawn at once, nothing read
+    pump(app, 0.1)
+    assert tab.result["remote"] == far and tab.result["store"] is far_store and tab.computes == computes + 1, (
+        tab.result["remote"], tab.computes)
+    assert len(tab.result["base_starts"]) == 12 and tab.spare[0] is overlap_store, len(tab.result["base_starts"])
+    set_remote(REMOTE)
+    pump(app, 0.1)
+    assert tab.result["remote"] == REMOTE and tab.result["store"] is overlap_store and tab.store is overlap_store
+    assert tab.computes == computes + 1, tab.computes
+    print(f"    remote {far} picked: drawing cleared, \"{ask}\"; its compute returning after {REMOTE} was picked "
+          f"back: \"...{far_line[far_line.find('kept'):]}\", D02 rr E08 still drawn, 5 min chunks from its own "
+          f"store: {want5} chunks; {far} again drawn from its kept store, {REMOTE} again from the overlap's")
+
+    compute("the chunk impedances, again")  # the QC window's own store again
+    assert tab.computes == computes + 2 and tab.result["kind"] == QC and len(tab.result["base_starts"]) == 12, (
+        tab.computes, tab.result["kind"])
+    print(f"    the overlap picked, then the QC window again while it computed ({race_s:.1f} s): drawn over the QC "
+          f"window, 12 chunks from the overlap's store (\"{race_line}\"); Compute on the QC window with the overlap "
+          f"picked meanwhile: \"{dropped_line}\"; the QC window regrouped: \"{lead_line}\"")
+
+    # a compute queued for a window that a returning store covers is dropped: the overlap picked (outside the
+    # QC window's store: one compute starts), then QC window 5 before it returns (outside that store too: its
+    # compute queued behind the first); the overlap's store, on its return, is kept and drawn over QC window 5
+    qc_store, computes = tab.store, tab.computes
+    k5 = qc_index() + 1
+    _kind5, start5, end5 = entries()[k5]
+    combo.setCurrentIndex(0)
+    combo.setCurrentIndex(k5)
+    assert tab._pending is not None and tuple(tab._pending[2:5]) == (QC, start5, end5), tab._pending
+    began = time.time()
+    wait_until(app, lambda: tab.store is not qc_store, 120, "the overlap's store, QC window 5's compute queued")
+    pump(app, 0.5)  # a queued compute starts as the first one's thread finishes
+    queue_s = time.time() - began
+    kept_line = visible_status()
+    r_k5 = tab.result
+    assert tab.computes == computes + 1 and tab._pending is None and tab._thread is None, (
+        tab.computes - computes, tab._pending, tab._thread)
+    assert tab.store_key[2] == OVERLAP and r_k5["store"] is tab.store and r_k5["kind"] == QC, (
+        tab.store_key[2], r_k5["kind"])
+    assert (pd.Timestamp(r_k5["range"][0]), pd.Timestamp(r_k5["range"][1])) == (start5, end5), r_k5["range"]
+    assert r_k5["base_starts"][0] == start5.floor("60s"), r_k5["base_starts"][0]
+    assert "kept: the overlap store covers it" in kept_line, (kept_line, tab.status.text())
+    combo.setCurrentIndex(qc_index())  # the fourth QC window again: regrouped from the overlap's store
+    compute("the chunk impedances, once more")  # the rest of (34) reads the window's own compute
+    assert tab.computes == computes + 2 and tab.result["kind"] == QC and len(tab.result["base_starts"]) == 12, (
+        tab.computes, tab.result["kind"])
+    print(f"    the overlap picked, then QC window 5 while it computed ({queue_s:.1f} s): one compute, QC window 5 "
+          f"drawn from the overlap's store, \"{kept_line}\"")
 
     band_combo = tab.band_combo
 
     def band_named() -> int:
-        """The label names the combo's current band: its place (1-based), its period, its level."""
+        """Check that the label names the combo's current band and return the band's index.
+
+        The label gives its place (1-based), its period, its level and its grid.
+        """
         index, jj, label = band_combo.currentIndex(), band_combo.currentData(), tab.band_label.text()
+        m_jj, n_jj = multiples[level[jj]], len(band_view(tab.result, jj)["starts"])
+        grid = (f"{n_jj} chunks of {600 * m_jj / 60:.3g} min" if 600 * m_jj < 7200 else
+                f"{n_jj} chunks of {600 * m_jj / 3600:.1f} h") if n_jj else "no chunk (needs "
         for want in (rf"\bband {index + 1} of {band_combo.count()}\b",
-                     rf"(^|\s){re.escape(f'{tab.band_periods(jj)[0]:.4g}')} s\b", rf"\blevel {level[jj]}\b"):
+                     rf"(^|\s){re.escape(f'{tab.band_periods(jj)[0]:.4g}')} s\b", rf"\blevel {level[jj]}\b",
+                     re.escape(f" · {grid}")):
             assert re.search(want, label), (label, want, index, jj)
         return index
 
@@ -1192,20 +1754,21 @@ def crosspower_check(app, window) -> None:
     band_combo.setCurrentIndex(at)
     pump(app, 0.1)
     assert tab.band() == j and tab.band_label.text() == label_at, (tab.band(), tab.band_label.text(), label_at)
-    spots = [len(item.scatter.points()) for item in z_plot.getPlotItem().listDataItems()]
+    spots = spots_per_mode()
     assert spots == [12, 12], spots  # the band the rubber band goes round, drawn again
     print(f"    band label \"{label_at}\"; the next arrow one band on and the previous arrow back, the label "
           f"following; the previous arrow off at band 1, the next arrow off at band {band_combo.count()}")
 
-    starts_s = np.asarray(r["chunk_starts"].asi8, dtype=float) / 1e9
-    z_plot.getViewBox().selected.emit(crosspower_rect(starts_s, CROSSPOWER_MASKED))
+    view = band_view(r, j)
+    centres_s = (np.asarray(view["starts"].asi8, dtype=float) + np.asarray(view["ends"].asi8, dtype=float)) / 2e9
+    z_plot.getViewBox().selected.emit(crosspower_rect(centres_s, CROSSPOWER_MASKED))
     pump(app, 0.1)
     assert tab.selected == set(CROSSPOWER_MASKED) and tab.selected_on == "time", (tab.selected, tab.selected_on)
-    assert not tab.all_bands.isChecked(), "a time-panel mask must cover the shown band only unless asked"
+    assert not tab.all_bands.isChecked(), "'all bands' ticked before it was asked for"
     tab.all_bands.setChecked(True)  # asked: this one is a time cut
     tab.mask_button.click()
     first, last = min(CROSSPOWER_MASKED), max(CROSSPOWER_MASKED)
-    want = {"start": r["chunk_starts"][first], "end": r["chunk_ends"][last]}
+    want = {"start": view["starts"][first], "end": view["ends"][last]}
     assert len(tab.masks) == 1, tab.masks
     mask = tab.masks[0]
     assert (pd.Timestamp(mask["start"]), pd.Timestamp(mask["end"])) == (want["start"], want["end"]), mask
@@ -1233,20 +1796,23 @@ def crosspower_check(app, window) -> None:
             hollow = [spot.brush().style() == Qt.NoBrush for spot in item.scatter.points()]
             want_hollow = [int(i) in CROSSPOWER_MASKED for i in idx]
             assert hollow == want_hollow, (plot.panel, hollow)
+    assert tab.count_label.text().startswith("2 of 12 chunks masked;"), tab.count_label.text()
     real_masks_after = real_masks.read_bytes() if real_masks.exists() else None
     assert real_masks_after == real_masks_before, "the real survey folder's masks.yaml was written"
     shot = SHOT_DIR / "gui_crosspower.png"
     assert tab.grab().save(str(shot)), f"could not save {shot}"
     print(f"    reloaded from the file: chunks {list(CROSSPOWER_MASKED)} hollow on the |Z| and both polar "
-          f"plots, the other ten filled; the real survey folder's masks.yaml untouched; {shot.name} saved")
+          f"plots, the other ten filled, \"{tab.count_label.text()}\"; the real survey folder's masks.yaml "
+          f"untouched; {shot.name} and {shot_deep.name} saved")
 
 
 def main() -> int:
+    """Build the window over the real survey, check criteria (1)-(34) in the order they run and return 0."""
     print(__doc__.split("**This test fails if**")[1].split("It opens three")[0].strip())
     print()
 
     global REAL_YAML
-    REAL_YAML = SURVEY_YAML.read_bytes()  # (17): must be the same bytes at the end
+    REAL_YAML = SURVEY_YAML.read_bytes()  # (17): the same bytes at the end
     app = QApplication.instance() or QApplication(sys.argv)
     theme.apply(app)  # as __main__ does, before the window is built
     window = MainWindow(survey_yaml=SURVEY_YAML)
@@ -1375,7 +1941,7 @@ def main() -> int:
     print(f"  segment_loaded after {load_s:.1f} s: {segment.station} {segment.t0} "
           f"n={segment.n:,} at {segment.sample_rate:g} Hz; four plots, x limits [0, 7200] s; "
           f"hint {ts.hint_label.text()!r}")
-    # the MATLAB app's stack: order, names, colours, one shared x axis, no gaps
+    # the stack: order, names, colours, one shared x axis, no gaps
     assert ts.comps == list(EXPECTED_CHANNELS), f"Time Series panels {ts.comps}"
     pump(app, 0.2)  # the layout settles before the geometry is read
     for k, ((name, want_pen), plot) in enumerate(zip(PANEL_LOOK, ts.plots)):
@@ -1440,7 +2006,7 @@ def main() -> int:
           f"spectrograms {t_s.size} x {periods.size}")
     window_text = f"{segment.t0:%H:%M:%S} to {segment.end:%H:%M:%S} UTC"
     assert_labelled(window, SITE, window_text, f"remote {REMOTE}")
-    # Spectra: the MATLAB Welch tab, two panels on one frequency axis
+    # Spectra: two panels on one frequency axis
     spectra = window.spectra_tab
     assert list(spectra.plots) == SPECTRA_PANELS, list(spectra.plots)
     mark_labels = []
@@ -1503,7 +2069,7 @@ def main() -> int:
     print(f"  Spectrogram: {[i.plot.getAxis('left').labelText for i in spectrogram.images.values()]}, "
           f"x limits [0, {WINDOW_MIN:g}] min, a setXRange(-10, 200) stays on [0, {WINDOW_MIN:g}]")
 
-    # Coherence: the MATLAB titles, the band lines and their mean, locked axes
+    # Coherence: the pair titles, the band lines and their mean, locked axes
     coherence = window.coherence_tab
     band_names = [label for _lo, _hi, label in BANDS_S]
     for pair, plot in coherence.band_plots.items():
@@ -1550,7 +2116,7 @@ def main() -> int:
     for pair, plot in coherence.band_plots.items():
         x_view = plot.getViewBox().viewRange()[0]
         assert np.allclose(x_view, [0.0, WINDOW_MIN], rtol=0, atol=1e-9), f"Coherence {pair}: {x_view}"
-    # the cursor is on every panel, and a click on the RIGHT column moves it
+    # the cursor is on every panel, and a click on the right column moves it
     click_plot(app, coherence.band_plots[REMOTE_ORDER[1][0]], 900.0 / 60.0)
     values = [float(c.value()) for c in coherence.cursors.values()]
     assert max(abs(v - 15.0) for v in values) < 1.0 / 60.0, values
@@ -1687,7 +2253,7 @@ def main() -> int:
           f"(factor {ratio:.3f})")
 
     # --------------------------------------------- (13) the Process tab
-    print("(13) the Process tab for D02, in the MATLAB Process Data tab's order:")
+    print("(13) the Process tab for D02, row by row:")
     window.tabs.setCurrentWidget(process)
     process.select_station(SITE)
     pump(app, 0.3)
@@ -1810,7 +2376,7 @@ def main() -> int:
         print(f"  credit as the map's tooltip {want_tip[:50]!r}..., no label under the map; a zoom out "
               f"to +-1 deg stays at lon {vx0:.4f}..{vx1:.4f}, lat {vy0:.4f}..{vy1:.4f}, inside the basemap")
     else:
-        print(f"  basemap: SKIPPED -- no {basemap_json.name} / {basemap_png.name} in {WORK} "
+        print(f"  basemap: SKIPPED, no {basemap_json.name} / {basemap_png.name} in {WORK} "
               f"(run scripts/fetch_basemap.py once, online)")
 
     wait_until(app, lambda: {SITE, REMOTE} <= set(bar.spans), 60, "both recorded spans")
@@ -1990,8 +2556,8 @@ def main() -> int:
         runner.reset()  # anything still queued goes before run_queue is real again
         runner.add, runner.run_queue = real_add, real_run
 
-    # -------------------------- (20) Add to queue no longer starts the queue
-    # the interception above replaced `runner.add`; test the real path too --
+    # -------------------------- (20) Add to queue leaves the job for Run queue
+    # the interception above replaced `runner.add`; test the real path too:
     # `_queue()` is what every queuing button (Add to queue included) calls
     assert process.station_combo.currentData() == SITE and process.remote_combo.currentData() == REMOTE, (
         process.station_combo.currentData(), process.remote_combo.currentData())
@@ -2068,7 +2634,7 @@ def main() -> int:
     own_hours = (other_span[1] - other_span[0]).total_seconds() / 3600
     fraction = summary.ENOUGH_FRACTION  # the declared threshold, not the recommendation itself
     tie_hours = summary.TIE_HOURS
-    # the rule: the NEAREST site among those whose overlap covers
+    # the rule: the nearest site among those whose overlap covers
     # at least the fraction of the station's own record; else the longest overlap
     enough = sorted(name for name, hours in by_hours.items() if hours >= fraction * own_hours)
     tied = sorted(name for name, hours in by_hours.items() if hours >= top - tie_hours)
@@ -2144,7 +2710,7 @@ def main() -> int:
     data = yaml.safe_load(copy_filters.read_text(encoding="utf-8")) or {}
     assert SITE not in data and data.get("A07") == A07_FILTERS, data
     assert (SURVEY_DIR / "filters.yaml").read_text(encoding="utf-8").count("A07") >= 1
-    print(f"  emptied: filters.yaml keys now {list(data)}; the real filters.yaml was never written")
+    print(f"  emptied: filters.yaml keys now {list(data)}; the round trip wrote the copy's filters.yaml")
 
     # ------------------- (15) continued: the Metadata tab edits the same copy
     print("(15) Metadata edits on the same copy:")
@@ -2302,7 +2868,7 @@ def main() -> int:
     pump(app, 0.3)
     assert "channels" not in yaml.safe_load(copy_yaml.read_text(encoding="utf-8"))["sites"][UNARCHIVED]
     assert copy_yaml.read_bytes() == before, "back to the default, the file is not what it was"
-    print(f"  back to {DEFAULT_CHANNELS!r}: {UNARCHIVED}'s channels key removed, the file byte-identical again")
+    print(f"  back to {DEFAULT_CHANNELS!r}: {UNARCHIVED}'s channels key removed, the file identical to before again")
 
     _, shown = choose_channels(UNARCHIVED, channels_column.CUSTOM, typed="hx, hy, ex, ey, tx")
     assert shown == "hx, hy, ex, ey, tx", shown
@@ -2338,10 +2904,12 @@ def main() -> int:
           f"legend {labels}, drawn in {edis.last_seconds:.2f} s")
 
     # phase range: 0-90 (mtpy's own yx + 180 fold) is the default, -180 to 180
-    # undoes it, and it applies to every EDI on the phase axes, not just one
+    # undoes it, and it applies to every EDI on the phase axes
     def phase_axes():
-        """(xy, yx) phase axes of the current draw, found by their ylabel --
-        `tf_plot._apply_phase_range` always labels both "Phase (deg)"."""
+        """Return the (xy, yx) phase axes of the current draw, found by their ylabel.
+
+        `tf_plot._apply_phase_range` labels both "Phase (deg)".
+        """
         found = [ax for ax in fig.axes if "Phase" in ax.get_ylabel()]
         assert len(found) == 2, f"expected 2 phase axes (xy, yx), got {len(found)}"
         return found
@@ -2381,10 +2949,11 @@ def main() -> int:
     # both resistivity axes exactly, and a bad pair (min >= max) is ignored
     # and reported rather than silently applied
     def rho_axes():
-        """(axr, axr2) of the current draw -- the two resistivity axes mtpy
-        makes before the phase ones, so fig.axes[:2] for this two-station
-        overlay (already checked above: each holds two error-bar
-        containers)."""
+        """Return (axr, axr2) of the current draw, the two resistivity axes mtpy makes before the phase ones.
+
+        They are fig.axes[:2] for this two-station overlay (each holding two
+        error-bar containers, checked above).
+        """
         axes = fig.axes[:2]
         assert len(axes) == 2, f"expected 2 resistivity axes (axr, axr2), got {len(axes)}"
         return axes
@@ -2534,7 +3103,7 @@ def main() -> int:
     QTimer.singleShot(100, fill_dialog)
     n_before = len(runner.jobs)
     started = time.time()
-    meta.new_button.click()  # async now: returns once the dialog closed and the job is queued+started
+    meta.new_button.click()  # asynchronous: returns once the dialog closed and the job is queued and started
     took_to_queue = time.time() - started
     assert filled.get("name") == raw_root.name, f"the name defaulted to {filled.get('name')!r}"
     assert Path(filled.get("workspace", "")) == raw_root / "work", f"workspace {filled.get('workspace')!r}"
@@ -2546,12 +3115,12 @@ def main() -> int:
     assert Path(job.argv[job.argv.index("--workspace") + 1]) == raw_root / "work", job.argv
     assert filled["channels"] == (LEMI423_PRESETS, DEFAULT_CHANNELS), filled["channels"]
     assert job.argv[job.argv.index("--channels") + 1] == NEW_SURVEY_CHANNELS, job.argv
-    # the window must not have blocked for the scan: click() itself returns
+    # the window stays responsive during the scan: click() itself returns
     # once the job is queued and started, well under the several seconds the
     # real script needs for 2 synthetic sites plus process start-up
-    assert took_to_queue < 5.0, f"new_button.click() blocked for {took_to_queue:.1f} s -- not async"
-    # the runner's own echo (JobRunner._append), not a loguru line: "$ ..."
-    # with no "HH:MM:SS | name | " prefix -- see criterion 12/18's trivial job
+    assert took_to_queue < 5.0, f"new_button.click() blocked for {took_to_queue:.1f} s: not async"
+    # the runner's own echo (JobRunner._append), "$ ..." without a loguru
+    # "HH:MM:SS | name | " prefix, as for the trivial job of criteria 12 and 18
     strip_now = console.toPlainText().splitlines()
     assert f"$ {job.command}" in strip_now, \
         "the job's command line had not reached the console strip while it ran"
@@ -2559,7 +3128,7 @@ def main() -> int:
           f"queued and started in {took_to_queue:.2f} s (async), console already showing it")
 
     # app.processEvents() runs inside wait_until while the job (and the GUI)
-    # keep going -- this is what "the window stayed responsive" means here
+    # keep going: this is what "the window stayed responsive" means here
     wait_until(app, lambda: runner.jobs[index].status in ("done", "failed"), 60, "the new-survey job")
     assert runner.jobs[index].status == "done", "\n".join(runner.jobs[index].output[-8:])
     pump(app, 0.2)
@@ -2685,8 +3254,8 @@ def main() -> int:
     runner.reset()
     assert not (WORK / "mth5" / f"{UNARCHIVED}.h5").exists(), f"{UNARCHIVED}.h5 was written"
 
-    # a filtered variant's own stem (`<site>_f<hash>.h5`, mtproc.ingest.variant_path)
-    # must never be mistaken for a site or a stacked remote of its own
+    # a filtered variant's own stem (`<site>_f<hash>.h5`, mtproc.ingest.variant_path) is
+    # another archive of its site, listed neither as a site nor as a stacked remote
     fake_variant = WORK / "mth5" / f"{SITE}_fdeadbeef.h5"
     fake_variant.write_bytes(b"")
     try:
@@ -2801,9 +3370,9 @@ def main() -> int:
                    series.removed_items[comp].isVisible())
             assert got == (grey_shown, colour_shown, removed_shown), (mode, comp, got)
         if mode in ("Both", "Removed"):
-            # the y range follows the trace being read, never the raw one (a
-            # large removed component made the raw trace hide the filtered channels at
-            # fine zoom). pyqtgraph pads the auto range by about a tenth on each side.
+            # the y range follows the trace being read rather than the raw one, whose
+            # large removed component would hide the filtered channels at fine zoom;
+            # pyqtgraph pads the auto range by about a tenth on each side
             shown = series.filtered_items["ex"] if mode == "Both" else series.removed_items["ex"]
             plot = series.plots["ex"]; vb = plot.getViewBox(); vb.autoRange(); pump(app, 0.1)
             lo, hi = vb.viewRange()[1]
@@ -2844,25 +3413,25 @@ def main() -> int:
     ft.add_filter("cp")
     cp_view = latest_preview(ft.entries, 60, "the notch + cp preview")
     assert [next(iter(entry)) for entry in cp_view.filters] == ["notch", "cp"], cp_view.filters
-    print(f"  TIMING: notch + cp on the 2 h window ({WINDOW_SAMPLES:,} samples x 4 channels): "
+    print(f"  timing: notch + cp on the 2 h window ({WINDOW_SAMPLES:,} samples x 4 channels): "
           f"{cp_view.elapsed_s:.2f} s (filters + filtered PSD ladder; the raw ladder is cached per window, "
           f"{raw_view.elapsed_s:.2f} s once)")
     assert ft.archive_label.text() == "", ft.archive_label.text()
-    assert not ft.delete_button.isVisible(), "D02's list was never saved: Delete archive must be hidden"
+    assert not ft.delete_button.isVisible(), "Delete archive shown for D02's unsaved list"
     shoot(app, window, "filters", ft)
     print(f"  archive note {ft.archive_label.text()!r} (D02's edits are unsaved), Delete archive hidden")
 
-    # A07's real (saved) `replace` entry, no variant built yet -- a direct,
-    # read-only check of `_update_archive_note` that does not disturb D02's
-    # loaded window or its (unsaved) working list: `state.site` is poked and
-    # restored without going through `set_site` (no site_changed signal, so
-    # `ft.entries`/the preview/the selection are untouched)
+    # A07's real (saved) `replace` entry, no variant built yet: a direct,
+    # read-only check of `_update_archive_note` that leaves D02's loaded
+    # window and its (unsaved) working list as they are; `state.site` is set
+    # and restored without `set_site` (no site_changed signal, so
+    # `ft.entries`, the preview and the selection stay)
     prev_site = state.site
     state.site = "A07"
     ft._update_archive_note()
     assert ft.archive_label.text() == (
         "filtered archive for this list: not built yet (built when processing starts)"), ft.archive_label.text()
-    assert not ft.delete_button.isVisible(), "A07 has no variant file yet: Delete archive must be hidden"
+    assert not ft.delete_button.isVisible(), "Delete archive shown for A07, which has no variant file yet"
     state.site = prev_site
     ft._update_archive_note()
     assert ft.archive_label.text() == "" and not ft.delete_button.isVisible()
@@ -2898,7 +3467,7 @@ def main() -> int:
     LOADED = "   (loaded)"
 
     def marked_rows(combo):
-        """[row] of every row bold, accent-coloured and suffixed "(loaded)"; every other row plain."""
+        """Return the rows bold, accent-coloured and suffixed "(loaded)", checking every other row is plain."""
         rows = []
         for k in range(combo.count()):
             font = combo.itemData(k, Qt.FontRole)
@@ -2955,10 +3524,13 @@ def main() -> int:
     before_replace = yaml.safe_load(filters_path.read_text(encoding="utf-8")) or {}
 
     def copy_dialog(tick, append, on_ready=None):
-        """Click "Copy to sites...": once the dialog is up, run `on_ready`, tick `tick`, set
-        Replace/Append and press OK -- exactly what the button's own handler drives."""
+        """Click "Copy to sites..." and fill the dialog as the button's own handler drives it.
+
+        Once the dialog is up: run `on_ready`, tick `tick`, set Replace or
+        Append and press OK.
+        """
         def fill():
-            # the dialog now up, never a closed one still awaiting deletion
+            # the dialog now up, rather than a closed one still awaiting deletion
             dialog = next((d for d in ft.findChildren(CopyFiltersDialog) if d.isVisible()), None)
             if dialog is None:
                 QTimer.singleShot(50, fill)
@@ -2979,9 +3551,12 @@ def main() -> int:
             "Replace is not the dialog's default"
 
     def settle(label):
-        """`_copy_to_sites` reopens the whole survey and reloads the window while it is loaded
-        (the same as `save()`): wait for that load AND its full QC to finish, and any stale
-        preview run, before the next dialog opens -- never two such reloads in flight together."""
+        """Wait for the reload a copy causes, one reload in flight at a time.
+
+        `_copy_to_sites` reopens the whole survey and reloads the window while
+        it is loaded (the same as `save()`): wait for that load and its full QC
+        to finish, and any stale preview run, before the next dialog opens.
+        """
         wait_until(app, lambda: store.segment is not None and store.segment.station == SITE
                    and store.segment.t0 == other_start and not store.busy,
                    90, f"D02's window settled after {label}")
@@ -3020,14 +3595,14 @@ def main() -> int:
     copy_dialog([], append=False)
     pump(app, 0.3)
     assert filters_path.read_bytes() == before_empty, "OK with nothing ticked wrote to filters.yaml"
-    print("    nothing ticked: OK did nothing, filters.yaml byte-identical")
+    print("    nothing ticked: OK did nothing, filters.yaml unchanged")
 
     # a site picked elsewhere (as the tree does), nothing loaded for it yet: no row marked
     state.set_site("E08")
     wait_until(app, lambda: chooser.site() == "E08" and chooser.window_combo.count() > 0,
                60, "E08's windows listed for the chooser (state.set_site, no window picked)")
     pump(app, 0.2)
-    assert state.selection == (SITE, other_start, other_end), "picking a site alone must not load a window"
+    assert state.selection == (SITE, other_start, other_end), "picking a site alone loaded a window"
     unmarked = marked_rows(chooser.window_combo)
     assert unmarked == [], (unmarked, "E08 has no loaded window: no row should be marked")
     print(f"    E08 shown with nothing loaded for it: no row marked, {chooser.window_combo.count()} windows listed")
@@ -3037,7 +3612,7 @@ def main() -> int:
 
     assert len(SHOTS) == 9, f"{len(SHOTS)} screenshots, expected 9: {SHOTS}"
     assert SURVEY_YAML.read_bytes() == REAL_YAML, "the real surveys/curnamona_cube/survey.yaml changed"
-    print("\nthe real survey.yaml is byte-identical; screenshots:")
+    print("\nthe real survey.yaml is unchanged; screenshots:")
     for path in SHOTS:
         print(f"  {path}")
     assert not SLOT_ERRORS, (

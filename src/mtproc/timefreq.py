@@ -1,16 +1,18 @@
-"""Time-resolved spectra and coherence for per-site QC, on a decimation cascade.
+# -*- coding: utf-8 -*-
+"""
+Time-resolved spectra and coherence for per-site QC on a decimation cascade
 
-The AusLAMP long-period QC figures (whole-record overview, band coherence vs
-time, coherogram, spectrogram) computed each level of their period ladder by
-growing the FFT length at the native 1 Hz rate. At 1000 Hz that is hopeless:
-a 2000 s period would need a 2-million-point FFT on a 160 M-sample channel.
-Here the ladder is a **factor-4 decimation cascade** instead, the same shape
-`mtproc.bands.lemimt_band_scheme` lays out for processing: the FFT length is
+The AusLAMP long-period QC figures (whole-record overview, band coherence
+against time, coherogram, spectrogram) compute each level of their period
+ladder by growing the FFT length at the native 1 Hz rate. At 1000 Hz a
+2000 s period would need a 2-million-point FFT on a 160 M-sample channel, so
+here the ladder is a factor-4 decimation cascade, the same shape
+`mtproc.bands.build_band_scheme` lays out for processing: the FFT length is
 fixed at every level and the sample rate drops by 4, so each level's segment
-covers 4x the period range of the one below it. Numerically the two are the
-same Welch estimate over the same segment durations; the cascade just gets
-there for 1/4 of the work per level and never holds more than one level's
-copy of the data (`cascade` replaces its input dict in place).
+covers 4 times the period range of the one below it. Both give the same
+Welch estimate over the same segment durations; the cascade costs a quarter
+of the work per level and holds one level's copy of the data at a time
+(`cascade` replaces its input dict in place).
 
 The pieces, in the order the figures use them:
 
@@ -34,13 +36,17 @@ The pieces, in the order the figures use them:
 
 Scaling matches `scipy.signal.welch(..., scaling="density")` and the
 per-frequency coherence matches `scipy.signal.coherence`, both verified
-against scipy; band lines and images are then bin-averages of those, exactly
-as the AusLAMP figures do it.
+against scipy; band lines and images are bin averages of those, as in the
+AusLAMP figures.
 
 Windows: the mean is removed per segment; a segment touching a gap is
 dropped and a window keeping fewer than half its segments is left NaN. The
-DC bin is dropped; a log-period bin holding no FFT harmonic is dropped
+DC bin is dropped, and a log-period bin holding no FFT harmonic is dropped
 rather than drawn as a hole.
+
+@author: ben kay (ben@auscope.org.au)
+
+:license: MIT
 """
 
 from __future__ import annotations
@@ -48,6 +54,7 @@ from __future__ import annotations
 import time
 import warnings
 from dataclasses import dataclass, field
+from functools import lru_cache
 from pathlib import Path
 
 import numpy as np
@@ -88,10 +95,13 @@ PMIN_S = 0.005
 PMAX_S = 2000.0
 # a decimation FIR smears a gap this many output samples either side
 GAP_DILATE = 32
+# fewest Welch segments (STFT windows) an estimate is formed from: `window_spectra`
+# leaves a window with fewer NaN, and `mtproc.crosspower` uses it as its compute floor
+MIN_WINDOWS = 4
 
 
 def pair_label(pair: tuple[str, str]) -> str:
-    """'Bx-Ey', 'Ex-rBy', ... for a (component, component) pair."""
+    """Return the plot label of a component pair, such as 'Bx-Ey' or 'Ex-rBy'."""
     return "-".join(
         ("r" + BLABEL[c[2:]]) if c.startswith("r_") else BLABEL[c] for c in pair
     )
@@ -104,11 +114,24 @@ def pair_label(pair: tuple[str, str]) -> str:
 class Record:
     """One station's whole deployment on a single sample grid, in physical units.
 
-    `arrays[comp]` is float32 with the channel's DC offset **removed** (kept in
-    `offsets[comp]`, same units): at 1000 Hz a LEMI count sits around 1e7-1e9,
-    where a float32 ulp is tens of counts and would bury the instrument's own
-    LSB under quantisation noise. Everything spectral removes the mean anyway;
-    only the overview adds the offset back.
+    ``arrays[comp]`` is float32 with the channel's DC offset removed and kept
+    in ``offsets[comp]``, in the same units. At 1000 Hz a LEMI count sits
+    around 1e7-1e9, where a float32 ulp is tens of counts and would bury the
+    instrument's LSB under quantisation noise. The spectral estimates remove
+    the mean in any case; the overview adds the offset back (`value`).
+
+    Attributes:
+        station (str): Station id.
+        survey (str): Survey id.
+        t0 (pd.Timestamp): Time of sample 0.
+        sample_rate (float): Sample rate in Hz.
+        n (int): Number of samples.
+        arrays (dict): Component to float32 samples, offset removed.
+        offsets (dict): Component to DC offset in physical units.
+        gains (dict): Component to scalar calibration gain.
+        gaps (list of tuple): [start, stop) sample ranges with no data.
+        scalar_only (set): Components whose chain has a shape filter that
+            was not applied.
     """
 
     station: str
@@ -124,22 +147,27 @@ class Record:
 
     @property
     def duration_s(self) -> float:
+        """Record length in s."""
         return self.n / self.sample_rate
 
     def value(self, comp: str) -> np.ndarray:
-        """The channel with its DC offset added back, float64 (for the overview)."""
+        """Return the channel with its DC offset added back, as float64."""
         return self.arrays[comp].astype("float64") + self.offsets[comp]
 
 
 def _scalar_gain(channel) -> tuple[float, bool]:
-    """(product of the frequency-independent filter gains, whether any shape filter was skipped).
+    """Return the scalar part of a channel's filter chain.
 
-    The MTH5 chain for a LEMI-423 magnetic channel is
-    [linear nT->count coefficient, coil response table, `lemi423_b_scale`
-    coefficient]; for an electric channel [dipole-length coefficient, linear
-    coefficient] -- so the electrics come out fully calibrated and the
-    magnetics carry the coil's shape, which a DC-ish overview does not need.
+    The MTH5 chain for a LEMI-423 magnetic channel is [linear nT->count
+    coefficient, coil response table, `lemi423_b_scale` coefficient]; for an
+    electric channel it is [dipole-length coefficient, linear coefficient].
+    The electrics therefore come out fully calibrated, and the magnetics
+    lack the coil's shape, which a near-DC overview does not need.
     Calibration divides by the chain, so counts / gain is the physical value.
+
+    Returns:
+        tuple: ``(gain, skipped)``: the product of the coefficient-filter
+        gains, and whether any shape filter was left out.
     """
     gain, skipped = 1.0, False
     for f in channel.channel_response.filters_list:
@@ -152,11 +180,14 @@ def _scalar_gain(channel) -> tuple[float, bool]:
 
 
 def _real_runs(station_group) -> list[tuple[str, pd.Timestamp, pd.Timestamp]]:
-    """(run id, start, end) for every run group holding data, earliest first.
+    """List every run group holding data, earliest first.
 
-    Aurora/mth5 write auxiliary station-level groups (Features,
+    Aurora and mth5 write auxiliary station-level groups (Features,
     Fourier_Coefficients, Transfer_Functions) whose time period is the null
-    1980-01-01; they are dropped here, as `mtproc.qc.longest_run` drops them.
+    1980-01-01; they are skipped, as `mtproc.qc.longest_run` skips them.
+
+    Returns:
+        list of tuple: ``(run_id, start, end)``.
     """
     runs = []
     for run_id in station_group.groups_list:
@@ -177,13 +208,29 @@ def load_station(
     prefix: str = "",
     chunk: int = 1 << 24,
 ) -> Record:
-    """Every run of `station` concatenated onto one sample grid, calibrated.
+    """Load every run of a station onto one calibrated sample grid.
 
-    `grid` is (t0, n, sample_rate) -- pass another station's grid to place a
-    remote on the local sample grid (samples it does not cover become gaps).
-    Without it the grid spans the station's own first to last sample.
-    `prefix` is prepended to the component keys ("r_" for a remote).
-    The MTH5 is opened read-only and closed before returning.
+    Opens the MTH5 read-only and closes it before returning. Channels the
+    archive lacks are skipped with a log line.
+
+    Args:
+        mth5_path (Path): MTH5 file.
+        survey_name (str): Survey id.
+        station (str): Station id.
+        comps (iterable of str): Components to load.
+        grid (tuple, optional): ``(t0, n, sample_rate)`` of another station,
+            to place a remote on the local sample grid; samples it does not
+            cover become gaps. Without it the grid spans the station's own
+            first to last sample.
+        prefix (str): Prepended to the component keys, "r_" for a remote.
+        chunk (int): Samples converted per step.
+
+    Returns:
+        Record: The station's record.
+
+    Raises:
+        ValueError: If the station has no runs with data, none of the
+            requested channels, or a sample rate different from `grid`.
     """
     mth5_path = Path(mth5_path)
     m = MTH5()
@@ -194,7 +241,7 @@ def load_station(
         if not first_run:
             raise ValueError(f"{station}: no runs with data in {mth5_path}")
         # only the channels the archive holds (broadband surveys drop hz at
-        # ingest: no sensor was attached)
+        # ingest when no sensor was attached)
         available = set(st.get_run(first_run[0][0]).groups_list)
         missing = [c for c in comps if c not in available]
         if missing:
@@ -243,7 +290,7 @@ def load_station(
                     step = max(1, n_run // 200_000)
                     offset_counts = float(np.median(ds[::step].astype("float64")))
                 # clip the run to the grid, then fill it in chunks so the int32
-                # -> float64 -> float32 conversion never copies the whole run
+                # -> float64 -> float32 conversion does not copy the whole run
                 a, b = max(i0, 0), min(i0 + n_run, n)
                 if b <= a:
                     logger.warning(f"{station} {run_id} {comp}: outside the grid, skipped")
@@ -280,7 +327,7 @@ def load_station(
 
 
 def _complement(spans: list[tuple[int, int]], n: int) -> list[tuple[int, int]]:
-    """The [0, n) index ranges no span covers, merged and sorted."""
+    """Return the [0, n) index ranges no span covers, merged and sorted."""
     out, cursor = [], 0
     for a, b in sorted(spans):
         if a > cursor:
@@ -292,7 +339,11 @@ def _complement(spans: list[tuple[int, int]], n: int) -> list[tuple[int, int]]:
 
 
 def merge(local: Record, remote: Record) -> Record:
-    """Fold a remote Record (already loaded on the local grid) into the local one."""
+    """Fold a remote Record, loaded on the local grid, into the local one.
+
+    Raises:
+        ValueError: If the remote was not loaded on the local grid.
+    """
     if remote.n != local.n or remote.t0 != local.t0:
         raise ValueError("remote was not loaded on the local grid")
     local.arrays.update(remote.arrays)
@@ -312,18 +363,31 @@ def spot_check_calibration(
     prefix: str = "",
     n_probe: int = 7,
 ) -> dict[str, float]:
-    """Re-read scattered single samples straight from the MTH5 and compare.
+    """Re-read scattered single samples from the MTH5 and compare them with a Record.
 
-    An independent path to the same number: each probe index is mapped back to
-    its run and local offset from the run metadata alone, the raw count is read
-    one sample at a time, and the calibration gain is recomputed from the
-    channel's filter chain. Comparing that with `record.arrays[comp][i] +
-    record.offsets[comp]` tests the gain, the sign, the stored DC offset and
-    the run-placement arithmetic all at once -- a misplaced run, a dropped
-    filter stage or an off-by-N index cannot survive it. Returns
-    {component: largest absolute difference in units of the channel's std}.
+    Each probe index is mapped back to its run and local offset from the run
+    metadata alone, the raw count is read one sample at a time, and the
+    calibration gain is recomputed from the channel's filter chain.
+    Comparing that with ``record.arrays[comp][i] + record.offsets[comp]``
+    tests the gain, the sign, the stored DC offset and the run placement
+    together, so a misplaced run, a dropped filter stage or an off-by-N
+    index shows up. The archive is opened read-only.
+
+    Args:
+        mth5_path (Path): MTH5 file.
+        survey_name (str): Survey id.
+        station (str): Station id.
+        record (Record): The loaded record.
+        comps (iterable of str): Components to check; those not loaded are
+            skipped.
+        prefix (str): Key prefix used when loading.
+        n_probe (int): Probes per run.
+
+    Returns:
+        dict: Component key to the largest absolute difference in units of
+        the channel's standard deviation.
     """
-    # only channels that were actually loaded (broadband archives carry no hz)
+    # only channels that were loaded (broadband archives carry no hz)
     comps = [c for c in comps if (prefix + c) in record.arrays]
     m = MTH5()
     m.open_mth5(Path(mth5_path), mode="r")
@@ -352,6 +416,7 @@ def spot_check_calibration(
 
 
 def _merge_intervals(spans: list[tuple[int, int]]) -> list[tuple[int, int]]:
+    """Merge overlapping or touching [start, stop) intervals, sorted by start."""
     out: list[tuple[int, int]] = []
     for a, b in sorted(spans):
         if out and a <= out[-1][1]:
@@ -376,17 +441,39 @@ def levels_plan(
     min_segments: int = MIN_SEGMENTS,
     min_windows: int = 3,
 ) -> pd.DataFrame:
-    """The decimation ladder, one row per level, without reading any data.
+    """Plan the decimation ladder, one row per level, without reading data.
 
-    Level L runs at `sample_rate / factor**L`, so its `nperseg`-point segment
-    is `factor**L` times longer and it covers the period slice from the level
-    below it up to its own segment length. The base level uses the caller's
-    window and step; a deeper level whose segment no longer leaves
-    `min_segments` Welch segments in that window gets a window long enough
-    that it does (and a step of half a segment, as the AusLAMP ladder does),
-    so the long periods are still estimated from a sane number of segments.
-    The ladder stops at the level reaching `pmax`, or earlier if its window
-    no longer fits `min_windows` times into the record.
+    Level L runs at ``sample_rate / factor**L``, so its `nperseg`-point
+    segment is ``factor**L`` times longer and it covers the period slice
+    from the level below it up to its own segment length. The base level
+    uses the given window and step. A deeper level whose segment would leave
+    fewer than `min_segments` Welch segments in that window gets a window
+    long enough for them, and a step of at least half a segment, as in the
+    AusLAMP ladder, so the long periods are estimated from enough segments.
+    The ladder stops at the level reaching `pmax`, or earlier when a
+    level's window no longer fits `min_windows` times into the record.
+
+    Args:
+        sample_rate (float): Base sample rate in Hz.
+        record_s (float): Record length in s.
+        win_s (float): Base window length in s.
+        step_s (float): Base window step in s.
+        pmin (float): Shortest period in s.
+        pmax (float): Longest period in s.
+        nperseg (int): Welch segment length in samples, the same on every
+            level.
+        factor (int): Decimation factor between levels.
+        min_segments (int): Fewest Welch segments per window.
+        min_windows (int): Fewest windows per level.
+
+    Returns:
+        pd.DataFrame: Columns level, sample_rate, nperseg, segment_s,
+        window_s, step_s, n_segments, n_windows, period_floor_s and
+        period_ceiling_s.
+
+    Raises:
+        ValueError: If no level is usable because the record is shorter
+            than one base window.
     """
     rows = []
     lo = float(pmin)
@@ -435,9 +522,14 @@ def levels_plan(
 
 
 def _log_bins(nperseg: int, fs: float, pmin: float, pmax: float, per_decade: int):
-    """(bin index per FFT harmonic, in-range mask, harmonics per bin, bin centre periods).
+    """Map FFT harmonics to log-period bins.
 
-    The DC bin is dropped; bins holding no harmonic are dropped by the caller.
+    The DC bin is excluded; bins holding no harmonic are dropped by the
+    caller.
+
+    Returns:
+        tuple: ``(idx, ok, counts, centres)``: the bin index per harmonic,
+        the in-range mask, the harmonics per bin and the bin centre periods.
     """
     periods = 1.0 / np.fft.rfftfreq(nperseg, 1.0 / fs)[1:]
     n_bins = max(1, int(round(np.log10(pmax / pmin) * per_decade)))
@@ -450,12 +542,12 @@ def _log_bins(nperseg: int, fs: float, pmin: float, pmax: float, per_decade: int
 
 
 def _segment_starts(window_n: int, nperseg: int, max_segments: int) -> np.ndarray:
-    """Offsets of the Welch segments inside a window, thinned evenly to `max_segments`.
+    """Return the offsets of the Welch segments in a window, thinned evenly to `max_segments`.
 
-    At 1000 Hz a 20-minute window holds ~2300 segments of 1024 samples; a few
-    hundred already give a coherence estimate far tighter than the QC needs,
-    so above `max_segments` the segments are spread evenly over the window
-    instead of taken back to back. Time coverage is unchanged.
+    At 1000 Hz a 20 minute window holds about 2300 segments of 1024 samples,
+    and a few hundred already give a coherence estimate well within the QC
+    requirement. Above `max_segments` the segments are spread evenly over
+    the window instead of taken back to back, keeping the time coverage.
     """
     hop = nperseg // 2
     starts = np.arange(0, window_n - nperseg + 1, hop, dtype=int)
@@ -463,6 +555,56 @@ def _segment_starts(window_n: int, nperseg: int, max_segments: int) -> np.ndarra
         pick = np.linspace(0, starts.size - 1, max_segments).round().astype(int)
         starts = starts[pick]
     return starts
+
+
+@lru_cache(maxsize=16)
+def _hann(nperseg: int) -> np.ndarray:
+    """Return the periodic Hann taper (scipy's "hann") as a cached, read-only float32 array."""
+    win = get_window("hann", nperseg).astype("float32")
+    win.flags.writeable = False
+    return win
+
+
+def density_scale(fs: float, nperseg: int) -> tuple[float, np.ndarray]:
+    """Return the factors that turn |FFT|^2 of a Hann-tapered segment into a power density.
+
+    Matches ``scipy.signal.welch(..., scaling="density")``: every bin except
+    DC and, for even `nperseg`, Nyquist is doubled for the one-sided
+    spectrum.
+
+    Args:
+        fs (float): Sample rate in Hz.
+        nperseg (int): Segment length in samples.
+
+    Returns:
+        tuple: ``(scale, doubling)``, a float and a per-rfft-bin array.
+    """
+    win = _hann(nperseg)
+    scale = 1.0 / (fs * float(np.sum(win.astype("float64") ** 2)))
+    dbl = np.full(nperseg // 2 + 1, 2.0)
+    dbl[0] = 1.0
+    if nperseg % 2 == 0:
+        dbl[-1] = 1.0
+    return scale, dbl
+
+
+def segment_ffts(x: np.ndarray, offsets: np.ndarray, nperseg: int) -> np.ndarray:
+    """Return the rfft of `nperseg`-point segments of `x`, demeaned and Hann-tapered.
+
+    This is the segment transform shared by `window_spectra` and
+    `mtproc.crosspower`.
+
+    Args:
+        x (np.ndarray): Samples.
+        offsets (np.ndarray): Segment start offsets.
+        nperseg (int): Segment length in samples.
+
+    Returns:
+        np.ndarray: Complex array indexed [segment, bin].
+    """
+    view = np.lib.stride_tricks.sliding_window_view(x, nperseg)[offsets]
+    segs = (view - view.mean(axis=1, keepdims=True)) * _hann(nperseg)
+    return np.fft.rfft(segs, axis=1)
 
 
 def window_spectra(
@@ -477,32 +619,43 @@ def window_spectra(
     max_segments: int = MAX_SEGMENTS,
     counts: bool = False,
 ):
-    """Welch auto- and cross-spectra per window, every channel and pair in one pass.
+    """Compute Welch auto- and cross-spectra per window for every channel and pair in one pass.
 
-    Returns (window centres in seconds from sample 0, one-sided frequencies,
-    {channel: Sxx[window, freq]}, {pair: Sxy[window, freq] complex}). The
-    segment FFTs are taken once per channel per window and shared by every
-    pair, which is the whole point of doing this here rather than calling
-    `scipy.signal.coherence` per pair. Scaling matches
-    `scipy.signal.welch(..., scaling="density")`; the DC bin is kept here and
-    dropped by the binning. With `counts` a fifth item follows: the number of
-    segments each window averaged (0 for a window dropped for its gaps), which
-    `mtproc.crosspower` reports as a chunk's STFT window count.
+    The segment FFTs are taken once per channel per window and shared by
+    every pair, which is faster than calling `scipy.signal.coherence` per
+    pair. Scaling matches ``scipy.signal.welch(..., scaling="density")``.
+    The DC bin is kept here and dropped by the binning. A window keeping
+    fewer than max(`MIN_WINDOWS`, half) of its segments after gap removal
+    is left NaN.
+
+    Args:
+        arrays (dict): Channel to samples.
+        gaps (list of tuple): [start, stop) sample ranges with no data.
+        fs (float): Sample rate in Hz.
+        win_s (float): Window length in s.
+        step_s (float): Window step in s.
+        nperseg (int): Segment length in samples.
+        channels (tuple of str): Channels for auto-spectra.
+        pairs (tuple of tuple): Channel pairs for cross-spectra.
+        max_segments (int): Most segments per window.
+        counts (bool): Also return the segment count per window.
+
+    Returns:
+        tuple: ``(t, freqs, psd, csd)``: window centres in s from sample 0,
+        one-sided frequencies, ``{channel: Sxx[window, freq]}`` and
+        ``{pair: Sxy[window, freq]}`` (complex). With `counts`, a fifth item
+        holds the number of segments each window averaged (0 for a window
+        dropped for its gaps), which `mtproc.crosspower` reports as a
+        chunk's STFT window count.
     """
     n = min(a.size for a in arrays.values())
     w = int(round(win_s * fs))
     st = max(1, int(round(step_s * fs)))
     starts = np.arange(0, max(1, n - w + 1), st, dtype=int)
     seg0 = _segment_starts(w, nperseg, max_segments)
-    win = get_window("hann", nperseg).astype("float32")
-    scale = 1.0 / (fs * float(np.sum(win.astype("float64") ** 2)))
+    scale, dbl = density_scale(fs, nperseg)
     n_freq = nperseg // 2 + 1
     freqs = np.fft.rfftfreq(nperseg, 1.0 / fs)
-    # one-sided: every bin but DC and (for even nperseg) Nyquist carries twice
-    dbl = np.full(n_freq, 2.0)
-    dbl[0] = 1.0
-    if nperseg % 2 == 0:
-        dbl[-1] = 1.0
 
     psd = {c: np.full((starts.size, n_freq), np.nan) for c in channels}
     csd = {p: np.full((starts.size, n_freq), np.nan, dtype="complex128") for p in pairs}
@@ -514,16 +667,12 @@ def window_spectra(
             if g1 <= s or g0 >= s + w:
                 continue
             good &= (s + seg0 + nperseg <= g0) | (s + seg0 >= g1)
-        if good.sum() < max(4, 0.5 * seg0.size):
+        if good.sum() < max(MIN_WINDOWS, 0.5 * seg0.size):
             n_bad += 1
             continue
         offs = seg0[good]
         n_used[k] = offs.size
-        ffts = {}
-        for c in channels:
-            view = np.lib.stride_tricks.sliding_window_view(arrays[c][s : s + w], nperseg)[offs]
-            segs = (view - view.mean(axis=1, keepdims=True)) * win
-            ffts[c] = np.fft.rfft(segs, axis=1)
+        ffts = {c: segment_ffts(arrays[c][s : s + w], offs, nperseg) for c in channels}
         for c in channels:
             psd[c][k] = dbl * scale * np.mean(np.abs(ffts[c]) ** 2, axis=0)
         for a, b in pairs:
@@ -558,18 +707,29 @@ def decimation_levels(
     channels: tuple[str, ...],
     factor: int = LEVEL_FACTOR,
 ):
-    """Walk `n_levels` factor-`factor` levels down, yielding (level, fs, level_gaps).
+    """Walk `n_levels` decimation levels down, yielding each level in turn.
 
-    The one copy of the cascade's decimation: while a (level, ...) tuple is
-    out, `arrays[c]` holds that level's float32 copy of each channel (level 0
-    is the input itself). **`arrays` is consumed** -- gap samples are zeroed
-    first (the arrays are offset-removed, so zero is the channel mean; a FIR
-    would otherwise smear one NaN across the whole record), any NaN outside
-    the gaps is zeroed with a warning, and each level replaces the one before
-    it. The gaps are carried down and dilated by `GAP_DILATE` output samples
-    per level to cover the filter's smear. Level L's sample j is the input's
-    sample j * factor**L. `cascade` walks it for the QC ladder,
-    `mtproc.crosspower` for a chunk's impedances.
+    This is the cascade's decimation, used by `cascade` for the QC ladder
+    and by `mtproc.crosspower` for a chunk's impedances. While a level is
+    yielded, ``arrays[c]`` holds that level's float32 copy of each channel
+    (level 0 is the input itself). `arrays` is consumed: gap samples are
+    zeroed first (the arrays are offset-removed, so zero is the channel
+    mean, and a FIR would otherwise smear one NaN across the whole record),
+    any NaN outside the gaps is zeroed with a warning, and each level
+    replaces the one before it. The gaps are carried down and dilated by
+    `GAP_DILATE` output samples per level to cover the filter's smear.
+    Level L's sample j is the input's sample j * factor**L.
+
+    Args:
+        arrays (dict): Channel to samples, modified in place.
+        gaps (list of tuple): [start, stop) sample ranges with no data.
+        sample_rate (float): Input sample rate in Hz.
+        n_levels (int): Number of levels.
+        channels (tuple of str): Channels to decimate.
+        factor (int): Decimation factor between levels.
+
+    Yields:
+        tuple: ``(level, fs, level_gaps)``.
     """
     for a, b in gaps:
         for c in channels:
@@ -609,20 +769,30 @@ def cascade(
     max_segments: int = MAX_SEGMENTS,
     factor: int = LEVEL_FACTOR,
 ):
-    """Walk the ladder once, returning coherence and power maps per level.
+    """Walk the ladder once and return coherence and power maps per level.
 
-    Returns ({pair: [(t_s, periods, coh), ...]}, {channel: [(t_s, periods, psd), ...]},
-    {channel: (freqs, median level-0 PSD)}). The first two hold one entry per
-    level, which `levels_to_grid` and `band_from_levels` stitch; the third is
-    the base level at full frequency resolution, for `line_excess`.
+    `arrays` is consumed: each level's entries are replaced by the
+    decimated copy, so the full-rate arrays are released once level 0 is
+    done and the peak footprint is one level plus a quarter. Gap handling
+    follows `decimation_levels`.
 
-    **`arrays` is consumed**: each level's entries are replaced by the
-    decimated copy, so the full-rate arrays are released once level 0 is done
-    and the peak footprint is one level plus a quarter. Gap samples are zeroed
-    first (the arrays are offset-removed, so zero is the channel mean) because
-    a FIR decimation would otherwise smear one NaN across the whole record;
-    the gap list is carried down the cascade and dilated by `GAP_DILATE`
-    output samples per level to cover the filter's smear (`decimation_levels`).
+    Args:
+        arrays (dict): Channel to samples, modified in place.
+        gaps (list of tuple): [start, stop) sample ranges with no data.
+        sample_rate (float): Input sample rate in Hz.
+        plan (pd.DataFrame): Ladder from `levels_plan`.
+        channels (tuple of str): Channels for power maps.
+        pairs (tuple of tuple): Channel pairs for coherence maps.
+        per_decade (int): Log-period bins per decade.
+        max_segments (int): Most Welch segments per window.
+        factor (int): Decimation factor between levels.
+
+    Returns:
+        tuple: ``({pair: [(t_s, periods, coh), ...]}, {channel: [(t_s,
+        periods, psd), ...]}, {channel: (freqs, median level-0 PSD)})``. The
+        first two hold one entry per level, which `levels_to_grid` and
+        `band_from_levels` stitch; the third is the base level at full
+        frequency resolution, for `line_excess`.
     """
     coh_levels = {p: [] for p in pairs}
     pow_levels = {c: [] for c in channels}
@@ -648,8 +818,7 @@ def cascade(
         if row.level == 0:
             # the level-0 spectra at full frequency resolution, kept for the
             # narrow-line report: a log-period bin at 8 per decade is 15 Hz
-            # wide at 50 Hz and cannot show a mains line, so the number has to
-            # come from here (see `line_excess`)
+            # wide at 50 Hz and cannot show a mains line (see `line_excess`)
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore", RuntimeWarning)
                 base_psd = {c: (freqs, np.nanmedian(psd[c], axis=0)) for c in channels}
@@ -671,14 +840,24 @@ def cascade(
 
 def line_excess(freqs: np.ndarray, psd: np.ndarray, f0: float, half_width: float = 10.0,
                 guard: float = 2.0) -> float:
-    """dB by which the spectrum at `f0` stands above the floor either side of it.
+    """Return the dB by which the spectrum at `f0` stands above the floor either side of it.
 
     The floor is the median density over [f0 - half_width, f0 + half_width]
-    excluding a +-`guard` Hz window around the line itself. Reported per
-    channel because a narrow line cannot survive log-period binning: at 8 bins
-    per decade the bin holding 50 Hz is ~15 Hz wide, so a line standing 2 dB
-    above the floor in a 1 Hz resolution bandwidth is diluted to ~0.2 dB and
-    is invisible in the spectrogram however the colours are scaled.
+    excluding +/-`guard` Hz around the line. It is reported per channel
+    because log-period binning hides a narrow line: at 8 bins per decade the
+    bin holding 50 Hz is about 15 Hz wide, so a line standing 2 dB above the
+    floor in a 1 Hz resolution bandwidth is diluted to about 0.2 dB and does
+    not show in the spectrogram at any colour scale.
+
+    Args:
+        freqs (np.ndarray): Frequencies in Hz.
+        psd (np.ndarray): Power density at `freqs`.
+        f0 (float): Line frequency in Hz.
+        half_width (float): Half-width of the floor window in Hz.
+        guard (float): Half-width excluded around the line in Hz.
+
+    Returns:
+        float: Excess in dB, NaN when the window holds no floor bins.
     """
     near = (freqs >= f0 - half_width) & (freqs <= f0 + half_width)
     floor_m = near & (np.abs(freqs - f0) > guard)
@@ -707,19 +886,19 @@ def psd_ladder(
     n_stages: int = PSD_STAGES,
     min_segments: int = PSD_MIN_SEGMENTS,
 ):
-    """The whole-spectrum decimation ladder: one entry per stage, (fs, freqs, {channel: psd}).
+    """Compute the whole-spectrum decimation ladder of `scripts/psd_qc.py`.
 
-    `scripts/psd_qc.py`'s stage ladder, moved here so the GUI's segment QC can
-    call it on a 1-3 h stretch: native rate first, `/factor` per subsequent
-    stage, plain `scipy.signal.welch` at the fixed `nperseg` over the whole
-    spectrum available at that rate (the script then draws each stage's
-    assigned decade; see its module docstring for the table).
+    Also used by the GUI segment QC on a 1-3 h stretch. Stage 0 is at the
+    native rate and each later stage at a further `/factor`, with plain
+    `scipy.signal.welch` at the fixed `nperseg` over the whole spectrum
+    available at that rate; the script draws each stage's assigned decade
+    (see its module docstring for the table).
 
-    A stage is only computed while its array still holds at least
-    `min_segments * nperseg` samples; the ladder stops early otherwise, so a
-    short segment gets the stages its length supports and never a Welch
-    estimate scipy has quietly shrunk `nperseg` for. At 1000 Hz with the
-    defaults (65536-point segments, four of them) the thresholds are
+    A stage is computed while its array holds at least
+    ``min_segments * nperseg`` samples, and the ladder stops otherwise, so a
+    short segment gets the stages its length supports and scipy never
+    shrinks `nperseg` for a stage. At 1000 Hz with the defaults
+    (65536-point segments, four of them) the thresholds are
 
         stage  fs       needs      samples at that rate
         0      1000 Hz  262 s      4 x 65536
@@ -727,21 +906,32 @@ def psd_ladder(
         2      10 Hz    7.28 h     4 x 65536
         3      1 Hz     72.8 h     4 x 65536
 
-    so a 1 h segment (3.6 M samples) yields stages 0 and 1, and so does a 3 h
-    one (10.8 M): stage 2 would need 7.3 h. Even the whole 41 h Curnamona
-    record is short of the default at stage 3 (148 k samples at 1 Hz, 2.3
-    segment lengths), which is why `scripts/psd_qc.py` passes `min_segments=1`
-    -- one whole segment -- and keeps every stage it always had.
+    so a 1 h segment (3.6 M samples) yields stages 0 and 1, and so does a
+    3 h one (10.8 M), since stage 2 needs 7.3 h. Any record shorter than
+    72.8 h is also short of the default at stage 3, so `scripts/psd_qc.py`
+    passes ``min_segments=1`` (one whole segment, 18.2 h at 1 Hz) to keep
+    all four stages.
 
-    **`arrays` is consumed**: each channel is cast to float64 in place (the
-    float32 it replaces is released as soon as its channel is done, not held
-    alongside every other channel's float64 copy), then replaced by its
-    decimated copy at every subsequent stage -- the same memory discipline
-    `cascade` uses, so the peak footprint is one stage's worth of channels,
-    not the whole ladder's. Gap samples are zeroed first (the arrays are
-    already offset-removed by `load_station`, so zero is the channel mean);
-    any NaN outside the declared gaps is zeroed too, with a warning,
-    defensively.
+    `arrays` is consumed: each channel is cast to float64 in place, the
+    float32 it replaces being released channel by channel, then replaced by
+    its decimated copy at every later stage, as in `cascade`, so the peak
+    footprint is one stage's worth of channels. Gap samples are zeroed
+    first (the arrays are offset-removed by `load_station`, so zero is the
+    channel mean), and any NaN outside the declared gaps is zeroed with a
+    warning.
+
+    Args:
+        arrays (dict): Channel to samples, modified in place.
+        gaps (list of tuple): [start, stop) sample ranges with no data.
+        fs0 (float): Native sample rate in Hz.
+        channels (iterable of str): Channels to use.
+        nperseg (int): Welch segment length in samples.
+        factor (int): Decimation factor between stages.
+        n_stages (int): Most stages.
+        min_segments (int): Fewest segment lengths a stage needs.
+
+    Returns:
+        list of tuple: ``(fs, freqs, {channel: psd})`` per stage.
     """
     for a, b in gaps:
         for c in channels:
@@ -784,7 +974,7 @@ def psd_ladder(
 
 
 def power_db(power: np.ndarray) -> np.ndarray:
-    """10 log10 of a power density, NaN where it is zero or missing (for a spectrogram)."""
+    """Return 10 log10 of a power density, NaN where it is zero or missing."""
     with np.errstate(divide="ignore", invalid="ignore"):
         return 10.0 * np.log10(power)
 
@@ -793,7 +983,11 @@ def power_db(power: np.ndarray) -> np.ndarray:
 
 
 def levels_to_grid(levels, t_base):
-    """Every level interpolated (nearest window) onto the base time grid, as one image."""
+    """Stitch every level onto the base time grid (nearest window) as one image.
+
+    Returns:
+        tuple: ``(periods, image)`` with periods sorted ascending.
+    """
     per_all, cols = [], []
     for t, per, img in levels:
         if per.size == 0:
@@ -808,7 +1002,23 @@ def levels_to_grid(levels, t_base):
 
 
 def band_from_levels(levels, lo_s, hi_s, t_base) -> np.ndarray:
-    """One band line on the base time grid, averaged over every level reaching the band."""
+    """Return one band line on the base time grid, averaged over every level reaching the band.
+
+    Args:
+        levels (list of tuple): One ``(t_s, periods, image)`` per level, as
+            `cascade` returns them: window times in s, bin periods in s,
+            and the (windows, bins) map.
+        lo_s (float): Shortest period of the band in s.
+        hi_s (float): Longest period of the band in s.
+        t_base (np.ndarray): Times of the base grid, in s; each level is
+            read at its first window at or after each time (its last
+            window beyond the end).
+
+    Returns:
+        np.ndarray: The band's mean over its bins on `t_base`, averaged
+        over the levels with a finite value (NaN ignored); all NaN when no
+        level reaches the band.
+    """
     out = []
     for t, per, img in levels:
         m = (per >= lo_s) & (per <= hi_s)
@@ -825,7 +1035,7 @@ def band_from_levels(levels, lo_s, hi_s, t_base) -> np.ndarray:
 
 
 def running_median(a: np.ndarray, n_windows: int) -> np.ndarray:
-    """Centred running median along time (axis 0), NaN-tolerant."""
+    """Return the centred running median along time (axis 0), ignoring NaN."""
     if n_windows <= 1:
         return a
     return (
@@ -837,16 +1047,20 @@ def running_median(a: np.ndarray, n_windows: int) -> np.ndarray:
 
 
 def iso(t: pd.Timestamp) -> str:
+    """Format a time as 'YYYY-MM-DD HH:MM'."""
     return pd.Timestamp(t).strftime("%Y-%m-%d %H:%M")
 
 
 def day_axis(t0: pd.Timestamp, duration_s: float):
-    """(tick positions in days from t0, tick labels) snapped to round UTC times.
+    """Return time-axis ticks snapped to round UTC times.
 
-    The AusLAMP version ticked whole days, which is right for a record of
-    weeks; a broadband deployment is ~2 days, so the step is chosen from
-    quarter-hours up to 20 days for about 8 ticks and the label carries the
+    The AusLAMP version ticks whole days, which suits a record of weeks. A
+    broadband deployment lasts about 2 days, so the step is chosen from
+    quarter-hours up to 20 days for about 8 ticks, and the label carries the
     time of day whenever the step is under a day.
+
+    Returns:
+        tuple: ``(ticks, labels)``: positions in days from t0 and label text.
     """
     days = duration_s / DAY
     steps = [1 / 96, 1 / 48, 1 / 24, 2 / 24, 3 / 24, 6 / 24, 12 / 24, 1, 2, 5, 10, 20]
@@ -862,12 +1076,12 @@ def day_axis(t0: pd.Timestamp, duration_s: float):
 
 
 def block_stats(x: np.ndarray, m: int):
-    """(mean, min, max) of each block of m samples; the trailing partial block is dropped."""
+    """Return the (mean, min, max) of each block of m samples, dropping the trailing partial block."""
     n = x.size // m * m
     a = x[:n].reshape(-1, m)
     if np.isnan(a).any():
         # a block falling wholly inside a gap is all-NaN and comes back NaN,
-        # which is what the figure should draw: a hole, not a joined line
+        # so the figure draws a hole rather than a joined line
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", RuntimeWarning)
             return np.nanmean(a, axis=1), np.nanmin(a, axis=1), np.nanmax(a, axis=1)
@@ -887,43 +1101,51 @@ def narrow_lines(
     min_db: float = 6.0,
     mains_hz: float = 50.0,
 ) -> list[tuple[float, float, bool]]:
-    """Narrow spectral lines in `x` between `fmin` and `fmax` Hz.
+    """Find narrow spectral lines in `x` between `fmin` and `fmax` Hz.
 
-    Built for declaring notch-filter `extra` lines by hand (`scripts/line_scan.py`):
-    the grid-wide interharmonic combs around a broadband survey's mains hum
-    sit a couple of Hz either side of 50 Hz and its harmonics, so this needs
-    resolution fine enough to separate e.g. 34.3 and 37.4 Hz, which a
-    log-period bin (`cascade`'s `_log_bins`) or `psd_ladder`'s fixed
-    2**16-point segment cannot give at a useful record length.
+    Used to declare notch-filter `extra` lines by hand
+    (`scripts/line_scan.py`). The grid-wide interharmonic combs around a
+    broadband survey's mains hum sit a couple of Hz either side of 50 Hz
+    and its harmonics, so the resolution must separate, for example, 34.3
+    and 37.4 Hz, which a log-period bin (`cascade`'s `_log_bins`) or the
+    fixed 2**16-point segment of `psd_ladder` cannot at a useful record
+    length.
 
-    A plain `scipy.signal.welch` PSD (Hann window, 50% overlap, the mean
-    removed per segment -- `detrend="constant"`) at `nperseg = round(fs /
-    resolution_hz)`, converted to dB. Each candidate bin's local floor is the
-    median of the dB spectrum within +-`guard_hz`, excluding the +-0.25 Hz
-    immediately around the bin itself (so the line's own peak, and the start
-    of its own skirt, never pollute its own floor estimate). A line is a
-    local maximum of (dB - floor) that clears `min_db`; where two candidates
-    fall within 0.5 Hz of each other only the higher-excess one is kept, so a
-    single Hz-scale feature is reported once rather than once per FFT bin
-    under it. `is_mains_harmonic` is True when the line sits within 0.6 Hz of
-    a multiple of `mains_hz`.
+    The PSD is a plain `scipy.signal.welch` (Hann window, 50 % overlap, mean
+    removed per segment with ``detrend="constant"``) at
+    ``nperseg = round(fs / resolution_hz)``, in dB. Each candidate bin's
+    local floor is the median of the dB spectrum within +/-`guard_hz`,
+    excluding the +/-0.25 Hz around the bin itself so the line's peak and
+    the start of its skirt stay out of its floor. A line is a local maximum
+    of (dB - floor) that clears `min_db`; of two candidates within 0.5 Hz
+    only the higher-excess one is kept, so a Hz-scale feature is reported
+    once. `is_mains_harmonic` is True when the line sits within 0.6 Hz of a
+    multiple of `mains_hz`.
 
-    Returns a list of `(frequency_hz, excess_db, is_mains_harmonic)`, sorted
-    by frequency.
+    The result describes `x` as given. For per-hour behaviour over a longer
+    record, call it once per hour as `scripts/line_scan.py` does; the whole
+    record averages an intermittent or drifting line toward the noise floor.
+    Frequency resolution is ``fs / nperseg`` (about `resolution_hz`,
+    rounded to the nearest bin). A line more than about twice that
+    resolution wide, or one drifting across more than about a bin within
+    `x`, spreads over several bins; the smear raises each bin's floor once
+    it reaches past the +/-0.25 Hz exclusion, so `excess_db` understates
+    the line, and a wandering line may be reported as several weak adjacent
+    lines or not at all.
 
-    Limits: this is a snapshot of `x` exactly as given -- a caller wanting
-    per-hour behaviour over a longer record calls it once per hour, as
-    `scripts/line_scan.py` does, rather than passing the whole record (which
-    would average an intermittent or drifting line down toward the noise
-    floor and under-report it). Frequency resolution is `fs / nperseg`
-    (~`resolution_hz`, rounded to the nearest bin); a line materially wider
-    than 2x that resolution, or one that drifts across more than about a bin
-    width within `x`, is not "narrow" in the sense this function measures --
-    its power is smeared across several bins, each bin's own local floor is
-    dragged up by the smear once it reaches past the +-0.25 Hz exclusion, and
-    the reported `excess_db` at any single bin under-states the line's true
-    strength (a wandering line can end up reported as several weak, adjacent
-    lines instead of one strong one, or not reported at all).
+    Args:
+        x (np.ndarray): Samples.
+        fs (float): Sample rate in Hz.
+        fmin (float): Lowest frequency searched in Hz.
+        fmax (float): Highest frequency searched in Hz.
+        resolution_hz (float): Target frequency resolution in Hz.
+        guard_hz (float): Half-width of the floor window in Hz.
+        min_db (float): Smallest excess reported in dB.
+        mains_hz (float): Mains frequency in Hz.
+
+    Returns:
+        list of tuple: ``(frequency_hz, excess_db, is_mains_harmonic)``,
+        sorted by frequency.
     """
     x = np.asarray(x, dtype="float64")
     nperseg = int(round(fs / resolution_hz))
