@@ -31,6 +31,15 @@ not overwrite each other, and `--dry-run` prints everything this run resolved
 to — band kwargs, both sites' raw and variant archive status, window, product
 stem — and exits without opening a single file (it never builds a variant).
 
+Time masks (`<survey>/masks.yaml`, declared per site on the GUI's
+Cross-powers tab) are applied from BOTH sites of the pair: the local site's
+and the remote site's entries, joined (`mtproc.masks.union_masks`) -- a
+remote-referenced estimate uses both stations' samples, so an interval that
+is bad at either one is left out. A stacked remote (`STK_...`) has no entry
+of its own; the remote is judged by its name (`mtproc.masks.remote_masks`),
+so its masks apply whether or not data_root is mounted.
+`--no-masks` ignores the file for both sites.
+
 The estimator flags (--taper ... --tolerance) are **advanced**: each changes
 aurora's STFT or robust regression on every decimation level for this run
 only (`mtproc.process.process_station(tweaks=...)`, whose docstring gives the
@@ -70,7 +79,7 @@ from loguru import logger
 from mtproc.bands import lemimt_band_scheme
 from mtproc.compare import phase_quadrants, plot_comparison
 from mtproc.ingest import default_archive_path, filters_hash, ingest_site, processing_archive, variant_path, variant_ready
-from mtproc.masks import load_masks
+from mtproc.masks import load_masks, remote_masks, union_masks
 from mtproc.process import ESTIMATOR_DEFAULTS, TAPERS, process_station
 from mtproc.survey import Survey
 
@@ -98,7 +107,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--no-filters", action="store_true",
                    help="process from the raw archive, not the filtered variant")
     p.add_argument("--no-masks", action="store_true",
-                   help="ignore the site's masks.yaml (a campaign run: every remote and option on the same data)")
+                   help="ignore masks.yaml for both sites (a campaign run: every remote and option on the same data)")
     p.add_argument("--tag", default=None, help="suffix appended to the output stem")
     p.add_argument("--dry-run", action="store_true",
                    help="print what this run resolved to and exit, opening nothing")
@@ -151,8 +160,19 @@ def reference_edi(survey_yaml: Path, site: str):
     return (mapping.get(site) or {}).get("edi")
 
 
+def clean_tag(tag) -> str:
+    """The tag as it goes into a file name: leading dashes/underscores and outer
+    whitespace dropped, inner whitespace to '-'; ValueError on a path separator.
+    A tag typed as "-mask_test" would otherwise be read by argparse as an option
+    (pass it as --tag=-mask_test) and would put a stray dash in the stem."""
+    text = "-".join(str(tag or "").split()).lstrip("-_").rstrip("_")
+    if any(c in text for c in "/\:"):
+        raise ValueError(f"tag {tag!r} must not hold a path separator")
+    return text
+
+
 def run_stem(local: str, remote: str, started, suffix=None) -> str:
-    """<local>_rr-<remote>_<YYYYMMDD-HHMM>[_<suffix>].
+    """<local>_rr-<remote>_<YYYYMMDD-HHMM>[_<suffix>] (`suffix` via `clean_tag`).
 
     The stamp is `started` (local time, the machine clock at the top of
     `main`, formatted once there and reused everywhere), not the processing
@@ -162,8 +182,9 @@ def run_stem(local: str, remote: str, started, suffix=None) -> str:
     itself lives in the `.json` sidecar next to the EDI, not in the file name.
     """
     stem = f"{local}_rr-{remote}_{pd.Timestamp(started).strftime('%Y%m%d-%H%M')}"
+    suffix = clean_tag(suffix)
     if suffix:
-        stem += f"_{str(suffix).strip().strip('_')}"
+        stem += f"_{suffix}"
     return stem
 
 
@@ -208,6 +229,11 @@ def resolve(args, started) -> dict:
     resolves the archive actually processed from (`mtproc.ingest.processing_archive`,
     which does build) once `--dry-run` has returned, and overwrites these two
     entries with what was actually used before the sidecar is written.
+
+    `masks_local`/`masks_remote` are each site's `masks.yaml` entries
+    (`load_masks`, and `remote_masks` for the remote: [] for a stack, named
+    `STK_...`, which has none of its own) and `masks` their union in start order, what `process_station` is
+    handed; all three are [] and `masks_ignored` True with `--no-masks`.
     """
     survey = Survey.from_yaml(args.survey_yaml)
     scheme_kwargs = dict(survey.processing)
@@ -235,6 +261,11 @@ def resolve(args, started) -> dict:
     stacked = survey.workspace / "mth5" / f"{args.remote}.h5"
     virtual = args.remote not in raw_sites and stacked.exists()
     remote_h5 = stacked if virtual else default_archive_path(survey, args.remote)
+    ignore_masks = bool(args.no_masks)
+    masks_local = [] if ignore_masks else load_masks(survey, args.local)
+    # by name (`remote_masks`), not by `virtual`: with data_root unmounted every
+    # remote that has an archive looks virtual, and its masks would be dropped
+    masks_remote = [] if ignore_masks else remote_masks(survey, args.remote)
 
     return {
         "survey": survey,
@@ -263,6 +294,10 @@ def resolve(args, started) -> dict:
         "output_channels": output_channels(survey, args.local),
         # only the advanced estimator flags given on the command line
         "tweaks": tweaks_from(args),
+        "masks_local": masks_local,
+        "masks_remote": masks_remote,
+        "masks": union_masks(masks_local, masks_remote),
+        "masks_ignored": ignore_masks,
     }
 
 
@@ -381,6 +416,10 @@ def build_sidecar(res: dict, args, started, finished, edi_path: Path, png_path: 
             local: _declared_filters(survey, local, raw_sites),
             remote: _declared_filters(survey, remote, raw_sites),
         },
+        # each site's masks.yaml entries, and the union actually applied (the key
+        # the existing sidecar readers use)
+        "masks_local": list(res.get("masks_local") or []),
+        "masks_remote": list(res.get("masks_remote") or []),
         "masks": list(res.get("masks") or []),
         "masks_ignored": bool(res.get("masks_ignored")),
         "argv": list(sys.argv),
@@ -453,6 +492,11 @@ def print_resolution(res: dict) -> None:
     extra = {k: v for k, v in res["scheme_kwargs"].items() if k not in BAND_KEYS}
     for key, value in extra.items():
         print(f"{key}: {value}")
+    if res["masks_ignored"]:
+        print("masks: ignored (--no-masks)")
+    else:
+        print(f"masks: {res['local']} {len(res['masks_local'])}, {res['remote']} "
+              f"{len(res['masks_remote'])} ({len(res['masks'])} applied)")
     for key, value in res["tweaks"].items():
         print(f"tweak.{key}: {value}")
     if not res["tweaks"]:
@@ -494,14 +538,20 @@ def main(args) -> None:
 
     stem = res["stem"]
     scheme = lemimt_band_scheme(survey.sample_rate, **res["scheme_kwargs"])
-    masks = [] if args.no_masks else load_masks(survey, local)  # the student's masks.yaml intervals for this site
-    res["masks"] = masks
-    res["masks_ignored"] = bool(args.no_masks)
-    if args.no_masks:
-        logger.info(f"{local}: masks.yaml ignored (--no-masks)")
-    elif masks:
-        logger.info(f"{local}: {len(masks)} mask(s) declared in masks.yaml "
-                    f"({sum(1 for m in masks if m.get('bands', 'all') == 'all')} all-band, applied as time cuts)")
+    masks = res["masks"]  # both sites' masks.yaml intervals, joined (`resolve`)
+    if res["masks_ignored"]:
+        logger.info(f"{local}, {remote}: masks.yaml ignored (--no-masks)")
+    else:
+        def all_band(declared):
+            return sum(1 for m in declared if m["bands"] == "all")
+
+        if res["masks_local"]:
+            logger.info(f"{local}: {len(res['masks_local'])} mask(s) declared in masks.yaml "
+                        f"({all_band(res['masks_local'])} all-band, applied as time cuts)")
+        if res["masks_remote"]:
+            logger.info(f"{remote} (remote): {len(res['masks_remote'])} mask(s) declared "
+                        f"({all_band(res['masks_remote'])} all-band, applied as time cuts)")
+            logger.info(f"{local} rr {remote}: {len(masks)} mask(s) applied (both sites' entries joined)")
     tf = process_station(
         local_h5, local, remote_h5, remote,
         out_dir=survey.workspace / "tf", band_scheme=scheme,

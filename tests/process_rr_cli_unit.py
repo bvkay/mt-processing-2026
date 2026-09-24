@@ -35,8 +35,11 @@ does not say "tweaks: none" and print no `tweak.` line; `--taper hamming
 hamming`, `tweak.overlap_pct: 50.0`, `tweak.prewhiten: False` and `tweak.r0:
 2.0` -- no other tweak, no "tweaks: none" -- with every other line as in the
 plain run (`started`/`stem` excepted); or, building aurora's real config for
-D02 against E08 with the survey's lemimt band scheme (in-process, the
-archives opened read-only), without tweaks any decimation level is not
+D02 against E08 with the survey's lemimt band scheme (in-process, through
+`mtproc.process.kernel_dataset` with nothing patched, while this process
+holds both archives open read-only with h5py, as the GUI holds one: HDF5
+refuses a read-write open of a file already open read-only, so the build
+fails unless mth5 itself opens them read-only), without tweaks any decimation level is not
 window.type hann (the in-use default; aurora's own is
 boxcar), overlap round(num_samples * 0.25) -- or int(num_samples * 0.75) on a
 level whose window lasts over 600 s, of which there must be at least one, so
@@ -50,7 +53,8 @@ the long-window boost replaced -- prewhitening_type "" (which mth5's
 `apply_prewhitening` must hand back untouched) with recoloring False and r0
 2.0, or any other value moved from the defaults above; a dpss taper does not
 build a finite taper of num_samples points on every level; or the config
-builds change the modification time of D02.h5 or E08.h5.
+builds change the modification time of D02.h5 or E08.h5, or a second
+read-only h5py handle cannot open either while the first is held.
 
 The product stem, the sidecar and the quadrant window. **This test also
 fails if** `run_stem` does not give exactly `<local>_rr-<remote>_
@@ -68,6 +72,25 @@ not "flipped: ..." and one built from too few usable periods is not "not
 judged: ..."; or `quadrant_window` does not pick 0.1-10 s at 100 Hz and above
 and 30-3000 s below that (the false "180 deg out ... declare flip" the
 0.1-10 s window raised on Stuart Shelf's 10 Hz ST19/ST20).
+
+Both sites' time masks. **This test also fails if**, on a scratch copy of
+curnamona_cube whose own masks.yaml holds three D02 masks (one written twice),
+two E08 masks and one mask identical to one of D02's, one for the stack
+STK_E08u and one for the archive-only SYN01, `resolve` for D02 rr E08 does not give `masks_local` D02's
+three in start order, `masks_remote` E08's three, and `masks` the union in
+start order -- exactly the starts listed in MASK_UNION_STARTS, the shared
+interval once (D02's entry), E08's own entries carrying E08's reasons; the
+sidecar `build_sidecar` makes does not carry the same three lists with
+`masks_ignored` False; the dry run does not print "masks: D02 3, E08 3 (5
+applied)"; with `--no-masks` all three lists are not empty with
+`masks_ignored` True in `resolve` and the sidecar and "masks: ignored
+(--no-masks)" printed; D02 against the stack STK_E08u picks up its
+masks.yaml entry (a stacked remote has none of its own); D02 against SYN01
+(archive-only, no STK_ prefix: judged by name, like a site) does not carry
+SYN01's entry; or, with data_root pointed at a folder that does not exist
+(the data drive unplugged, so resolve sees no raw sites and classes E08 as
+virtual), `masks_remote` in `resolve` and the sidecar is not E08's three
+and `masks` not the same union.
 """
 
 from __future__ import annotations
@@ -257,8 +280,7 @@ def level_values(dec) -> dict:
 
 
 def test_tweaks_reach_every_decimation_level() -> None:
-    import mth5.mth5
-    import mth5.processing.run_summary as run_summary
+    import h5py
     import numpy as np
     import xarray as xr
     from mth5.processing.spectre.prewhitening import apply_prewhitening
@@ -275,21 +297,26 @@ def test_tweaks_reach_every_decimation_level() -> None:
     assert res["tweaks"] == {"taper": "hamming", "overlap_pct": 50.0, "prewhiten": False, "r0": 2.0},         res["tweaks"]
     scheme = lemimt_band_scheme(res["survey"].sample_rate, **res["scheme_kwargs"])
 
-    # read-only: RunSummary opens through initialize_mth5 (mode "a") and the
-    # KernelDataset's metadata read through MTH5.open_mth5 (default mode "a")
+    # read-only, as mth5 opens the archives itself (mtproc patches nothing): both are held
+    # open read-only for the whole build, and HDF5 refuses a read-write open of a file this
+    # process already holds read-only ("file is already open for read-only")
     archives = [MTH5_DIR / f"{LOCAL}.h5", MTH5_DIR / f"{REMOTE}.h5"]
     mtimes = [p.stat().st_mtime_ns for p in archives]
-    real_init, real_open = run_summary.initialize_mth5, mth5.mth5.MTH5.open_mth5
-    run_summary.initialize_mth5 = lambda path, mode="r", **kw: real_init(path, mode="r", **kw)
-    mth5.mth5.MTH5.open_mth5 = (
-        lambda self, filename=None, mode="r", **kw: real_open(self, filename, mode="r", **kw))
+    held = [h5py.File(p, "r") for p in archives]
     try:
         configs = {}
         for name, tweaks in (("in use", None), ("tweaked", res["tweaks"])):
-            kd = kernel_dataset(res["local_archive"], LOCAL, res["remote_archive"], REMOTE)
+            try:
+                kd = kernel_dataset(res["local_archive"], LOCAL, res["remote_archive"], REMOTE)
+            except OSError as exc:
+                raise AssertionError(f"the kernel dataset opened a held archive read-write: {exc}") from exc
             configs[name] = build_config(kd, scheme, tweaks, output_channels=res["output_channels"])
+        second = [h5py.File(p, "r") for p in archives]  # read-only still opens beside the held handle
+        for f in second:
+            f.close()
     finally:
-        run_summary.initialize_mth5, mth5.mth5.MTH5.open_mth5 = real_init, real_open
+        for f in held:
+            f.close()
     assert [p.stat().st_mtime_ns for p in archives] == mtimes, "a config build wrote to an archive"
 
     long_levels = 0
@@ -317,7 +344,8 @@ def test_tweaks_reach_every_decimation_level() -> None:
         assert len(taper) == dec.stft.window.num_samples and np.isfinite(taper).all(), dec.decimation.level
     print(f"  config D02 rr E08, {len(levels)} levels ({long_levels} with windows over 600 s): "
           f"in use {IN_USE['type']}, overlap 25 %/75 %, r0 {IN_USE['r0']}; tweaked hamming, overlap "
-          f"50 % on every level, prewhitening off, r0 2.0; dpss builds; archives' mtimes unchanged")
+          f"50 % on every level, prewhitening off, r0 2.0; dpss builds; built while both archives were "
+          f"held read-only, a second read-only handle opened, mtimes unchanged")
 
 
 def test_dry_run_writes_nothing() -> None:
@@ -368,6 +396,105 @@ def _fake_tf(xy_deg: float, yx_deg: float, periods):
     tf.period = period
     tf.impedance = z
     return tf
+
+
+def _mask(start: str, end: str, reason: str, bands="all") -> dict:
+    return {"start": start, "end": end, "bands": bands, "reason": reason, "found_by": "time"}
+
+
+MASKS_BOTH = {
+    LOCAL: [_mask("2021-06-29T10:00:00Z", "2021-06-29T10:20:00Z", "D02 spike"),
+            _mask("2021-06-29T08:00:00Z", "2021-06-29T08:30:00Z", "D02 band", [0.01, 0.1]),
+            _mask("2021-06-29T10:00:00Z", "2021-06-29T10:20:00Z", "D02 spike again"),
+            _mask("2021-06-30T01:00:00Z", "2021-06-30T01:10:00Z", "D02 night")],
+    REMOTE: [_mask("2021-06-29T12:00:00Z", "2021-06-29T12:05:00Z", "E08 band", [1.0, 10.0]),
+             _mask("2021-06-29T09:00:00Z", "2021-06-29T09:15:00Z", "E08 fence"),
+             _mask("2021-06-30T01:00:00Z", "2021-06-30T01:10:00Z", "E08 same as D02 night")],
+    "SYN01": [_mask("2021-06-29T11:00:00Z", "2021-06-29T11:30:00Z", "SYN01 declared by hand")],
+    "STK_E08u": [_mask("2021-06-29T11:00:00Z", "2021-06-29T11:30:00Z", "a stack has no masks")],
+}
+# stated here, not computed from the masks: the union's starts and reasons, earliest first
+MASK_UNION_STARTS = ["2021-06-29T08:00:00Z", "2021-06-29T09:00:00Z", "2021-06-29T10:00:00Z",
+                     "2021-06-29T12:00:00Z", "2021-06-30T01:00:00Z"]
+MASK_UNION_REASONS = ["D02 band", "E08 fence", "D02 spike", "E08 band", "D02 night"]
+
+
+def test_masks_from_both_sites() -> None:
+    import numpy as np
+
+    process_rr = _load_process_rr()
+    started = dt.datetime(2026, 9, 24, 9, 0, 0, tzinfo=dt.timezone.utc)
+    physical = process_rr.phase_quadrants(_fake_tf(45.0, -135.0, np.geomspace(0.1, 10.0, 8)))
+    with tempfile.TemporaryDirectory() as tmp:
+        copy_yaml = make_survey_copy(Path(tmp), {})
+        (Path(tmp) / "masks.yaml").write_text(yaml.safe_dump(MASKS_BOTH, sort_keys=False), encoding="utf-8")
+
+        def resolved(*extra):
+            args = process_rr.build_parser().parse_args([str(copy_yaml), LOCAL, REMOTE, *extra])
+            res = process_rr.resolve(args, started)
+            edi = res["survey"].workspace / "tf" / f"{res['stem']}.edi"
+            sidecar = process_rr.build_sidecar(res, args, started, started, edi,
+                                               edi.with_suffix(".png"), physical, [])
+            return res, sidecar
+
+        res, sidecar = resolved()
+        assert [m["start"] for m in res["masks_local"]] == [
+            "2021-06-29T08:00:00Z", "2021-06-29T10:00:00Z", "2021-06-30T01:00:00Z"], res["masks_local"]
+        assert [m["reason"] for m in res["masks_remote"]] == [
+            "E08 fence", "E08 band", "E08 same as D02 night"], res["masks_remote"]
+        assert [m["start"] for m in res["masks"]] == MASK_UNION_STARTS, [m["start"] for m in res["masks"]]
+        assert [m["reason"] for m in res["masks"]] == MASK_UNION_REASONS, [m["reason"] for m in res["masks"]]
+        assert res["masks_ignored"] is False, res["masks_ignored"]
+        for key in ("masks_local", "masks_remote", "masks"):
+            assert sidecar[key] == res[key], (key, sidecar[key])
+        assert sidecar["masks_ignored"] is False, sidecar["masks_ignored"]
+        json.loads(json.dumps(sidecar, default=str))
+
+        argv = [sys.executable, str(SCRIPT), str(copy_yaml), LOCAL, REMOTE, "--dry-run"]
+        done = subprocess.run(argv, capture_output=True, text=True, cwd=REPO)
+        assert done.returncode == 0, f"exit {done.returncode}\n{done.stdout}\n{done.stderr}"
+        line = next((ln for ln in done.stdout.splitlines() if ln.startswith("masks:")), None)
+        assert line == "masks: D02 3, E08 3 (5 applied)", line
+        print(f"  masks D02 rr E08: {len(res['masks_local'])} local + {len(res['masks_remote'])} remote "
+              f"-> {len(res['masks'])} applied, starts {[s[11:16] for s in MASK_UNION_STARTS]}; dry run {line!r}")
+
+        res, sidecar = resolved("--no-masks")
+        for key in ("masks_local", "masks_remote", "masks"):
+            assert res[key] == [] and sidecar[key] == [], (key, res[key], sidecar[key])
+        assert res["masks_ignored"] is True and sidecar["masks_ignored"] is True, sidecar["masks_ignored"]
+        done = subprocess.run(argv + ["--no-masks"], capture_output=True, text=True, cwd=REPO)
+        line = next((ln for ln in done.stdout.splitlines() if ln.startswith("masks:")), None)
+        assert line == "masks: ignored (--no-masks)", line
+        print(f"  --no-masks: masks_local/masks_remote/masks all [], masks_ignored True; dry run {line!r}")
+
+        args = process_rr.build_parser().parse_args([str(copy_yaml), LOCAL, "STK_E08u"])
+        res = process_rr.resolve(args, started)
+        assert res["masks_remote"] == [] and len(res["masks"]) == 3, (res["masks_remote"], res["masks"])
+        print(f"  D02 rr STK_E08u (stack): its masks.yaml entry ignored, {len(res['masks'])} applied")
+
+        # an archive-only remote without the stack prefix is judged by name, like a site
+        args = process_rr.build_parser().parse_args([str(copy_yaml), LOCAL, "SYN01"])
+        res = process_rr.resolve(args, started)
+        assert res["virtual_remote"] is True, "SYN01 is expected to be an archive-only (virtual) remote"
+        assert [m["reason"] for m in res["masks_remote"]] == ["SYN01 declared by hand"], res["masks_remote"]
+        print(f"  D02 rr SYN01 (archive-only, no STK_ prefix): its entry applies, {len(res['masks'])} applied")
+
+    # data_root on a drive that is not plugged in: every remote with an archive
+    # looks virtual to resolve, and E08's masks must still apply
+    with tempfile.TemporaryDirectory() as tmp:
+        copy_yaml = make_survey_copy(Path(tmp), {})
+        config = yaml.safe_load(copy_yaml.read_text(encoding="utf-8"))
+        config["data_root"] = str(Path(tmp) / "drive_not_mounted")
+        copy_yaml.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+        (Path(tmp) / "masks.yaml").write_text(yaml.safe_dump(MASKS_BOTH, sort_keys=False), encoding="utf-8")
+        res, sidecar = resolved()
+        assert res["raw_sites"] == {} and res["virtual_remote"] is True, (res["raw_sites"], res["virtual_remote"])
+        assert [m["reason"] for m in res["masks_remote"]] == [
+            "E08 fence", "E08 band", "E08 same as D02 night"], res["masks_remote"]
+        assert [m["start"] for m in res["masks"]] == MASK_UNION_STARTS, [m["start"] for m in res["masks"]]
+        assert sidecar["masks_remote"] == res["masks_remote"], sidecar["masks_remote"]
+        print(f"  data_root unmounted (E08 looks virtual): masks_remote {len(res['masks_remote'])}, "
+              f"{len(res['masks'])} applied")
 
 
 def test_build_sidecar_with_a_fake_tf() -> None:

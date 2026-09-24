@@ -18,8 +18,12 @@ of an aurora KernelDataset; `applies(mask, period_s)` is the one rule for
 which bands a mask covers (the tab's hollow spots, `mtproc.crosspower.
 masked_chunks` and `stack_impedance` all ask it).
 
-**What reaches processing.** scripts/process_rr.py loads the site's masks
-and hands them to `mtproc.process.process_station(time_masks=...)`, which
+**What reaches processing.** scripts/process_rr.py loads the local site's
+masks and the remote site's (`remote_masks`: a stacked remote, named `STK_...`,
+has none of its own), joins
+them with `union_masks` -- a remote-referenced estimate uses both stations'
+samples, so noise at either one is left out -- and hands the union to
+`mtproc.process.process_station(time_masks=...)`, which
 calls `apply_time_masks` on the kernel dataset with the masks whose `bands`
 is `all`: each run interval is split around them, so aurora never sees
 those samples. A band-limited mask (`bands: [pmin_s, pmax_s]`, what a
@@ -186,6 +190,34 @@ def save_masks(survey, site: str, masks) -> Path:
     path.write_text(header + "".join(out), encoding="utf-8")
     logger.info(f"{site}: {len(entries)} mask(s) written to {path}")
     return path
+
+
+def union_masks(*mask_lists) -> list[dict]:
+    """Several sites' masks as one list: normalised, earliest first, the same
+    interval and bands declared at two sites kept once (the first site's entry)."""
+    return _ordered(m for masks in mask_lists for m in masks or [])
+
+
+STACK_PREFIX = "STK_"
+
+
+def is_stack(site) -> bool:
+    """True for a stacked remote's name (`STK_<site>u|w`, what scripts/campaign.py builds):
+    a product of several sites, with no masks.yaml entry of its own."""
+    return str(site or "").startswith(STACK_PREFIX)
+
+
+def remote_masks(survey, remote) -> list[dict]:
+    """The masks a run takes from its remote: `load_masks(survey, remote)`, [] for a stack.
+
+    Decided by the name alone (`is_stack`), never by whether the remote's raw
+    folder or archive can be found: a site's masks apply with the data drive
+    unplugged, and scripts/process_rr.py, the campaign signature and the GUI
+    Process tab use this one rule. A stack built under another name (a
+    scripts/build_stack.py name without the prefix) is read like a site:
+    whatever masks.yaml holds under that name applies.
+    """
+    return [] if not remote or is_stack(remote) else load_masks(survey, remote)
 
 
 def applies(mask: dict, period_s: float) -> bool:

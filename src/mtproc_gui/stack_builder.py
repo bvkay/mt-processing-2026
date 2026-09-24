@@ -6,7 +6,8 @@
                  the `scripts/build_stack.py` command line and never runs it
                  (the Process tab's "Build stack" button calls `build`).
 - `RunOptions`   the one group box of things a run can vary -- the four band
-                 kwargs, the ingest-filters switch and the output tag suffix --
+                 kwargs, the ingest-filters switch, the masks.yaml switch
+                 and the output tag suffix --
                  which hands back the `scripts/process_rr.py` flags for
                  whatever was *changed* from the survey's `processing:` block,
                  and nothing for what was not. Under them, collapsed by
@@ -16,12 +17,15 @@
 
 Nothing here computes a product: `StackBuilder.argv` and `RunOptions.flags`
 only assemble command lines from a `WindowBar`, the survey's own
-`processing:` block (`band_defaults`, below) and the estimator defaults.
+`processing:` block (`band_defaults`, below) and the estimator defaults; the
+masks switch only counts `mtproc.masks.load_masks` for the pair.
 """
 
 from __future__ import annotations
 
 import inspect
+
+import yaml
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
@@ -31,6 +35,7 @@ from PySide6.QtWidgets import (
 
 from mtproc.bands import lemimt_band_scheme
 from mtproc.ingest import variant_ready
+from mtproc.masks import is_stack, load_masks, remote_masks
 from mtproc.process import ESTIMATOR_DEFAULTS, TAPERS
 from mtproc_gui.window_bar import UTC_FMT, WindowBar
 
@@ -145,7 +150,15 @@ class StackBuilder(QGroupBox):
 
 
 class RunOptions(QGroupBox):
-    """What a single run may change: the band kwargs, the ingest filters and the tag."""
+    """What a single run may change: the band kwargs, the ingest filters, the masks and the tag."""
+
+    MASKS_TEXT = "apply masks.yaml"
+    MASKS_TIP = (
+        "On (default): the run leaves out the intervals in masks.yaml. Masks are declared "
+        "per site on the Cross-powers tab and apply with any remote; the remote site's own "
+        "masks apply too (a stacked remote, STK_..., has none). Off adds --no-masks: "
+        "masks.yaml is ignored for both sites."
+    )
 
     def __init__(self, state, parent=None):
         super().__init__("Aurora options (survey defaults; only what you change is passed)", parent)
@@ -168,6 +181,9 @@ class RunOptions(QGroupBox):
         )
         self.filters_label = QLabel("", self)
         self.filters_label.setWordWrap(True)
+        self.masks_check = QCheckBox(self.MASKS_TEXT, self, checked=True)
+        self.masks_check.setToolTip(self.MASKS_TIP)
+        self._masks_declared = False
         self.tag_edit = QLineEdit(self)
         self.tag_edit.setPlaceholderText("tag suffix (optional), e.g. nofilt or try2")
 
@@ -184,19 +200,21 @@ class RunOptions(QGroupBox):
         grid.addWidget(self.tag_edit, 1, 3, 1, 3)
         grid.addWidget(self.filters_check, 2, 0, 1, 2)
         grid.addWidget(self.filters_label, 2, 2, 1, 4)
+        grid.addWidget(self.masks_check, 3, 0, 1, 6)
         self.advanced = EstimatorOptions(self)
-        grid.addWidget(self.advanced, 3, 0, 1, 6)
+        grid.addWidget(self.advanced, 4, 0, 1, 6)
         for column in (1, 3, 5):
             grid.setColumnStretch(column, 1)
 
     def reload(self) -> None:
-        """Back to the survey's own band block, filters on, no tag."""
+        """Back to the survey's own band block, filters and masks on, no tag."""
         self.defaults = band_defaults(self.state.survey)
         for spin, key in ((self.min_spin, "min_period"), (self.max_spin, "max_period"),
                           (self.decade_spin, "periods_per_decade")):
             spin.setValue(float(self.defaults[key]))
         self.notch_edit.setText(notch_text(self.defaults["notch_frequencies"]))
         self.filters_check.setChecked(True)
+        self.masks_check.setChecked(True)
         self.tag_edit.clear()
         self.advanced.reset()
 
@@ -224,8 +242,39 @@ class RunOptions(QGroupBox):
             text += f" | {remote} (remote) declares: {kinds(remote)}"
         self.filters_label.setText(text + " (edit on the Filter Data tab)")
 
+    def describe_masks(self, station, remote=None) -> None:
+        """The masks switch's label: 'apply masks.yaml (<station>: n, <remote>: m)', the
+        `load_masks` count of each site of the pair; a stacked remote (`is_stack`, the
+        name rule process_rr uses, so the label does not depend on data_root being
+        mounted) has none and is left out. Disabled and ticked again, with '(no masks
+        declared)', when neither site has any, so a greyed box never reads as switched
+        off. An unreadable file shows '(masks.yaml unreadable)', the error in the
+        tooltip. Counts only: nothing is applied here."""
+        survey = self.state.survey
+        counts = []
+        try:
+            if station and survey is not None:
+                counts.append((station, len(load_masks(survey, station))))
+                if remote and remote != station and not is_stack(remote):
+                    counts.append((remote, len(remote_masks(survey, remote))))
+        except (OSError, ValueError, yaml.YAMLError) as exc:
+            self._masks_declared = True  # the run reports the file's error; the switch stays usable
+            self.masks_check.setEnabled(True)
+            self.masks_check.setText(f"{self.MASKS_TEXT} (masks.yaml unreadable)")
+            self.masks_check.setToolTip(f"{self.MASKS_TIP}\n\nmasks.yaml could not be read: {exc}")
+            return
+        self.masks_check.setToolTip(self.MASKS_TIP)
+        self._masks_declared = any(n for _site, n in counts)
+        self.masks_check.setEnabled(self._masks_declared)
+        if not self._masks_declared:
+            self.masks_check.setChecked(True)
+        detail = (", ".join(f"{site}: {n}" for site, n in counts) if self._masks_declared
+                  else "no masks declared")
+        self.masks_check.setText(f"{self.MASKS_TEXT} ({detail})")
+
     def flags(self) -> list[str]:
-        """Only what differs from the defaults: --min-period ... --notch, --no-filters, --tag, advanced."""
+        """Only what differs from the defaults: --min-period ... --notch, --no-filters,
+        --no-masks (only when the pair has masks to ignore), --tag, advanced."""
         out: list[str] = []
         for flag, spin, key in (("--min-period", self.min_spin, "min_period"),
                                 ("--max-period", self.max_spin, "max_period"),
@@ -237,8 +286,11 @@ class RunOptions(QGroupBox):
             out += ["--notch", wanted]
         if not self.filters_check.isChecked():
             out.append("--no-filters")
-        if self.tag_edit.text().strip():
-            out += ["--tag", self.tag_edit.text().strip()]
+        if self._masks_declared and not self.masks_check.isChecked():
+            out.append("--no-masks")
+        tag = self.tag_edit.text().strip()
+        if tag:
+            out.append(f"--tag={tag}")  # the '=' form survives a tag typed with a leading dash
         return out + self.advanced.flags()
 
 

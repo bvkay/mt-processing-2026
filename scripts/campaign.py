@@ -108,7 +108,7 @@ REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "src"))
 
 from mtproc.ingest import default_archive_path  # noqa: E402
-from mtproc.masks import load_masks  # noqa: E402
+from mtproc.masks import is_stack, load_masks  # noqa: E402
 
 try:  # optional: the variant API may not be present yet; the campaign still runs, waiting for it
     from mtproc.ingest import filters_hash as _api_filters_hash  # noqa: E402
@@ -192,7 +192,7 @@ class Plan:
     peak_percentile: float = 90.0
     peak_recent: int = 30
     move_products: bool = True
-    masks: bool = False       # rr runs apply the site's masks.yaml (else --no-masks: every remote and option on the same data)
+    masks: bool = False       # rr runs apply the local's and the remote's masks.yaml (else --no-masks: every remote and option on the same data)
 
     def group_of(self, site: str) -> str:
         return next(g for g, members in self.groups.items() if site in members)
@@ -740,9 +740,15 @@ class Campaign:
     def inputs(self, job: Job) -> str:
         sig = ";".join(self.signature(s) for s in job.input_sites)
         if self.plan.masks and job.kind == "rr":
-            masks = load_masks(self.survey, job.local)
-            digest = hashlib.sha1(json.dumps(masks, sort_keys=True).encode()).hexdigest()[:8]
-            sig += f";{job.local}:m{digest}"   # the local's masks.yaml entry: edited means stale
+            # process_rr applies the local's and the remote's masks.yaml entries (a stack
+            # has none of its own: the name rule process_rr uses, mtproc.masks.is_stack):
+            # either edited means stale
+            for site in (job.local, job.remote):
+                if not site or is_stack(site):
+                    continue
+                masks = load_masks(self.survey, site)
+                digest = hashlib.sha1(json.dumps(masks, sort_keys=True).encode()).hexdigest()[:8]
+                sig += f";{site}:m{digest}"
         return sig
 
     def rr_cmd(self, local: str, remote: str, config: str) -> list[str]:

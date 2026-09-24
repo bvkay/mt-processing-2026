@@ -60,7 +60,15 @@ reaches 12 h or half of either record. The "raw archives" are empty files
     log, or reads one out of a line that only mentions an .edi. The lines are
     the ones loguru really writes into the redirected log, ANSI colour codes
     and all: a captured path ending in the ANSI reset code (ESC[0m) does not
-    match ".edi" under a naive suffix check.
+    match ".edi" under a naive suffix check;
+
+(9) the masks signature is wrong: with the plan's runner.masks on, an rr
+    job A rr B's inputs do not name both A's and B's masks.yaml hash
+    (";A:m<8 hex>" and ";B:m<8 hex>"), or do not change when a mask is added
+    to B alone (the remote: process_rr applies it too) or then to A; a job
+    against a stack STK_Au names a masks hash for the stack; or its command
+    carries --no-masks. With runner.masks off: any ":m" hash in the inputs,
+    or a command without --no-masks.
 """
 
 from __future__ import annotations
@@ -415,11 +423,44 @@ def test_parse_products() -> None:
     print(f"  {got}")
 
 
+def test_inputs_masks_both_sites() -> None:
+    import re
+
+    root = ROOT / "masks"
+    survey_yaml = make_survey(root)
+    runner = {"minutes_per_job": {"rr": 8, "variant": 8, "stack": 1}, "min_available_gb": 0.2,
+              "masks": True}
+    c = cp.Campaign(survey_yaml, cp.load_plan(make_plan(root, runner=runner)), parallel=2, create=False)
+    job = c.rr_job(1, "A", "B", "default", "s1_A_rr-B")
+    stack_job = c.rr_job(2, "A", "STK_Au", "default", "s2_A_rr-STK_Au")
+    bare = c.inputs(job)
+    assert re.search(r";A:m[0-9a-f]{8}", bare) and re.search(r";B:m[0-9a-f]{8}", bare), bare
+    assert "--no-masks" not in job.cmd, job.cmd
+
+    def mask(h0: float) -> dict:
+        return {"start": iso(h0), "end": iso(h0 + 0.5), "bands": "all", "reason": "test", "found_by": "time"}
+
+    (root / "masks.yaml").write_text(yaml.safe_dump({"B": [mask(10)]}), encoding="utf-8")
+    remote_masked = c.inputs(job)
+    assert remote_masked != bare, "a mask added to the remote did not change the inputs"
+    assert remote_masked.split(";A:m")[1][:8] == bare.split(";A:m")[1][:8], (bare, remote_masked)
+    (root / "masks.yaml").write_text(yaml.safe_dump({"A": [mask(20)], "B": [mask(10)]}), encoding="utf-8")
+    both_masked = c.inputs(job)
+    assert both_masked != remote_masked, "a mask added to the local did not change the inputs"
+    stack_sig = c.inputs(stack_job)
+    assert ";A:m" in stack_sig and "STK_Au:m" not in stack_sig, stack_sig
+
+    off = cp.Campaign(survey_yaml, cp.load_plan(make_plan(root / "off")), parallel=2, create=False)
+    off_job = off.rr_job(1, "A", "B", "default", "s1_A_rr-B")
+    assert ":m" not in off.inputs(off_job) and "--no-masks" in off_job.cmd, (off.inputs(off_job), off_job.cmd)
+    print(f"  masks on: {bare} -> B masked {remote_masked} -> A masked {both_masked}; stack job {stack_sig}")
+
+
 def main() -> int:
     print(__doc__.split("**This test fails if**")[1].strip())
     print()
     tests = [test_plan_parser, test_overlap_rule, test_stacks, test_dry_run_counts, test_runner_and_resume,
-             test_filter_check, test_parse_products]
+             test_filter_check, test_parse_products, test_inputs_masks_both_sites]
     failed = 0
     for t in tests:
         print(t.__name__)

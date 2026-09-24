@@ -15,7 +15,7 @@ Every button is one command line from README.md's table, queued through
 `mtproc_gui.jobs.JobRunner` and run from the repo root:
 
     Add to queue     scripts/process_rr.py <survey.yaml> <station> <remote> [start] [end]
-                                           [--min-period ...] [--no-filters] [--tag ...]
+                                           [--min-period ...] [--no-filters] [--no-masks] [--tag ...]
     Build stack      scripts/build_stack.py <survey.yaml> <name> <start> <end> <members...>
 
 A band option reaches the command line only when it differs from the survey's
@@ -24,7 +24,12 @@ A band option reaches the command line only when it differs from the survey's
 does for one site) and, unless told not to, builds each site's filtered
 variant on top of it (`mtproc.ingest.processing_archive`), and this is where
 "use declared filters" can be turned off (`--no-filters`: both sites are
-processed from their raw archives outright). A remote is always required:
+processed from their raw archives outright). Likewise "apply masks.yaml"
+(on by default; its label counts each site's `masks.yaml` entries for the
+pair, refreshed when the pair changes, the survey is opened and the tab is
+shown, since masks are saved on the Cross-powers tab): process_rr applies
+the station's masks and the remote site's; off adds `--no-masks`, ignoring
+both. A remote is always required:
 there is no single-station product (HANDOVER.md, "Decisions made").
 
 **Queuing a job never starts it**, as the legacy MATLAB field app kept "add
@@ -215,6 +220,12 @@ class ProcessTab(QWidget):
         self.summary.refresh()
         self._update_enabled()
         self.options.describe_filters(station, remote)
+        self.options.describe_masks(station, remote)
+
+    def showEvent(self, event) -> None:
+        """Recount the masks: they are saved on the Cross-powers tab while this one is hidden."""
+        super().showEvent(event)
+        self.options.describe_masks(self.station_combo.currentData(), self.remote_combo.currentData())
 
     def _paint_map(self) -> None:
         self.site_map.set_roles(self.station_combo.currentData(), self.remote_combo.currentData(),
