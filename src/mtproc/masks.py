@@ -122,13 +122,26 @@ def normalise(mask: dict) -> dict:
             "reason": str(mask.get("reason") or ""), "found_by": found_by}
 
 
+def _ordered(masks) -> list[dict]:
+    """Normalised, earliest first, the same interval and bands declared twice (a repeated
+    click on the Cross-powers tab) kept once."""
+    out, seen = [], set()
+    for m in sorted((normalise(m) for m in masks), key=lambda m: m["start"]):
+        key = (m["start"], m["end"], str(m["bands"]))
+        if key not in seen:
+            seen.add(key)
+            out.append(m)
+    return out
+
+
 def load_masks(survey, site: str) -> list[dict]:
-    """`site`'s masks from masks.yaml, normalised, earliest first ([] with no file or no entry)."""
+    """`site`'s masks from masks.yaml, normalised, earliest first, duplicates collapsed
+    ([] with no file or no entry)."""
     path = masks_path(survey)
     if not path.exists():
         return []
     data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    return sorted((normalise(m) for m in data.get(site) or []), key=lambda m: m["start"])
+    return _ordered(data.get(site) or [])
 
 
 def _blocks(text: str) -> tuple[str, list[tuple[str, str]]]:
@@ -147,13 +160,14 @@ def _blocks(text: str) -> tuple[str, list[tuple[str, str]]]:
 
 
 def save_masks(survey, site: str, masks) -> Path:
-    """Write `site`'s masks (normalised, earliest first); an empty list removes its block.
+    """Write `site`'s masks (normalised, earliest first, duplicates collapsed); an empty
+    list removes its block.
 
     Only that site's block of the file changes: the other sites' blocks and
     the leading comment are carried over as text, byte for byte.
     """
     path = masks_path(survey)
-    entries = sorted((normalise(m) for m in masks), key=lambda m: m["start"])
+    entries = _ordered(masks)
     text = path.read_text(encoding="utf-8") if path.exists() else HEADER
     header, blocks = _blocks(text)
     new = (yaml.dump({site: entries}, Dumper=_Dumper, sort_keys=False, allow_unicode=True,

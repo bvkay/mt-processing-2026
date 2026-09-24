@@ -23,7 +23,11 @@
    [00:00, 00:05), which must go, and [03:00, 06:00)); or leave a run no mask
    touches exactly as it was;
 3. a band-limited mask is applied (it must change nothing), or masks that
-   leave nothing do not raise ValueError.
+   leave nothing do not raise ValueError;
+4. duplicates survive: the same interval and bands declared three times (a
+   repeated click) must save as one entry and, written by hand into the
+   file, must load as one; the same interval with other bands stays a
+   separate mask.
 """
 
 from __future__ import annotations
@@ -115,6 +119,25 @@ def test_round_trip() -> None:
         assert text4.startswith(HEADER + hand), text4
         assert len(load_masks(survey_yaml, "C23")) == 2
         print("  a hand-edited C10 block with a comment survives a C23 save byte for byte")
+
+
+def test_duplicates() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        survey_yaml = Path(tmp) / "survey.yaml"
+        survey_yaml.write_text("name: x\n", encoding="utf-8")
+        polar = {"start": at(1), "end": at(1.5), "bands": [0.02, 0.1], "reason": "polar", "found_by": "polar"}
+        other = {**polar, "bands": [1.0, 1.28]}
+        save_masks(survey_yaml, "C20", [polar, polar, dict(polar), other])
+        got = load_masks(survey_yaml, "C20")
+        assert [m["bands"] for m in got] == [[0.02, 0.1], [1.0, 1.28]], got
+        text = masks_path(survey_yaml).read_text(encoding="utf-8")
+        assert text.count("found_by") == 2, text
+        # the same three, written by hand
+        hand = "".join("- {start: '2023-09-22T01:00:00Z', end: '2023-09-22T01:30:00Z', bands: [0.02, 0.1], "
+                       "reason: 'x', found_by: polar}\n" for _ in range(3))
+        masks_path(survey_yaml).write_text(HEADER + "C20:\n" + hand, encoding="utf-8")
+        assert len(load_masks(survey_yaml, "C20")) == 1, load_masks(survey_yaml, "C20")
+        print("  three identical masks save as one and load as one; the same interval with other bands stays")
 
 
 def kernel(rows, remote: str | None = "R") -> KernelDataset:
