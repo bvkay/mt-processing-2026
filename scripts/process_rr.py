@@ -97,6 +97,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--notch", default=None, help='comma-separated Hz, e.g. "50,100" ("" for none)')
     p.add_argument("--no-filters", action="store_true",
                    help="process from the raw archive, not the filtered variant")
+    p.add_argument("--no-masks", action="store_true",
+                   help="ignore the site's masks.yaml (a campaign run: every remote and option on the same data)")
     p.add_argument("--tag", default=None, help="suffix appended to the output stem")
     p.add_argument("--dry-run", action="store_true",
                    help="print what this run resolved to and exit, opening nothing")
@@ -380,6 +382,7 @@ def build_sidecar(res: dict, args, started, finished, edi_path: Path, png_path: 
             remote: _declared_filters(survey, remote, raw_sites),
         },
         "masks": list(res.get("masks") or []),
+        "masks_ignored": bool(res.get("masks_ignored")),
         "argv": list(sys.argv),
         "tag": res["tag"],
         "edi": edi_path.name,
@@ -491,9 +494,12 @@ def main(args) -> None:
 
     stem = res["stem"]
     scheme = lemimt_band_scheme(survey.sample_rate, **res["scheme_kwargs"])
-    masks = load_masks(survey, local)  # the student's masks.yaml intervals for this site
+    masks = [] if args.no_masks else load_masks(survey, local)  # the student's masks.yaml intervals for this site
     res["masks"] = masks
-    if masks:
+    res["masks_ignored"] = bool(args.no_masks)
+    if args.no_masks:
+        logger.info(f"{local}: masks.yaml ignored (--no-masks)")
+    elif masks:
         logger.info(f"{local}: {len(masks)} mask(s) declared in masks.yaml "
                     f"({sum(1 for m in masks if m.get('bands', 'all') == 'all')} all-band, applied as time cuts)")
     tf = process_station(

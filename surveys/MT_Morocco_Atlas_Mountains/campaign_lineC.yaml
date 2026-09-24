@@ -69,4 +69,6 @@ runner:
   min_available_gb: 40      # a job starts only with this much memory free ...
   peak_factor: 1.0          # ... and 1.0 x the largest peak RSS the ledger has seen (1.2 idled the second slot: 128 GB RAM, 53 GB peaks)
   expected_peak_gb: {rr: 35, variant: 20, stack: 8}   # held back for running jobs until measured
-  move_products: true       # EDI/PNG/JSON into <workspace>/campaign/lineC/tf, not the survey's default tf/
+  peak_recent: 30           # ... judged over the 30 most recent jobs: stock aurora peaked at 47-72 GB, the fork at 10-29 GB
+  move_products: false      # EDI/PNG/JSON stay in the survey's tf/ so the GUI lists them (true until 24 Sep 2026; the earlier products were copied across)
+  masks: false              # rr runs pass --no-masks: masks.yaml is being edited on the Cross-powers tab mid-campaign (C20, 24 Sep); the GUI's own runs apply it

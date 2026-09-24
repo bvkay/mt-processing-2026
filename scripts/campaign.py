@@ -57,10 +57,10 @@ comparison PNG and the .json sidecar are moved into <campaign>/tf/ (plan
 
 Runner: up to --parallel jobs at once within a stage (variant and stack
 builds too). A job starts only when psutil's available memory, less what the
-running jobs are still expected to grow by (the largest peak the ledger has
-seen for their kind, else the plan's `expected_peak_gb`), is at least
-`min_available_gb` and `peak_factor` x the largest peak RSS in the ledger;
-waiting slots log every 5 min. Children run at below-normal priority, each
+running jobs are still expected to grow by (the `peak_percentile` of the
+`peak_recent` most recently finished peaks of their kind, else the plan's
+`expected_peak_gb`), is at least `min_available_gb` and `peak_factor` x that
+percentile over every kind; waiting slots log every 5 min. Children run at below-normal priority, each
 with its own log in <campaign>/logs/<run_id>.log; RSS (with children) is
 polled every 2 s.
 
@@ -108,6 +108,7 @@ REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "src"))
 
 from mtproc.ingest import default_archive_path  # noqa: E402
+from mtproc.masks import load_masks  # noqa: E402
 
 try:  # optional: the variant API may not be present yet; the campaign still runs, waiting for it
     from mtproc.ingest import filters_hash as _api_filters_hash  # noqa: E402
@@ -189,7 +190,9 @@ class Plan:
     peak_factor: float = 1.2
     expected_peak_gb: dict[str, float] = field(default_factory=lambda: {"rr": 35.0, "variant": 20.0, "stack": 8.0})
     peak_percentile: float = 90.0
+    peak_recent: int = 30
     move_products: bool = True
+    masks: bool = False       # rr runs apply the site's masks.yaml (else --no-masks: every remote and option on the same data)
 
     def group_of(self, site: str) -> str:
         return next(g for g, members in self.groups.items() if site in members)
@@ -267,12 +270,14 @@ def load_plan(path) -> Plan:
         pmin=None if scoring.get("pmin") is None else float(scoring["pmin"]),
         pmax=None if scoring.get("pmax") is None else float(scoring["pmax"]),
         move_products=bool(runner.get("move_products", True)),
+        masks=bool(runner.get("masks", False)),
         min_available_gb=float(runner.get("min_available_gb", 40.0)),
         peak_factor=float(runner.get("peak_factor", 1.2)),
     )
     plan.minutes.update({k: float(v) for k, v in (runner.get("minutes_per_job") or {}).items()})
     plan.expected_peak_gb.update({k: float(v) for k, v in (runner.get("expected_peak_gb") or {}).items()})
     plan.peak_percentile = float(runner.get("peak_percentile", 90.0))
+    plan.peak_recent = int(runner.get("peak_recent", 30))
     return plan
 
 
@@ -537,16 +542,23 @@ class Ledger:
                  f"written at the next change")
         return False
 
-    def peak_mb(self, kind: str | None = None, percentile: float = 90.0) -> float:
+    def peak_mb(self, kind: str | None = None, percentile: float = 90.0, recent: int = 0) -> float:
         """The `percentile` of the peak RSS of finished jobs (of `kind`), MB; 0 with none.
 
         The maximum ever seen (an overlap-50 run at 70 GB) kept the campaign's
         second slot idle 91 % of the time while pairs of 53 GB jobs ran side by
         side without trouble on 128 GB: the gate keys on a percentile,
         `runner.peak_percentile` in the plan (default 90).
+
+        With `recent` > 0 only the `recent` most recently finished jobs count:
+        a change of estimator (the aurora fork halved the peaks) should move the
+        gate with it rather than sit under the old peaks for hundreds of runs.
         """
-        vals = sorted(float(r["peak_rss_mb"]) for r in self.rows.values()
-                      if r["peak_rss_mb"] and (kind is None or r["kind"] == kind))
+        rows = [r for r in self.rows.values()
+                if r["peak_rss_mb"] and (kind is None or r["kind"] == kind)]
+        if recent > 0:
+            rows = sorted(rows, key=lambda r: r["finished"] or r["started"])[-recent:]
+        vals = sorted(float(r["peak_rss_mb"]) for r in rows)
         if not vals:
             return 0.0
         k = min(len(vals) - 1, max(0, int(round(percentile / 100.0 * (len(vals) - 1)))))
@@ -726,11 +738,17 @@ class Campaign:
                 f"@{int(p.stat().st_mtime) if p.exists() else 'missing'}")
 
     def inputs(self, job: Job) -> str:
-        return ";".join(self.signature(s) for s in job.input_sites)
+        sig = ";".join(self.signature(s) for s in job.input_sites)
+        if self.plan.masks and job.kind == "rr":
+            masks = load_masks(self.survey, job.local)
+            digest = hashlib.sha1(json.dumps(masks, sort_keys=True).encode()).hexdigest()[:8]
+            sig += f";{job.local}:m{digest}"   # the local's masks.yaml entry: edited means stale
+        return sig
 
     def rr_cmd(self, local: str, remote: str, config: str) -> list[str]:
         extra = self.plan.configs.get(config, []) if config != "default" else []
-        return [PY, str(SCRIPTS / "process_rr.py"), self.survey_yaml, local, remote, *extra,
+        masks = [] if self.plan.masks else ["--no-masks"]
+        return [PY, str(SCRIPTS / "process_rr.py"), self.survey_yaml, local, remote, *extra, *masks,
                 "--tag", self.plan.tag(config)]
 
     def rr_job(self, stage: int, local: str, remote: str, config: str, run_id: str, deps=()) -> Job:
@@ -886,12 +904,13 @@ class Campaign:
     # ------------------------------------------------------------------ memory
 
     def expected_peak_mb(self, kind: str) -> float:
-        return self.ledger.peak_mb(kind, self.plan.peak_percentile) or self.plan.expected_peak_gb.get(kind, 35.0) * 1024.0
+        return (self.ledger.peak_mb(kind, self.plan.peak_percentile, self.plan.peak_recent)
+                or self.plan.expected_peak_gb.get(kind, 35.0) * 1024.0)
 
     def gate(self) -> tuple[bool, str]:
         avail = psutil.virtual_memory().available / MB
         reserve = sum(max(0.0, self.expected_peak_mb(r.job.kind) - r.rss_mb) for r in self._running.values())
-        need = max(self.plan.min_available_gb * 1024.0, self.plan.peak_factor * self.ledger.peak_mb(None, self.plan.peak_percentile))
+        need = max(self.plan.min_available_gb * 1024.0, self.plan.peak_factor * self.ledger.peak_mb(None, self.plan.peak_percentile, self.plan.peak_recent))
         ok = avail - reserve >= need
         return ok, (f"available {avail / 1024:.1f} GB, {reserve / 1024:.1f} GB held back for "
                     f"{len(self._running)} running job(s), need {need / 1024:.1f} GB")
