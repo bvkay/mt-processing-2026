@@ -59,7 +59,7 @@ next to the EDI. A short summary also goes into the EDI's INFO block
 Usage:
     python scripts/process_rr.py <survey.yaml> <local> <remote> [start] [end]
         [--min-period S] [--max-period S] [--per-decade N] [--notch "50,150"]
-        [--no-filters] [--no-masks] [--tag SUFFIX] [--dry-run]
+        [--no-filters] [--no-masks | --masks] [--tag SUFFIX] [--dry-run]
         [--taper {boxcar,hamming,hann,dpss}] [--overlap PCT] [--no-prewhiten]
         [--min-windows N] [--max-iterations N] [--redescending-iterations N]
         [--r0 X] [--u0 X] [--tolerance X]
@@ -116,8 +116,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--notch", default=None, help='comma-separated Hz, e.g. "50,100" ("" for none)')
     p.add_argument("--no-filters", action="store_true",
                    help="process from the raw archive, not the filtered variant")
-    p.add_argument("--no-masks", action="store_true",
+    p.add_argument("--no-masks", dest="masks", action="store_false",
                    help="ignore masks.yaml for both sites (a campaign run: every remote and option on the same data)")
+    p.add_argument("--masks", dest="masks", action="store_true", default=True,
+                   help="apply masks.yaml (the default; after --no-masks, the later flag wins)")
     p.add_argument("--tag", default=None, help="suffix appended to the output stem")
     p.add_argument("--dry-run", action="store_true",
                    help="print what this run resolved to and exit, opening nothing")
@@ -315,7 +317,7 @@ def resolve(args, started) -> dict:
     stacked = survey.workspace / "mth5" / f"{args.remote}.h5"
     virtual = args.remote not in raw_sites and stacked.exists()
     remote_h5 = stacked if virtual else default_archive_path(survey, args.remote)
-    ignore_masks = bool(args.no_masks)
+    ignore_masks = not args.masks
     masks_local = [] if ignore_masks else load_masks(survey, args.local)
     # by name (`remote_masks`), not by `virtual`: with data_root unmounted every
     # remote that has an archive looks virtual, and its masks would be dropped

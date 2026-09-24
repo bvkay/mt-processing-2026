@@ -93,7 +93,8 @@ sidecar `build_sidecar` makes does not carry the same three lists with
 `masks_ignored` False; the dry run does not print "masks: D02 3, E08 3 (5
 applied)"; with `--no-masks` all three lists are not empty with
 `masks_ignored` True in `resolve` and the sidecar and "masks: ignored
-(--no-masks)" printed; D02 against the stack STK_E08u picks up its
+(--no-masks)" printed; `--no-masks --masks` does not apply the five with
+`masks_ignored` False, or `--masks --no-masks` applies any; D02 against the stack STK_E08u picks up its
 masks.yaml entry (a stacked remote has none of its own); D02 against SYN01
 (archive-only, no STK_ prefix: judged by name, like a site) does not carry
 SYN01's entry; or, with data_root pointed at a folder that does not exist
@@ -488,6 +489,13 @@ def test_masks_from_both_sites() -> None:
         line = next((ln for ln in done.stdout.splitlines() if ln.startswith("masks:")), None)
         assert line == "masks: ignored (--no-masks)", line
         print(f"  --no-masks: masks_local/masks_remote/masks all [], masks_ignored True; dry run {line!r}")
+
+        # the later flag wins: a campaign config's --masks after the runner's --no-masks
+        res, sidecar = resolved("--no-masks", "--masks")
+        assert len(res["masks"]) == 5 and res["masks_ignored"] is False and sidecar["masks_ignored"] is False,             (len(res["masks"]), res["masks_ignored"])
+        res, sidecar = resolved("--masks", "--no-masks")
+        assert res["masks"] == [] and res["masks_ignored"] is True, (res["masks"], res["masks_ignored"])
+        print("  --no-masks --masks: 5 applied; --masks --no-masks: ignored (the later flag wins)")
 
         args = process_rr.build_parser().parse_args([str(copy_yaml), LOCAL, "STK_E08u"])
         res = process_rr.resolve(args, started)

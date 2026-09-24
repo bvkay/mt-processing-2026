@@ -78,7 +78,10 @@ Usage:
     to B alone (the remote: process_rr applies it too) or then to A; a job
     against a stack STK_Au names a masks hash for the stack; or its command
     carries --no-masks. With runner.masks off: any ":m" hash in the inputs,
-    or a command without --no-masks.
+    or a command without --no-masks; a config declared as [--masks] whose
+    command does not put --masks after the runner's --no-masks, or whose
+    inputs name no masks hash; with runner.masks on, a config [--no-masks]
+    whose inputs name one.
 """
 
 from __future__ import annotations
@@ -485,7 +488,21 @@ def test_inputs_masks_both_sites() -> None:
     off = cp.Campaign(survey_yaml, cp.load_plan(make_plan(root / "off")), parallel=2, create=False)
     off_job = off.rr_job(1, "A", "B", "default", "s1_A_rr-B")
     assert ":m" not in off.inputs(off_job) and "--no-masks" in off_job.cmd, (off.inputs(off_job), off_job.cmd)
+    # a config's own --masks wins over runner.masks off: it comes after the
+    # runner's --no-masks on the command line and the inputs name both hashes
+    off.plan.configs["masked"] = ["--masks"]
+    masked_job = off.rr_job(3, "A", "B", "masked", "s3_A_rr-B_masked")
+    assert off.rr_masks_on("masked") and not off.rr_masks_on("default"), off.plan.configs
+    assert masked_job.cmd.index("--no-masks") < masked_job.cmd.index("--masks"), masked_job.cmd
+    masked_sig = off.inputs(masked_job)
+    assert ";A:m" in masked_sig and ";B:m" in masked_sig, masked_sig
+    c.plan.configs["unmasked"] = ["--no-masks"]
+    unmasked_job = c.rr_job(3, "A", "B", "unmasked", "s3_A_rr-B_unmasked")
+    assert not c.rr_masks_on("unmasked") and ":m" not in c.inputs(unmasked_job), c.inputs(unmasked_job)
+    assert unmasked_job.cmd.count("--no-masks") == 1 and "--masks" not in unmasked_job.cmd, unmasked_job.cmd
     print(f"  masks on: {bare} -> B masked {remote_masked} -> A masked {both_masked}; stack job {stack_sig}")
+    print(f"  runner.masks off + config [--masks]: {masked_job.cmd[-5:]} -> {masked_sig}; "
+          f"runner.masks on + config [--no-masks]: no masks hash")
 
 
 def main() -> int:

@@ -852,7 +852,7 @@ class Campaign:
     def inputs(self, job: Job) -> str:
         """Return the input signature of a job; a change means the job is re-run."""
         sig = ";".join(self.signature(s) for s in job.input_sites)
-        if self.plan.masks and job.kind == "rr":
+        if job.kind == "rr" and self.rr_masks_on(job.config):
             # process_rr applies the local's and the remote's masks.yaml entries (a stack
             # has none of its own, by the name rule of mtproc.masks.is_stack); an edit
             # to either makes the product stale
@@ -864,11 +864,30 @@ class Campaign:
                 sig += f";{site}:m{digest}"
         return sig
 
+    def rr_masks_on(self, config: str) -> bool:
+        """Return whether an rr run of `config` applies masks.yaml.
+
+        The plan's `runner.masks` sets the default and a config's own
+        `--masks` or `--no-masks` overrides it, as the later flag wins on the
+        process_rr command line.
+        """
+        on = self.plan.masks
+        for flag in (self.plan.configs.get(config, []) if config != "default" else []):
+            if flag == "--masks":
+                on = True
+            elif flag == "--no-masks":
+                on = False
+        return on
+
     def rr_cmd(self, local: str, remote: str, config: str) -> list[str]:
-        """Build the process_rr.py command line of one rr run."""
+        """Build the process_rr.py command line of one rr run.
+
+        The runner's `--no-masks` goes before the config's flags so that a
+        config declaring `--masks` wins.
+        """
         extra = self.plan.configs.get(config, []) if config != "default" else []
         masks = [] if self.plan.masks else ["--no-masks"]
-        return [PY, str(SCRIPTS / "process_rr.py"), self.survey_yaml, local, remote, *extra, *masks,
+        return [PY, str(SCRIPTS / "process_rr.py"), self.survey_yaml, local, remote, *masks, *extra,
                 "--tag", self.plan.tag(config)]
 
     def rr_job(self, stage: int, local: str, remote: str, config: str, run_id: str, deps=()) -> Job:
