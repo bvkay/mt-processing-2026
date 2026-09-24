@@ -7,9 +7,106 @@ https://github.com/bvkay/mt-processing-2026
 
 The student-facing command line is the table in `README.md`; every step is a
 plain script (no notebooks, no LLM at run time). The desktop GUI
-(`src/bbmt_gui`, authoritative doc `src/bbmt_gui/README.md`) is a launcher and
+(`src/mtproc_gui`, authoritative doc `src/mtproc_gui/README.md`) is a launcher and
 viewer over those scripts and each survey's YAML - it computes no product of
 its own. Per-site findings live in each survey's `qc_notes.md`.
+
+## 2026-09-23, second session: filters, archives, line C, other instruments
+
+Everything below is uncommitted on top of 5878872 (the rename commit). All 20
+`tests/*_unit.py` and `tests/gui_smoke.py` (34 criteria) pass on this tree.
+
+### Landed
+
+- **Archive layout: raw archive plus filtered variants.**
+  `<workspace>/mth5/<site>.h5` is the recording, built once with no filters.
+  Processing reads `<site>_f<hash>.h5`, built on demand from the raw archive
+  with the site's declared list (`mtproc.ingest.build_variant`,
+  `processing_archive`; hash = sha1[:8] of the list; one variant per site
+  kept; written to `.part` then renamed). A filter object in the MTH5 was
+  rejected: aurora applies responses on 7.8 Hz-wide bins at 1000 Hz, so a
+  notch stored as a response leaves the 50 Hz line in the bins (the C18
+  spike); mains/cp/burst are not linear filters at all. Archives with
+  filters baked in (Burra, some Curnamona) are refused as "old layout" until
+  rebuilt raw (`scripts/ingest_site.py <survey> <site> --raw`).
+- **Filter kinds**: `burst` (transient masking), `flip` (sign), `mains`
+  (block-wise fitted subtraction that follows amplitude steps; the notch's
+  ringing at C23's stepping mains was the "burst"). For a stepping or
+  cut-off mains declare `mains` then `notch`. NotchForm shows its ring time.
+  "Copy to sites..." dialog on the Filter Data tab (Replace/Append).
+- **Hann is the default taper** (`build_config`; `--taper boxcar` restores
+  the old). Validated on Curnamona D02 rr E08 (no loss) and it repairs D03's
+  50 Hz leakage on line D.
+- **Products**: `<local>_rr-<remote>_<YYYYMMDD-HHMM>[_<tag>].edi` plus a
+  `<stem>.json` sidecar (window, archives, band scheme, tweaks, filters,
+  masks, versions, quadrant verdict). Nothing is overwritten any more.
+- **GUI**: phase axis locked to 0-90 or -180..180; rho min/max; loaded
+  window marked in the Filter Data chooser; basemap zoom +3 (cap 8000 px);
+  Metadata columns `sensor_type` (EDL: bartington | lemi120) and
+  `electric_gain`; **Cross-powers tab** (per-chunk, per-band
+  remote-reference impedance, coherence, polar plane, rectangle selection,
+  `<survey>/masks.yaml`; `process_rr` cuts the all-band masks out of the
+  kernel dataset; band-limited masks are provenance only).
+- **Scripts**: `line_scan.py` (narrow lines per site/hour, table + figure),
+  `fetch_observatory.py` (INTERMAGNET GIN one-second -> MTH5 hx/hy/hz at
+  1 Hz + survey entry; unfetched: the session's shells lost DNS),
+  `campaign.py` (resumable remotes/stacks/options campaign with
+  `mtproc.quality` scores), `build_stack.py --weighting coherence --check`
+  (members read from archives: 26 s and 2.7 GB instead of 308 s and 47 GB).
+- **Instruments**: EDL broadband (Hillside 2012) matches the 2012 BIRRP
+  processing after five ingest fixes (LEMI-120 coil chain, other stations' files,
+  incomplete stamps, short files, preset word order); PR6-24 electric chain gain declared
+  per survey/site from the field notes (Stuart Shelf 2009: `electric_gain: 10`
+  beyond mt-io's x10 terminal box, trip 2 verified against the 2009 EDIs);
+  `Survey.site_dirs` reads a site's `raw\` subfolder; `lemimt_band_scheme`
+  refuses bands narrower than one FFT harmonic.
+
+### Findings
+
+- Line D batch (13 pairings, raw archives): most sites track lemimt to a
+  few percent; D12's yx is 180 deg out (a reversed channel: declare
+  `flip`); D10 xy is a factor 2.3 above lemimt because lemimt used 50 m for
+  a 33 m dipole (aurora is right); the 1-10 s xy sawtooth at D01 is
+  incoherent coils, not band layout; D03's short-period fault is D13's 50 Hz
+  leaking through the boxcar window. Coherence-weighted stacks do not beat
+  the nearest quiet single remote; D01 on the stacks' window was best.
+- Interharmonic sidebands 50 +- 12.55 and +- 15.7 Hz across line D
+  (stable to 0.05 Hz, intermittent): declare them as notch `extra` lines.
+  B24: 50m +- 60n Hz intermodulation from a 60 Hz source -> a second notch
+  `f0: 10, harmonics: 20`. B30 and B24: stepping mains -> `mains` first.
+- Line C: C21's folder is a copy of C07 (excluded); no lemimt references;
+  every archive was raw at the time of processing, hence the single-band
+  spike at 0.017 s next to 50 Hz. Campaign running (see below).
+- Stuart Shelf 2009: 81 of 97 deployments are PR6-24, 16 Orange Boxes;
+  mt-io's Orange Box reader decodes the files but its time axis, E scale and
+  one magnetic scale are wrong (issues 10-16); the 2009 Orange Box EDIs have
+  xy/yx swapped; the GPS forensics (`qc/gps_summary.md` in that workspace)
+  found no lost survey in trip 1, ST59's data under the prefix ST52_, ST34
+  empty, ST36's first deployment missing.
+- Hillside: mt-io's PR6-24 reader silently calibrates coils as Bartington
+  fluxgates (rho 1e-7 x BIRRP on LEMI-120 data) -> `sensor_type`.
+
+### Running
+
+- Line C campaign, runner pid 34132, `<Morocco workspace>/campaign/lineC/`
+  (ledger.csv, runs.log, campaign.out, figures/, tf/, summary.md):
+  stage 0 (variants) done; stage 1 (266 remote runs), 2 (46 stacks), 3
+  (207 option runs) follow, two at a time, ~5.5 min per run. Group A first.
+  `python scripts/campaign.py <survey> <plan> --report` redraws everything.
+  Kill and relaunch to resume.
+
+### Open
+
+- The GUI has no `intermagnet` instrument yet (Metadata rejects the entry;
+  Build MTH5 has no branch); aurora needs equal sample rates, so a 1 Hz
+  observatory references 1 Hz archives only.
+- Long-period needs (Stuart Shelf lists in both `qc/*.md`): Orange Box
+  instrument in mtproc, rate-appropriate processing block, Spectra/
+  Coherence to 1e4 s, UTC-day windows, select the recommended remote.
+- `tabs/crosspower.py` is 678 lines; the remote preset ignores the window.
+- HANDOVER/README documentation pass.
+- Old products keep their names; the campaign's products live outside the
+  GUI's EDI list.
 
 ## What works (validated)
 
@@ -38,15 +135,16 @@ its own. Per-site findings live in each survey's `qc_notes.md`.
 - **Timing QC before ingest** (`scripts/timing_qc.py`): file-boundary slips,
   clock offset vs the remote by cross-correlation (10 ms resolution), GPS
   status per file.
-- **The GUI** (`src/bbmt_gui`, new this phase): a PySide6 + pyqtgraph
+- **The GUI** (`src/mtproc_gui`, new this phase): a PySide6 + pyqtgraph
   launcher-and-viewer, verified end to end by `tests/gui_smoke.py` against
   the real Curnamona survey (see "What was verified and how" below) - the
   tree-driven Time Series/Spectra/Spectrogram/Coherence tabs, the Filter Data
   and Process tabs (including the queue, the recommendation tie-break and the
   basemap), and the mtpy-v2 View EDIs tab all load and draw real archives.
 
-Environment: `conda env create -f environment.yml` -> `bbmt-2026` (mth5 0.6.9,
-mt-io 0.0.5, mt-metadata 1.0.10, aurora 0.6.2, now also PySide6, pyqtgraph and
+Environment: `conda env create -f environment.yml` -> `mt-2026` (an environment
+created earlier as `bbmt-2026` keeps working; mth5 0.6.9, mt-io 0.0.5,
+mt-metadata 1.0.10, aurora 0.6.2, now also PySide6, pyqtgraph and
 mtpy-v2 2.1.4 for the GUI - see README.md's "The GUI"). 128 GB Windows box; a
 full-deployment RR run peaks ~45 GB and takes ~13 min; ingest of a 2-day site
 takes ~30 s.
@@ -83,15 +181,12 @@ removed. Full detail and the KISS-stack numbers: `surveys/burra/qc_notes.md`,
 - **Processing window != archive window**: one MTH5 per site holds the whole
   deployment; `start`/`end` on the processing scripts trim aurora's kernel
   dataset only.
-- Agent usage: Fable designs and verifies; sub-agents get a frozen spec,
-  reference code, a falsifiable test, and files nobody else is editing.
 
 **The GUI (2026-09-22/23, new):**
-- **PySide6 + pyqtgraph**, a launcher-and-viewer over `scripts/` + YAML -
-  "I really don't think the png images work within the GUI" (owner): no
-  processing code and no PNG anywhere in `src/bbmt_gui`; no single-station
+- **PySide6 + pyqtgraph**, a launcher-and-viewer over `scripts/` + YAML: no
+  processing code and no PNG anywhere in `src/mtproc_gui`; no single-station
   option anywhere either.
-- **Tree-driven Time Series tab**, mirroring the MATLAB App Designer app: a
+- **Tree-driven Time Series tab**, mirroring the legacy MATLAB field app: a
   site tree on the left expands to fixed windows (2 h at 1000 Hz, 4 h at
   500 Hz, `windows.py`); a click loads that window's time series, spectra,
   spectrogram and coherence.
@@ -107,11 +202,11 @@ removed. Full detail and the KISS-stack numbers: `surveys/burra/qc_notes.md`,
   opens no archive), which adds and runs together.
 - **Look**: dark theme, magnetics blue / electrics red, shared x axis with no
   gap between stacked panels, locked zoom (no pan/zoom past the data
-  extent), Zxy/Zyx-style labels - all copied from the owner's MATLAB app
-  after he reviewed the first slices (`theme.py`).
-- **The Process tab is arranged like the MATLAB Process Data tab** (owner,
-  2026-09-23: "makes it feel much more intuitive"); every control does what
-  it did before, only the order changed (`docs/matlab_app_borrowing.md`).
+  extent), Zxy/Zyx-style labels - copied from the legacy MATLAB field app
+  (`theme.py`).
+- **The Process tab is arranged like the MATLAB Process Data tab** (2026-09-23);
+  every control does what it did before, only the order changed
+  (`docs/matlab_app_borrowing.md`).
 - **mtpy-v2 2.1.4** installed for the View EDIs tab: phase tensors now,
   induction arrows later (tipper stays disabled - no hz sensor on this
   survey).
@@ -162,7 +257,7 @@ against an independent pyproj computation, network mocked) and
 `new_survey_unit.py` (B423 header parsing against synthetic files, then the
 real Curnamona headers).
 
-Timings measured on the owner's machine: a 2 h window at 1000 Hz draws 2.6 s
+Timings measured on the development machine: a 2 h window at 1000 Hz draws 2.6 s
 after the click; all QC views 5 s without a remote, 8 s with one; a two-EDI
 mtpy overlay draws in 0.2-0.4 s; the new-survey scan of 59 Curnamona sites
 takes 2.6 s; the OpenTopoMap basemap fetch for Curnamona took 18 s at zoom 8.
@@ -186,6 +281,23 @@ takes 2.6 s; the OpenTopoMap basemap fetch for Curnamona took 18 s at zoom 8.
   archive open, and it touches the file's modification time on every
   processing run. Workaround in tests: monkeypatch both `initialize_mth5`
   and `MTH5.open_mth5` to force `mode="r"`. Worth an upstream request.
+- **Other instruments (2026-09-23): LEMI-424 and Earth Data PR6-24 (EDL)**
+  are read, archived and viewed (README.md, "Instruments";
+  `mtproc/instruments.py`, `mtproc_gui/channels.py`). The instrument is
+  detected per site folder with a survey default and an `instrument:` per
+  site; archives keep the readers' names (a LEMI-424's bx by bz e1-e4), and
+  the LEMI-423 path writes byte-identical archives (checked old vs new on
+  3 h of D02 and A07). Checked on one real hour each: MBJ21 (LEMI-424,
+  `<data_root>/MT_WA-MT/Phase_1`, daily 1 Hz files, not hourly) and EGFLP02
+  (EDL 10 Hz, `<data_root>/MT_PROCESSING_2026/MT_EasternGoldfields`). What the readers
+  hand over: **LEMI-424 electrics are the recorded mV, labelled mV/km by
+  mt-io** (no dipole length; the `.inf` says L1-L4 = 50 m) and no filter
+  chain; its run metadata lists only e1 e2 as recorded (mth5 corrects it on
+  write). **EDL has no rate without `recorder.ini`** unless two files give
+  it, no position (its `.gps` sidecars are not parsed), and only the
+  Bartington long-period chain is wired (broadband LEMI-120 on the PR6-24
+  is not). In the GUI a LEMI-424's first two electrics, E1 and E2, stand in
+  for Ex and Ey ("By-E1 (Zxy)").
 
 ## Hard-won facts (do not rediscover these)
 
@@ -231,12 +343,12 @@ takes 2.6 s; the OpenTopoMap basemap fetch for Curnamona took 18 s at zoom 8.
 ## Next steps (agreed order)
 
 1. **Commit the uncommitted work in two commits**: library/scripts/config
-   first (`src/bbmt/*.py`, `scripts/*.py`, `environment.yml`, `pyproject.toml`,
+   first (`src/mtproc/*.py`, `scripts/*.py`, `environment.yml`, `pyproject.toml`,
    the two `survey.yaml`s, `docs/upstream_issues.md`), then GUI/tests
-   (`src/bbmt_gui/`, `tests/`, this handover and the README).
+   (`src/mtproc_gui/`, `tests/`, this handover and the README).
 2. **The cross-power editor**, one site at a time: per-band, per-window
    cross-powers, coherence and single-window rho/phase against time, from
-   `bbmt.timefreq.window_spectra`. Masks saved as UTC intervals per site in
+   `mtproc.timefreq.window_spectra`. Masks saved as UTC intervals per site in
    `<survey>/masks.yaml`; `process_rr.py` excludes them - an extension of the
    existing processing-window clipping to several intervals instead of one.
    Aurora's Fourier-coefficient storage was considered and **rejected** for
@@ -249,12 +361,21 @@ takes 2.6 s; the OpenTopoMap basemap fetch for Curnamona took 18 s at zoom 8.
    before/after filter comparison on the loaded QC window; the spectrogram's
    relative-to-median and baseline-from-zoomed-window modes; swap/flip coil
    kinds; the least-squares quick-look with its coherence gate and 3-MAD trim
-   (the owner has not ruled on its single-site nature - it sits in front of a
-   product, not in place of one, but needs an explicit yes).
+   (open whether its single-site nature is acceptable - it sits in front of a
+   product, not in place of one, but needs an explicit decision).
 5. **Re-ingest D02 and E08 without hz** (see Findings): delete the archives,
-   rerun `process_rr.py` (a full-deployment ingest plus estimate is about 13 min per pair on the owner's machine). Coherence-weighted stacking and the
+   rerun `process_rr.py` (a full-deployment ingest plus estimate is about 13 min per pair). Coherence-weighted stacking and the
    aurora feature-weights experiment remain open from the earlier handover
    (see "Open items").
+6. **The electric-pair setting for LEMI-424** (which two of e1-e4 are Ex and
+   Ey): a per-site key read by `mtproc.process`, which must also pass aurora
+   its electric-channel nomenclature (LEMI12/LEMI34) -- `process.py` was not
+   touched by the instruments work, so **a LEMI-424 site cannot be processed
+   yet** (ingest and view only). With it: the dipole length for e1-e4 (the
+   reader leaves them in mV), and the GUI's pair rule then follows the
+   setting instead of "the first two electrics". EDL sites use the LEMI-423
+   names and are processable as they stand, but no EDL transfer function has
+   been checked against lemimt yet.
 
 ## Burra survey facts
 
