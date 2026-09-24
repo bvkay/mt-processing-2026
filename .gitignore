@@ -13,8 +13,9 @@ docs/local/
 local/
 
 # working notes, prototypes, figures and upstream-issue log stay local
-docs/
+docs/*
 
 # working notes for this machine, not part of the package
 HANDOVER.md
 src/mtproc_gui/README.md
+!docs/upstream_issues.md
