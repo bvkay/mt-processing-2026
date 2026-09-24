@@ -325,6 +325,9 @@ C12:
     passes: 2
     extra:
     - 82.0
+- flip:
+    channels:
+    - ey
 C11:
 - notch:
     f0: 50.0
