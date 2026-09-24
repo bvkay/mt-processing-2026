@@ -115,7 +115,7 @@ REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "src"))
 
 from mtproc.ingest import default_archive_path  # noqa: E402
-from mtproc.masks import is_stack, load_masks  # noqa: E402
+from mtproc.masks import is_stack, load_masks, remote_masks  # noqa: E402
 
 try:  # optional: without the variant API the campaign runs and waits for it
     from mtproc.ingest import filters_hash as _api_filters_hash  # noqa: E402
@@ -954,8 +954,17 @@ class Campaign:
                     self.log(f"stage 3: {s}: no stage 1 product to choose a remote from: skipped")
                     continue
             for config in self.plan.configs:
+                if (self.rr_masks_on(config) and not self.plan.masks and remote != "<best-of-stage-1>"
+                        and not self.has_masks(s, remote)):
+                    # the run would repeat the default: masks.yaml names neither site
+                    self.log(f"stage 3: {s}: {config}: no masks.yaml entry for {s} or {remote}: skipped")
+                    continue
                 jobs.append(self.rr_job(3, s, remote, config, f"s3_{s}_rr-{remote}_{config}"))
         return jobs
+
+    def has_masks(self, local: str, remote: str) -> bool:
+        """Return whether masks.yaml names `local` or `remote` (a stack has none)."""
+        return bool(load_masks(self.survey, local)) or bool(remote_masks(self.survey, remote))
 
     # --------------------------------------------------------------- choices
 

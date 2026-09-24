@@ -81,7 +81,8 @@ Usage:
     or a command without --no-masks; a config declared as [--masks] whose
     command does not put --masks after the runner's --no-masks, or whose
     inputs name no masks hash; with runner.masks on, a config [--no-masks]
-    whose inputs name one.
+    whose inputs name one; a stage 3 [--masks] job built for A rr B while
+    masks.yaml names neither, or not built once it names B.
 """
 
 from __future__ import annotations
@@ -503,6 +504,16 @@ def test_inputs_masks_both_sites() -> None:
     print(f"  masks on: {bare} -> B masked {remote_masked} -> A masked {both_masked}; stack job {stack_sig}")
     print(f"  runner.masks off + config [--masks]: {masked_job.cmd[-5:]} -> {masked_sig}; "
           f"runner.masks on + config [--no-masks]: no masks hash")
+
+    # stage 3 leaves the masked config out when masks.yaml names neither site
+    off.plan.configs = {"masked": ["--masks"], "hamming": ["--taper", "hamming"]}
+    off.best_remotes = lambda sites, persist=True, df=None: {s: {"remote": "B"} for s in sites}
+    (root / "masks.yaml").write_text("", encoding="utf-8")
+    none = [j.config for j in off.stage3_jobs(["A"])]
+    (root / "masks.yaml").write_text(yaml.safe_dump({"B": [mask(10)]}), encoding="utf-8")
+    some = [j.config for j in off.stage3_jobs(["A"])]
+    assert none == ["hamming"] and some == ["masked", "hamming"], (none, some)
+    print(f"  stage 3 with no masks.yaml entry for A or B: {none}; with one for B: {some}")
 
 
 def main() -> int:
