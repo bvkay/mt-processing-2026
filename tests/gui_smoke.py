@@ -1,4 +1,4 @@
-"""Smoke test for the bbmt_gui desktop GUI (run headless).
+"""Smoke test for the mtproc_gui desktop GUI (run headless).
 
     QT_QPA_PLATFORM=offscreen python tests/gui_smoke.py
 
@@ -8,8 +8,13 @@ and Coherence tabs show that window. **This test fails if**
 
 (1)  the window cannot be built, or its tabs are not, in order, Metadata,
      Time Series, Spectra, Spectrogram, Coherence, Filter Data, Process,
-     View EDIs; or the Metadata table does not show 59 sites with a `remote`
-     column reading E08 for D02; or the dark theme is not on: the
+     Cross-powers, View EDIs; or the Metadata table does not show 59 sites with a `remote`
+     column reading E08 for D02, and a `channels` column reading "Ex Ey Bx
+     By" (the survey default [ex, ey, hx, hy] as its preset's label) for D02
+     and for A07 -- both archived, so both cells drawn in the disabled grey
+     #7a7a7a with the tooltip "archive built with the old set - Delete
+     archive then Build MTH5 to change it" -- and for A02 (no archive) with
+     no tooltip and not in that grey; or the dark theme is not on: the
      application palette's Window colour is not #2b2b2b (`theme.WINDOW`),
      its Base not #1f1f1f, or the style not Fusion (behind the theme's
      proxy); or an unticked, unlabelled QCheckBox has no pixel at least 64
@@ -18,8 +23,8 @@ and Coherence tabs show that window. **This test fails if**
 (2)  the Time Series tree does not have 59 site rows, bold and collapsed, of
      which exactly three -- A07, D02, E08, the archived ones -- are
      expandable (an indicator and no rows yet) while every other row holds
-     one disabled child reading "no archive - ..."; or a real mouse click on
-     D02's row does not expand it;
+     one disabled child reading "no MTH5 yet - select the site and press
+     Build MTH5"; or a real mouse click on D02's row does not expand it;
 (3)  expanding D02 does not, within 30 s, yield 21 window rows, the first
      labelled with D02's record start as the runs' `time_period.start` attrs
      give it ("2021-06-29 06:55 UTC (2.0 h)") and the last "(1.3 h)";
@@ -44,7 +49,7 @@ and Coherence tabs show that window. **This test fails if**
      `sample_rate` attr, the run covering the window found from the runs'
      `time_period` attrs and its `ex` dataset sliced by sample offset from
      that run's start, divided by the Segment's gain; nothing from
-     `bbmt_gui.segment` or `bbmt_gui.archive` places these samples in time. This catches an off-by-one, wrong-run or
+     `mtproc_gui.segment` or `mtproc_gui.archive` places these samples in time. This catches an off-by-one, wrong-run or
      wrong-t0 bug (the window starts 16,200,999 samples into the second run);
 (6)  the archive lock does not serialise: A07 expanded right after the click,
      while the store holds the lock for its load phase, must wait (no tree
@@ -112,14 +117,20 @@ and Coherence tabs show that window. **This test fails if**
      does not do all of this for D02. Layout, from the widgets' positions:
      station combo, remote combo and summary left to right on row 1; below
      them the window bar; below that the buttons "Add to queue", "Run
-     queue", "Reset queue", "Timing check", "Site QC figures", "Build stack",
-     "Fetch basemap" left to right on one row; below them the Aurora options,
+     queue", "Reset queue", "Build stack" left to right on one row, and no
+     "Timing check", "Site QC figures" or "Fetch basemap" button anywhere on
+     the tab (nor the attributes or queue methods behind them, removed at the
+     owner's request); below them the Aurora options,
      their "Advanced (aurora estimator)" block collapsed; below those
      the queue table; the site map right of the table and below the bar,
      the stack builder under the map and the Products list under that; in
      the bar, the status line centred (3 px) between the two lamps and above
      the plot, the start field left of the plot and the end field right of
-     it. Behaviour: preselect remote E08 from `survey.yaml`; draw a site map
+     it. Behaviour: the declared-filters line (`RunOptions.describe_filters`)
+     must read "D02 declares: none | E08 (remote) declares: none" (neither
+     declares anything) and, called directly for A07 (a saved `replace`, no
+     `A07_f<hash>.h5` variant built) "A07 declares: replace (filtered
+     archive will be built first, from the raw archive)"; preselect remote E08 from `survey.yaml`; draw a site map
      of 59 points with D02 green, E08 blue and a distance label within 2 km
      of the D02-E08 separation computed here from the YAML coordinates by
      the spherical law of cosines (a different formula from the haversine
@@ -129,8 +140,17 @@ and Coherence tabs show that window. **This test fails if**
      them this check is skipped with a printed reason) the map must hold one
      `pg.ImageItem` below the dots whose rect in view coordinates equals the
      JSON's lon_min..lon_max, lat_min..lat_max (1e-9), whose top data row is
-     the PNG's first (north) row and bottom data row its last, with the
-     attribution naming the provider and no "no basemap" line showing;
+     the PNG's first (north) row and bottom data row its last; the credit
+     must be the map plot's TOOLTIP, "Basemap: <provider> - <attribution>"
+     from basemap.json (its "(C)" as the copyright sign), with no visible
+     label under the map (the grey line is hidden, and no visible QLabel on
+     the tab carries the attribution); the map's ViewBox
+     limits must be the JSON's extent (x and y limits lon_min..lon_max,
+     lat_min..lat_max, maximum ranges their widths, 1e-9) and a setRange a
+     degree beyond every side must leave the view inside that extent (the
+     aspect lock may crop one axis, never widen it); every
+     site name must sit on a translucent dark box (the SURFACE grey, alpha
+     between 100 and 230) drawn above the basemap and below the dots;
      the summary must read "Distance to remote:"
      within 0.1 km of that law-of-cosines figure, "Overlap available:" within
      0.05 h (and its days within 0.005) of the D02-E08 overlap computed HERE
@@ -157,11 +177,10 @@ and Coherence tabs show that window. **This test fails if**
      Options, once the spinbox and the checkbox are moved, and none again
      when they are put back; with the advanced block untouched no estimator
      flag (--taper ... --tolerance), then, with it expanded and the taper
-     set to hann and r0 to 2.0, exactly `--taper hann --r0 2.0` at the end
-     of the argv and "--taper hann --r0 2.0" in the row's Options, and none
-     again once they are put back; "Fetch basemap" must record exactly
-     `<python> scripts/fetch_basemap.py <survey.yaml>` and add a row showing
-     its label; the row-3 "Build stack" button must record a
+     set to hamming (hann is the in-use default, so it
+     emits no flag) and r0 to 2.0, exactly `--taper hamming --r0 2.0` at the
+     end of the argv and "--taper hamming --r0 2.0" in the row's Options, and none
+     again once they are put back; the row-3 "Build stack" button must record a
      build_stack.py argv naming the survey, the default stack name STKD02,
      the window and both chosen members (A02, A03), which the map then
      paints orange; "Reset queue" must leave the table with no rows and the
@@ -180,7 +199,7 @@ and Coherence tabs show that window. **This test fails if**
      HERE from the archives' run `time_period` attrs (h5py) for the archived
      sites and the B423 file names for the rest;
 (14) any of the Spectra, Spectrogram or Coherence tabs still carries a
-     label containing "What to look for" (the owner writes a PDF instead);
+     label containing "What to look for" (a PDF explains it instead);
      the Filter Data tab's rule box is not touched;
 (15) the Filter Data tab does not round-trip through `filters.yaml`: pointed
      at a *copy* of the survey folder, adding a notch (defaults plus extra
@@ -192,10 +211,17 @@ and Coherence tabs show that window. **This test fails if**
      copy (whose `generated_by: scripts/site_table_to_yaml.py` came over with
      it), does not edit and save its `survey.yaml`: the yellow line must be
      visible and read "survey.yaml is generated by scripts/site_table_to_yaml.py:
-     regenerating will overwrite edits made here"; serial, firmware, start and
-     end must be the four columns right after remote; exactly the ten columns
-     latitude, longitude, elevation, dipole_length_ex, dipole_length_ey,
-     azimuth_ex, azimuth_ey, remote, timing and notes must be editable; D02's
+     regenerating will overwrite edits made here"; channels,
+     electric_gain, serial, firmware, start and end must be the six
+     columns right after remote; exactly the eleven columns latitude,
+     longitude, elevation, dipole_length_ex, dipole_length_ey, azimuth_ex,
+     azimuth_ey, remote, timing, channels and notes must be editable --
+     electric_gain, the EDL electric chain's declared gain, must read "-",
+     read-only, with the tooltip "PR6-24 (EDL) sites only" on every row of
+     this LEMI-423 copy, and its save rule (`metadata_edit.electric_gain_edit`)
+     on an EDL survey whose default is 10.0 must leave "10.0" typed over "10"
+     unchanged, write 1.0 for "1" and 5.0 for "5" typed over "10", drop the
+     site's key for "10" typed over "1", and refuse "abc"; D02's
      dipole_length_ex typed as 51.25 and Save pressed must ask the Yes/No
      question once, naming the script, and answered No leave the file
      byte-identical; pressed again and answered Yes, every byte above the
@@ -209,7 +235,23 @@ and Coherence tabs show that window. **This test fails if**
      embedded canvas's figure must carry at least two axes, one mtpy
      error-bar container per station on each of them, and BOTH labels in the
      resistivity legends (that is what says the overlay is two stations and
-     not one drawn twice); making A07's EDI the tree's current row with
+     not one drawn twice); the Phase group's default "0 to 90 deg" must leave
+     the yx phase axes' y limits exactly (0, 90), locked whatever the data do, with every plotted yx value
+     in 0-90 for both EDIs (mtpy's own `phase_yx + 180` fold); "-180 to 180
+     deg" must redraw with the yx axes' y limits exactly (-180, 180) and
+     every yx value in -180 to -90, the physical quadrant, for both EDIs; and
+     switching back to "0 to 90 deg" must restore the (0, 90) limits; the
+     Apparent resistivity group's min and max fields, blank by default, must
+     leave both resistivity axes (xy and yx) on mtpy's own automatic scale
+     until a field's `editingFinished` fires; typed 10 and 1000 must, after
+     the debounce, clamp both axes' y limits to exactly (10, 1000); clearing
+     max alone must put the low limit back to 10 and the high back to
+     whatever mtpy drew automatically (checked against a draw with both
+     fields blank); and typed 1000 and 10 (min >= max) must leave both axes
+     at that same automatic scale and put "rho limits ignored" on the status
+     line -- this fails if the fields do not clamp the resistivity axes, or
+     if a bad pair is silently applied; making
+     A07's EDI the tree's current row with
      quick view on must bring one more draw within 2 s whose figure title
      names A07's file and whose xy axes now holds three containers, while
      the two ticked rows stay ticked; "plus phase tensor" must add axes to
@@ -225,7 +267,8 @@ and Coherence tabs show that window. **This test fails if**
 (17) the screenshots cannot be grabbed to `work/qc/`: gui_timeseries.png
      (tree and window), gui_timeseries_3s.png (a 3 s zoom), gui_spectra.png,
      gui_spectrogram.png, gui_coherence.png, gui_metadata.png,
-     gui_process.png, gui_filters.png, gui_edis.png -- nine in all; or any
+     gui_process.png, gui_filters.png (the preview of (26), notch + cp on
+     D02's fifth window), gui_edis.png -- nine in all; or any
      exception is raised inside a Qt slot on the way (PySide6 prints those
      and carries on; `sys.excepthook` collects them here); or the real
      `surveys/curnamona_cube/survey.yaml` is not byte-identical at the end;
@@ -239,7 +282,7 @@ and Coherence tabs show that window. **This test fails if**
      its stdout;
 (19) once the segment QC of (7) is ready, the console strip does not also
      carry a line starting "[segment] " (the store's `qc_started`, for the
-     window clicked in (4)) and at least one line containing "bbmt.timefreq"
+     window clicked in (4)) and at least one line containing "mtproc.timefreq"
      (the ladder -- `cascade` and `psd_ladder` both call `logger.info`) --
      the sink must reach a line logged from the segment store's worker
      thread, not only the GUI thread's;
@@ -248,11 +291,18 @@ and Coherence tabs show that window. **This test fails if**
      and D02/E08 already the pair, a job queued through the Process tab's own
      `_queue()` is not left "queued" with the runner idle and
      `status_label` reading "1 job(s) queued - press Run queue" until "Run
-     queue" is pressed, after which it does not run to completion;
+     queue" is pressed, after which it does not run to completion; or, with a
+     job queued that way and waiting, `JobRunner.run_now` (what New survey,
+     the basemap fetch and Build MTH5 call) does not start its own job at
+     once while the waiting job stays "queued" -- before, during and after
+     that run, the runner idle at the end; or a job started with `run_now`
+     from inside a `job_finished` slot (what a finished New survey does when
+     its survey has no basemap) does not run to "done" with the runner idle
+     after it;
 (21) "Import site table..." (its `import_site_table`) with a two-row CSV --
      A03: dipole_length_ey 48 and notes "moved 20 m east"; B02:
      dipole_length_ey 51.5 and an EMPTY notes cell -- does not change exactly
-     those three cells of the copy's table (every other cell, 59 sites by 18
+     those three cells of the copy's table (every other cell, 59 sites by 20
      columns, reading as before), read "2 of 2 sites matched", and on Save
      (answered Yes) change exactly those three keys of the copy's parsed
      `sites:` block and nothing else;
@@ -268,13 +318,209 @@ and Coherence tabs show that window. **This test fails if**
      with the table showing two rows whose serial and firmware cells read
      "36" and "2.1" for S01 and "112" and "2.3" for S02, the yellow line
      naming scripts/new_survey.py, and the console strip also carrying the
-     script's "wrote ..." line; nor does the name default to the folder's;
+     script's "wrote ..." line; nor does the name default to the folder's, the
+     dialog's workspace field to `<data folder>/work` (that path in the job's
+     `--workspace` and in the written survey.yaml's `workspace:`), or the
+     survey's opening (its workspace has no basemap.json) run
+     `<python> scripts/fetch_basemap.py <the new survey.yaml>` through
+     `run_now`; nor does the dialog's "channels recorded" combo offer exactly
+     the LEMI-423 presets "Ex Ey Bx By", "Ex Ey Bx By Bz", "Bx By (magnetics
+     only)", "Bx By Bz" in that order with "Ex Ey Bx By" preselected, and,
+     set to "Ex Ey Bx By Bz", put `--channels "Ex Ey Bx By Bz"` in the job's
+     argv, `defaults: channels: [ex, ey, hx, hy, hz]` in the written
+     survey.yaml and "Ex Ey Bx By Bz" in S01's and S02's channels cells;
 (23) the Process tab's site map, on screen in the 1400 x 900 window, is less
-     than 340 px tall.
+     than 340 px tall;
+(24) the basemap is not fetched on survey open exactly when it is missing:
+     building the window over the real survey, whose workspace holds
+     basemap.json, must call `run_now` for no fetch_basemap.py job; opening a
+     scratch copy of the survey folder whose workspace is an empty scratch
+     folder must call it once, with `<python> scripts/fetch_basemap.py
+     <the copy's survey.yaml>`, and the site map must show its "no basemap"
+     line; reopening the real survey must call it for none;
+(25) the Time Series tab's "Build MTH5" button (on the real survey again) is
+     not enabled with A02 (a raw site with no archive) the tree's current row
+     and disabled, with the tooltip "archive exists", with D02; is not
+     disabled while a job runs (a 2 s sleep started with `run_now`) and
+     enabled again after it; pressed on A02, does not call `run_now` with
+     exactly `<python> scripts/ingest_site.py <survey.yaml> A02` (recorded,
+     never run) and put "building A02.h5 ..." in the tab's hint; or a
+     finished job whose argv names ingest_site.py for A02 (a `python -c`
+     that only prints, run through the real runner) does not -- with
+     `state.has_archive` made to answer True for A02 -- turn A02's row
+     expandable and open (no "no MTH5 yet" child, the grey dropped, a read of
+     its windows started) and the hint "built A02.h5 ..."; nor, once
+     has_archive answers truthfully again, does `refresh_site("A02")` put the
+     "no MTH5 yet" row back. surveys/curnamona_cube/work/mth5/A02.h5 must not
+     exist at the end; a filtered variant's own file (D02_fdeadbeef.h5,
+     dropped in and removed again here) must not show up in
+     `archived_sites`, `stacked_remotes` or `remote_choices` -- it is
+     another archive of D02, not a site or a stacked remote of its own;
+(26) the Filter Data tab does not preview the filter list on the loaded
+     window. On a scratch copy of the survey folder (its workspace the real
+     one), with the tab in front: choosing D02 in the tab's own site combo
+     and D02's fifth window in its window combo -- no trip to the Time Series
+     tab -- must within 60 s load that window through the segment store (a
+     Segment for D02 whose t0 is D02's record start + 8 h, the attrs' start
+     of (3); the selection the same) and run the preview on that very
+     Segment: with no filters the raw-only view -- four time-series panels,
+     each with exactly one visible curve, in its channel colour, and the two
+     PSD panels with solid curves only. Then:
+     adding "50 Hz + harmonics" with the form's defaults (50 Hz, 9
+     harmonics) must bring, after the debounce, a preview whose filtered
+     arrays differ from the raw on every channel while the store's raw
+     arrays keep their SHA-1; whose Ex `line_excess` at 50 Hz on the 1000 Hz
+     stage -- computed HERE with `mtproc.timefreq.line_excess` from the
+     result's raw and filtered ladders -- drops by more than 15 dB; whose
+     time-series view has 4 panels each holding a visible light grey curve
+     (`theme.RAW_COLOUR`) and a visible curve in its channel colour, both
+     over the whole window (7.2 M samples); and whose PSD view has the panels
+     "By-Ex (Zxy)" and "Bx-Ey (Zyx)" each with dashed grey and solid coloured
+     curves;
+     a high-pass at 0.05 Hz added and moved above the notch must re-run the
+     preview with the provenance lines in the list's order (the high-pass,
+     then the notch);
+     "Before" must hide every coloured curve and leave the grey ones
+     visible, "After" the reverse, and "Both" show both again;
+     the notch's q set to 25 and at once to 20 must re-run the preview
+     exactly once (`started` not yet emitted 0.3 s later, then once), with
+     q=20 in its provenance;
+     unticking Bx under "Show" must hide Bx's time-series panel and every Bx
+     curve on the PSD panels, and ticking it bring them back;
+     with the list "50 Hz + harmonics" then "cathodic protection stack"
+     (12 s) the preview's elapsed time is printed (the timing) and
+     gui_filters.png shot with it on screen; the archive note must be empty
+     and Delete archive hidden (D02's list was never saved, so `filters.yaml`
+     still declares nothing for it and there is no variant file); switching
+     to A07 (whose real `filters.yaml` entry -- a `replace` -- is saved, but
+     which has no `A07_f<hash>.h5` yet) must read "filtered archive for this
+     list: not built yet (built when processing starts)" with Delete archive
+     still hidden (no variant file to delete), and switching back must read
+     empty again;
+     "burst removal (short transients)" added after them (the form's
+     defaults) must re-run the preview with a last provenance line starting
+     "burst:";
+     "mains" added after it likewise, its line "mains:", its row LABELS["mains"];
+     and removing every filter must bring the raw-only view back (the
+     result's `filtered` None, one visible curve per panel in its channel
+     colour, no dashed PSD curve);
+(27) the Metadata tab's channels column does not edit and save the set on
+     the scratch copy of (15): double-clicking A02's cell (`editItem`) must
+     open a combo offering exactly the four LEMI-423 presets then "custom...",
+     "Ex Ey Bx By" current; choosing "Bx By (magnetics only)" must set the
+     cell to it; Save (answered Yes) must change the copy's parsed `sites:`
+     block in exactly one key, A02's `channels` = [hx, hy] (no other site
+     gains one), keep every byte above the `sites:` line and from the
+     trailing `workspace:` key on, and `Survey.site("A02").channels` must
+     read [hx, hy] while A03's stays the default; choosing "Ex Ey Bx By"
+     again and saving must remove A02's key and leave the file
+     byte-identical to before the first save; and "custom..." with the
+     prompt answering "hx, hy, ex, ey, tx" (`channels_column.ask_channels`
+     replaced) must set the cell to "hx, hy, ex, ey, tx" and make the tab's
+     pending edits exactly {A02: {channels: [hx, hy, ex, ey, tx]}}, while
+     "ex ey hx hy hz" typed the same way must come back as the preset
+     "Ex Ey Bx By Bz" (nothing saved in either case);
+(28) the mixed survey -- `tests/instrument_samples.py`: scripts/new_survey.py
+     over a scratch data root holding a synthetic LEMI-423 site (S01) and one
+     real hour each of a LEMI-424 (MBJ21) and an Earth Data PR6-24 (EGFLP02),
+     whose archives `ingest_site` writes into the scratch workspace when they
+     are missing (tests/ingest_unit.py writes them too) -- opened with
+     `window.open_survey`, does not show on the Metadata tab an "instrument"
+     column right after "site", read-only, reading lemi423 for S01, lemi424
+     for MBJ21 and edl for EGFLP02 (three values); or the Time Series tree
+     does not hold exactly those three sites, MBJ21 and EGFLP02 expandable
+     and S01 with the "no MTH5 yet" row;
+(29) expanding MBJ21 and EGFLP02 does not list, within 30 s, exactly one
+     window each, "2024-10-25 00:00 UTC (1.0 h)" and "2019-01-10 00:00 UTC
+     (1.0 h)" (a one-hour record under the 24 h window `window_hours` gives
+     both 1 Hz and 10 Hz);
+(30) a click on MBJ21's window does not, within 60 s, draw seven panels,
+     bx by bz e1 e2 e3 e4 top to bottom, left labels starting "Bx (", "By (",
+     "Bz (", "E1 (", "E2 (", "E3 (", "E4 (", pens #4fc3f7 on the three
+     magnetics and #ff5252 on the four electrics, whose E1 curve equals
+     (atol 1e-6 of its spread) the 12th column of the sample file read HERE
+     with numpy -- a LEMI-424 has no filter chain, so the archive holds the
+     recorded values; or its `qc_ready` does not follow within 60 s with the
+     Spectra panels titled "By-E1 (Zxy)" and "Bx-E2 (Zyx)", each holding
+     finite positive curves in exactly one magnetic and one electric pen (no
+     remote), the Coherence tab's local panels labelled "By-E1 (Zxy)",
+     "Bx-E2 (Zyx)", "Bx-By (magnetic)" and "E1-E2 (electric)", and the
+     Spectrogram tab one image per channel, bx .. e4, labelled by `label`;
+(31) a click on EGFLP02's window does not draw five panels, hx hy hz ex ey,
+     labelled "Bx (", "By (", "Bz (", "Ex (", "Ey (", pens blue, blue, blue,
+     red, red, whose Ex curve equals the sample's EX file (recorded
+     microvolts) read HERE with numpy and divided by -500 (the reader's
+     -50 m dipole times the x10 terminal box, so mV/km; atol 1e-6 of the
+     spread); or its `qc_ready` does not bring Spectra panels titled "By-Ex
+     (Zxy)" and "Bx-Ey (Zyx)" with finite positive curves. Four screenshots
+     of (30) and (31) go to the instrument scratch folder, not `work/qc/`.
+(32) the Filter Data tab's window combo does not mark the loaded window's
+     row -- bold, the theme's accent colour, suffixed "(loaded)" -- as the
+     one and only marked row; or the mark does not move when another
+     window is chosen (the old row plain again); or a site shown with
+     nothing of it loaded has a marked row. The opened popup is saved as
+     `work/qc/gui_filter_window_popup.png` (not counted in (17)).
+(33) "Copy to sites..." -- **this fails if the copy does not write the
+     ticked sites' lists as the source's, or touches an unticked site, or
+     Append replaces**. With D02's list non-empty (criterion 26 leaves it
+     with notch, cp, burst; a notch is added here if it does not), opening
+     the dialog programmatically, ticking E08 and A07, keeping Replace and
+     accepting must make both sites' `filters.yaml` entries equal D02's list
+     while every other site's entry (including D02's own) is unchanged;
+     Append onto E08 with a one-filter list must grow E08's list by that one
+     entry, its own entries first and in order; and accepting with nothing
+     ticked must leave the file's bytes unchanged.
+(34) the Cross-powers tab -- **this fails if the tab does not compute over
+     the whole local-remote overlap by default, or the chunk impedances do
+     not sit within a factor 3 of the processed EDI's, or masking does not
+     write and reload**. On a fresh scratch copy of the survey
+     (`make_survey_copy`, as (26) redirects its saves; a masks.yaml left
+     there removed first), with D02's fourth window (record start + 6 h to
+     + 8 h, the attrs' start of (3)) loaded through `state.set_selection` and
+     the tab in front: its site combo on D02 must preset remote E08 (D02's
+     declared remote) and its window combo list D02's 21 QC windows after a
+     first, current entry -- the tree's window must not displace it -- the
+     whole overlap, equal within a sample to the span computed HERE from the
+     two archives' run attrs with h5py (the later first start, the earlier
+     last sample plus one sample: 2021-06-29 06:55:49 to 2021-07-01
+     00:11:53.754 UTC, 41.3 h). With the band nearest 0.1 s chosen, Compute
+     on it must within 120 s give the chunk count computed HERE from that
+     span (whole 600 s chunks, plus the tail when it is 300 s or more: 248),
+     the first chunk starting at the span's start within a sample and the
+     last ending not after the span's end nor 300 s or more before it; zxy
+     and zyx of shape [chunks, bands], at least 95 % of the chunks with an
+     estimate at the band and the medians of their |Zxy| and |Zyx| within a
+     factor 3 of the EDI's (below); the |Z| plot holding one spot per chunk
+     with a finite estimate, per mode; the time panel's x range covering
+     every chunk start on its UTC date axis and its title naming both dates.
+     Then, on that fourth QC window picked in the combo, Compute must within
+     120 s give 12 chunks, the first starting at the
+     window's start, zxy, zyx, coh_xy and coh_yx of shape [12, bands], every
+     chunk finite with n_windows > 0 at that band, and the medians of the
+     chunks' |Zxy| and |Zyx| there within a factor 3 of the values of
+     surveys/curnamona_cube/work/tf/D02_rr-E08.edi (read HERE with
+     mt_metadata, at its period nearest the band's); the |Z| plot must hold
+     12 spots per mode. A rubber band over chunks 3 and 4 on the |Z| plot
+     (the ViewBox's `selected` signal with a rectangle computed HERE from
+     their start times, `crosspower_rect`) must select exactly {3, 4}; "Mask
+     selected" must add one mask, chunk 3's start to chunk 4's end, bands all,
+     found_by time; "Save masks" must write the copy's masks.yaml holding
+     exactly that one D02 entry (read HERE with yaml); the tab moved to E08
+     and back to D02 must list it again from the file; Compute on the same
+     window again must draw chunks 3 and 4 hollow (no brush) and the ten
+     others filled, on the |Z| plot and on both polar plots; and the real
+     survey folder must hold no masks.yaml. The compute times are printed and
+     the tab shot to work/qc/gui_crosspower_overlap.png (the whole overlap)
+     and gui_crosspower.png (the QC window), neither counted in (17).
 
 It opens three archives, D02.h5, E08.h5 and A07.h5, read-only (through the
-GUI and, for the independent check, through h5py), runs no script that
-writes an archive, never writes the real `surveys/curnamona_cube/filters.yaml`
+GUI and, for the independent check, through h5py) -- and, for (28)-(31), the
+scratch survey's MBJ21.h5 and EGFLP02.h5 -- runs no script that
+writes an archive and never goes online: `JobRunner.run_now` is wrapped, at
+the class level before the window is built, so that a call naming
+fetch_basemap.py or ingest_site.py is only recorded (`DIVERTED`) and never
+started, while every other call (New survey's) runs as it would. It
+never writes the real `surveys/curnamona_cube/filters.yaml`
 or `survey.yaml` (the round trips use a copy in the scratch directory; the
 New survey check writes only under the scratch directory too), and writes
 only PNGs into `surveys/curnamona_cube/work/qc/`.
@@ -282,6 +528,7 @@ only PNGs into `surveys/curnamona_cube/work/qc/`.
 
 from __future__ import annotations
 
+import hashlib
 import os
 import shutil
 import sys
@@ -306,16 +553,21 @@ from PySide6.QtCore import QPointF, Qt, QTimer  # noqa: E402
 from PySide6.QtGui import QColor, QPalette  # noqa: E402
 from PySide6.QtTest import QTest  # noqa: E402
 from PySide6.QtWidgets import (  # noqa: E402
-    QApplication, QCheckBox, QDialogButtonBox, QLabel, QTreeWidgetItem,
+    QApplication, QCheckBox, QComboBox, QDialogButtonBox, QLabel, QPushButton, QTreeWidgetItem,
 )
 
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "src"))
 
-from bbmt.survey import Survey  # noqa: E402
-from bbmt.timefreq import BANDS_S  # noqa: E402
-from bbmt_gui import metadata_edit, theme  # noqa: E402
-from bbmt_gui.app import MainWindow  # noqa: E402
+from mtproc.survey import Survey  # noqa: E402
+from mtproc.timefreq import BANDS_S, line_excess  # noqa: E402
+from mtproc_gui import channels_column, metadata_edit, theme  # noqa: E402
+from mtproc_gui.app import MainWindow  # noqa: E402
+from mtproc_gui.jobs import JobRunner  # noqa: E402
+
+sys.path.insert(0, str(REPO / "tests"))
+import instrument_samples  # noqa: E402  (the mixed survey of (28)-(31))
+from _scratch import scratch_dir  # noqa: E402
 
 SURVEY_DIR = REPO / "surveys" / "curnamona_cube"
 SURVEY_YAML = SURVEY_DIR / "survey.yaml"
@@ -334,7 +586,7 @@ MAINS = [50.0 * k for k in range(1, 11)]  # to Nyquist at 1000 Hz
 Y_EXTENT_HZ = (0.003, 400.0)  # below the anti-alias roll-off, psd_qc.py's rule
 WINDOW_MIN = 120.0  # the QC window in minutes, the Spectrogram and Coherence x unit
 EXPECTED_TABS = ["Metadata", "Time Series", "Spectra", "Spectrogram", "Coherence",
-                 "Filter Data", "Process", "View EDIs"]
+                 "Filter Data", "Process", "Cross-powers", "View EDIs"]
 WINDOW_SAMPLES = 7_200_000
 WINDOW_INDEX = 3  # the fourth window of D02
 N_WINDOWS_D02 = 21
@@ -348,8 +600,12 @@ REMOTE_ORDER = [(("ex", "r_hy"), "rBy-Ex (Zxy, remote)"), (("ey", "r_hx"), "rBx-
 STACK_MEMBERS = ["A02", "A03"]
 RECOMMENDED = "E08"  # the Process tab's recommendation for D02: its declared `remote:`
 PARTIAL = "D08"  # a raw site whose recorded span ends inside D02's: the amber and red lamps
-ROW3_BUTTONS = ["Add to queue", "Run queue", "Reset queue", "Timing check", "Site QC figures",
-                "Build stack", "Fetch basemap"]
+ROW3_BUTTONS = ["Add to queue", "Run queue", "Reset queue", "Build stack"]
+REMOVED_BUTTONS = {"Timing check", "Site QC figures", "Fetch basemap"}
+REMOVED_NAMES = ("timing_button", "qc_button", "basemap_button",
+                 "queue_timing_check", "queue_site_qc", "queue_basemap")
+NO_ARCHIVE_ROW = "no MTH5 yet - select the site and press Build MTH5"
+UNARCHIVED = "A02"  # a raw site with no archive: Build MTH5's site in (25)
 ESTIMATOR_FLAGS = {"--taper", "--overlap", "--no-prewhiten", "--min-windows", "--max-iterations",
                    "--redescending-iterations", "--r0", "--u0", "--tolerance"}
 ACST_OFFSET_H = 9.5  # what `timezone: Australia/Adelaide` means in June
@@ -358,10 +614,7 @@ NO_HZ_TOOLTIP = "no hz sensor on this survey"  # what the View EDIs tipper radio
 WORK = SURVEY_DIR / "work"
 SHOT_DIR = WORK / "qc"
 
-SCRATCH = Path(
-    r"C:\Users\joint\AppData\Local\Temp\claude\D--BEN-BBMT-Processing-2026"
-    r"\7432a3ce-c47b-448e-8958-b1c946ec7c08\scratchpad\gui_survey"
-)
+SCRATCH = scratch_dir("gui_survey")
 
 # what the Filter Data tab must write for D02, entry for entry
 EXPECTED_FILTERS = [
@@ -373,8 +626,13 @@ A07_FILTERS = [{"replace": {"hx": "A06"}}]
 
 # the Metadata tab, stated here rather than taken from the tab's own lists
 EDITABLE_COLUMNS = {"latitude", "longitude", "elevation", "dipole_length_ex", "dipole_length_ey",
-                    "azimuth_ex", "azimuth_ey", "remote", "timing", "notes"}
-HEADER_COLUMNS = ["serial", "firmware", "start", "end"]  # read-only, right after "remote"
+                    "azimuth_ex", "azimuth_ey", "remote", "timing", "channels", "notes"}
+HEADER_COLUMNS = ["channels", "electric_gain", "serial", "firmware", "start", "end"]  # right after "remote"
+# the channels column (27): the LEMI-423 presets in the combo's order, the default first
+LEMI423_PRESETS = ["Ex Ey Bx By", "Ex Ey Bx By Bz", "Bx By (magnetics only)", "Bx By Bz"]
+DEFAULT_CHANNELS = "Ex Ey Bx By"
+MAGNETICS_ONLY = "Bx By (magnetics only)"
+ARCHIVE_TIP = "archive built with the old set - Delete archive then Build MTH5 to change it"
 NEW_DIPOLE = "51.25"  # D02's dipole_length_ex, typed into the copy's table
 GENERATED_WARNING = ("survey.yaml is generated by scripts/site_table_to_yaml.py: "
                      "regenerating will overwrite edits made here")
@@ -385,10 +643,32 @@ IMPORT_KEYS = {("A03", "dipole_length_ey"): 48.0, ("A03", "notes"): "moved 20 m 
                ("B02", "dipole_length_ey"): 51.5}
 NEW_SURVEY_DIR = SCRATCH.parent / "gui_new_survey"  # (22): the synthetic raw data and its survey
 SYNTHETIC = {"S01": ("36", "2.1"), "S02": ("112", "2.3")}  # serial, firmware in the headers
+NEW_SURVEY_CHANNELS = "Ex Ey Bx By Bz"  # (22): the dialog's channels combo, moved off its default
 
 
 SLOT_ERRORS: list[str] = []
 REAL_YAML = b""  # surveys/curnamona_cube/survey.yaml as the test found it
+
+# never online, never an archive written: these two scripts are recorded, not run
+NEVER_RUN = {"fetch_basemap.py", "ingest_site.py"}
+DIVERTED: list[list[str]] = []
+_real_run_now = JobRunner.run_now
+
+
+def _diverting_run_now(self, label, argv, **details):
+    """`JobRunner.run_now`, except that a job naming one of NEVER_RUN is only recorded."""
+    argv = [str(a) for a in argv]
+    if any(Path(a).name in NEVER_RUN for a in argv):
+        DIVERTED.append(argv)
+        return -1
+    return _real_run_now(self, label, argv, **details)
+
+
+JobRunner.run_now = _diverting_run_now
+
+
+def fetches() -> list[list[str]]:
+    return [argv for argv in DIVERTED if Path(argv[1]).name == "fetch_basemap.py"]
 
 
 def _record_slot_error(exc_type, exc, tb) -> None:
@@ -470,7 +750,7 @@ def independent_ex(site: str, start: pd.Timestamp, seconds: float) -> np.ndarray
 
     The run whose `time_period` attrs cover `start` is sliced by sample
     offset from that run's own start at the dataset's `sample_rate` attr.
-    Nothing from `bbmt_gui.segment` or `bbmt_gui.archive` is used, so a wrong
+    Nothing from `mtproc_gui.segment` or `mtproc_gui.archive` is used, so a wrong
     grid there cannot move this read along with it.
     """
     with h5py.File(WORK / "mth5" / f"{site}.h5", "r") as f:
@@ -626,6 +906,290 @@ def make_survey_copy() -> Path:
     return copy_yaml
 
 
+# (30)/(31): the panels a LEMI-424 and an EDL window must draw, stated here rather than taken from the GUI
+MIXED_SITES = {"S01": "lemi423", "MBJ21": "lemi424", "EGFLP02": "edl"}
+LEMI424_PANELS = [("bx", "Bx", theme.B_COLOUR), ("by", "By", theme.B_COLOUR), ("bz", "Bz", theme.B_COLOUR),
+                  ("e1", "E1", theme.E_COLOUR), ("e2", "E2", theme.E_COLOUR), ("e3", "E3", theme.E_COLOUR),
+                  ("e4", "E4", theme.E_COLOUR)]
+EDL_PANELS = [("hx", "Bx", theme.B_COLOUR), ("hy", "By", theme.B_COLOUR), ("hz", "Bz", theme.B_COLOUR),
+              ("ex", "Ex", theme.E_COLOUR), ("ey", "Ey", theme.E_COLOUR)]
+EDL_EX_GAIN = -50.0 * 10.0  # the reader's dipole filter (-L, L = 50 m) times the x10 terminal box
+
+
+def check_panels(app, ts, look, truth_comp, truth) -> None:
+    """The Time Series stack against `look` [(comp, label, pen)] and one curve against `truth` (numpy, HERE)."""
+    pump(app, 0.2)
+    assert ts.comps == [c for c, _l, _p in look], f"Time Series panels {ts.comps}"
+    for (comp, name, want_pen), plot in zip(look, ts.plots):
+        text = plot.getAxis("left").labelText
+        assert text.startswith(f"{name} ("), f"{comp}: labelled {text!r}, expected {name} (..."
+        pen = pg.mkPen(plot.getPlotItem().listDataItems()[0].opts["pen"]).color().name()
+        assert pen == want_pen.lower(), f"{comp}: pen {pen}, expected {want_pen}"
+    _x, shown = curve_data(ts.plots[ts.comps.index(truth_comp)])
+    atol = 1e-6 * float(np.ptp(truth))
+    assert shown.size == truth.size and np.allclose(shown, truth, rtol=0, atol=atol), (
+        f"{truth_comp} as plotted differs from the file by up to {np.max(np.abs(shown - truth)):g}")
+
+
+def check_spectra(spectra, titles) -> None:
+    """Both Spectra panels titled `titles`, each with finite positive curves in one magnetic and one electric pen."""
+    for (key, plot), title in zip(spectra.plots.items(), titles):
+        assert plot.getPlotItem().titleLabel.text == title, (key, plot.getPlotItem().titleLabel.text, title)
+        items = plot.getPlotItem().listDataItems()
+        pens = sorted({pg.mkPen(item.opts["pen"]).color().name() for item in items})
+        assert pens == sorted([theme.B_COLOUR, theme.E_COLOUR]), f"{title}: pens {pens}"
+        for n in range(len(items)):
+            _f, p = curve_data(plot, n)
+            assert p.size > 10 and np.isfinite(p).all() and (p > 0).all(), f"{title} curve {n}"
+
+
+def mixed_instruments(app, window) -> None:
+    """(28)-(31): a LEMI-424 and an EDL site through the tree, the Time Series tab and the QC tabs."""
+    t = time.time()
+    paths = instrument_samples.ensure_archives()
+    print(f"(28) mixed survey {instrument_samples.MIXED_YAML}; archives {[p.name for p in paths.values()]} "
+          f"({time.time() - t:.1f} s to make or find)")
+    window.open_survey(instrument_samples.MIXED_YAML)
+    pump(app, 0.3)
+    table = window.metadata_tab.table
+    columns = [table.horizontalHeaderItem(c).text() for c in range(table.columnCount())]
+    assert columns[:2] == ["site", "instrument"], columns[:3]
+    got = {table.item(r, 0).text(): table.item(r, 1).text() for r in range(table.rowCount())}
+    assert got == MIXED_SITES, got
+    assert not any(table.item(r, 1).flags() & Qt.ItemIsEditable for r in range(table.rowCount()))
+    ts, store, tree = window.timeseries_tab, window.state.segment_store, window.timeseries_tab.tree
+    window.tabs.setCurrentWidget(ts)
+    pump(app, 0.2)
+    rows = {r.text(0): r for r in tree.site_items()}
+    assert sorted(rows) == sorted(MIXED_SITES), sorted(rows)
+    expandable = sorted(n for n, r in rows.items()
+                        if r.childCount() == 0 and r.childIndicatorPolicy() == QTreeWidgetItem.ShowIndicator)
+    assert expandable == ["EGFLP02", "MBJ21"], expandable
+    assert rows["S01"].child(0).text(0) == NO_ARCHIVE_ROW, rows["S01"].child(0).text(0)
+    print(f"  instrument column {got}; not editable; tree {sorted(rows)}, expandable {expandable}")
+
+    wants = {"MBJ21": "2024-10-25 00:00 UTC (1.0 h)", "EGFLP02": "2019-01-10 00:00 UTC (1.0 h)"}
+    for site in wants:
+        rows[site].setExpanded(True)
+        wait_until(app, lambda s=site: len(tree.window_items(s)) == 1, 30, f"{site}'s window row")
+    labels = {site: [w.text(0) for w in tree.window_items(site)] for site in wants}
+    assert labels == {site: [text] for site, text in wants.items()}, labels
+    print(f"(29) windows {labels}")
+
+    loaded, results = [], []
+    store.segment_loaded.connect(loaded.append)
+    store.qc_ready.connect(results.append)
+    sample = instrument_samples.MIXED_ROOT
+    cases = (
+        ("MBJ21", LEMI424_PANELS, "e1",
+         np.loadtxt(sample / "MBJ21" / instrument_samples.LEMI424_FILE, usecols=11),
+         ["By-E1 (Zxy)", "Bx-E2 (Zyx)"],
+         ["By-E1 (Zxy)", "Bx-E2 (Zyx)", "Bx-By (magnetic)", "E1-E2 (electric)"], "lemi424"),
+        ("EGFLP02", EDL_PANELS, "ex",
+         np.loadtxt(sample / "EGFLP02" / instrument_samples.EDL_DAY / f"{instrument_samples.EDL_STAMP}.EX")
+         / EDL_EX_GAIN,
+         ["By-Ex (Zxy)", "Bx-Ey (Zyx)"],
+         ["By-Ex (Zxy)", "Bx-Ey (Zyx)", "Bx-By (magnetic)", "Ex-Ey (electric)"], "edl"),
+    )
+    for site, look, truth_comp, truth, spectra_titles, coherence_labels, tag in cases:
+        t0 = time.time()
+        click(app, tree, tree.window_items(site)[0])
+        wait_until(app, lambda s=site: loaded and loaded[-1].station == s, 60, f"segment_loaded for {site}")
+        load_s = time.time() - t0
+        check_panels(app, ts, look, truth_comp, truth)
+        shot = instrument_samples.SCRATCH / f"gui_{tag}_timeseries.png"
+        ts.grab().save(str(shot))
+        wait_until(app, lambda s=site: results and results[-1].station == s, 60, f"qc_ready for {site}")
+        qc_s = time.time() - t0
+        qc = results[-1]
+        check_spectra(window.spectra_tab, spectra_titles)
+        local = [window.coherence_tab.labels[pair] for pair in window.coherence_tab.band_plots
+                 if pair[1][:2] != "r_"]
+        assert local == coherence_labels, local
+        images = window.spectrogram_tab.images
+        assert list(images) == [c for c, _l, _p in look], list(images)
+        assert [image.plot.getAxis("left").labelText for image in images.values()] ==             [f"{name} period (s)" for _c, name, _p in look], [i.plot.getAxis("left").labelText for i in images.values()]
+        window.tabs.setCurrentWidget(window.spectra_tab)
+        pump(app, 0.3)
+        window.spectra_tab.grab().save(str(instrument_samples.SCRATCH / f"gui_{tag}_spectra.png"))
+        window.tabs.setCurrentWidget(ts)
+        pump(app, 0.1)
+        print(f"({30 if site == 'MBJ21' else 31}) {site}: segment_loaded {load_s:.1f} s, qc_ready {qc_s:.1f} s; "
+              f"panels {ts.comps} labelled {[p.getAxis('left').labelText for p in ts.plots]}; {truth_comp} == the "
+              f"file read here; Spectra {spectra_titles} at {[fs for fs, _f, _p in qc.psd_stages]} Hz; "
+              f"Coherence {local}; Spectrogram {list(images)}; screenshots {shot.name} + gui_{tag}_spectra.png")
+
+
+# ---------------------------------------------------------------- (34) the Cross-powers tab
+CROSSPOWER_EDI = WORK / "tf" / "D02_rr-E08.edi"
+CROSSPOWER_PERIOD_S = 0.1  # the band nearest this is computed
+CROSSPOWER_MASKED = (3, 4)  # the chunks the rubber band goes round
+
+
+def crosspower_rect(starts_s: np.ndarray, chunks) -> "QRectF":
+    """The rubber band (view coordinates of the time panel's |Z| plot, x in epoch seconds, y in
+    log10) round the spots of `chunks`: from 60 s before the first's start to 60 s after the last's."""
+    from PySide6.QtCore import QRectF
+
+    lo, hi = starts_s[min(chunks)] - 60.0, starts_s[max(chunks)] + 60.0
+    return QRectF(lo, -10.0, hi - lo, 20.0)
+
+
+def crosspower_check(app, window) -> None:
+    """(34): the whole overlap by default; compute, compare with the EDI, select, mask, save, reload,
+    hollow -- on a copy of the survey."""
+    import pyqtgraph as pg
+    from mt_metadata.transfer_functions.core import TF
+    from mtproc.crosspower import band_table
+    from mtproc_gui.tabs.crosspower import OVERLAP, QC
+
+    print("(34) the Cross-powers tab, on a copy of the survey folder:")
+    (SCRATCH / "masks.yaml").unlink(missing_ok=True)
+    window.open_survey(make_survey_copy())
+    pump(app, 0.3)
+    state, tab = window.state, window.crosspower_tab
+    combo = tab.window_combo
+    t_rec, fs = record_start_and_rate(SITE)
+    sample = pd.Timedelta(seconds=1.0 / fs)
+    start, end = t_rec + pd.Timedelta(hours=6), t_rec + pd.Timedelta(hours=8)
+    state.set_selection(SITE, start, end)  # what a click on the tree's fourth D02 window does
+    window.tabs.setCurrentWidget(tab)
+    tab.select_site(SITE)
+
+    def entries():
+        return [combo.itemData(k) or (None, None, None) for k in range(combo.count())]
+
+    def qc_index():
+        return next(k for k, data in enumerate(entries())
+                    if data[0] == QC and (pd.Timestamp(data[1]), pd.Timestamp(data[2])) == (start, end))
+
+    wait_until(app, lambda: tab.site() == SITE and [e[0] for e in entries()].count(QC) == N_WINDOWS_D02, 60,
+               "the Cross-powers tab's D02 QC windows")
+    wait_until(app, lambda: tab.remote_combo.currentData() == REMOTE, 60, "the Cross-powers remote preset")
+    wait_until(app, lambda: (combo.currentData() or (None, None))[1] is not None, 60,
+               "the whole overlap from the two spans")
+    (d0, d1), (e0, e1) = archive_span(SITE), archive_span(REMOTE)
+    here = (max(d0, e0), min(d1, e1) + sample)  # time_period.end is the last sample
+    current = combo.currentData()
+    assert combo.currentIndex() == 0 and current[0] == OVERLAP, (combo.currentIndex(), current)
+    assert abs(current[1] - here[0]) <= sample and abs(current[2] - here[1]) <= sample, (current, here)
+    level, lo, hi = band_table(tab.scheme)
+    periods = 1.0 / np.sqrt(lo * hi)
+    j = int(np.argmin(np.abs(np.log(periods / CROSSPOWER_PERIOD_S))))
+    tab.band_combo.setCurrentIndex(tab.band_combo.findData(j))
+    edi = TF()
+    edi.read(CROSSPOWER_EDI)
+    k = int(np.argmin(np.abs(np.log(np.asarray(edi.period) / periods[j]))))
+    z_edi = np.asarray(edi.impedance.data)[k]
+
+    def compute(what):
+        tab.result = None
+        began = time.time()
+        tab.compute_button.click()
+        wait_until(app, lambda: tab.result is not None, 120, what)
+        pump(app, 0.2)
+        return time.time() - began
+
+    took_all = compute("the chunk impedances over the whole overlap")
+    r = tab.result
+    total_s = (here[1] - here[0]).total_seconds()
+    want_n = int(total_s // 600.0) + (1 if total_s % 600.0 >= 300.0 else 0)
+    n_all = len(r["chunk_starts"])
+    first, last = r["chunk_starts"][0], r["chunk_ends"][-1]
+    assert n_all == want_n, (n_all, want_n, total_s)
+    assert abs(first - here[0]) <= sample, (first, here[0])
+    assert last <= here[1] + sample and (here[1] - last).total_seconds() < 300.0, (last, here[1])
+    for key in ("zxy", "zyx"):
+        assert r[key].shape == (n_all, periods.size), (key, r[key].shape)
+    has = (r["n_windows"][:, j] > 0) & np.isfinite(r["zxy"][:, j]) & np.isfinite(r["zyx"][:, j])
+    assert has.sum() >= 0.95 * n_all, (int(has.sum()), n_all)
+    ratios_all = {mode: float(np.median(np.abs(r[f"z{mode}"][has, j])) / abs(z_edi[a, b]))
+                  for mode, (a, b) in (("xy", (0, 1)), ("yx", (1, 0)))}
+    for mode, ratio in ratios_all.items():
+        assert 1 / 3 < ratio < 3, ("whole overlap", mode, ratio, periods[j], edi.period[k])
+    z_plot = tab.time_plots[0]
+    spots = [len(item.scatter.points()) for item in z_plot.getPlotItem().listDataItems()]
+    with np.errstate(divide="ignore", invalid="ignore"):
+        want_spots = [int(((r["n_windows"][:, j] > 0) & np.isfinite(np.log10(np.abs(r[f"z{mode}"][:, j])))).sum())
+                      for mode in ("xy", "yx")]
+    assert spots == want_spots, (spots, want_spots)
+    x0, x1 = z_plot.getViewBox().viewRange()[0]
+    assert x0 <= first.timestamp() and x1 >= r["chunk_starts"][-1].timestamp(), (x0, x1, first, last)
+    axis = tab.time_plots[-1].getAxis("bottom")
+    assert isinstance(axis, pg.DateAxisItem), type(axis)
+    title = z_plot.getPlotItem().titleLabel.text
+    assert first.date() != last.date() and f"{first:%Y-%m-%d}" in title and f"{last:%Y-%m-%d}" in title, title
+    ticks = [s for spacing, values in axis.tickValues(x0, x1, axis.width())
+             for s in axis.tickStrings(values, 1.0, spacing)]
+    SHOT_DIR.mkdir(parents=True, exist_ok=True)
+    shot_all = SHOT_DIR / "gui_crosspower_overlap.png"
+    assert tab.grab().save(str(shot_all)), f"could not save {shot_all}"
+    print(f"    whole overlap by default (the tree's window loaded): {here[0]} to {here[1]} "
+          f"({total_s / 3600:.1f} h) as the attrs give it; {n_all} chunks of 600 s, {first} to {last}, "
+          f"computed in {took_all:.1f} s; {int(has.sum())} with an estimate at {periods[j]:.4g} s, median |Z| / "
+          f"EDI's xy {ratios_all['xy']:.3f}, yx {ratios_all['yx']:.3f}; {spots} spots; axis ticks {ticks}; "
+          f"{shot_all.name} saved")
+
+    combo.setCurrentIndex(qc_index())
+    took = compute("the chunk impedances")
+    r = tab.result
+    n_chunks = len(r["chunk_starts"])
+    assert n_chunks == 12 and r["chunk_starts"][0] == start, (n_chunks, r["chunk_starts"][0], start)
+    for key in ("zxy", "zyx", "coh_xy", "coh_yx"):
+        assert r[key].shape == (12, periods.size), (key, r[key].shape)
+    assert (r["n_windows"][:, j] > 0).all(), r["n_windows"][:, j]
+    for key in ("zxy", "zyx", "coh_xy", "coh_yx", "h_amp", "e_amp"):
+        assert np.isfinite(r[key][:, j]).all(), (key, r[key][:, j])
+    ratios = {mode: float(np.median(np.abs(r[f"z{mode}"][:, j])) / abs(z_edi[a, b]))
+              for mode, (a, b) in (("xy", (0, 1)), ("yx", (1, 0)))}
+    for mode, ratio in ratios.items():
+        assert 1 / 3 < ratio < 3, (mode, ratio, periods[j], edi.period[k])
+    spots = [len(item.scatter.points()) for item in z_plot.getPlotItem().listDataItems()]
+    assert spots == [12, 12], spots
+    print(f"    D02 rr E08, {n_chunks} chunks of 600 s at {periods[j]:.4g} s (level {level[j]}): computed in "
+          f"{took:.1f} s; median |Z| / EDI's at {edi.period[k]:.4g} s: xy {ratios['xy']:.3f}, yx {ratios['yx']:.3f}")
+
+    starts_s = np.asarray(r["chunk_starts"].asi8, dtype=float) / 1e9
+    z_plot.getViewBox().selected.emit(crosspower_rect(starts_s, CROSSPOWER_MASKED))
+    pump(app, 0.1)
+    assert tab.selected == set(CROSSPOWER_MASKED) and tab.selected_on == "time", (tab.selected, tab.selected_on)
+    tab.mask_button.click()
+    first, last = min(CROSSPOWER_MASKED), max(CROSSPOWER_MASKED)
+    want = {"start": r["chunk_starts"][first], "end": r["chunk_ends"][last]}
+    assert len(tab.masks) == 1, tab.masks
+    mask = tab.masks[0]
+    assert (pd.Timestamp(mask["start"]), pd.Timestamp(mask["end"])) == (want["start"], want["end"]), mask
+    assert mask["bands"] == "all" and mask["found_by"] == "time", mask
+    tab.save_button.click()
+    written = yaml.safe_load((SCRATCH / "masks.yaml").read_text(encoding="utf-8"))
+    assert list(written) == [SITE] and len(written[SITE]) == 1, written
+    entry = written[SITE][0]
+    assert (pd.Timestamp(entry["start"]), pd.Timestamp(entry["end"])) == (want["start"], want["end"]), entry
+    assert entry["bands"] == "all" and entry["found_by"] == "time", entry
+    print(f"    chunks {list(CROSSPOWER_MASKED)} masked and saved: "
+          f"{entry['start']} to {entry['end']}, bands {entry['bands']}")
+
+    tab.select_site(OTHER)
+    pump(app, 0.2)
+    assert tab.masks == [], tab.masks
+    tab.select_site(SITE)
+    wait_until(app, lambda: [e[0] for e in entries()].count(QC) == N_WINDOWS_D02, 30, "D02's windows again")
+    assert len(tab.masks) == 1 and tab.masks[0]["start"] == entry["start"], tab.masks
+    assert combo.currentData()[0] == OVERLAP, combo.currentData()  # a new site starts on its whole overlap
+    combo.setCurrentIndex(qc_index())
+    compute("the chunk impedances again")
+    for plot in (z_plot, *tab.polar_plots.values()):
+        for item, _x, _y, idx, _colour in tab.items[plot]:
+            hollow = [spot.brush().style() == Qt.NoBrush for spot in item.scatter.points()]
+            want_hollow = [int(i) in CROSSPOWER_MASKED for i in idx]
+            assert hollow == want_hollow, (plot.panel, hollow)
+    assert not (SURVEY_DIR / "masks.yaml").exists(), "a masks.yaml was written into the real survey folder"
+    shot = SHOT_DIR / "gui_crosspower.png"
+    assert tab.grab().save(str(shot)), f"could not save {shot}"
+    print(f"    reloaded from the file: chunks {list(CROSSPOWER_MASKED)} hollow on the |Z| and both polar "
+          f"plots, the other ten filled; the real survey folder has no masks.yaml; {shot.name} saved")
+
+
 def main() -> int:
     print(__doc__.split("**This test fails if**")[1].split("It opens three")[0].strip())
     print()
@@ -638,7 +1202,8 @@ def main() -> int:
     window.resize(1400, 900)
     window.show()
     pump(app, 0.3)
-    assert window.windowTitle() == "BBMT processing", window.windowTitle()
+    startup_fetches = fetches()  # (24): the real workspace has its basemap.json
+    assert window.windowTitle() == "MT processing", window.windowTitle()
     tabs = [window.tabs.tabText(i) for i in range(window.tabs.count())]
     assert tabs == EXPECTED_TABS, f"tab order {tabs}, expected {EXPECTED_TABS}"
     print(f"(1) window built from {SURVEY_YAML}: {tabs}")
@@ -648,7 +1213,15 @@ def main() -> int:
     columns = [table.horizontalHeaderItem(c).text() for c in range(table.columnCount())]
     row = next(r for r in range(table.rowCount()) if table.item(r, 0).text() == SITE)
     assert table.item(row, columns.index("remote")).text() == REMOTE
-    print(f"  metadata: {table.rowCount()} sites, {SITE}'s remote column {REMOTE}")
+    for site, archived in ((SITE, True), ("A07", True), (UNARCHIVED, False)):
+        cell = table.item(next(r for r in range(table.rowCount()) if table.item(r, 0).text() == site),
+                          columns.index("channels"))
+        grey = cell.foreground().color().name() == theme.DISABLED == "#7a7a7a"
+        assert cell.text() == DEFAULT_CHANNELS, (site, cell.text())
+        assert (grey, cell.toolTip()) == ((True, ARCHIVE_TIP) if archived else (False, "")), \
+            (site, cell.foreground().color().name(), cell.toolTip())
+    print(f"  metadata: {table.rowCount()} sites, {SITE}'s remote column {REMOTE}; channels "
+          f"{DEFAULT_CHANNELS!r} for {SITE}, A07 (greyed, archive tooltip) and {UNARCHIVED} (plain)")
     palette = app.palette()
     window_grey = palette.color(QPalette.Window).name()
     base_grey = palette.color(QPalette.Base).name()
@@ -697,7 +1270,7 @@ def main() -> int:
     for r in rows:
         if r.text(0) not in ARCHIVED:
             assert r.childCount() == 1 and not (r.child(0).flags() & Qt.ItemIsEnabled), r.text(0)
-            assert r.child(0).text(0).startswith("no archive"), r.child(0).text(0)
+            assert r.child(0).text(0) == NO_ARCHIVE_ROW, r.child(0).text(0)
     d02 = next(r for r in rows if r.text(0) == SITE)
     click(app, tree, d02)
     assert d02.isExpanded(), "a click on D02's row did not expand it"
@@ -939,11 +1512,11 @@ def main() -> int:
     # -------------------------------- (19) the console strip: segment + ladder
     console_text = console.toPlainText()
     segment_lines = [line for line in console_text.splitlines() if line.startswith("[segment] ")]
-    ladder_lines = [line for line in console_text.splitlines() if "bbmt.timefreq" in line]
+    ladder_lines = [line for line in console_text.splitlines() if "mtproc.timefreq" in line]
     assert segment_lines, f"no '[segment] ' line in the console strip:\n{console_text}"
-    assert ladder_lines, f"no 'bbmt.timefreq' line (the ladder, off the GUI thread) in the console:\n{console_text}"
+    assert ladder_lines, f"no 'mtproc.timefreq' line (the ladder, off the GUI thread) in the console:\n{console_text}"
     print(f"(19) console strip: {len(segment_lines)} '[segment] ' line(s), last {segment_lines[-1]!r}; "
-          f"{len(ladder_lines)} 'bbmt.timefreq' line(s), e.g. {ladder_lines[0]!r}")
+          f"{len(ladder_lines)} 'mtproc.timefreq' line(s), e.g. {ladder_lines[0]!r}")
 
     shoot(app, window, "timeseries", ts)
     ts.plots[0].setXRange(3000.0, 3003.0, padding=0)
@@ -1069,6 +1642,16 @@ def main() -> int:
     pump(app, 0.3)
     assert process.station_combo.currentData() == SITE, process.station_combo.currentData()
     assert process.remote_combo.currentData() == REMOTE, process.remote_combo.currentData()
+    assert process.options.filters_label.text() == (
+        f"{SITE} declares: none | {REMOTE} (remote) declares: none (edit on the Filter Data tab)"), \
+        process.options.filters_label.text()
+    process.options.describe_filters("A07", None)  # a saved `replace`, no A07_f<hash>.h5 variant yet
+    assert process.options.filters_label.text() == (
+        "A07 declares: replace (filtered archive will be built first, from the raw archive) "
+        "(edit on the Filter Data tab)"), process.options.filters_label.text()
+    process.options.describe_filters(SITE, REMOTE)  # restore: station_combo/remote_combo still show D02/E08
+    print(f"  filters line: {SITE}/{REMOTE} 'none declared'; A07 (a saved replace, no variant) "
+          f"'filtered archive will be built first, from the raw archive'")
 
     def at(widget):
         """(left, top, right, bottom) of a widget in the tab's coordinates."""
@@ -1076,10 +1659,12 @@ def main() -> int:
         return top_left.x(), top_left.y(), top_left.x() + widget.width(), top_left.y() + widget.height()
 
     bar, summary, table = process.window_bar, process.summary, process.job_panel.table
-    buttons = [process.add_button, process.run_button, process.reset_button,
-               process.timing_button, process.qc_button, process.build_button,
-               process.basemap_button]
+    buttons = [process.add_button, process.run_button, process.reset_button, process.build_button]
     assert [b.text() for b in buttons] == ROW3_BUTTONS, [b.text() for b in buttons]
+    on_tab = {b.text() for b in process.findChildren(QPushButton)}
+    assert not on_tab & REMOVED_BUTTONS, f"removed buttons still on the Process tab: {on_tab & REMOVED_BUTTONS}"
+    left_over = [name for name in REMOVED_NAMES if hasattr(process, name)]
+    assert not left_over, f"the Process tab still has {left_over}"
     lefts = [at(b)[0] for b in buttons]
     assert lefts == sorted(lefts) and len({at(b)[1] for b in buttons}) == 1, [at(b) for b in buttons]
     row1 = [at(w)[0] for w in (process.station_combo, process.remote_combo, summary)]
@@ -1103,6 +1688,8 @@ def main() -> int:
     print(f"  layout: row 1 station, remote, summary; then the bar (status centred between the "
           f"lamps, start field left, end field right); then {', '.join(ROW3_BUTTONS)}; the options; "
           f"the queue table; the map, stack builder and Products to the right of rows 3-5")
+    print(f"  no {', '.join(sorted(REMOVED_BUTTONS))} button among the tab's {len(on_tab)} buttons, "
+          f"and none of {', '.join(REMOVED_NAMES)}")
 
     site_map = process.site_map
     assert len(site_map.scatter.points()) == EXPECTED_SITES, len(site_map.scatter.points())
@@ -1144,11 +1731,33 @@ def main() -> int:
         assert data.shape == png.shape and np.array_equal(data[-1], png[0]) and np.array_equal(data[0], png[-1]), \
             "the basemap is not north up"
         assert images[0].zValue() < site_map.scatter.zValue(), "the basemap is not under the dots"
-        assert meta["provider"] in site_map.attribution_item.toPlainText(), site_map.attribution_item.toPlainText()
-        assert site_map.basemap_label.isHidden(), site_map.basemap_label.text()
+        want_tip = f"Basemap: {meta['provider']} - " + meta["attribution"].replace("(C)", "\N{COPYRIGHT SIGN}")
+        assert site_map.plot.toolTip() == want_tip, (site_map.plot.toolTip(), want_tip)
+        assert site_map.basemap_label.isHidden(), f"a label under the map shows {site_map.basemap_label.text()!r}"
+        credit = meta["attribution"].split("(C)")[-1].strip()[:12]
+        shown = [w.text() for w in process.findChildren(QLabel) if w.isVisible() and credit in w.text()]
+        assert not shown, f"the attribution is still on a visible label: {shown}"
+        map_box = site_map.plot.getViewBox()
+        lim = map_box.state["limits"]
+        west, east, south, north = meta["lon_min"], meta["lon_max"], meta["lat_min"], meta["lat_max"]
+        assert np.allclose(lim["xLimits"], [west, east], rtol=0, atol=1e-9), lim["xLimits"]
+        assert np.allclose(lim["yLimits"], [south, north], rtol=0, atol=1e-9), lim["yLimits"]
+        assert np.allclose([lim["xRange"][1], lim["yRange"][1]], [east - west, north - south], rtol=0, atol=1e-9)
+        map_box.setRange(xRange=(west - 1, east + 1), yRange=(south - 1, north + 1), padding=0)
+        pump(app, 0.2)
+        (vx0, vx1), (vy0, vy1) = map_box.viewRange()
+        tol = 1e-9
+        assert west - tol <= vx0 < vx1 <= east + tol and south - tol <= vy0 < vy1 <= north + tol, (
+            f"the map zoomed out past the basemap: view {map_box.viewRange()}, extent {west, east, south, north}")
+        for text in site_map.texts:
+            fill = text.fill.color()
+            assert fill.name() == SURFACE_GREY and 100 <= fill.alpha() <= 230, (text.toPlainText(), fill.name())
+            assert images[0].zValue() < text.zValue() < site_map.scatter.zValue(), text.toPlainText()
         print(f"  basemap: {meta['provider']} zoom {meta['zoom']}, {png.shape[1]}x{png.shape[0]} px, an "
               f"ImageItem at lon {got[0]:.4f}..{got[0] + got[2]:.4f}, lat {got[1]:.4f}..{got[1] + got[3]:.4f} "
               f"= basemap.json, north row on top, under the dots")
+        print(f"  credit as the map's tooltip {want_tip[:50]!r}..., no label under the map; a zoom out "
+              f"to +-1 deg stays at lon {vx0:.4f}..{vx1:.4f}, lat {vy0:.4f}..{vy1:.4f}, inside the basemap")
     else:
         print(f"  basemap: SKIPPED -- no {basemap_json.name} / {basemap_png.name} in {WORK} "
               f"(run scripts/fetch_basemap.py once, online)")
@@ -1280,14 +1889,14 @@ def main() -> int:
         advanced.toggle.click()
         pump(app)
         assert advanced.block.isVisible(), "the advanced toggle did not expand the block"
-        advanced.taper_combo.setCurrentText("hann")
+        advanced.taper_combo.setCurrentText("hamming")
         advanced.r0_spin.setValue(2.0)
         process.add_button.click()
         pump(app)
         tweaked = recorded[-1]
-        assert tweaked[7:] == ["--taper", "hann", "--r0", "2.0"], tweaked[7:]
-        added_row("--taper hann --r0 2.0")
-        advanced.taper_combo.setCurrentText("boxcar")
+        assert tweaked[7:] == ["--taper", "hamming", "--r0", "2.0"], tweaked[7:]
+        added_row("--taper hamming --r0 2.0")
+        advanced.taper_combo.setCurrentText("hann")
         advanced.r0_spin.setValue(1.5)
         process.add_button.click()
         pump(app)
@@ -1299,15 +1908,6 @@ def main() -> int:
         print(f"    advanced block collapsed and untouched: no estimator flag; taper hann, r0 2.0: "
               f"...{' '.join(tweaked[7:])}, Options {table_row(table, table.rowCount() - 2)[4]!r}; "
               f"put back: none")
-
-        process.basemap_button.click()
-        pump(app)
-        fetch_argv = recorded[-1]
-        assert fetch_argv[1:] == [str(REPO / "scripts" / "fetch_basemap.py"), str(state.survey_yaml)], fetch_argv
-        assert table_row(table, table.rowCount() - 1)[1:5] == ["fetch_basemap (needs internet)", "-", "-", "-"], \
-            table_row(table, table.rowCount() - 1)
-        print(f"  Fetch basemap: {' '.join(Path(a).name if a.endswith('.py') else a for a in fetch_argv[1:])} "
-              f"queued, not run")
 
         for name in STACK_MEMBERS:
             items = process.stack_builder.list.findItems(name, Qt.MatchExactly)
@@ -1362,6 +1962,35 @@ def main() -> int:
     assert "queued, not started" in "\n".join(runner.log)
     print(f"  Run queue started it: status {runner.jobs[real_index].status!r}")
     runner.reset()  # leave the queue empty for what follows
+    waiting = process._queue("waiting job", [sys.executable, "-c", "print('still waiting')"])
+    now = runner.run_now("run-now job", [sys.executable, "-c", "print('run now')"])
+    assert runner.running and runner.current_job() is runner.jobs[now], "run_now did not start its own job"
+    assert runner.jobs[waiting].status == "queued", runner.jobs[waiting].status
+    wait_until(app, lambda: runner.jobs[now].status in ("done", "failed"), 30, "the run_now job")
+    pump(app, 0.3)
+    assert runner.jobs[now].status == "done" and runner.jobs[waiting].status == "queued", \
+        [job.status for job in runner.jobs]
+    assert not runner.running, "the queue went on to the waiting job after run_now's"
+    print(f"  run_now with a job waiting: its own job {runner.jobs[now].status!r}, the waiting one "
+          f"still {runner.jobs[waiting].status!r}, runner idle")
+    runner.reset()
+    chained: list[int] = []
+
+    def chain(_index: int, _ok: bool) -> None:
+        if not chained:
+            chained.append(runner.run_now("chained job", [sys.executable, "-c", "print('chained')"]))
+
+    runner.job_finished.connect(chain)
+    try:
+        runner.run_now("first job", [sys.executable, "-c", "print('first')"])
+        wait_until(app, lambda: bool(chained) and runner.jobs[chained[0]].status in ("done", "failed"), 30,
+                   "a job started with run_now from a job_finished slot")
+    finally:
+        runner.job_finished.disconnect(chain)
+    pump(app, 0.2)
+    assert runner.jobs[chained[0]].status == "done" and not runner.running, [j.status for j in runner.jobs]
+    print(f"  run_now from a job_finished slot: the chained job {runner.jobs[chained[0]].status!r}, runner idle")
+    runner.reset()
     if have_basemap:
         before = process.site_map.basemap_item
         pretend = runner.add("pretend fetch_basemap", [sys.executable, "-c", "print('pretend fetch')",
@@ -1385,7 +2014,12 @@ def main() -> int:
             common = (min(span[1], other_span[1]) - max(span[0], other_span[0])).total_seconds() / 3600
             by_hours[name] = max(common, 0.0)
     top = max(by_hours.values())
-    tie_hours = summary.TIE_HOURS  # the declared threshold, not the recommendation itself
+    own_hours = (other_span[1] - other_span[0]).total_seconds() / 3600
+    fraction = summary.ENOUGH_FRACTION  # the declared threshold, not the recommendation itself
+    tie_hours = summary.TIE_HOURS
+    # the rule: the NEAREST site among those whose overlap covers
+    # at least the fraction of the station's own record; else the longest overlap
+    enough = sorted(name for name, hours in by_hours.items() if hours >= fraction * own_hours)
     tied = sorted(name for name, hours in by_hours.items() if hours >= top - tie_hours)
 
     def _law_of_cosines_to_other(name: str) -> float:
@@ -1393,28 +2027,28 @@ def main() -> int:
             return float("inf")
         return cosines_km(OTHER, name)
 
-    expected = min(tied, key=lambda n: (_law_of_cosines_to_other(n), n))
+    pool = enough or tied
+    expected = min(pool, key=lambda n: (_law_of_cosines_to_other(n), n))
     text = summary.recommended.text()
     pick = text.split("Recommended remote: ")[1].split(" ")[0]
     assert pick == expected, (
         f"{OTHER}: recommended {pick!r}, expected {expected!r} (nearest among "
-        f"{len(tied)} tied within {tie_hours:g} h of {top:.3f} h: {tied}): {text!r}")
+        f"{len(pool)} with overlap >= {fraction:.0%} of {own_hours:.1f} h: {pool}): {text!r}")
     assert abs(float(text.rsplit(", ", 1)[1].split(" h")[0]) - by_hours[expected]) < 0.051, (text, by_hours[expected])
     print(f"  {OTHER} (no declared remote): {text!r}; computed here {expected} at "
-          f"{by_hours[expected]:.3f} h ({_law_of_cosines_to_other(expected):.1f} km), "
-          f"{len(tied)} site(s) tied within {tie_hours:g} h of {top:.3f} h: {tied}")
+          f"{by_hours[expected]:.3f} h ({_law_of_cosines_to_other(expected):.1f} km), nearest of "
+          f"{len(pool)} site(s) with overlap >= {fraction:.0%} of {own_hours:.1f} h: {pool}")
 
 
     # ------------------------------------------ (14) no "What to look for"
     for name, tab in (("Spectra", spectra), ("Spectrogram", spectrogram), ("Coherence", coherence)):
         found = hint_labels(tab)
         assert not found, f"the {name} tab still hints: {found}"
-    from bbmt_gui.tabs.filters import RULE
-
-    kept = [w for w in window.filters_tab.findChildren(QLabel) if w.text() == RULE]
-    assert len(kept) == 1, f"the Filter Data tab's rule box is {len(kept)} labels, expected 1"
+    # the Filter Data tab carries no explanatory text either (a PDF explains it)
+    rule_labels = [w for w in window.filters_tab.findChildren(QLabel) if "Nothing here is automatic" in w.text()]
+    assert not rule_labels, "the Filter Data tab still shows the rule box"
     print('(14) no "What to look for" label on Spectra, Spectrogram or Coherence; '
-          'the Filter Data rule box is still there')
+          'no rule box on Filter Data')
 
     # ------------------------------------------- (15) the filters round trip
     print("(15) Filter Data round trip on a copy of the survey folder:")
@@ -1427,7 +2061,7 @@ def main() -> int:
     state.set_site("A07")
     pump(app, 0.2)
     rows_f = [filters_tab.list.item(i).text() for i in range(filters_tab.list.count())]
-    assert rows_f == ["replace hx<-A06"], rows_f
+    assert rows_f == ["replace magnetics from another site: Bx <- A06"], rows_f
     replace_form = filters_tab.forms["replace"]
     assert filters_tab.stack.currentWidget() is replace_form
     assert replace_form.boxes["hx"].isChecked() and not replace_form.boxes["hy"].isChecked()
@@ -1449,7 +2083,6 @@ def main() -> int:
     assert got_filters == EXPECTED_FILTERS, f"\n got      {got_filters}\n expected {EXPECTED_FILTERS}"
     assert survey.site("A07").filters == A07_FILTERS, survey.site("A07").filters
     print(f"  saved {copy_filters}: {got_filters}")
-    shoot(app, window, "filters", filters_tab)  # with the two filters still listed
     state.set_site(SITE)
     pump(app)
     while filters_tab.list.count():
@@ -1471,12 +2104,30 @@ def main() -> int:
     assert meta.warning_label.text() == GENERATED_WARNING, meta.warning_label.text()
     mtable = meta.table
     mcols = [mtable.horizontalHeaderItem(c).text() for c in range(mtable.columnCount())]
-    after_remote = mcols[mcols.index("remote") + 1:mcols.index("remote") + 5]
+    after_remote = mcols[mcols.index("remote") + 1:mcols.index("remote") + 1 + len(HEADER_COLUMNS)]
     assert after_remote == HEADER_COLUMNS, after_remote
     editable = {c for i, c in enumerate(mcols) if mtable.item(0, i).flags() & Qt.ItemIsEditable}
     assert editable == EDITABLE_COLUMNS, f"editable {sorted(editable)}"
+    gcol = mcols.index("electric_gain")
+    gains = [mtable.item(r, gcol) for r in range(mtable.rowCount())]
+    assert {g.text() for g in gains} == {"-"} and not any(g.flags() & Qt.ItemIsEditable for g in gains), \
+        [(g.text(), int(g.flags())) for g in gains[:3]]
+    assert {g.toolTip() for g in gains} == {"PR6-24 (EDL) sites only"}, {g.toolTip() for g in gains}
+    edl = Survey({"name": "g", "instrument": "edl", "data_root": ".", "defaults": {"electric_gain": 10.0},
+                  "sites": {"ST19": {}}}, Path("."))
+    rule = lambda text, shown: metadata_edit.electric_gain_edit(edl, "ST19", text, shown)  # noqa: E731
+    assert rule("10.0", "10") is channels_column.UNCHANGED, rule("10.0", "10")
+    assert (rule("1", "10"), rule("5", "10"), rule("10", "1")) == (1.0, 5.0, None), \
+        (rule("1", "10"), rule("5", "10"), rule("10", "1"))
+    try:
+        rule("abc", "10")
+        raise AssertionError("'abc' accepted as an electric_gain number")
+    except ValueError as exc:
+        assert "abc" in str(exc), exc
     print(f"  yellow line: {meta.warning_label.text()!r}; {', '.join(HEADER_COLUMNS)} after remote; "
-          f"{len(editable)} editable columns")
+          f"{len(editable)} editable columns; electric_gain '-' read-only on all {len(gains)} LEMI-423 "
+          f"rows; its rule on an EDL survey (default 10.0): '10.0' over '10' unchanged, '1' -> 1.0, "
+          f"'5' -> 5.0, '10' over '1' -> key dropped, 'abc' refused")
     row = next(r for r in range(mtable.rowCount()) if mtable.item(r, 0).text() == SITE)
     old_dipole = Survey.from_yaml(copy_yaml).site(SITE).dipole_length_ex
     before = copy_yaml.read_bytes()
@@ -1539,6 +2190,80 @@ def main() -> int:
     assert sites_changes(sites_before, sites_after) == IMPORT_KEYS, sites_changes(sites_before, sites_after)
     print(f"  {meta.status_label.text() or 'saved'}; cells changed {sorted(moved)}; "
           f"sites block changed {sorted(IMPORT_KEYS)} and nothing else")
+
+    # ------------------------------------ (27) the channels column's round trip
+    print("(27) channels column on the same copy:")
+    ccol = mcols.index("channels")
+
+    def channels_cell(site):
+        return mtable.item(next(r for r in range(mtable.rowCount()) if mtable.item(r, 0).text() == site), ccol)
+
+    def choose_channels(site, label, typed=None):
+        """Open the site's editor as a double-click does and pick `label` (a custom prompt answers `typed`)."""
+        cell = channels_cell(site)
+        mtable.editItem(cell)
+        pump(app)
+        combo = mtable.indexWidget(mtable.model().index(mtable.row(cell), ccol))
+        assert isinstance(combo, QComboBox), f"no combo editor on {site}'s channels cell: {combo}"
+        offered = [combo.itemText(i) for i in range(combo.count())]
+        real_prompt = channels_column.ask_channels
+        channels_column.ask_channels = lambda _parent, _current: typed
+        try:
+            combo.setCurrentIndex(offered.index(label))
+            combo.activated.emit(offered.index(label))  # what a click on the item emits
+        finally:
+            channels_column.ask_channels = real_prompt
+        pump(app)
+        return offered, channels_cell(site).text()
+
+    before = copy_yaml.read_bytes()
+    sites_before = yaml.safe_load(before.decode("utf-8"))["sites"]
+    default_a03 = Survey.from_yaml(copy_yaml).site("A03").channels
+    assert channels_cell(UNARCHIVED).text() == DEFAULT_CHANNELS, channels_cell(UNARCHIVED).text()
+    offered, shown = choose_channels(UNARCHIVED, MAGNETICS_ONLY)
+    assert offered == LEMI423_PRESETS + [channels_column.CUSTOM], offered
+    assert shown == MAGNETICS_ONLY, shown
+    try:
+        metadata_edit.ask_yes_no = answering(True, asked)
+        assert meta.save(), "save() refused the channels edit"
+    finally:
+        metadata_edit.ask_yes_no = real_ask
+    pump(app, 0.3)
+    after = copy_yaml.read_bytes()
+    changes = sites_changes(sites_before, yaml.safe_load(after.decode("utf-8"))["sites"])
+    assert changes == {(UNARCHIVED, "channels"): ["hx", "hy"]}, changes
+    cut = before.index(b"\nsites:") + 1
+    assert after[:cut] == before[:cut], "the bytes above sites: changed"
+    assert before[before.index(b"\nworkspace:"):] == after[after.index(b"\nworkspace:"):], "the tail changed"
+    reread = Survey.from_yaml(copy_yaml)
+    assert reread.site(UNARCHIVED).channels == ["hx", "hy"], reread.site(UNARCHIVED).channels
+    assert reread.site("A03").channels == default_a03 == ["ex", "ey", "hx", "hy"], reread.site("A03").channels
+    assert channels_cell(UNARCHIVED).text() == MAGNETICS_ONLY, channels_cell(UNARCHIVED).text()
+    print(f"  offered {offered}; {UNARCHIVED} -> {MAGNETICS_ONLY!r}: saved {changes}, head and tail unchanged")
+
+    _, shown = choose_channels(UNARCHIVED, DEFAULT_CHANNELS)
+    assert shown == DEFAULT_CHANNELS, shown
+    try:
+        metadata_edit.ask_yes_no = answering(True, asked)
+        assert meta.save(), "save() refused the channels edit back to the default"
+    finally:
+        metadata_edit.ask_yes_no = real_ask
+    pump(app, 0.3)
+    assert "channels" not in yaml.safe_load(copy_yaml.read_text(encoding="utf-8"))["sites"][UNARCHIVED]
+    assert copy_yaml.read_bytes() == before, "back to the default, the file is not what it was"
+    print(f"  back to {DEFAULT_CHANNELS!r}: {UNARCHIVED}'s channels key removed, the file byte-identical again")
+
+    _, shown = choose_channels(UNARCHIVED, channels_column.CUSTOM, typed="hx, hy, ex, ey, tx")
+    assert shown == "hx, hy, ex, ey, tx", shown
+    assert meta.pending() == {UNARCHIVED: {"channels": ["hx", "hy", "ex", "ey", "tx"]}}, meta.pending()
+    _, shown = choose_channels(UNARCHIVED, channels_column.CUSTOM, typed="ex ey hx hy hz")
+    assert shown == "Ex Ey Bx By Bz", shown
+    channels_cell(UNARCHIVED).setText(DEFAULT_CHANNELS)
+    assert meta.pending() == {}, meta.pending()
+    assert copy_yaml.read_bytes() == before, "the custom checks wrote the file"
+    print("  custom...: 'hx, hy, ex, ey, tx' kept as typed (pending [hx, hy, ex, ey, tx]); "
+          "'ex ey hx hy hz' shown as the preset 'Ex Ey Bx By Bz'; nothing saved")
+
     state.set_site(SITE)
     shoot(app, window, "metadata", meta)  # the copy: yellow line, header columns, the edits
 
@@ -1560,6 +2285,100 @@ def main() -> int:
     assert labels == ticked, f"legend {labels}, ticked {ticked}"
     print(f"  overlay of {ticked}: {base_axes} axes, one error-bar container per station, "
           f"legend {labels}, drawn in {edis.last_seconds:.2f} s")
+
+    # phase range: 0-90 (mtpy's own yx + 180 fold) is the default, -180 to 180
+    # undoes it, and it applies to every EDI on the phase axes, not just one
+    def phase_axes():
+        """(xy, yx) phase axes of the current draw, found by their ylabel --
+        `tf_plot._apply_phase_range` always labels both "Phase (deg)"."""
+        found = [ax for ax in fig.axes if "Phase" in ax.get_ylabel()]
+        assert len(found) == 2, f"expected 2 phase axes (xy, yx), got {len(found)}"
+        return found
+
+    assert edis.phase_fold_radio.isChecked(), "Phase does not default to '0 to 90 deg'"
+    _axp, axp2 = phase_axes()
+    lo, hi = axp2.get_ylim()
+    assert (lo, hi) == (0.0, 90.0), f"default phase axes y limits {(lo, hi)}, expected exactly (0, 90): the axis is locked to the chosen range"
+    for name, (_period, phase) in zip(ticked, edi_curves(axp2)):
+        assert phase.size and ((phase >= 0) & (phase <= 90)).all(), (
+            f"{name}: default yx phase outside 0-90: {phase.min():.1f} to {phase.max():.1f}"
+        )
+    print(f"  Phase '0 to 90 deg' (default): yx axes y limits {(lo, hi)}, "
+          f"yx within 0-90 for {ticked}")
+
+    edis.phase_unfold_radio.setChecked(True)
+    pump(app, 0.6)
+    _axp, axp2 = phase_axes()
+    lo, hi = axp2.get_ylim()
+    assert (lo, hi) == (-180.0, 180.0), f"unfolded phase axes y limits {(lo, hi)}, expected (-180, 180)"
+    for name, (_period, phase) in zip(ticked, edi_curves(axp2)):
+        assert phase.size and ((phase >= -180) & (phase <= -90)).all(), (
+            f"{name}: unfolded yx phase not in -180 to -90 (the physical quadrant): "
+            f"{phase.min():.1f} to {phase.max():.1f}"
+        )
+    print(f"  Phase '-180 to 180 deg': yx axes y limits {(lo, hi)}, "
+          f"yx within -180 to -90 (physical quadrant) for {ticked}")
+
+    edis.phase_fold_radio.setChecked(True)
+    pump(app, 0.6)
+    _axp, axp2 = phase_axes()
+    lo, hi = axp2.get_ylim()
+    assert (lo, hi) == (0.0, 90.0), f"back to '0 to 90 deg': y limits {(lo, hi)}, expected exactly (0, 90)"
+    print(f"  back to Phase '0 to 90 deg': yx axes y limits {(lo, hi)}")
+
+    # rho limits: blank is mtpy's own automatic scale, a valid pair clamps
+    # both resistivity axes exactly, and a bad pair (min >= max) is ignored
+    # and reported rather than silently applied
+    def rho_axes():
+        """(axr, axr2) of the current draw -- the two resistivity axes mtpy
+        makes before the phase ones, so fig.axes[:2] for this two-station
+        overlay (already checked above: each holds two error-bar
+        containers)."""
+        axes = fig.axes[:2]
+        assert len(axes) == 2, f"expected 2 resistivity axes (axr, axr2), got {len(axes)}"
+        return axes
+
+    def set_rho(edit, text: str) -> None:
+        """Type `text` into a rho field and let its debounced redraw land."""
+        before = edis.draws
+        edit.setText(text)
+        edit.editingFinished.emit()
+        wait_for_draw(app, edis, before)
+        pump(app, 0.3)
+
+    assert edis.rho_limits() == (None, None), "the rho fields do not start blank"
+    set_rho(edis.rho_min_edit, "")  # a redraw with both fields confirmed blank: the automatic baseline
+    auto_lims = [ax.get_ylim() for ax in rho_axes()]
+    print(f"  rho limits blank (automatic): resistivity axes y limits {auto_lims}")
+
+    set_rho(edis.rho_min_edit, "10")
+    set_rho(edis.rho_max_edit, "1000")
+    assert edis.rho_limits() == (10.0, 1000.0), edis.rho_limits()
+    for axes in rho_axes():
+        assert axes.get_ylim() == (10.0, 1000.0), f"rho axes y limits {axes.get_ylim()}, expected (10, 1000)"
+    print("  rho limits min 10 max 1000: both resistivity axes clamped to (10.0, 1000.0)")
+
+    set_rho(edis.rho_max_edit, "")
+    assert edis.rho_limits() == (10.0, None), edis.rho_limits()
+    for axes, (auto_lo, auto_hi) in zip(rho_axes(), auto_lims):
+        lo, hi = axes.get_ylim()
+        assert lo == 10.0, f"rho axes low limit {lo}, expected 10.0 kept"
+        assert hi == auto_hi, f"rho axes high limit {hi}, expected mtpy's automatic {auto_hi}"
+    print("  rho limits min 10, max blank: low clamped to 10.0, high back to mtpy's automatic value")
+
+    set_rho(edis.rho_min_edit, "1000")
+    set_rho(edis.rho_max_edit, "10")
+    assert edis.rho_limits() == (1000.0, 10.0), edis.rho_limits()
+    for axes, auto in zip(rho_axes(), auto_lims):
+        assert axes.get_ylim() == auto, f"a bad pair (min >= max) changed the axes: {axes.get_ylim()}, was {auto}"
+    assert "rho limits ignored" in edis.status_label.text(), edis.status_label.text()
+    print(f"  rho limits min 1000 max 10 (min >= max): ignored, axes stayed at {auto_lims}, "
+          f"status {edis.status_label.text()!r}")
+
+    set_rho(edis.rho_min_edit, "")
+    set_rho(edis.rho_max_edit, "")
+    assert edis.rho_limits() == (None, None), edis.rho_limits()
+    print("  rho fields cleared back to blank (automatic)")
 
     channels = state.survey.site(SITE).channels
     assert channels is not None and "hz" not in channels, channels
@@ -1655,6 +2474,10 @@ def main() -> int:
         dialog.folder_edit.setText(str(raw_root))
         filled["name"] = dialog.name_edit.text()
         filled["timezone"] = dialog.timezone_edit.text()
+        filled["workspace"] = dialog.workspace_edit.text()
+        combo = dialog.channels_combo
+        filled["channels"] = ([combo.itemText(i) for i in range(combo.count())], combo.currentText())
+        combo.setCurrentText(NEW_SURVEY_CHANNELS)
         dialog.findChild(QDialogButtonBox).button(QDialogButtonBox.Ok).click()
 
     QTimer.singleShot(100, fill_dialog)
@@ -1663,10 +2486,15 @@ def main() -> int:
     meta.new_button.click()  # async now: returns once the dialog closed and the job is queued+started
     took_to_queue = time.time() - started
     assert filled.get("name") == raw_root.name, f"the name defaulted to {filled.get('name')!r}"
+    assert Path(filled.get("workspace", "")) == raw_root / "work", f"workspace {filled.get('workspace')!r}"
+    n_fetches = len(fetches())
     assert len(runner.jobs) == n_before + 1, "New survey... did not queue a job"
     index = len(runner.jobs) - 1
     job = runner.jobs[index]
     assert "new_survey.py" in job.command, job.command
+    assert Path(job.argv[job.argv.index("--workspace") + 1]) == raw_root / "work", job.argv
+    assert filled["channels"] == (LEMI423_PRESETS, DEFAULT_CHANNELS), filled["channels"]
+    assert job.argv[job.argv.index("--channels") + 1] == NEW_SURVEY_CHANNELS, job.argv
     # the window must not have blocked for the scan: click() itself returns
     # once the job is queued and started, well under the several seconds the
     # real script needs for 2 synthetic sites plus process start-up
@@ -1694,6 +2522,13 @@ def main() -> int:
         assert (cells[(site, "serial")], cells[(site, "firmware")]) == (serial, firmware), \
             (site, cells[(site, "serial")], cells[(site, "firmware")])
     assert meta.warning_label.isVisible() and "scripts/new_survey.py" in meta.warning_label.text()
+    written_config = yaml.safe_load(want_yaml.read_text(encoding="utf-8"))
+    written = written_config["workspace"]
+    assert Path(written) == (raw_root / "work").resolve(), written
+    assert written_config["defaults"]["channels"] == ["ex", "ey", "hx", "hy", "hz"], written_config["defaults"]
+    assert all(cells[(site, "channels")] == NEW_SURVEY_CHANNELS for site in SYNTHETIC), cells
+    new_fetch = fetches()[n_fetches:]
+    assert new_fetch == [[sys.executable, str(REPO / "scripts" / "fetch_basemap.py"), str(want_yaml)]], new_fetch
     strip = console.toPlainText().splitlines()
     wrote = [line for line in strip if f"wrote {want_yaml}" in line]
     assert f"$ {job.command}" in strip and wrote, \
@@ -1702,6 +2537,452 @@ def main() -> int:
     print("  table: " + ", ".join(f"{s} serial {cells[(s, 'serial')]} firmware {cells[(s, 'firmware')]}"
                                   for s in SYNTHETIC) + f"; yellow line {meta.warning_label.text()!r}")
     print(f"  console: {job.command[:90]}...")
+    print(f"  channels combo {filled['channels'][0]}, {filled['channels'][1]!r} preselected; set to "
+          f"{NEW_SURVEY_CHANNELS!r}: --channels in the argv, defaults channels "
+          f"{written_config['defaults']['channels']}, the table's cells {NEW_SURVEY_CHANNELS!r}")
+    print(f"  workspace field {filled['workspace']!r} (<data folder>/work), survey.yaml workspace: {written}; "
+          f"opening it ran fetch_basemap.py (recorded, not run): its workspace has no basemap.json")
+
+    # ------------------------------------ (24) the basemap, fetched when missing
+    print("(24) the basemap is fetched on survey open exactly when basemap.json is missing:")
+    assert (WORK / "basemap.json").exists(), f"{WORK / 'basemap.json'} is missing: run scripts/fetch_basemap.py"
+    assert startup_fetches == [], f"the window fetched a basemap the real workspace has: {startup_fetches}"
+    bare = SCRATCH.parent / "gui_basemap_survey"
+    shutil.rmtree(bare, ignore_errors=True)
+    bare.mkdir(parents=True)
+    for name in ("survey.yaml", "filters.yaml", "reference_edis.yaml"):
+        shutil.copy2(SURVEY_DIR / name, bare / name)
+    config = yaml.safe_load((bare / "survey.yaml").read_text(encoding="utf-8"))
+    config["workspace"] = str(bare / "work")  # empty: no basemap.png, no basemap.json
+    (bare / "survey.yaml").write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+    n_fetches = len(fetches())
+    window.open_survey(bare / "survey.yaml")
+    pump(app, 0.3)
+    got = fetches()[n_fetches:]
+    want = [[sys.executable, str(REPO / "scripts" / "fetch_basemap.py"), str((bare / "survey.yaml").resolve())]]
+    assert got == want, f"opening a survey with no basemap ran {got}, expected {want}"
+    site_map = process.site_map
+    assert site_map.basemap_item is None and site_map.basemap_label.text().startswith("no basemap"), \
+        site_map.basemap_label.text()
+    print(f"  {bare.name} (empty workspace): run_now({' '.join(Path(a).name for a in got[0][1:])}), "
+          f"map says {site_map.basemap_label.text()!r}")
+    window.open_survey(SURVEY_YAML)
+    pump(app, 0.3)
+    assert fetches()[n_fetches + 1:] == [], "reopening the real survey fetched a basemap it has"
+    print(f"  the window over the real survey and its reopening: no fetch ({WORK / 'basemap.json'} exists)")
+
+    # ------------------------------------------ (25) Build MTH5 on the tree
+    print("(25) Build MTH5 on the Time Series tab:")
+    window.tabs.setCurrentWidget(ts)
+    pump(app, 0.3)
+    build = ts.build_button
+    assert not state.has_archive(UNARCHIVED) and UNARCHIVED in state.raw_sites(), UNARCHIVED
+    rows = {r.text(0): r for r in tree.site_items()}
+    a02_row = rows[UNARCHIVED]
+    assert a02_row.childCount() == 1 and a02_row.child(0).text(0) == NO_ARCHIVE_ROW, a02_row.child(0).text(0)
+    assert not (a02_row.child(0).flags() & Qt.ItemIsEnabled), "the no-MTH5 row is enabled"
+    tree.setCurrentItem(rows[SITE])
+    pump(app)
+    assert not build.isEnabled() and build.toolTip() == "archive exists", (build.isEnabled(), build.toolTip())
+    tree.setCurrentItem(a02_row)
+    pump(app)
+    assert build.isEnabled(), f"Build MTH5 disabled on {UNARCHIVED}: {build.toolTip()!r}"
+    print(f"  {SITE}: disabled, tooltip {'archive exists'!r}; {UNARCHIVED}: enabled, tooltip {build.toolTip()!r}")
+    sleeper = runner.run_now("sleep 2 s", [sys.executable, "-c", "import time; time.sleep(2)"])
+    pump(app)
+    assert runner.running and not build.isEnabled(), "Build MTH5 is enabled while a job runs"
+    busy_tip = build.toolTip()
+    wait_until(app, lambda: runner.jobs[sleeper].status in ("done", "failed"), 30, "the sleeping job")
+    pump(app)
+    assert build.isEnabled(), f"Build MTH5 stayed disabled after the job: {build.toolTip()!r}"
+    print(f"  while a job ran: disabled ({busy_tip!r}); enabled again after it")
+    runner.reset()
+    n_diverted = len(DIVERTED)
+    build.click()
+    pump(app)
+    ingest_argv = [sys.executable, str(REPO / "scripts" / "ingest_site.py"), str(state.survey_yaml), UNARCHIVED]
+    assert DIVERTED[n_diverted:] == [ingest_argv], DIVERTED[n_diverted:]
+    assert not runner.running and ts.hint_label.text().startswith(f"building {UNARCHIVED}.h5 ..."), \
+        (runner.running, ts.hint_label.text())
+    print(f"  pressed on {UNARCHIVED}: run_now({' '.join(Path(a).name for a in ingest_argv[1:])}) recorded, "
+          f"not run; hint {ts.hint_label.text()!r}")
+    real_has_archive = state.has_archive
+    state.has_archive = lambda site: site == UNARCHIVED or real_has_archive(site)
+    try:
+        pretend = runner.add(f"pretend ingest {UNARCHIVED}", [
+            sys.executable, "-c", "print('pretend ingest')", str(REPO / "scripts" / "ingest_site.py"),
+            str(state.survey_yaml), UNARCHIVED])
+        runner.run_queue()
+        wait_until(app, lambda: runner.jobs[pretend].status in ("done", "failed"), 30, "the pretend ingest")
+        assert runner.jobs[pretend].status == "done", runner.jobs[pretend].output
+        children = [a02_row.child(i).text(0) for i in range(a02_row.childCount())]
+        assert NO_ARCHIVE_ROW not in children, children
+        assert a02_row.childIndicatorPolicy() == QTreeWidgetItem.ShowIndicator and a02_row.isExpanded(), \
+            (a02_row.childIndicatorPolicy(), a02_row.isExpanded())
+        assert a02_row.data(0, Qt.ForegroundRole) is None, "A02's row is still grey"
+        assert children and ts.hint_label.text().startswith(f"built {UNARCHIVED}.h5"), (children, ts.hint_label.text())
+        print(f"  a finished job naming ingest_site.py {UNARCHIVED} (has_archive made True): the row is "
+              f"expandable and open, children {children}, hint {ts.hint_label.text()!r}")
+        wait_until(app, lambda: tree._thread is None and not tree._queue, 30, "the tree's read of A02")
+        pump(app, 0.2)
+    finally:
+        state.has_archive = real_has_archive
+    tree.refresh_site(UNARCHIVED)
+    children = [a02_row.child(i).text(0) for i in range(a02_row.childCount())]
+    assert children == [NO_ARCHIVE_ROW], children
+    print(f"  has_archive truthful again: refresh_site put back {children}")
+    runner.reset()
+    assert not (WORK / "mth5" / f"{UNARCHIVED}.h5").exists(), f"{UNARCHIVED}.h5 was written"
+
+    # a filtered variant's own stem (`<site>_f<hash>.h5`, mtproc.ingest.variant_path)
+    # must never be mistaken for a site or a stacked remote of its own
+    fake_variant = WORK / "mth5" / f"{SITE}_fdeadbeef.h5"
+    fake_variant.write_bytes(b"")
+    try:
+        assert fake_variant.stem not in state.archived_sites(), state.archived_sites()
+        assert fake_variant.stem not in state.stacked_remotes(), state.stacked_remotes()
+        assert fake_variant.stem not in [n for _d, n in state.remote_choices(None)],             state.remote_choices(None)
+    finally:
+        fake_variant.unlink()
+    print(f"  a filtered variant's own stem ({fake_variant.stem}) is invisible to archived_sites/"
+          f"stacked_remotes/remote_choices")
+
+    # ------------------------------------ (26) the Filter Data tab's preview
+    print("(26) the Filter Data tab's preview, on a copy of the survey folder:")
+    window.open_survey(make_survey_copy())
+    pump(app, 0.3)
+    ft = window.filters_tab
+    window.tabs.setCurrentWidget(ft)
+    pump(app, 0.3)
+    chooser, pane = ft.chooser, ft.pane
+    series, psd = pane.series, pane.spectra
+    previews, preview_starts = [], []
+    ft.preview.ready.connect(previews.append)
+    ft.preview.started.connect(preview_starts.append)
+
+    def latest_preview(entries, timeout, what):
+        """The preview for exactly `entries` on the loaded window, waited for."""
+        wait_until(app, lambda: previews and previews[-1].filters == entries
+                   and previews[-1].segment is store.segment and not ft.preview.busy, timeout, what)
+        pump(app, 0.2)
+        return previews[-1]
+
+    def curves_of(plot):
+        """[(pen colour, dashed, visible, n points)] of every data curve on a plot."""
+        out = []
+        for item in plot.getPlotItem().listDataItems():
+            pen = pg.mkPen(item.opts["pen"])
+            x, _y = item.getOriginalDataset()
+            out.append((pen.color().name(), pen.style() == Qt.DashLine, item.isVisible(),
+                        0 if x is None else len(x)))
+        return out
+
+    def assert_raw_only(where):
+        for comp, plot in series.plots.items():
+            shown = [c for c in curves_of(plot) if c[2]]
+            assert len(shown) == 1 and shown[0][0] == theme.colour(comp).lower(), (where, comp, curves_of(plot))
+        for title, plot in psd.plots.items():
+            assert all(not dashed for _c, dashed, _v, _n in curves_of(plot)), (where, title, curves_of(plot))
+
+    chooser.site_combo.setCurrentIndex(chooser.site_combo.findText(SITE))
+    wait_until(app, lambda: chooser.window_combo.count() == N_WINDOWS_D02, 30, "the chooser's D02 windows")
+    fifth_start = t_rec + pd.Timedelta(hours=4 * window_h)
+    t0 = time.time()
+    chooser.window_combo.setCurrentIndex(4)
+    wait_until(app, lambda: store.segment is not None and store.segment.station == SITE
+               and store.segment.t0 == fifth_start, 60, "the fifth window chosen on the Filter Data tab")
+    assert state.selection == (SITE, fifth_start, chooser.window_combo.itemData(4)[1]), state.selection
+    raw_view = latest_preview([], 60, "the raw-only preview")
+    loaded_seg = store.segment
+    assert raw_view.filtered is None and raw_view.segment is loaded_seg
+    assert list(series.plots) == list(EXPECTED_CHANNELS) and list(psd.plots) == SPECTRA_PANELS
+    assert_raw_only("no filters")
+    raw_sha = {c: hashlib.sha1(a.tobytes()).hexdigest() for c, a in loaded_seg.arrays.items()}
+    print(f"  chooser: {SITE}'s fifth window loaded in {time.time() - t0:.1f} s ({loaded_seg.t0}, the "
+          f"record start + 8 h); raw-only preview ({raw_view.elapsed_s:.1f} s): one curve per panel in "
+          f"its colour; label {ft.window_label.text()!r}")
+
+    ft.add_filter("notch")
+    notch_view = latest_preview(ft.entries, 60, "the notch preview")
+    assert notch_view.filters == [{"notch": {"f0": 50.0, "harmonics": 9, "q": 30.0, "passes": 2}}]
+    for comp in EXPECTED_CHANNELS:
+        assert not np.array_equal(notch_view.filtered[comp], loaded_seg.arrays[comp]), f"{comp} unfiltered"
+    assert {c: hashlib.sha1(a.tobytes()).hexdigest() for c, a in store.segment.arrays.items()} == raw_sha, \
+        "the store's raw arrays changed"
+    raw_stage = next(stage for stage in notch_view.raw_stages if stage[0] == 1000.0)
+    filt_stage = next(stage for stage in notch_view.filtered_stages if stage[0] == 1000.0)
+    ex_raw = line_excess(raw_stage[1], raw_stage[2]["ex"], 50.0)
+    ex_filt = line_excess(filt_stage[1], filt_stage[2]["ex"], 50.0)
+    assert ex_raw - ex_filt > 15.0, f"Ex 50 Hz excess {ex_raw:.1f} -> {ex_filt:.1f} dB, drop under 15 dB"
+    for comp, plot in series.plots.items():
+        got = sorted((colour, visible, n) for colour, _d, visible, n in curves_of(plot))
+        # three curves per panel: the raw (grey, shown), the filtered (colour, shown)
+        # and the removed = raw minus filtered (colour, hidden until Removed mode)
+        want = sorted([(theme.RAW_COLOUR.lower(), True, WINDOW_SAMPLES),
+                       (theme.colour(comp).lower(), True, WINDOW_SAMPLES),
+                       (theme.colour(comp).lower(), False, WINDOW_SAMPLES)])
+        assert got == want, (comp, got)
+    for title, plot in psd.plots.items():
+        styles = {(dashed, colour == theme.RAW_COLOUR.lower()) for colour, dashed, _v, _n in curves_of(plot)}
+        assert styles == {(True, True), (False, False)}, (title, curves_of(plot))
+    print(f"  notch: every channel filtered, the raw SHA-1s unchanged; Ex 50 Hz excess {ex_raw:.1f} -> "
+          f"{ex_filt:.1f} dB (drop {ex_raw - ex_filt:.1f} > 15); 4 panels of grey + colour over "
+          f"{WINDOW_SAMPLES:,} samples; PSD panels {list(psd.plots)} dashed grey + solid colour")
+
+    ft.add_filter("hp")
+    ft.forms["hp"].cutoff.setValue(0.05)
+    ft.move_filter(-1)
+    hp_view = latest_preview(ft.entries, 60, "the hp + notch preview")
+    kinds = [next(iter(entry)) for entry in hp_view.filters]
+    assert kinds == ["hp", "notch"], kinds
+    assert hp_view.provenance[0].startswith("hp highpass 0.05 Hz") and hp_view.provenance[1].startswith("notch"), \
+        hp_view.provenance
+    print(f"  hp 0.05 Hz moved above the notch: provenance {[line[:22] for line in hp_view.provenance]}")
+
+    for mode, grey_shown, colour_shown, removed_shown in (
+        ("Before", True, False, False), ("After", False, True, False),
+        ("Both", True, True, False), ("Removed", False, False, True),
+    ):
+        next(b for b in pane.mode_group.buttons() if b.text() == mode).setChecked(True)
+        pump(app, 0.1)
+        for comp in series.plots:
+            got = (series.raw_items[comp].isVisible(), series.filtered_items[comp].isVisible(),
+                   series.removed_items[comp].isVisible())
+            assert got == (grey_shown, colour_shown, removed_shown), (mode, comp, got)
+        if mode in ("Both", "Removed"):
+            # the y range follows the trace being read, never the raw one (a
+            # large removed component made the raw trace hide the filtered channels at
+            # fine zoom). pyqtgraph pads the auto range by about a tenth on each side.
+            shown = series.filtered_items["ex"] if mode == "Both" else series.removed_items["ex"]
+            plot = series.plots["ex"]; vb = plot.getViewBox(); vb.autoRange(); pump(app, 0.1)
+            lo, hi = vb.viewRange()[1]
+            y = shown.yData; pad = 0.2 * (np.nanmax(y) - np.nanmin(y))
+            assert np.nanmin(y) - pad <= lo and hi <= np.nanmax(y) + pad, (mode, "y range not set by the shown trace", lo, hi, np.nanmin(y), np.nanmax(y))
+            if mode == "Removed":
+                raw = series.raw_items["ex"].yData
+                assert hi - lo < 0.75 * (np.nanmax(raw) - np.nanmin(raw)), ("Removed y range as wide as the raw", hi - lo)
+    next(b for b in pane.mode_group.buttons() if b.text() == "Both").setChecked(True)
+    pump(app, 0.1)
+    print("  Before: grey only; After: colour only; Both: both, y set by the filtered trace; Removed: raw minus filtered only")
+
+    ft.list.setCurrentRow(1)
+    pump(app, 0.1)
+    n_starts = len(preview_starts)
+    ft.forms["notch"].q.setValue(25.0)
+    ft.forms["notch"].q.setValue(20.0)
+    pump(app, 0.3)
+    assert len(preview_starts) == n_starts, "the preview ran before the debounce ended"
+    q_view = latest_preview(ft.entries, 60, "the q 20 preview")
+    pump(app, 1.0)
+    assert len(preview_starts) == n_starts + 1, f"{len(preview_starts) - n_starts} runs for two q changes"
+    assert "q=20" in q_view.provenance[1], q_view.provenance
+    print(f"  q 30 -> 25 -> 20 in quick succession: one run after the debounce, {q_view.provenance[1][:40]!r}")
+
+    pane.channel_boxes["hx"].setChecked(False)
+    pump(app, 0.1)
+    assert series.plots["hx"].isHidden() and not series.plots["hy"].isHidden()
+    bx_items = [item for comp, item in psd.items["Bx-Ey (Zyx)"] if comp == "hx"]
+    assert bx_items and not any(item.isVisible() for item in bx_items)
+    pane.channel_boxes["hx"].setChecked(True)
+    pump(app, 0.1)
+    assert not series.plots["hx"].isHidden() and all(item.isVisible() for item in bx_items)
+    print("  Show: Bx unticked hid its panel and its PSD curves; ticked, they came back")
+
+    ft.list.setCurrentRow(0)
+    ft.remove_filter()
+    ft.add_filter("cp")
+    cp_view = latest_preview(ft.entries, 60, "the notch + cp preview")
+    assert [next(iter(entry)) for entry in cp_view.filters] == ["notch", "cp"], cp_view.filters
+    print(f"  TIMING: notch + cp on the 2 h window ({WINDOW_SAMPLES:,} samples x 4 channels): "
+          f"{cp_view.elapsed_s:.2f} s (filters + filtered PSD ladder; the raw ladder is cached per window, "
+          f"{raw_view.elapsed_s:.2f} s once)")
+    assert ft.archive_label.text() == "", ft.archive_label.text()
+    assert not ft.delete_button.isVisible(), "D02's list was never saved: Delete archive must be hidden"
+    shoot(app, window, "filters", ft)
+    print(f"  archive note {ft.archive_label.text()!r} (D02's edits are unsaved), Delete archive hidden")
+
+    # A07's real (saved) `replace` entry, no variant built yet -- a direct,
+    # read-only check of `_update_archive_note` that does not disturb D02's
+    # loaded window or its (unsaved) working list: `state.site` is poked and
+    # restored without going through `set_site` (no site_changed signal, so
+    # `ft.entries`/the preview/the selection are untouched)
+    prev_site = state.site
+    state.site = "A07"
+    ft._update_archive_note()
+    assert ft.archive_label.text() == (
+        "filtered archive for this list: not built yet (built when processing starts)"), ft.archive_label.text()
+    assert not ft.delete_button.isVisible(), "A07 has no variant file yet: Delete archive must be hidden"
+    state.site = prev_site
+    ft._update_archive_note()
+    assert ft.archive_label.text() == "" and not ft.delete_button.isVisible()
+    print("  A07 (a saved replace, no variant built): archive note 'not built yet'; D02 empty again on the way back")
+
+    ft.add_filter("burst")
+    burst_view = latest_preview(ft.entries, 60, "the notch + cp + burst preview")
+    assert burst_view.provenance[-1].startswith("burst:"), burst_view.provenance
+    print(f"  burst added: {burst_view.provenance[-1][:70]!r} ({burst_view.elapsed_s:.2f} s)")
+
+    from mtproc_gui.filter_forms import LABELS  # (26) only: the list row's words for the kind
+    ft.add_filter("mains")
+    mains_view = latest_preview(ft.entries, 60, "the notch + cp + burst + mains preview")
+    assert mains_view.provenance[-1].startswith("mains:"), mains_view.provenance
+    mains_row = ft.list.item(len(ft.entries) - 1).text()
+    assert mains_row.startswith(LABELS["mains"] + ": "), mains_row
+    print(f"  mains added: {mains_view.provenance[-1][:90]!r} ({mains_view.elapsed_s:.2f} s); row {mains_row!r}")
+
+    while ft.entries:
+        ft.list.setCurrentRow(0)
+        ft.remove_filter()
+    empty_view = latest_preview([], 60, "the raw-only preview again")
+    assert empty_view.filtered is None and empty_view.filtered_stages is None
+    assert_raw_only("every filter removed")
+    assert SITE not in (yaml.safe_load((SURVEY_DIR / "filters.yaml").read_text(encoding="utf-8")) or {})
+    print("  every filter removed: the raw-only view again; the real filters.yaml has no D02 entry")
+    ft.wait()
+
+    # --------- the window chooser's "(loaded)" mark
+    # This test fails if the loaded window is not the one and only marked
+    # row, or the mark does not follow a change of window.
+    print("  the window chooser's loaded-window mark:")
+    LOADED = "   (loaded)"
+
+    def marked_rows(combo):
+        """[row] of every row bold, accent-coloured and suffixed "(loaded)"; every other row plain."""
+        rows = []
+        for k in range(combo.count()):
+            font = combo.itemData(k, Qt.FontRole)
+            brush = combo.itemData(k, Qt.ForegroundRole)
+            colour = brush.color() if hasattr(brush, "color") else brush
+            text = combo.itemText(k)
+            if font is not None and font.bold():
+                rows.append(k)
+                assert colour is not None and colour.name() == QColor(theme.HIGHLIGHT).name(), \
+                    (k, text, "the loaded row's foreground is not theme.HIGHLIGHT")
+                assert text.endswith(LOADED), (k, text, "the loaded row has no (loaded) suffix")
+            else:
+                assert colour is None, (k, text, "a plain row still carries a foreground brush")
+                assert not text.endswith(LOADED), (k, text, "a plain row still carries the (loaded) suffix")
+        return rows
+
+    # D02's fifth window (row 4) was loaded above: the only marked row
+    before = marked_rows(chooser.window_combo)
+    assert before == [4], (before, "D02's fifth window (row 4, just loaded) should be the only mark")
+    print(f"    D02's fifth window still the only mark: row 4, {chooser.window_combo.itemText(4)!r}")
+
+    # a different window loaded through the chooser: the mark follows it
+    other_start, other_end = chooser.window_combo.itemData(2)
+    chooser.window_combo.setCurrentIndex(2)  # signals on: loads it, as the fifth window was loaded above
+    wait_until(app, lambda: store.segment is not None and store.segment.station == SITE
+               and store.segment.t0 == other_start, 60, "D02's third window chosen through the chooser")
+    assert state.selection == (SITE, other_start, other_end), state.selection
+    moved = marked_rows(chooser.window_combo)
+    assert moved == [2], (moved, "the mark did not move to row 2, or row 4 is still marked")
+    print("    switched to row 2: the mark moved there, row 4 back to plain")
+
+    chooser.window_combo.showPopup()
+    QApplication.processEvents()
+    popup = chooser.window_combo.view().window()
+    SHOT_DIR.mkdir(parents=True, exist_ok=True)
+    popup_path = SHOT_DIR / "gui_filter_window_popup.png"
+    assert popup.grab().save(str(popup_path)), f"could not save {popup_path}"
+    chooser.window_combo.hidePopup()
+    pump(app, 0.1)
+    print(f"    popup screenshot saved to {popup_path}")
+
+    # --------- "Copy to sites..." (33)
+    # This test fails if the copy does not write the ticked sites' lists as
+    # the source's, or touches an unticked site, or Append replaces.
+    print('  "Copy to sites...":')
+    from mtproc_gui.copy_filters import CopyFiltersDialog  # (33) only
+
+    if not ft.entries:  # (26) may have emptied it: (33) needs a non-empty source list
+        ft.add_filter("notch")
+        pump(app, 0.2)
+    assert ft.entries, "(33) could not give D02 a filter to copy"
+    d02_filters = [dict(entry) for entry in ft.entries]
+    filters_path = state.filters_yaml()
+    before_replace = yaml.safe_load(filters_path.read_text(encoding="utf-8")) or {}
+
+    def copy_dialog(tick, append, on_ready=None):
+        """Click "Copy to sites...": once the dialog is up, run `on_ready`, tick `tick`, set
+        Replace/Append and press OK -- exactly what the button's own handler drives."""
+        def fill():
+            # the dialog now up, never a closed one still awaiting deletion
+            dialog = next((d for d in ft.findChildren(CopyFiltersDialog) if d.isVisible()), None)
+            if dialog is None:
+                QTimer.singleShot(50, fill)
+                return
+            if on_ready is not None:
+                on_ready(dialog)
+            for name in tick:
+                dialog.boxes[name].setChecked(True)
+            (dialog.append_radio if append else dialog.replace_radio).setChecked(True)
+            dialog.findChild(QDialogButtonBox).button(QDialogButtonBox.Ok).click()
+        QTimer.singleShot(50, fill)
+        ft.copy_button.click()  # exec(): returns once fill() closes the dialog
+
+    def check_offer(dialog):
+        assert SITE not in dialog.boxes, "the source site offered itself"
+        assert len(dialog.boxes) >= 50, f"only {len(dialog.boxes)} other sites offered"
+        assert dialog.replace_radio.isChecked() and not dialog.append_radio.isChecked(), \
+            "Replace is not the dialog's default"
+
+    def settle(label):
+        """`_copy_to_sites` reopens the whole survey and reloads the window while it is loaded
+        (the same as `save()`): wait for that load AND its full QC to finish, and any stale
+        preview run, before the next dialog opens -- never two such reloads in flight together."""
+        wait_until(app, lambda: store.segment is not None and store.segment.station == SITE
+                   and store.segment.t0 == other_start and not store.busy,
+                   90, f"D02's window settled after {label}")
+        wait_until(app, lambda: not ft.preview.busy, 60, f"the preview settled after {label}")
+        pump(app, 0.3)
+
+    copy_dialog(["E08", "A07"], append=False, on_ready=check_offer)
+    settle("the Replace copy")
+    after_replace = yaml.safe_load(filters_path.read_text(encoding="utf-8")) or {}
+    assert after_replace.get("E08") == d02_filters, (after_replace.get("E08"), d02_filters)
+    assert after_replace.get("A07") == d02_filters, (after_replace.get("A07"), d02_filters)
+    rest_before = {s: v for s, v in before_replace.items() if s not in ("E08", "A07")}
+    rest_after = {s: v for s, v in after_replace.items() if s not in ("E08", "A07")}
+    assert rest_after == rest_before, "Replace touched a site other than the two ticked"
+    assert ft.entries == d02_filters, "D02's own (unsaved) list changed by copying it elsewhere"
+    print(f"    Replace: E08 and A07 now hold D02's {len(d02_filters)} filter(s); every other entry, "
+          f"D02's own included, unchanged")
+
+    while len(ft.entries) > 1:
+        ft.list.setCurrentRow(len(ft.entries) - 1)
+        ft.remove_filter()
+    one_filter = [dict(entry) for entry in ft.entries]
+    kind_name = next(iter(one_filter[0]))
+    e08_before_append = after_replace["E08"]
+    copy_dialog(["E08"], append=True)
+    settle("the Append copy")
+    after_append = yaml.safe_load(filters_path.read_text(encoding="utf-8")) or {}
+    assert after_append["E08"] == e08_before_append + one_filter, \
+        (after_append["E08"], e08_before_append, one_filter)
+    assert len(after_append["E08"]) == len(e08_before_append) + 1, "E08's list did not grow by exactly one"
+    assert after_append.get("A07") == d02_filters, "A07 changed by an E08-only Append"
+    print(f"    Append: E08's list grew by D02's one remaining filter ({kind_name}), its own "
+          f"{len(e08_before_append)} first")
+
+    before_empty = filters_path.read_bytes()
+    copy_dialog([], append=False)
+    pump(app, 0.3)
+    assert filters_path.read_bytes() == before_empty, "OK with nothing ticked wrote to filters.yaml"
+    print("    nothing ticked: OK did nothing, filters.yaml byte-identical")
+
+    # a site picked elsewhere (as the tree does), nothing loaded for it yet: no row marked
+    state.set_site("E08")
+    wait_until(app, lambda: chooser.site() == "E08" and chooser.window_combo.count() > 0,
+               60, "E08's windows listed for the chooser (state.set_site, no window picked)")
+    pump(app, 0.2)
+    assert state.selection == (SITE, other_start, other_end), "picking a site alone must not load a window"
+    unmarked = marked_rows(chooser.window_combo)
+    assert unmarked == [], (unmarked, "E08 has no loaded window: no row should be marked")
+    print(f"    E08 shown with nothing loaded for it: no row marked, {chooser.window_combo.count()} windows listed")
+
+    mixed_instruments(app, window)
+    crosspower_check(app, window)  # (34)
 
     assert len(SHOTS) == 9, f"{len(SHOTS)} screenshots, expected 9: {SHOTS}"
     assert SURVEY_YAML.read_bytes() == REAL_YAML, "the real surveys/curnamona_cube/survey.yaml changed"
