@@ -32,10 +32,10 @@ editable; every dependency, the GUI's included, is listed once, in
 mtproc runs on the `mtproc-fixes` branches of five forks, `github.com/bvkay/`
 aurora, mth5, mt-io, mt-metadata and mt-timeseries, which carry the fixes
 logged in `docs/upstream_issues.md`. `pyproject.toml` names them by git URL
-(`mth5 @ git+https://github.com/bvkay/mth5@mtproc-fixes`, ...); the mth5, mt-io,
-mt-metadata and mt-timeseries branches are on GitHub; aurora's follows. A
-local clone (a sibling of this repo) installs over the stock package, leaving
-every other dependency as it is:
+(`mth5 @ git+https://github.com/bvkay/mth5@mtproc-fixes`, ...); all five branches are on
+GitHub, so a plain install resolves them. A local clone (a sibling of this
+repo) installs over the package from GitHub, leaving every other dependency
+as it is:
 
 ```bash
 pip install --no-deps ../mt-metadata ../mt-timeseries ../mt-io ../mth5 ../aurora
