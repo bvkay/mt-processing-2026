@@ -987,15 +987,19 @@ so its criteria can be read top to bottom.)
   "all-band masks: time cuts; band masks: their windows dropped in those bands (aurora patch)"): `scripts/process_rr.py` loads the site's masks and
   `mtproc.process.process_station` cuts the `bands: all` ones out of the
   kernel dataset's run intervals (`apply_time_masks`, pieces under 10 min
-  dropped). A band-limited mask also reaches aurora: a
-  scoped runtime patch (`mtproc.process._band_masks_applied`; 0.6.2 takes no
-  per-band window weights, docs/upstream_issues.md 22) drops the STFT
+  dropped). A band-limited mask also reaches aurora: on aurora 0.6.2+mtproc
+  (`mtproc.process.AURORA_WINDOW_MASKS`) it is set directly on
+  `DecimationLevel.window_masks`, the fork's own field
+  (`mtproc.process._set_window_masks`); on stock aurora, which takes no
+  per-band window weights (docs/upstream_issues.md 22), a scoped runtime
+  patch instead (`mtproc.process._band_masks_applied`) drops the STFT
   windows it overlaps from each band whose centre period it covers, before
   the regression (Morocco C18 rr C19, 2023-09-23 01:00-03:00 UTC: 8 masks
   over [0.02, 0.1] s moved those 7 bands by 0.02-9 % and left the other 41
   bit-identical, 43.0 s against 41.3 s unmasked; tests/band_masks_unit.py
   also shows aurora's shared Huber iteration count letting a mask shift
-  later bands of the same decimation level). It also acts in
+  later bands of the same decimation level, on stock aurora only -- the
+  fork resets it per regression). It also acts in
   `mtproc.crosspower.stack_impedance(result, masks)`, the classical
   cross-power editor's estimate: per band, the kept chunks' <E R*> summed
   times the inverse of their <H R*> summed, with a delete-one-chunk

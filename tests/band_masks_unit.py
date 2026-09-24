@@ -1,6 +1,16 @@
-"""Unit test for band-limited masks inside aurora: `mtproc.process._band_masks_applied`.
+"""Unit test for band-limited masks inside aurora: `mtproc.process._band_masks_applied` on
+stock aurora, `mtproc.process._set_window_masks` (aurora's own `DecimationLevel.window_masks`)
+on aurora 0.6.2+mtproc (`mtproc.process.AURORA_WINDOW_MASKS`). Both live in this one file and
+branch on `mtproc.process.AURORA_WINDOW_MASKS`, so the same criteria are checked whichever
+aurora is installed; running it once under each aurora is how both get exercised (below).
 
     python tests/band_masks_unit.py            # FALSIFY=1 disables the window drop
+
+**Running it under both aurora.** This environment runs aurora 0.6.2+mtproc (the bvkay/aurora
+fork, branch mtproc-fixes), so a plain run exercises `_set_window_masks`. Stock aurora 0.6.2 is a git
+worktree of the same clone (`git -C <the clone> worktree add <scratch> 3395804c`); running
+this file again as a subprocess with that worktree first on PYTHONPATH exercises
+`_band_masks_applied` instead -- the old, stock-only expectations (below) hold there unchanged.
 
 The synthetic archives of `tests/crosspower_unit.py` (L: ex ey hx hy in two
 runs, [T0, T0 + 1500 s) and [T0 + 1600 s, T0 + 3100 s); R: hx hy over the
@@ -34,7 +44,8 @@ bands the loop reaches after it on the same level (ex bands, then ey
 bands) can flip between Huber and no Huber. In the unmasked run here 10 of
 48 regressions skip the stage.
 
-**This test fails if**
+**This test fails if** (stock aurora; under the fork, 1 and 3 and half of 5 change -- see
+"under the fork" after each)
 
 1. isolation: (a) leak-free, the band-masked run changes any band but the
    test band -- every other band's Z (the 2x2) and its error must be
@@ -48,7 +59,14 @@ bands) can flip between Huber and no Huber. In the unmasked run here 10 of
    ey) changed although that regression's Huber-skip state did not flip
    (recorded HERE by wrapping `MEstimator.apply_huber_regression`); or the
    cascade pair moves no other row at all -- the leak exists in aurora
-   0.6.2, and when aurora fixes it this fails so the docs saying so change;
+   0.6.2, and when aurora fixes it this fails so the docs saying so change.
+   **Under the fork** (aurora 0.6.2+mtproc resets the Huber iteration count
+   before its convergence check, per regression -- the fork's
+   second commit -- so there is no shared state left to leak through): 1b
+   becomes "no other band moves at all", own band still must change, and
+   the leak-free pair must be bit-identical to the stock pair (the
+   test-local reset is now redundant with aurora's own -- asserted, not
+   assumed);
 2. in the test band, in both the stock and the leak-free pair, the masked
    Zxy is not closer to the known Zxy (the band mean of 2 exp(-2 pi i f /
    100) over the harmonics aurora used, recorded HERE) than half the
@@ -59,26 +77,37 @@ bands) can flip between Huber and no Huber. In the unmasked run here 10 of
    saying the test band lost N of 780 windows, N being the level-1 windows
    (128 points at 25 Hz, 96-sample hop from each run's start: 5.12 s long,
    3.84 s apart) that overlap [600, 1200) s, counted HERE from that grid
-   (158); or any other level gets a line;
+   (158); or any other level gets a line. **Under the fork**: mtproc's own
+   "window masks, decimation level 1: 1 mask(s) passed to aurora" line is
+   missing, or aurora's own "window masks: band ...s drops N of M STFT
+   windows" line (its logger, not mtproc's) does not carry that same (158,
+   780);
 4. the all-band mask over chunk 1 does not change every band;
-5. a band mask over the whole record is not skipped in the test band with a
-   log line naming it (it would leave 0 windows), a mask covering no band's
-   centre is not warned about, or that run is not bit-identical to the
-   unmasked one in every band;
-6. aurora's `get_band_for_tf_estimate` is not restored (the same object)
-   after every run and after an exception inside the block.
+5. a band mask over the whole record is not skipped in the test band (it
+   would leave 0 windows), a mask covering no band's centre is not warned
+   about (by mtproc: aurora does not check that itself, fork or stock), or
+   that run is not bit-identical to the unmasked one in every band.
+   **Under stock**: the skip is not a log line from mtproc naming the mask.
+   **Under the fork**: the skip is not a warning from aurora's own logger
+   naming the band and the floor;
+6. `mtproc.process._band_masks_applied` (the patch, always importable and
+   directly tested here regardless of which aurora is installed) does not
+   restore aurora's `get_band_for_tf_estimate` (the same object) after a
+   run through it and after an exception inside the block.
 
-The guard: **this test also fails if** aurora's entry point moves:
+The guard: **this test also fails if**, under stock aurora,
 `aurora.pipelines.transfer_function_helpers.get_band_for_tf_estimate`'s
 parameters are not (band, dec_level_config, local_stft_obj, remote_stft_obj);
 either regression loop (process_transfer_functions,
 process_transfer_functions_with_weights) stops calling that module-level
-name; the STFT a band is cut from, recorded HERE during the unmasked run,
-does not have dims (time, frequency) with `time` a naive datetime64 whose
-first window at levels 0 and 1 is T0 exactly and whose first window after
-L's gap is T0 + 1600 s (each window's first sample, UTC -- what the patch
-assumes); or `mtproc.process._check_band_patch` accepts a function with
-other parameter names.
+name; or `mtproc.process._check_band_patch` accepts a function with other
+parameter names; under the fork, `mtproc.process.AURORA_WINDOW_MASKS` is not
+True, `DecimationLevel` does not round-trip a `window_masks` assignment, or
+`transfer_function_helpers` lost `window_mask_for_band`. Either aurora: the
+STFT a band is cut from, recorded HERE during the unmasked run, does not
+have dims (time, frequency) with `time` a naive datetime64 whose first
+window at levels 0 and 1 is T0 exactly and whose first window after L's gap
+is T0 + 1600 s (each window's first sample, UTC -- what both paths assume).
 """
 
 from __future__ import annotations
@@ -100,6 +129,7 @@ sys.path.insert(0, str(REPO / "tests"))
 import crosspower_unit as cu  # noqa: E402  (the synthetic archive)
 from loguru import logger  # noqa: E402
 
+import aurora  # noqa: E402
 import aurora.pipelines.transfer_function_helpers as tfh  # noqa: E402
 import mtproc.process as mp  # noqa: E402
 from aurora.transfer_function.regression.m_estimator import MEstimator  # noqa: E402
@@ -204,14 +234,22 @@ class Recorder:
         return next(level for level, p, _s in self.huber if round(p, 6) == round(period, 6))
 
 
+LOG_NAMES = (("mtproc.process", "aurora.pipelines.transfer_function_helpers")
+            if mp.AURORA_WINDOW_MASKS else ("mtproc.process",))
+
+
 def run(local, remote, masks, leak_free=False, falsify=False):
-    """process_station L rr R; returns (tf, the mtproc.process log lines, the Recorder)."""
+    """process_station L rr R; returns (tf, the log lines (mtproc.process, plus aurora's own
+    transfer_function_helpers logger under the fork), the Recorder)."""
     lines: list[str] = []
     sink = logger.add(lambda m: lines.append(m.record["message"]), level="INFO",
-                      filter=lambda r: r["name"] == "mtproc.process")
-    saved = mp.windows_in_mask
-    if falsify:  # the drop disabled: no window is ever found inside a mask
+                      filter=lambda r: r["name"] in LOG_NAMES)
+    saved_patch = mp.windows_in_mask
+    saved_fork = getattr(tfh, "window_mask_for_band", None)
+    if falsify:  # the drop disabled: no window is ever found inside a mask, on whichever path runs
         mp.windows_in_mask = lambda times, window_s, mask: np.zeros(np.asarray(times).size, dtype=bool)
+        if saved_fork is not None:
+            tfh.window_mask_for_band = lambda dec_level_config, band, times: None
     rec = Recorder(leak_free)
     rec.install()
     try:
@@ -220,13 +258,25 @@ def run(local, remote, masks, leak_free=False, falsify=False):
         restored = tfh.get_band_for_tf_estimate is rec
     finally:
         rec.uninstall()
-        mp.windows_in_mask = saved
+        mp.windows_in_mask = saved_patch
+        if saved_fork is not None:
+            tfh.window_mask_for_band = saved_fork
         logger.remove(sink)
     assert restored, "6. get_band_for_tf_estimate was not restored after the run"
     return tf, lines, rec
 
 
 def guard() -> None:
+    """Under the fork: `AURORA_WINDOW_MASKS` is active and its two support points still exist.
+    Under stock: the patch's entry point and signature (unchanged from before the switch)."""
+    if mp.AURORA_WINDOW_MASKS:
+        assert mp._decimation_level_accepts_window_masks(), \
+            "guard: DecimationLevel no longer round-trips a window_masks assignment"
+        assert hasattr(tfh, "window_mask_for_band"), \
+            "guard: aurora.pipelines.transfer_function_helpers lost window_mask_for_band"
+        print(f"  guard: aurora {aurora.__version__}; AURORA_WINDOW_MASKS is True; DecimationLevel "
+              f"round-trips window_masks; transfer_function_helpers still has window_mask_for_band")
+        return
     fn = tfh.get_band_for_tf_estimate
     params = tuple(inspect.signature(fn).parameters)
     assert params == EXPECTED_PARAMETERS, f"guard: aurora's get_band_for_tf_estimate takes {params}"
@@ -279,6 +329,8 @@ def stock_isolation(label, periods, ref, got, skip_ref, skip_got, masked_period,
 
 
 def main() -> int:
+    fork = mp.AURORA_WINDOW_MASKS
+    print(f"path exercised: {'aurora window_masks (0.6.2+mtproc, DecimationLevel.window_masks)' if fork else 'runtime patch (stock aurora, _band_masks_applied)'}")
     guard()
     falsify = os.environ.get("FALSIFY") == "1"
     period, pmin, pmax = the_test_band()
@@ -294,12 +346,14 @@ def main() -> int:
         banded, band_lines, rec_band = run(local, remote, [band_mask], falsify=falsify)
         free_none, _, _ = run(local, remote, None, leak_free=True)
         free_band, _, _ = run(local, remote, [band_mask], leak_free=True, falsify=falsify)
+        cascade = rec_cascade = None
         if falsify:
-            print("  FALSIFY=1: the window drop is disabled; 1b (the masked band unchanged) must now fail")
+            print("  FALSIFY=1: the window drop is disabled; own-band and known-Z criteria must now fail")
         else:
-            lo, hi = np.asarray(SCHEME["band_edges"][TEST_LEVEL])[CASCADE_INDEX]
-            cascade_mask = {"start": at(WHITE[0]), "end": at(WHITE[1]), "bands": [1.0 / hi, 1.0 / lo]}
-            cascade, _, rec_cascade = run(local, remote, [cascade_mask])
+            if not fork:  # the shared-iteration-count cascade is a stock-only leak (aurora 0.6.2+mtproc resets per regression)
+                lo, hi = np.asarray(SCHEME["band_edges"][TEST_LEVEL])[CASCADE_INDEX]
+                cascade_mask = {"start": at(WHITE[0]), "end": at(WHITE[1]), "bands": [1.0 / hi, 1.0 / lo]}
+                cascade, _, rec_cascade = run(local, remote, [cascade_mask])
             all_band, _, _ = run(local, remote, [{**band_mask, "bands": "all"}])
             whole = {"start": at(-3600), "end": at(7200), "bands": [pmin, pmax], "reason": "empties the band"}
             nowhere = {"start": at(1800), "end": at(2400), "bands": [0.2900, 0.2905], "reason": "no centre"}
@@ -325,36 +379,58 @@ def main() -> int:
     Z = {name: (tf.impedance.data, tf.impedance_error.data)
          for name, tf in (("none", none), ("band", banded), ("free_none", free_none), ("free_band", free_band))}
 
-    # 1a. leak-free: only the test band moved
-    for k in others:
-        assert np.array_equal(Z["free_band"][0][k], Z["free_none"][0][k]) and \
-            np.array_equal(Z["free_band"][1][k], Z["free_none"][1][k]), \
-            f"1a. leak-free, band {periods[k]:.4f} s changed under a mask on {period:.4f} s"
-    print(f"  1a. leak-free: band mask [{pmin:.4f}, {pmax:.4f}] s leaves the other {len(others)} bands "
-          f"bit-identical (Z and its error)")
+    # own band must change either way -- the falsification target: FALSIFY=1 disables the drop,
+    # so this (and 2, below) must then fail
+    assert not np.array_equal(Z["band"][0][j], Z["none"][0][j]), \
+        f"1. the mask did not change its own band ({period:.4f} s): no window was dropped"
 
-    # 1b. stock aurora: other levels bit-identical; same-level changes only where the Huber skip flipped
-    skip_none = rec_none.skipped()
-    print(f"  1b. stock aurora: {sum(skip_none.values())} of {len(skip_none)} regressions skip the Huber stage "
-          f"unmasked")
-    pairs = [("test-band pair", banded, rec_band, periods[j])]
-    if not falsify:
-        lo, hi = np.asarray(SCHEME["band_edges"][TEST_LEVEL])[CASCADE_INDEX]
-        pairs.append(("cascade pair", cascade, rec_cascade, periods[int(np.argmin(np.abs(periods - 1 / np.sqrt(lo * hi))))]))
-    for label, tf, rec, masked_period in pairs:
-        moved, worst = stock_isolation(label, periods, Z["none"], (tf.impedance.data, tf.impedance_error.data),
-                                       skip_none, rec.skipped(), masked_period, rec_none)
-        if label == "cascade pair":
-            assert moved, ("1b. masking the white burst in the cascade band moved no other band: aurora's shared "
-                           "iteration counter no longer leaks -- update the docs that say it does")
-        print(f"      {label}: mask on {masked_period:.4f} s moved {len(moved)} other row(s), all on level "
-              f"{TEST_LEVEL}, each with its Huber skip flipped{f' (at most {100 * worst:.1f} % of |Z|)' if moved else ''}: "
-              f"{moved}")
+    if fork:
+        # 1. the fork resets the Huber iteration count before its convergence check, per regression
+        # (the fork's second commit): no shared state is left for a mask on one band to
+        # leak through to another, so every other band -- on every level -- must be untouched
+        for k in others:
+            assert np.array_equal(Z["band"][0][k], Z["none"][0][k]) and \
+                np.array_equal(Z["band"][1][k], Z["none"][1][k]), \
+                f"1. fork: band {periods[k]:.4f} s changed under a mask on {period:.4f} s (no other band should move)"
+        print(f"  1. fork: band mask [{pmin:.4f}, {pmax:.4f}] s changes only its own band ({period:.4f} s); "
+              f"the other {len(others)} bands are bit-identical (Z and its error)")
+        # the test-local Huber reset ("leak-free") is now redundant with aurora's own -- assert, don't assume
+        for a, b in (("none", "free_none"), ("band", "free_band")):
+            assert np.array_equal(Z[a][0], Z[b][0]) and np.array_equal(Z[a][1], Z[b][1]), \
+                f"1. fork: {a} and {b} differ although aurora resets the Huber count itself"
+        print("  1. fork: the leak-free run (test-local Huber reset) is bit-identical to the stock run: "
+              "aurora's own per-regression reset already removes the cascade")
+    else:
+        # 1a. leak-free: only the test band moved
+        for k in others:
+            assert np.array_equal(Z["free_band"][0][k], Z["free_none"][0][k]) and \
+                np.array_equal(Z["free_band"][1][k], Z["free_none"][1][k]), \
+                f"1a. leak-free, band {periods[k]:.4f} s changed under a mask on {period:.4f} s"
+        print(f"  1a. leak-free: band mask [{pmin:.4f}, {pmax:.4f}] s leaves the other {len(others)} bands "
+              f"bit-identical (Z and its error)")
+
+        # 1b. stock aurora: other levels bit-identical; same-level changes only where the Huber skip flipped
+        skip_none = rec_none.skipped()
+        print(f"  1b. stock aurora: {sum(skip_none.values())} of {len(skip_none)} regressions skip the Huber stage "
+              f"unmasked")
+        pairs = [("test-band pair", banded, rec_band, periods[j])]
+        if not falsify:
+            lo, hi = np.asarray(SCHEME["band_edges"][TEST_LEVEL])[CASCADE_INDEX]
+            pairs.append(("cascade pair", cascade, rec_cascade, periods[int(np.argmin(np.abs(periods - 1 / np.sqrt(lo * hi))))]))
+        for label, tf, rec, masked_period in pairs:
+            moved, worst = stock_isolation(label, periods, Z["none"], (tf.impedance.data, tf.impedance_error.data),
+                                           skip_none, rec.skipped(), masked_period, rec_none)
+            if label == "cascade pair":
+                assert moved, ("1b. masking the white burst in the cascade band moved no other band: aurora's shared "
+                               "iteration counter no longer leaks -- update the docs that say it does")
+            print(f"      {label}: mask on {masked_period:.4f} s moved {len(moved)} other row(s), all on level "
+                  f"{TEST_LEVEL}, each with its Huber skip flipped{f' (at most {100 * worst:.1f} % of |Z|)' if moved else ''}: "
+                  f"{moved}")
 
     # 2. the test band moved towards the known Z, by more than its own error
     f = rec_none.freqs[min(rec_none.freqs, key=lambda p: abs(p - period))]
     want = cu.Z_TRUE["xy"] * np.mean(np.exp(-2j * np.pi * f * cu.DELAY / cu.FS))
-    for label, a, b in (("stock", "none", "band"), ("leak-free", "free_none", "free_band")):
+    for label, a, b in ((("aurora window_masks" if fork else "stock"), "none", "band"), ("leak-free", "free_none", "free_band")):
         z0, e0, zb = Z[a][0][j, 0, 1], Z[a][1][j, 0, 1], Z[b][0][j, 0, 1]
         err0, errb, shift = rel_err(z0, want), rel_err(zb, want), abs(zb - z0)
         print(f"  2. {label}: {period:.4f} s ({f.size} harmonics, {f[0]:.3f}-{f[-1]:.3f} Hz) Zxy error "
@@ -363,14 +439,28 @@ def main() -> int:
         assert errb < 0.5 * err0, f"2. {label}: the masked band did not move towards the known Z"
         assert shift > e0, f"2. {label}: the shift {shift:.4f} is within the unmasked error {e0:.4f}"
 
-    # 3. the log: one line, for level 1, the lost windows as counted from the grid
+    # 3. the log: level 1 (and only level 1) reports the lost windows, counted from the grid
     hit, total = level1_windows_in(*BIASED)
-    level_lines = [line for line in band_lines if line.startswith("band masks, decimation level")]
-    assert len(level_lines) == 1 and level_lines[0].startswith(f"band masks, decimation level {TEST_LEVEL}:"), \
-        level_lines
-    m = re.search(rf"{period:.4g} s lost (\d+) of (\d+) windows", level_lines[0])
-    assert m and (int(m.group(1)), int(m.group(2))) == (hit, total), (level_lines[0], hit, total)
-    print(f"  3. log: {level_lines[0]!r} ({hit} of {total} counted here from the level-1 grid)")
+    if fork:
+        # mtproc's own line: how many masks were passed to aurora, per level
+        own_lines = [line for line in band_lines if line.startswith("window masks, decimation level")]
+        level_line = [line for line in own_lines if line.startswith(f"window masks, decimation level {TEST_LEVEL}:")]
+        assert len(level_line) == 1 and level_line[0].endswith("1 mask(s) passed to aurora"), own_lines
+        # aurora's own line (its logger, not mtproc's): the actual windows dropped for the test band
+        drop_lines = [line for line in band_lines if line.startswith("window masks: band ") and "drops" in line]
+        assert drop_lines, band_lines
+        m = re.search(r"window masks: band ([\d.]+)s drops (\d+) of (\d+) STFT windows", drop_lines[0])
+        assert m and abs(float(m.group(1)) - periods[j]) < 1e-5 * periods[j] and \
+            (int(m.group(2)), int(m.group(3))) == (hit, total), (drop_lines, hit, total)
+        print(f"  3. fork: {level_line[0]!r}; aurora itself logged {drop_lines[0]!r} "
+              f"({hit} of {total} counted here from the level-1 grid)")
+    else:
+        level_lines = [line for line in band_lines if line.startswith("band masks, decimation level")]
+        assert len(level_lines) == 1 and level_lines[0].startswith(f"band masks, decimation level {TEST_LEVEL}:"), \
+            level_lines
+        m = re.search(rf"{period:.4g} s lost (\d+) of (\d+) windows", level_lines[0])
+        assert m and (int(m.group(1)), int(m.group(2))) == (hit, total), (level_lines[0], hit, total)
+        print(f"  3. log: {level_lines[0]!r} ({hit} of {total} counted here from the level-1 grid)")
 
     # 4. the all-band mask moves every band
     za, z0 = all_band.impedance.data, Z["none"][0]
@@ -382,12 +472,23 @@ def main() -> int:
     # 5. a mask emptying the band is skipped, a mask covering no band is warned about
     assert np.array_equal(empty.impedance.data, z0) and np.array_equal(empty.impedance_error.data, Z["none"][1]), \
         "5. the skipped masks changed the estimate"
-    skip_line = [line for line in empty_lines if f"skipped at {period:.4g} s" in line]
-    assert skip_line and "2023-09-21T23:00:00Z" in skip_line[0], empty_lines
+    # mtproc warns about the mask covering no band's centre either way -- aurora does not check
+    # that itself, fork or stock (see the comment above mtproc.process.AURORA_WINDOW_MASKS)
     assert any("covers no band's centre period" in line and "[0.29, 0.2905]" in line for line in empty_lines), \
         empty_lines
-    print(f"  5. a mask over the whole record skipped at {period:.4g} s (logged), a mask between band centres "
-          f"warned about; every band bit-identical to the unmasked run")
+    if fork:
+        # aurora's own floor (max(1, min_num_stft_windows)) leaves the whole-record mask's band
+        # unmasked, and aurora logs that itself (not mtproc)
+        aurora_skip = [line for line in empty_lines
+                       if "STFT windows (minimum" in line and "band left unmasked" in line]
+        assert aurora_skip, empty_lines
+        print(f"  5. fork: a mask over the whole record left unmasked by aurora itself ({aurora_skip[0]!r}); "
+              f"mtproc warned about the mask between band centres; every band bit-identical to the unmasked run")
+    else:
+        skip_line = [line for line in empty_lines if f"skipped at {period:.4g} s" in line]
+        assert skip_line and "2023-09-21T23:00:00Z" in skip_line[0], empty_lines
+        print(f"  5. a mask over the whole record skipped at {period:.4g} s (logged), a mask between band centres "
+              f"warned about; every band bit-identical to the unmasked run")
 
     # 6. restored after an exception inside the block too
     original = tfh.get_band_for_tf_estimate

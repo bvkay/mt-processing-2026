@@ -6,12 +6,14 @@ import inspect
 from contextlib import contextmanager
 from pathlib import Path
 
+import aurora
 import aurora.pipelines.transfer_function_helpers as _tf_helpers
 import numpy as np
 import pandas as pd
 from aurora.config.config_creator import ConfigCreator
 from aurora.pipelines.process_mth5 import process_mth5
 from loguru import logger
+from mt_metadata.processing.aurora.decimation_level import DecimationLevel as _AuroraDecimationLevel
 
 from mth5.mth5 import MTH5
 
@@ -119,11 +121,73 @@ def _archives_read_only():
         MTH5.open_mth5 = original
 
 
-# Band-limited masks reach aurora through a scoped patch (docs/upstream_issues.md
-# 22: aurora 0.6.2 takes no per-band window weights or masks from outside).
-# Both of its regression loops take a band's Fourier coefficients from the one
-# function, looked up in `aurora.pipelines.transfer_function_helpers`' globals
-# at call time:
+# aurora 0.6.2+mtproc (the bvkay/aurora fork, branch mtproc-fixes, "Add per-band
+# STFT window masks on the decimation level") gained its own field for this:
+# `DecimationLevel.window_masks`, a list of [start, end, pmin_s, pmax_s] rows,
+# read with getattr inside both regression loops (window_mask_for_band /
+# apply_window_mask in aurora.pipelines.transfer_function_helpers) and dropped
+# the same way the patch below does -- overlapping STFT windows removed before
+# the regression, per band, per level. Its own floor is max(1,
+# stft.min_num_stft_windows); a mask left under that is skipped there, with a
+# warning aurora logs itself. It does *not* warn about a mask that covers no
+# band's centre on any level, so `_set_window_masks` does. `start`/`end` go
+# through aurora's own `_utc_naive` (`pandas.Timestamp(value)`, naive taken as
+# UTC), which parses `mtproc.masks.normalise`'s ISO strings the same way
+# `mtproc.masks.utc` does, so the mask dicts' own `start`/`end` are passed
+# through unchanged. mt_metadata's DecimationLevel has no *typed* window_masks
+# field, so it does not serialise
+# with the processing config and a stock DecimationLevel accepts the same
+# assignment without error -- `AURORA_WINDOW_MASKS` therefore checks aurora's
+# version string (a fork not carrying this feature would not say +mtproc) and
+# separately probes that an assignment on `DecimationLevel` actually round-trips.
+AURORA_WINDOW_MASKS = "+mtproc" in aurora.__version__
+
+
+def _decimation_level_accepts_window_masks() -> bool:
+    """True when this aurora's `DecimationLevel` stores and returns a `window_masks` assignment.
+
+    Guards `AURORA_WINDOW_MASKS` against a future fork whose version string
+    says +mtproc but which dropped (or never gained) the field itself: the
+    version check alone cannot tell, since the field is untyped and a stock
+    `DecimationLevel` accepts the same assignment (see the comment above).
+    """
+    probe = object()
+    dec = _AuroraDecimationLevel()
+    try:
+        dec.window_masks = probe
+    except Exception:
+        return False
+    return getattr(dec, "window_masks", None) is probe
+
+
+AURORA_WINDOW_MASKS = AURORA_WINDOW_MASKS and _decimation_level_accepts_window_masks()
+
+
+def _set_window_masks(config, band_limited: list[dict]) -> None:
+    """Set aurora's own `window_masks` (one row per band-limited mask) on every decimation
+    level of `config`, log per level how many were passed, and warn about a mask whose
+    [pmin_s, pmax_s] covers no band's centre period on any level -- aurora does not check
+    that itself (see the comment above `AURORA_WINDOW_MASKS`).
+    """
+    rows = [[m["start"], m["end"], m["bands"][0], m["bands"][1]] for m in band_limited]
+    matched: set[int] = set()
+    for dec in config.decimations:
+        dec.window_masks = list(rows)
+        logger.info(f"window masks, decimation level {int(dec.decimation.level)}: "
+                    f"{len(rows)} mask(s) passed to aurora")
+        for i, m in enumerate(band_limited):
+            if any(applies(m, float(band.center_period)) for band in dec.bands):
+                matched.add(i)
+    for i, m in enumerate(band_limited):
+        if i not in matched:
+            logger.warning(f"band mask {_mask_label(m)} covers no band's centre period: not applied")
+
+
+# On stock aurora (no `window_masks`), band-limited masks reach aurora through a
+# scoped patch instead (docs/upstream_issues.md 22: aurora 0.6.2 takes no
+# per-band window weights or masks from outside). Both of its regression loops
+# take a band's Fourier coefficients from the one function, looked up in
+# `aurora.pipelines.transfer_function_helpers`' globals at call time:
 #   line 249, process_transfer_functions:
 #       X, Y, RR = get_band_for_tf_estimate(band, dec_level_config, local_stft_obj, remote_stft_obj)
 #   line 339, process_transfer_functions_with_weights (per output channel):
@@ -401,12 +465,15 @@ def process_station(
     `time_masks` is the site's list from `<survey>/masks.yaml` (`mtproc.masks.load_masks`):
     the all-band intervals are cut out of the kernel dataset's run intervals
     before the config is built (`apply_time_masks`). The band-limited ones act
-    inside aurora's regression through a scoped patch (`_band_masks_applied`,
-    aurora 0.6.2 taking no per-band window weights from outside,
-    docs/upstream_issues.md 22): in a band whose centre period a mask covers,
-    the STFT windows overlapping the mask are dropped before the regression,
-    every other band untouched; a mask that would leave a band fewer than
-    `MIN_MASKED_WINDOWS` windows is skipped there, with a log line.
+    inside aurora's regression: on aurora 0.6.2+mtproc (`AURORA_WINDOW_MASKS`),
+    through its own `DecimationLevel.window_masks` field (`_set_window_masks`);
+    on stock aurora, which takes no per-band window weights from outside
+    (docs/upstream_issues.md 22), through a scoped patch instead
+    (`_band_masks_applied`). Either way, in a band whose centre period a mask
+    covers, the STFT windows overlapping the mask are dropped before the
+    regression, every other band untouched; a mask that would leave a band too
+    few windows is skipped there, with a log line (aurora's own floor on its
+    path; `MIN_MASKED_WINDOWS` on the patch's).
 
     `band_scheme` is the dict from mtproc.bands (band_edges, decimation_factors,
     num_samples_window); `start`/`end` (UTC) restrict the estimate to a
@@ -445,10 +512,16 @@ def process_station(
 
     logger.info(
         f"aurora: {station}" + (f" RR {remote_station}" if remote_station else " single-station")
-        + (f", {len(band_limited)} band-limited mask(s) applied per band" if band_limited else "")
+        + (f", {len(band_limited)} band-limited mask(s) applied per band"
+           f" ({'aurora window_masks' if AURORA_WINDOW_MASKS else 'runtime patch'})" if band_limited else "")
     )
-    with _band_masks_applied(band_limited):
+    if AURORA_WINDOW_MASKS:
+        if band_limited:
+            _set_window_masks(config, band_limited)
         tf = process_mth5(config, kd)
+    else:
+        with _band_masks_applied(band_limited):
+            tf = process_mth5(config, kd)
 
     if out_dir is not None:
         out_dir = Path(out_dir)
