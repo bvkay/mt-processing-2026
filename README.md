@@ -73,7 +73,6 @@ src/mtproc_gui/    the desktop GUI: a launcher and viewer over scripts/ and
 surveys/<name>/    one folder per survey: survey.yaml (config), reference_edis.yaml,
                    qc_notes.md (what was learned about each site) + work/ (outputs, gitignored)
 scripts/           the student-facing command line, one job each (see below)
-examples/          runnable end-to-end examples for students
 tests/             unit tests (no Qt) plus the GUI smoke test
 ```
 
@@ -157,8 +156,6 @@ remote = ingest_site(survey, "E08", start="2021-06-29 12:00", end="2021-06-29 18
 tf = process_station(local, "D02", remote, "E08", out_dir=survey.workspace / "tf")
 ```
 
-See `examples/01_validate_d02_e08.py` for the full validation run against the
-legacy lemimt EDIs.
 
 ## Instruments
 

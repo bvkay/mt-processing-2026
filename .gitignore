@@ -19,3 +19,4 @@ docs/*
 HANDOVER.md
 src/mtproc_gui/README.md
 !docs/upstream_issues.md
+examples/
