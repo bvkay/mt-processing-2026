@@ -826,7 +826,9 @@ def readable_b423(files: list[Path]) -> tuple[list[Path], list[str]]:
         try:
             Read_Lemi_Header(f).read()
         except (ValueError, IndexError) as exc:
-            skipped.append(f"{f.name}: header unreadable ({str(exc).split(': ', 1)[-1]})")
+            detail = str(exc).split(": ", 1)[-1]
+            skipped.append(f"{f.name}: {detail}" if "unreadable" in detail
+                           else f"{f.name}: header unreadable ({detail})")
             continue
         keep.append(f)
     if len(keep) >= B423_MIN_FILES_FOR_FILL:
