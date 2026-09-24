@@ -7,7 +7,11 @@ site (archived sites), the remote (archived sites whose recorded span
 overlaps the site's; preset to the site's declared `remote:`, else the
 Process tab's recommendation rule, `site_map.PairSummary.recommendation`,
 over the archived raw sites), the window, the band (every band of the
-survey's lemimt scheme, by period), the chunk length and **Compute**.
+survey's lemimt scheme, by period; the arrows either side of it, or PgUp /
+PgDn anywhere in the tab, step one band back or on, and the label after
+them names the band shown: "band 23 of 60 · 1.14 s · level 3", its place in
+the list, its centre period and its decimation level), the chunk length
+and **Compute**.
 
 The window is, first and by default, the **whole overlap** of the site and
 the remote: `window_bar.overlap` of their recorded spans, read exactly as
@@ -57,10 +61,10 @@ import numpy as np
 import pyqtgraph as pg
 from pyqtgraph import Point
 from PySide6.QtCore import QRectF, Qt, Signal
-from PySide6.QtGui import QColor
+from PySide6.QtGui import QColor, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemView, QCheckBox, QComboBox, QGraphicsRectItem, QHBoxLayout, QHeaderView, QLabel,
-    QPushButton, QSplitter, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
+    QPushButton, QSplitter, QTableWidget, QTableWidgetItem, QToolButton, QVBoxLayout, QWidget,
 )
 
 from mtproc.bands import lemimt_band_scheme
@@ -190,6 +194,9 @@ class CrossPowerTab(QWidget):
             "whole overlap of site and remote (default), the Process tab's processing window "
             "when one is set for this site, or one 2 h QC window"))
         self.band_combo = QComboBox(self, minimumWidth=150)
+        self.prev_band = QToolButton(self, arrowType=Qt.LeftArrow, toolTip="previous band (PgUp)")
+        self.next_band = QToolButton(self, arrowType=Qt.RightArrow, toolTip="next band (PgDn)")
+        self.band_label = QLabel("", self)  # the list is long: which band is shown
         self.chunk_combo = QComboBox(self, toolTip="chunk length: one impedance per chunk and band")
         for seconds in CHUNKS_S:
             self.chunk_combo.addItem(f"{seconds / 60:g} min", seconds)
@@ -198,15 +205,25 @@ class CrossPowerTab(QWidget):
         self.site_combo.currentIndexChanged.connect(lambda _i: self._site_changed())
         self.remote_combo.activated.connect(lambda _i: setattr(self, "_hand_remote", self.site()))
         self.remote_combo.currentIndexChanged.connect(lambda _i: self._fill_windows())  # a new overlap
+        self.band_combo.currentIndexChanged.connect(lambda _i: self._band_shown())
         self.band_combo.currentIndexChanged.connect(lambda _i: self.draw())
+        self.prev_band.clicked.connect(lambda: self.step_band(-1))
+        self.next_band.clicked.connect(lambda: self.step_band(1))
+        # PgUp / PgDn while the focus is anywhere in this tab; not bare Left / Right, the combo's and the plots'
+        for key, step in ((Qt.Key_PageUp, -1), (Qt.Key_PageDown, 1)):
+            shortcut = QShortcut(QKeySequence(key), self)
+            shortcut.setContext(Qt.WidgetWithChildrenShortcut)
+            shortcut.activated.connect(partial(self.step_band, step))
         self.chunk_combo.currentIndexChanged.connect(lambda _i: self._fill_bands())
         self.compute_button.clicked.connect(self.compute)
         top = QHBoxLayout()
-        for text, widget in (("Site", self.site_combo), ("Remote", self.remote_combo),
-                             ("Window", self.window_combo), ("Band", self.band_combo),
-                             ("Chunk", self.chunk_combo)):
+        for text, widgets in (("Site", [self.site_combo]), ("Remote", [self.remote_combo]),
+                              ("Window", [self.window_combo]),
+                              ("Band", [self.prev_band, self.band_combo, self.next_band, self.band_label]),
+                              ("Chunk", [self.chunk_combo])):
             top.addWidget(QLabel(text, self))
-            top.addWidget(widget)
+            for widget in widgets:
+                top.addWidget(widget)
         top.addWidget(self.compute_button)
         top.addWidget(self.status, 1)
 
@@ -228,8 +245,10 @@ class CrossPowerTab(QWidget):
         split.setStretchFactor(0, 3)
         split.setStretchFactor(1, 2)
 
-        self.all_bands = QCheckBox("all bands", self, checked=True,
-                                   toolTip="a time-panel mask covers every band (bands: all)")
+        self.all_bands = QCheckBox("all bands", self, checked=False,
+                                   toolTip="ticked: a time-panel mask is a time cut, every band left out "
+                                           "(bands: all); unticked: it covers the shown band only, like a "
+                                           "polar-panel mask")
         self.mask_button = QPushButton("Mask selected", self, clicked=self.mask_selected)
         self.unmask_button = QPushButton("Unmask selected", self, clicked=self.unmask_selected)
         self.remove_button = QPushButton("Remove", self, clicked=self.remove_rows)
@@ -261,6 +280,7 @@ class CrossPowerTab(QWidget):
         state.site_changed.connect(lambda site: self.select_site(site) if site else None)
         state.selection_changed.connect(lambda _selection: self._follow_selection())
         state.archive_lock.changed.connect(self._kick)
+        self._band_shown()  # no survey yet: no label, both arrows off
 
     # ------------------------------------------------------------- building
 
@@ -328,7 +348,26 @@ class CrossPowerTab(QWidget):
                 keep = int(np.argmin(np.abs(np.log(periods / DEFAULT_PERIOD_S))))
             self.band_combo.setCurrentIndex(keep)
         self.band_combo.blockSignals(False)
+        self._band_shown()
         self.draw()
+
+    def step_band(self, step: int) -> None:
+        """The band combo one band back (-1) or on (+1); nothing past either end."""
+        index = self.band_combo.currentIndex() + step
+        if 0 <= index < self.band_combo.count():
+            self.band_combo.setCurrentIndex(index)
+
+    def _band_shown(self) -> None:
+        """'band 23 of 60 · 1.14 s · level 3' for the combo's current band (its place in the list,
+        its centre period, its decimation level), empty without one; each arrow on while it has a band to go to."""
+        index, count, j = self.band_combo.currentIndex(), self.band_combo.count(), self.band()
+        self.prev_band.setEnabled(index > 0)
+        self.next_band.setEnabled(0 <= index < count - 1)
+        if j is None or self.scheme is None:
+            self.band_label.setText("")
+            return
+        level = band_table(self.scheme)[0][j]
+        self.band_label.setText(f"band {index + 1} of {count} · {self.band_periods(j)[0]:.4g} s · level {level}")
 
     def site(self) -> str | None:
         return self.site_combo.currentText() or None

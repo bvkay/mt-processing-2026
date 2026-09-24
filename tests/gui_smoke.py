@@ -500,16 +500,25 @@ and Coherence tabs show that window. **This test fails if**
      chunks' |Zxy| and |Zyx| there within a factor 3 of the values of
      surveys/curnamona_cube/work/tf/D02_rr-E08.edi (read HERE with
      mt_metadata, at its period nearest the band's); the |Z| plot must hold
-     12 spots per mode. A rubber band over chunks 3 and 4 on the |Z| plot
+     12 spots per mode. The label beside the band combo must then name the
+     combo's current band: "band <its index + 1> of <the band count>", its
+     period (`tab.band_periods`, 4 significant digits) and "level <its level>"
+     (band_table's, read HERE); the next-band arrow must move the combo one
+     band on and the previous-band arrow one back, the label following each
+     time; at the first band the previous arrow must be disabled and the next
+     enabled, at the last band the next arrow disabled; the band brought back
+     must be drawn again with 12 spots per mode. A rubber band over chunks 3
+     and 4 on the |Z| plot
      (the ViewBox's `selected` signal with a rectangle computed HERE from
-     their start times, `crosspower_rect`) must select exactly {3, 4}; "Mask
-     selected" must add one mask, chunk 3's start to chunk 4's end, bands all,
-     found_by time; "Save masks" must write the copy's masks.yaml holding
+     their start times, `crosspower_rect`) must select exactly {3, 4}; the
+     "all bands" box must start unticked (a time-panel mask covers the shown
+     band only, like a polar one); ticked, "Mask selected" must add one mask,
+     chunk 3's start to chunk 4's end, bands all, found_by time; "Save masks" must write the copy's masks.yaml holding
      exactly that one D02 entry (read HERE with yaml); the tab moved to E08
      and back to D02 must list it again from the file; Compute on the same
      window again must draw chunks 3 and 4 hollow (no brush) and the ten
      others filled, on the |Z| plot and on both polar plots; and the real
-     survey folder must hold no masks.yaml. The compute times are printed and
+     survey folder's masks.yaml, if any, must be left byte for byte as it was. The compute times are printed and
      the tab shot to work/qc/gui_crosspower_overlap.png (the whole overlap)
      and gui_crosspower.png (the QC window), neither counted in (17).
 
@@ -1036,14 +1045,18 @@ def crosspower_rect(starts_s: np.ndarray, chunks) -> "QRectF":
 
 
 def crosspower_check(app, window) -> None:
-    """(34): the whole overlap by default; compute, compare with the EDI, select, mask, save, reload,
-    hollow -- on a copy of the survey."""
+    """(34): the whole overlap by default; compute, compare with the EDI, the band label and arrows,
+    select, mask, save, reload, hollow -- on a copy of the survey."""
+    import re
+
     import pyqtgraph as pg
     from mt_metadata.transfer_functions.core import TF
     from mtproc.crosspower import band_table
     from mtproc_gui.tabs.crosspower import OVERLAP, QC
 
     print("(34) the Cross-powers tab, on a copy of the survey folder:")
+    real_masks = SURVEY_DIR / "masks.yaml"
+    real_masks_before = real_masks.read_bytes() if real_masks.exists() else None
     (SCRATCH / "masks.yaml").unlink(missing_ok=True)
     window.open_survey(make_survey_copy())
     pump(app, 0.3)
@@ -1149,10 +1162,47 @@ def crosspower_check(app, window) -> None:
     print(f"    D02 rr E08, {n_chunks} chunks of 600 s at {periods[j]:.4g} s (level {level[j]}): computed in "
           f"{took:.1f} s; median |Z| / EDI's at {edi.period[k]:.4g} s: xy {ratios['xy']:.3f}, yx {ratios['yx']:.3f}")
 
+    band_combo = tab.band_combo
+
+    def band_named() -> int:
+        """The label names the combo's current band: its place (1-based), its period, its level."""
+        index, jj, label = band_combo.currentIndex(), band_combo.currentData(), tab.band_label.text()
+        for want in (rf"\bband {index + 1} of {band_combo.count()}\b",
+                     rf"(^|\s){re.escape(f'{tab.band_periods(jj)[0]:.4g}')} s\b", rf"\blevel {level[jj]}\b"):
+            assert re.search(want, label), (label, want, index, jj)
+        return index
+
+    at = band_named()
+    assert at == band_combo.findData(j) and tab.prev_band.isEnabled() and tab.next_band.isEnabled(), (at, j)
+    label_at = tab.band_label.text()
+    tab.next_band.click()
+    pump(app, 0.1)
+    assert band_combo.currentIndex() == at + 1 == band_named(), (band_combo.currentIndex(), at)
+    tab.prev_band.click()
+    pump(app, 0.1)
+    assert band_combo.currentIndex() == at == band_named() and tab.band_label.text() == label_at, (
+        band_combo.currentIndex(), at, tab.band_label.text())
+    band_combo.setCurrentIndex(0)
+    pump(app, 0.1)
+    assert band_named() == 0 and not tab.prev_band.isEnabled() and tab.next_band.isEnabled(), "at the first band"
+    band_combo.setCurrentIndex(band_combo.count() - 1)
+    pump(app, 0.1)
+    assert band_named() == band_combo.count() - 1 and tab.prev_band.isEnabled() and not tab.next_band.isEnabled(), (
+        "at the last band")
+    band_combo.setCurrentIndex(at)
+    pump(app, 0.1)
+    assert tab.band() == j and tab.band_label.text() == label_at, (tab.band(), tab.band_label.text(), label_at)
+    spots = [len(item.scatter.points()) for item in z_plot.getPlotItem().listDataItems()]
+    assert spots == [12, 12], spots  # the band the rubber band goes round, drawn again
+    print(f"    band label \"{label_at}\"; the next arrow one band on and the previous arrow back, the label "
+          f"following; the previous arrow off at band 1, the next arrow off at band {band_combo.count()}")
+
     starts_s = np.asarray(r["chunk_starts"].asi8, dtype=float) / 1e9
     z_plot.getViewBox().selected.emit(crosspower_rect(starts_s, CROSSPOWER_MASKED))
     pump(app, 0.1)
     assert tab.selected == set(CROSSPOWER_MASKED) and tab.selected_on == "time", (tab.selected, tab.selected_on)
+    assert not tab.all_bands.isChecked(), "a time-panel mask must cover the shown band only unless asked"
+    tab.all_bands.setChecked(True)  # asked: this one is a time cut
     tab.mask_button.click()
     first, last = min(CROSSPOWER_MASKED), max(CROSSPOWER_MASKED)
     want = {"start": r["chunk_starts"][first], "end": r["chunk_ends"][last]}
@@ -1183,11 +1233,12 @@ def crosspower_check(app, window) -> None:
             hollow = [spot.brush().style() == Qt.NoBrush for spot in item.scatter.points()]
             want_hollow = [int(i) in CROSSPOWER_MASKED for i in idx]
             assert hollow == want_hollow, (plot.panel, hollow)
-    assert not (SURVEY_DIR / "masks.yaml").exists(), "a masks.yaml was written into the real survey folder"
+    real_masks_after = real_masks.read_bytes() if real_masks.exists() else None
+    assert real_masks_after == real_masks_before, "the real survey folder's masks.yaml was written"
     shot = SHOT_DIR / "gui_crosspower.png"
     assert tab.grab().save(str(shot)), f"could not save {shot}"
     print(f"    reloaded from the file: chunks {list(CROSSPOWER_MASKED)} hollow on the |Z| and both polar "
-          f"plots, the other ten filled; the real survey folder has no masks.yaml; {shot.name} saved")
+          f"plots, the other ten filled; the real survey folder's masks.yaml untouched; {shot.name} saved")
 
 
 def main() -> int:
