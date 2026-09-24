@@ -4,14 +4,21 @@
 
 The forks are the clones at MTPROC_FORKS/mth5 (import name `mth5`) and
 MTPROC_FORKS/mt-metadata (import name `mt_metadata`); MTPROC_FORKS defaults
-to D:\BEN. Every check runs in a fresh subprocess (`--worker`): the
-fork's with PYTHONPATH=<mth5 clone>;<mt-metadata clone>;src ahead of
-site-packages, the stock control's with PYTHONPATH=src. The stock controls
-show that each check can fail: stock is expected to fail checks 1, 2 and 4,
-and the test fails if it does not (the check would then prove nothing).
-Without both clones the fork checks are reported as skipped and the test
-passes; with a fork installed in place of stock, the stock controls and the
-timing comparison are skipped.
+to `_scratch.DEFAULT_FORKS`. Every check runs in a fresh subprocess
+(`--worker`): the fork's with PYTHONPATH=<mth5 clone>;<mt-metadata
+clone>[;<mt-io clone>/src], then this process's own PYTHONPATH and src,
+ahead of site-packages -- the mt-io clone too when there is one, because
+check 2 ingests through `mtproc.ingest`, whose LEMI-423 coil chain is the
+mt-io fork's (mtproc patches nothing of mt-io). The installed packages' run
+(what this interpreter imports: site-packages, or a PYTHONPATH set before
+the test) gets this process's own PYTHONPATH and src only.
+
+The installed packages run checks 1, 2 and 4 as well, reported, not tested:
+stock mth5 0.6.9 / mt_metadata 1.0.10 (with stock mt-io) fail all three --
+which is what shows each check can fail -- and the forks, once installed,
+pass all three, reported as fixed. Without both clones the fork checks are
+reported as skipped and the test passes; when the installed packages pass
+checks 1, 2 and 4 (the forks installed), the timing comparison is skipped.
 
 **This test fails if**
 
@@ -20,13 +27,13 @@ timing comparison are skipped.
    `KernelDataset.from_run_summary` over the small archives of
    `tests/crosspower_unit.py` (L: ex ey hx hy in two runs, R: hx hy in one,
    100 Hz) raise under the fork, give other stations than L and R, or change
-   either file's modification time (ns); or the stock control succeeds
-   (stock opens read-write, which the held read-only open must refuse);
+   either file's modification time (ns) (stock opens read-write, which the
+   held read-only open refuses);
 2. run ids (issue 9): `mtproc.ingest.ingest_site` over three synthetic
    LEMI-423 files (`tests/new_survey_unit.py`'s S01, survey.yaml written by
    scripts/new_survey.py) logs any WARNING from `mth5.groups.run` under the
-   fork, or a channel's run id in the archive is not its group's; or the
-   stock control logs no "Channel run.id" warning;
+   fork, or a channel's run id in the archive is not its group's (stock logs
+   a "Channel run.id" warning per channel);
 3. non-integer rate and phantom channel (issues 10 and 17, which live in
    mt_timeseries), run twice: with the mt-timeseries clone at
    MTPROC_FORKS/mt-timeseries (its src/ also on PYTHONPATH) and with the
@@ -43,9 +50,9 @@ timing comparison are skipped.
 4. no-harmonic band (issue 20): `Band(frequency_min=0.1575,
    frequency_max=0.1984).set_indices_from_frequencies(np.fft.rfftfreq(128,
    0.1))` does not raise a ValueError naming "0.1575-0.1984 Hz" and the
-   spacing "0.078125 Hz" under the fork; or the stock control does not raise
-   an IndexError;
-5. cost: on a synthetic 1 h, 1000 Hz, five-channel float64 archive
+   spacing "0.078125 Hz" under the fork (stock raises a bare IndexError);
+5. cost, when the installed packages are not the forks: on a synthetic 1 h,
+   1000 Hz, five-channel float64 archive
    (144 MB), the fork's best wall time of `RunGroup.to_runts()`,
    `to_runts` of 20 min or `ChannelDataset.time_slice` of 20 min exceeds the
    stock best by more than TIME_TOLERANCE (5 %: other jobs share the
@@ -82,16 +89,18 @@ def branch(path: Path) -> str:
     return text.rsplit("/", 1)[-1] if text.startswith("ref:") else text[:10]
 
 
-def _env(fork: tuple[Path, Path] | None) -> dict:
+def _env(fork: tuple[Path, ...] | None) -> dict:
+    """The fork's clones (None: none, the installed packages), this process's own PYTHONPATH, then src."""
     env = dict(os.environ)
     env.pop("HDF5_USE_FILE_LOCKING", None)  # the lock is what check 1 needs
     parts = [str(p) for p in fork] if fork else []
-    env["PYTHONPATH"] = os.pathsep.join(parts + [str(REPO / "src")])
+    inherited = [p for p in env.get("PYTHONPATH", "").split(os.pathsep) if p]
+    env["PYTHONPATH"] = os.pathsep.join(parts + inherited + [str(REPO / "src")])
     return env
 
 
-def run_worker(fork: tuple[Path, Path] | None, *args: str) -> dict:
-    """Run `--worker args` in a fresh process (fork on PYTHONPATH or stock); return its JSON line."""
+def run_worker(fork: tuple[Path, ...] | None, *args: str) -> dict:
+    """Run `--worker args` in a fresh process (fork on PYTHONPATH, or the installed packages); return its JSON line."""
     done = subprocess.run([sys.executable, str(Path(__file__).resolve()), "--worker", *args],
                           env=_env(fork), capture_output=True, text=True, cwd=REPO)
     lines = [ln for ln in done.stdout.splitlines() if ln.startswith("{")]
@@ -339,7 +348,8 @@ WORKERS = {"write_small": w_write_small, "hold": w_hold, "read_only": w_read_onl
 
 # --------------------------------------------------------------------------- the parent side
 
-def check_read_only(fork, stock, tmp: Path) -> None:
+def check_read_only(fork, tmp: Path) -> bool:
+    """Asserts the fork; returns whether the installed packages pass too."""
     run_worker(None, "write_small", str(tmp))
 
     def held(which) -> dict:
@@ -357,26 +367,34 @@ def check_read_only(fork, stock, tmp: Path) -> None:
     assert got["mtime_unchanged"], "1. fork: an archive's modification time changed"
     line = "run summary + kernel dataset of L (2 runs) and R while another process holds both read-only: " \
            "stations L, R, mtimes unchanged"
-    if stock:
-        control = held(None)
-        assert control["error"] is not None, "1. the stock control opened the held archives: the check proves nothing"
-        line += f"; stock control: {control['error'].splitlines()[0][:110]}"
+    control = held(None)
+    fixed = control["error"] is None and control["stations"] == ["L", "R"] and control["mtime_unchanged"]
+    line += ("; installed: fixed too" if fixed else
+             f"; installed: not fixed ({(control['error'] or 'an mtime changed').splitlines()[0][:110]})")
     print(f"  1. {line}")
+    return fixed
 
 
-def check_run_ids(fork, stock, tmp: Path) -> None:
+def check_run_ids(fork, tmp: Path) -> bool:
+    """Asserts the fork; returns whether the installed packages pass too."""
     got = run_worker(fork, "run_ids", str(tmp / "fork"))
     assert not got["warnings"], f"2. fork: mth5.groups.run warned {got['warnings']}"
     wrong = [row for row in got["ids"] if not (row[0] == row[1] == row[3])]
     assert got["ids"] and not wrong, f"2. fork: run ids (group, group metadata, channel, channel run id) {wrong}"
     runs = sorted({row[0] for row in got["ids"]})
     line = f"ingest_site: {len(got['ids'])} channels in runs {runs}, no mth5.groups.run warning, run ids consistent"
-    if stock:
+    try:
         control = run_worker(None, "run_ids", str(tmp / "stock"))
-        hits = [w for w in control["warnings"] if w.startswith("Channel run.id")]
-        assert hits, "2. the stock control logged no 'Channel run.id' warning: the check proves nothing"
-        line += f"; stock control: {len(hits)} x '{hits[0][:60]}...'"
+    except RuntimeError as exc:  # stock mt-io cannot read the LEMI-423 coil file mtproc passes it
+        tail = [ln for ln in str(exc).splitlines() if ln.strip()]
+        print(f"  2. {line}; installed: the ingest fails ({tail[-1][:110] if tail else exc})")
+        return False
+    hits = [w for w in control["warnings"] if w.startswith("Channel run.id")]
+    fixed = not control["warnings"] and bool(control["ids"]) and all(r[0] == r[1] == r[3] for r in control["ids"])
+    line += ("; installed: fixed too" if fixed else
+             f"; installed: not fixed ({len(hits)} x '{(hits or control['warnings'] or [''])[0][:60]}...')")
     print(f"  2. {line}")
+    return fixed
 
 
 def check_rate(fork, tmp: Path) -> None:
@@ -408,16 +426,17 @@ def check_rate(fork, tmp: Path) -> None:
         print(f"  3. {label}: {seen}")
 
 
-def check_band(fork, stock) -> None:
+def check_band(fork) -> bool:
+    """Asserts the fork; returns whether the installed packages pass too."""
     got = run_worker(fork, "band")
     assert got["error"] and got["error"][0] == "ValueError", f"4. fork: {got['error']}"
     assert "0.1575-0.1984 Hz" in got["error"][1] and "0.078125 Hz" in got["error"][1], f"4. fork: {got['error']}"
     line = f"Band 0.1575-0.1984 Hz on a 128-point 10 Hz window: ValueError '{got['error'][1]}'"
-    if stock:
-        control = run_worker(None, "band")
-        assert control["error"] and control["error"][0] == "IndexError", f"4. stock control: {control['error']}"
-        line += f"; stock control: IndexError '{control['error'][1]}'"
+    control = run_worker(None, "band")
+    fixed = control["error"] == got["error"]
+    line += "; installed: fixed too" if fixed else f"; installed: not fixed ({control['error']})"
     print(f"  4. {line}")
+    return fixed
 
 
 def check_cost(fork, tmp: Path) -> None:
@@ -454,27 +473,30 @@ def main() -> int:
         print(f"SKIPPED  mth5_fork_unit: no clones at {forks_dir('mth5')} and {forks_dir('mt-metadata')}; "
               f"stock mth5/mt_metadata only, the fork checks are skipped")
         return 0
-    fork = (mth5_clone, mtm_clone)
+    mtio_clone = fork_clone("mt-io")
+    mtio_src = mtio_clone / "src" if mtio_clone is not None and (mtio_clone / "src" / "mt_io").is_dir() else None
+    fork = (mth5_clone, mtm_clone) + ((mtio_src,) if mtio_src else ())
     where = run_worker(fork, "band")
     assert Path(where["mth5"]).is_relative_to(mth5_clone), f"the fork worker imported mth5 from {where['mth5']}"
     assert Path(where["mt_metadata"]).is_relative_to(mtm_clone), f"... mt_metadata from {where['mt_metadata']}"
     installed = run_worker(None, "band")
-    stock = not (Path(installed["mth5"]).is_relative_to(mth5_clone)
-                 or Path(installed["mt_metadata"]).is_relative_to(mtm_clone))
-    print(f"  fork: mth5 {mth5_clone} ({branch(mth5_clone)}), mt_metadata {mtm_clone} ({branch(mtm_clone)})")
-    print(f"  stock: {installed['mth5']}" if stock else "  a fork is installed: stock controls and timing skipped")
+    print(f"  fork: mth5 {mth5_clone} ({branch(mth5_clone)}), mt_metadata {mtm_clone} ({branch(mtm_clone)})"
+          + (f", mt-io {mtio_src} ({branch(mtio_clone)})" if mtio_src else ", the installed mt-io"))
+    print(f"  installed: mth5 {installed['mth5']}, mt_metadata {installed['mt_metadata']}")
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)
         for sub in ("small", "fork", "stock", "rate", "cost"):
             (tmp / sub).mkdir()
-        check_read_only(fork, stock, tmp / "small")
-        check_run_ids(fork, stock, tmp)
+        fixed = {1: check_read_only(fork, tmp / "small"), 2: check_run_ids(fork, tmp)}
         check_rate(fork, tmp / "rate")
-        check_band(fork, stock)
-        if stock:
-            check_cost(fork, tmp / "cost")
+        fixed[4] = check_band(fork)
+        if all(fixed.values()):
+            print("  5. cost: skipped (the installed packages pass checks 1, 2 and 4: the forks, nothing to compare)")
         else:
-            print("  5. cost: skipped (no stock install to compare with)")
+            check_cost(fork, tmp / "cost")
+    not_fixed = [k for k, v in fixed.items() if not v]
+    print(f"\n  fork: checks 1-4 fixed; installed: "
+          + ("checks 1, 2 and 4 fixed too" if not not_fixed else f"not fixed on check(s) {not_fixed} (stock)"))
     print("\nPASS  mth5_fork_unit")
     return 0
 

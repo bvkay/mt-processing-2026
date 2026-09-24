@@ -24,7 +24,10 @@ not resolve). Everything is written under a temporary directory, removed at the 
     h5py, does not hold exactly two runs, sr1_0001 starting 2023-09-20T00:00:00 with 600 samples and
     sr1_0002 starting 2023-09-20T00:30:00 with 600 samples, whose hx, hy, hz equal X, Y, Z (the
     filled 30 s included) to 1e-9 nT;
-(c) that archive's one station is not SFS at latitude 36.665, longitude -5.942, elevation 111.0; a
+(c) that archive's one station is not SFS at latitude 36.665, longitude -5.942, elevation 111.0, or
+    its channels_recorded is not exactly [hx, hy, hz] (no phantom auxiliary_default: the RunTS
+    station of stock mt_timeseries lists one, docs/upstream_issues.md 17, and `to_mth5` relies on
+    the mt-timeseries fork instead of overriding the list); a
     run holds any dataset but hx, hy, hz (F dropped); a channel's sample_rate is not 1.0, its units
     not nT (mt_metadata stores "nanoTesla") or its filters not empty; or a run's comment is not
     "INTERMAGNET SFS one-second, best-available, XYZF, GIN <url>, fetched <UTC>" with <url> the
@@ -52,6 +55,7 @@ import contextlib
 import gzip
 import importlib.util
 import io
+import json
 import re
 import socket
 import sys
@@ -228,9 +232,13 @@ def test_bc_archive(tmp: Path) -> None:
         a = st.attrs
         assert (float(a["location.latitude"]), float(a["location.longitude"]), float(a["location.elevation"])) == \
             (36.665, -5.942, 111.0), {k: a[k] for k in a if k.startswith("location.")}
+        recorded = a["channels_recorded"]
+        recorded = json.loads(recorded) if isinstance(recorded, str) else [str(c) for c in recorded]
+        assert recorded == ["hx", "hy", "hz"], f"the station lists {recorded}, not exactly its channels"
     print(f"  (b) 30 s gap filled on the line, 1200 s gap and the day's end left NaN; runs {names}: "
           f"600 s from 00:00:00 and 600 s from 00:30:00, hx hy hz = X Y Z")
-    print(f"  (c) station SFS at 36.665, -5.942, 111.0 m; hx hy hz only, 1 Hz, nanoTesla, filters []; "
+    print(f"  (c) station SFS at 36.665, -5.942, 111.0 m, channels_recorded {recorded}; hx hy hz only, 1 Hz, "
+          f"nanoTesla, filters []; "
           f"comment {comment[:60]}...")
 
 

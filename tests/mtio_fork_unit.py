@@ -3,21 +3,24 @@
     python tests/mtio_fork_unit.py
 
 The checks run in a fresh process (`--worker`) that imports mt_io and nothing
-of mtproc: `mtproc.ingest` patches mt-io's LEMI-423 header parser at import,
-which would make check 1 pass on stock mt-io. Every check writes its own
-synthetic files (B423, EDL ASCII, a .rsp table) into a temporary folder;
-nothing is read from an external data drive or from a survey.
+of mtproc (mtproc patches nothing of mt-io; it relies on the fork). Every
+check writes its own synthetic files (B423, EDL ASCII, a .rsp table) into a
+temporary folder; nothing is read from an external data drive or from a
+survey.
 
 Which mt-io is tested: the clone of the fork at `MTPROC_FORKS/mt-io`
-(MTPROC_FORKS defaults to D:\BEN) when it holds `src/mt_io`, run with
-PYTHONPATH=<clone>/src;src so the clone is imported ahead of site-packages;
-without a clone, the installed mt_io when it already parses the four-digit
-altitude of check 1 (the fork installed). Otherwise the fork checks are
-reported as skipped.
+(MTPROC_FORKS defaults to `_scratch.DEFAULT_FORKS`) when it holds
+`src/mt_io`, run with PYTHONPATH=<clone>/src ahead of this process's own
+PYTHONPATH and src; without a clone, the installed mt_io when it already
+parses the four-digit altitude of check 1 (the fork installed). Otherwise the
+fork checks are reported as skipped.
 
-The control: whenever the installed mt-io is stock 0.0.5, the same worker is
-also run on it, and every check must FAIL there -- each check is live against
-the bug it documents (docs/upstream_issues.md 6, 7, 8, 18, 19, 21).
+The installed mt-io (what this interpreter imports: site-packages, or a
+PYTHONPATH set before the test) is run through the same checks and reported
+check by check, not tested: stock 0.0.5 fails every one (each check is live
+against the bug it documents, docs/upstream_issues.md 6, 7, 8, 18, 19, 21),
+and once the fork is installed it passes every one, so a pass there is
+reported as fixed, not as a failure.
 
 **This test fails if**
 
@@ -41,8 +44,7 @@ the bug it documents (docs/upstream_issues.md 6, 7, 8, 18, 19, 21).
    does not calibrate ex 10 times smaller than the default read of the same
    files (ratio of the two channel responses at 0.1 and 1 Hz, to 1e-12), or
    changes the stored samples, or touches ey (issue 21, the hardware-neutral
-   per-channel gain);
-7. control: the installed mt-io is stock 0.0.5 and any of checks 1-6 PASSES on it.
+   per-channel gain).
 """
 
 from __future__ import annotations
@@ -235,9 +237,11 @@ def worker(out: Path) -> None:
 
 
 def run_worker(pythonpath: list[Path]) -> dict:
-    """`worker` in a fresh process with PYTHONPATH = `pythonpath` (clone first, if any), then this repo's src."""
+    """`worker` in a fresh process with PYTHONPATH = `pythonpath` (clone first, if any), this
+    process's own PYTHONPATH, then this repo's src: with `pythonpath` empty, the installed mt-io."""
     env = dict(os.environ)
-    env["PYTHONPATH"] = os.pathsep.join([str(p) for p in pythonpath] + [str(REPO / "src")])
+    inherited = [p for p in env.get("PYTHONPATH", "").split(os.pathsep) if p]
+    env["PYTHONPATH"] = os.pathsep.join([str(p) for p in pythonpath] + inherited + [str(REPO / "src")])
     with tempfile.TemporaryDirectory() as tmp:
         out = Path(tmp) / "result.json"
         proc = subprocess.run([sys.executable, str(Path(__file__).resolve()), "--worker", str(out)],
@@ -256,14 +260,14 @@ def report(results: dict, title: str) -> dict:
 
 
 def main() -> int:
-    stock = run_worker([])  # the installed mt-io
-    stock_is_fork = stock["checks"]["1"]["ok"]
+    installed = run_worker([])  # the installed mt-io
     clone = fork_clone("mt-io")
     failures = []
 
-    if stock["version"] == STOCK_VERSION and not stock_is_fork:
-        ok = report(stock, "control, installed stock mt-io (every check must FAIL)")
-        failures += [f"control: check {k} passes on stock mt-io {STOCK_VERSION}" for k, v in ok.items() if v]
+    fixed = report(installed, "installed mt-io, informational (stock fails every check, the fork passes them)")
+    n_fixed = sum(fixed.values())
+    kind = "the fork" if n_fixed == len(fixed) else "stock behaviour" if not n_fixed else "a partial fix"
+    installed_line = f"installed mt-io {installed['version']}: {n_fixed} of {len(fixed)} checks fixed ({kind})"
 
     if clone is not None and clone_ok(clone):
         fork = run_worker([clone / "src"])
@@ -272,18 +276,22 @@ def main() -> int:
         if not inside:
             failures.append(f"check 0: mt_io imported from {fork['mt_io']}, not {clone / 'src'}")
         ok = report(fork, f"fork, the clone at {clone}")
-    elif stock_is_fork:
-        ok = report(stock, "fork, installed")
+    elif installed["checks"]["1"]["ok"]:
+        print(f"  no fork clone at {forks_dir('mt-io')}; the installed mt-io parses the four-digit altitude: "
+              f"the fork installed, checks 1-6 asserted on it")
+        ok = fixed
     else:
-        print(f"  stock mt-io {stock['version']} installed and no fork clone at "
+        print(f"  stock mt-io {installed['version']} installed and no fork clone at "
               f"{clone or forks_dir('mt-io')}: fork checks 1-6 SKIPPED")
         ok = {}
     failures += [f"check {k} ({CHECKS[k]}) fails on the fork" for k, v in ok.items() if not v]
 
+    fork_line = f"fork: {sum(ok.values())} of {len(ok)} checks fixed; " if ok else ""
+    print(f"\n  {fork_line}{installed_line}")
     if failures:
         print("\nFAIL  mtio_fork_unit\n  " + "\n  ".join(failures))
         return 1
-    print("\nPASS  mtio_fork_unit" + ("" if ok else " (control only; fork checks skipped)"))
+    print("\nPASS  mtio_fork_unit" + ("" if ok else " (fork checks skipped)"))
     return 0
 
 

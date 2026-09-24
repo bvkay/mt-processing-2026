@@ -15,8 +15,6 @@ from aurora.pipelines.process_mth5 import process_mth5
 from loguru import logger
 from mt_metadata.processing.aurora.decimation_level import DecimationLevel as _AuroraDecimationLevel
 
-from mth5.mth5 import MTH5
-
 from .masks import applies, apply_time_masks, split_by_bands, windows_in_mask
 
 try:  # newer stacks host these in mth5
@@ -80,45 +78,6 @@ ESTIMATOR_DEFAULTS = {
 TAPERS = ("boxcar", "hamming", "hann", "dpss")
 AURORA_TAPER = "boxcar"  # what ConfigCreator sets; a run gets ESTIMATOR_DEFAULTS["taper"] unless told otherwise
 DPSS_NW = 3.0  # scipy's dpss window needs a time-bandwidth product; none is set by aurora
-
-
-# mth5's RunSummary opens every archive read-write to read run metadata, and a
-# read-write open fails while any other process holds the archive read-only
-# (the GUI drawing a window). Processing never writes to an archive, so the
-# summary is read read-only here; see docs/upstream_issues.md, 5.
-import mth5.processing.run_summary as _run_summary
-
-_mth5_initialize = _run_summary.initialize_mth5
-
-
-def _read_only_run_summary(path, mode="a", **kwargs):
-    return _mth5_initialize(path, mode="r", **kwargs)
-
-
-if _run_summary.initialize_mth5 is not _read_only_run_summary:
-    _run_summary.initialize_mth5 = _read_only_run_summary
-
-
-@contextmanager
-def _archives_read_only():
-    """Every `MTH5.open_mth5` inside the block opens read-only.
-
-    `KernelDataset.from_run_summary` opens the local archive with mth5's
-    default mode ("a") just to read the survey metadata; read-write opens
-    fail while any other process holds the archive read-only (the GUI drawing
-    a window) and touch the file's timestamp. Scoped, so ingest in the same
-    process still writes.
-    """
-    original = MTH5.open_mth5
-
-    def read_only(self, filename=None, mode="r", **kwargs):
-        return original(self, filename, mode="r", **kwargs)
-
-    MTH5.open_mth5 = read_only
-    try:
-        yield
-    finally:
-        MTH5.open_mth5 = original
 
 
 # aurora 0.6.2+mtproc (the bvkay/aurora fork, branch mtproc-fixes, "Add per-band
@@ -329,9 +288,9 @@ def _band_masks_applied(masks, min_windows: int = MIN_MASKED_WINDOWS):
     the mask are dropped from the local and remote Fourier coefficients
     before the regression (`_drop_masked_windows`). Logs once per decimation
     level how many windows each covered band lost, and warns about a mask
-    that covers no band. The original function is restored on exit, as
-    `_archives_read_only` restores `MTH5.open_mth5`. Yields a `_BandMaskLog`
-    (None with no band-limited mask, and then nothing is patched).
+    that covers no band. The original function is restored on exit. Yields
+    a `_BandMaskLog` (None with no band-limited mask, and then nothing is
+    patched).
 
     Raises RuntimeError before the block when aurora no longer has the
     expected entry point or signature (`_check_band_patch`), and after it
@@ -369,15 +328,20 @@ def _band_masks_applied(masks, min_windows: int = MIN_MASKED_WINDOWS):
 
 def kernel_dataset(local_h5, station, remote_h5=None, remote_station=None,
                    start=None, end=None, min_run_seconds: float = 0.0):
-    """The aurora KernelDataset for `station` (RR against `remote_station`), clipped to [start, end)."""
+    """The aurora KernelDataset for `station` (RR against `remote_station`), clipped to [start, end).
+
+    Both archives are only read: the mth5 fork opens them read-only for the
+    run summary and the kernel dataset's metadata (docs/upstream_issues.md 5),
+    so a config builds while another process (the GUI) holds an archive open
+    read-only, and the archives' modification times do not change.
+    """
     rs = RunSummary()
     paths = [Path(local_h5)]
     if remote_h5 is not None and Path(remote_h5) != Path(local_h5):
         paths.append(Path(remote_h5))
-    with _archives_read_only():
-        rs.from_mth5s(paths)
-        kd = KernelDataset()
-        kd.from_run_summary(rs, station, remote_station)
+    rs.from_mth5s(paths)
+    kd = KernelDataset()
+    kd.from_run_summary(rs, station, remote_station)
     clip_to_window(kd, start, end)
     if min_run_seconds:
         kd.drop_runs_shorter_than(min_run_seconds)

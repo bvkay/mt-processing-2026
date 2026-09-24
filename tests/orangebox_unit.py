@@ -19,21 +19,24 @@ binary file an hour, HFM<n>-NNN.BIN:
     `read_orange` (hx=ch0, hz=ch1, hy=ch2, ey=ch6, ex=ch7, counts unchanged; the header's
     rate 1e7/(512*1953) = 10.00064 Hz; start from the header; gains 2**23/70000 for hx and
     hz, -2**23/70000 for hy, -2**23*L/100000 for ex and ey);
-  - the RunTS read_orange returns does NOT step its time index at exactly 0.1 s (this
-    documents docs/upstream_issues.md #10: mt_timeseries' ChannelTS rounds any rate >= 1 Hz
-    to an integer, so the 10.00064 Hz the reader computes is stored as 10.0 Hz. When this
-    starts failing the rounding is gone upstream: re-run the timing QC);
-  - two synthetic files two hours apart are NOT joined into one gap-free run by
-    `read_orange` (this documents docs/upstream_issues.md #11: the reader never compares a
-    file's start with the previous file's end. When this assertion starts failing mt-io has
-    added a gap check: good news, update the scratch ingest and the issue);
+  - the RunTS read_orange returns does not keep the header's rate: its sample rate is not
+    exactly 1e7/(512*1953) = 10.00064 Hz, or its time index does not step by exactly
+    99,993,600 ns (1e9 * 512 * 1953 / 1e7) between every pair of samples. Stock
+    mt_timeseries rounds any rate >= 1 Hz to an integer and steps by 0.1 s
+    (docs/upstream_issues.md 10); the mt-timeseries fork keeps the rate;
+  - `read_orange` on two synthetic files two hours apart returns a run instead of raising
+    ValueError naming the missing time and both files (docs/upstream_issues.md 11: stock
+    mt-io joins them into one gap-free run dated from the first file; the mt-io fork
+    refuses files that do not join), or does not read the two files back to back
+    (the second starting at the first's end stamp) as one run of both files' samples;
   - one real hour (Stuart Shelf ST61, HFM1-000.BIN, read only from E:) averaged to 1 s does
     not match the legacy converter's mtdata.raw to 0.015 nT on hx, hy, hz (float32 and
     two-decimal rounding), or its ex and ey are not exactly 1/4 of mt-io's (the legacy
     25,000 uV electric full scale against mt-io's 100,000 uV: issue #13), to 1e-4;
   - the 69 real ST61 files are not back to back by their own stamps (each trailer stamp
     equals the next header's start, within the 1 s the stamps resolve).
-A missing E: drive is a failure, not a skip.
+The last two read E: (the Stuart Shelf raw data); without it they are SKIPPED, with the
+reason printed, and the synthetic checks alone decide the result.
 """
 
 from __future__ import annotations
@@ -113,30 +116,42 @@ def test_synthetic_round_trip(tmp: Path) -> None:
               "ex": -(2**23) * L_ex / 100000, "ey": -(2**23) * L_ey / 100000}
     for c in expect:
         assert abs(gains[c] - expect[c]) < 1e-9 * abs(expect[c]), (c, gains[c], expect[c])
-    step = np.unique(np.diff(run.dataset.time.values) / np.timedelta64(1, "ns"))
-    assert run.sample_rate == 10.0 and step.tolist() == [100_000_000], (run.sample_rate, step)
+    rate = 1e7 / (512 * FP)
+    step = np.unique(np.diff(run.dataset.time.values.astype("datetime64[ns]").astype(np.int64)))
+    assert run.sample_rate == rate and f"{run.sample_rate:.5f}" == "10.00064", (
+        f"RunTS rate {run.sample_rate!r}, header rate {rate!r} (stock mt_timeseries rounds it to 10.0: issue 10)")
+    assert step.tolist() == [99_993_600], f"time index steps {step.tolist()} ns, want [99993600] (issue 10)"
     print(f"PASS synthetic: {n} records of 21 bytes read back exactly; mapping and gains as documented; "
-          f"header rate {head['sample_rate']:.6f} Hz, RunTS rate {run.sample_rate} Hz (issue #10 documented)")
+          f"header rate {head['sample_rate']:.9f} Hz = RunTS rate {run.sample_rate:.9f} Hz, "
+          f"index step {step[0]:,} ns")
 
 
-def test_gap_is_not_detected(tmp: Path) -> None:
+def test_gap_is_refused(tmp: Path) -> None:
     n = 1200
     a, b = tmp / "HFM9-000.BIN", tmp / "HFM9-001.BIN"
     t0 = pd.Timestamp("2009-06-16 02:00:00")
-    write_orange_bin(a, synthetic_counts(n), t0)
-    end_b = write_orange_bin(b, synthetic_counts(n), t0 + pd.Timedelta(hours=2))
-    run = read_orange([str(a), str(b)], station_id="SYN")
-    n_run = run.dataset.time.size
-    last = pd.Timestamp(run.dataset.time.values[-1])
-    assert n_run == 2 * n, n_run
-    assert last < end_b - pd.Timedelta(hours=1.5), (last, end_b)
-    print(f"PASS gap (issue #11 documented): two files 2 h apart joined into one run of {n_run} "
-          f"samples ending {last:%H:%M:%S}, while the second file's own stamp ends {end_b:%H:%M:%S}")
+    end_a = write_orange_bin(a, synthetic_counts(n), t0)
+    write_orange_bin(b, synthetic_counts(n), t0 + pd.Timedelta(hours=2))
+    try:
+        run = read_orange([str(a), str(b)], station_id="SYN")
+    except ValueError as error:
+        text = str(error)
+    else:
+        last = pd.Timestamp(run.dataset.time.values[-1])
+        raise AssertionError(f"two files 2 h apart were joined into one run of {run.dataset.time.size} samples "
+                             f"ending {last:%H:%M:%S} (issue 11: stock mt-io joins without checking)")
+    missing = round((t0 + pd.Timedelta(hours=2) - end_a).total_seconds())
+    assert f"{missing} s missing" in text and a.name in text and b.name in text, text
+    # the same two files back to back (the second starting at the first's end stamp) still join
+    c = tmp / "HFM9-002.BIN"
+    write_orange_bin(c, synthetic_counts(n), end_a)
+    run = read_orange([str(a), str(c)], station_id="SYN")
+    assert run.dataset.time.size == 2 * n, run.dataset.time.size
+    print(f"PASS gap refused: two files 2 h apart raise ValueError ({text[:110]}...); "
+          f"back to back they read as one run of {2 * n} samples")
 
 
 def test_real_hour_vs_legacy() -> None:
-    if not ST61.is_dir():
-        raise SystemExit(f"FAIL: {ST61} is not mounted")
     run = read_orange(str(ST61 / "HFM1-000.BIN"), station_id="ST61", dipole_length_ex=20.0, dipole_length_ey=15.0)
     legacy = np.loadtxt(ST61 / "mtdata.raw", max_rows=3600)
     worst = {}
@@ -176,7 +191,12 @@ def test_real_files_back_to_back() -> None:
 if __name__ == "__main__":
     with tempfile.TemporaryDirectory() as d:
         test_synthetic_round_trip(Path(d))
-        test_gap_is_not_detected(Path(d))
-    test_real_hour_vs_legacy()
-    test_real_files_back_to_back()
-    print("orangebox_unit: all passed")
+        test_gap_is_refused(Path(d))
+    if ST61.is_dir():
+        test_real_hour_vs_legacy()
+        test_real_files_back_to_back()
+        print("orangebox_unit: all passed")
+    else:
+        print(f"SKIPPED real-data checks (real hour vs legacy, ST61 files back to back): {ST61} is not "
+              f"available (E: not mounted)")
+        print("orangebox_unit: synthetic checks passed; real-data checks SKIPPED")

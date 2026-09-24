@@ -78,6 +78,15 @@ HSSL09: another survey's PLB03 a month earlier; hs058: "XX_" inside its own
 record) must not reach `record_files`, the span or the archive, which must be
 exactly the own files; a recorder.ini naming no file's station keeps them all.
 
+**A LEMI-423 site with a `calibration_fn`** and `h_scale: -1000`, ingested
+from one synthetic B423 file, must be archived with hx's and hy's chain the
+mt-io fork's, physical to recorded -- the .rsp table (nanoTesla ->
+nanoTesla; amplitudes and phases equal to the file read with numpy), the
+reader's linear stage (nanoTesla -> digital counts, gain 1/K) -- then
+`lemi423_b_scale` (-1000, counts -> counts), each stage's units_in the
+previous stage's units_out, and ex with neither the coil nor the b_scale
+stage. Stock mt-io raises there instead (its coil table's "millivolts").
+
 **An EDL site declared `sensor_type: lemi120`** (Hillside's LEMI-120 coils)
 must be archived with, on hx and hy, the .rsp table (amplitudes
 and phases equal to the file read with numpy) then mt-io's 400000 uV/nT
@@ -871,12 +880,69 @@ def test_apple_double_twins_are_skipped() -> None:
         print("  AppleDouble twin skipped; a folder holding only twins is not a site")
 
 
+def test_lemi423_coil_chain() -> None:
+    """Fails if a LEMI-423 site with a `calibration_fn` (the LEMI-120 .rsp) and `h_scale: -1000`, ingested
+    from one synthetic B423 file, is not archived with hx's and hy's chain exactly, physical to recorded:
+    the coil table (FrequencyResponseTableFilter nanoTesla -> nanoTesla, amplitudes and phases equal to
+    the .rsp read HERE with numpy), the reader's linear stage (CoefficientFilter `lemi423_linear_<comp>`,
+    nanoTesla -> digital counts, gain 1/K from the header), then `lemi423_b_scale` (gain -1000, digital
+    counts -> digital counts); or if each stage's units_in is not the previous stage's units_out; or if
+    ex carries a coil or b_scale stage. That is the mt-io fork's chain with mtproc's one stage appended;
+    stock mt-io raises before writing anything (its coil table's "millivolts" is not a unit mt_metadata
+    knows), which mtproc no longer patches."""
+    import shutil
+    import numpy as np
+    from mth5.mth5 import MTH5
+    import new_survey_unit as nsu
+    rsp = REPO / "surveys" / "burra" / "sensors" / "l120n.rsp"
+    root = SCRATCH / "lemi423_coil"
+    shutil.rmtree(root, ignore_errors=True)
+    epoch = 1624510579
+    nsu.write_b423(root / "raw" / "S01" / f"{epoch}.B423", 36, "2.1", -31.5, 138.5, 123.4, epoch)
+    survey = Survey({"name": "t", "instrument": "lemi423", "sample_rate": 1000, "data_root": str(root / "raw"),
+                     "workspace": str(root / "work"),
+                     "defaults": {"calibration_fn": str(rsp), "h_scale": -1000.0, "channels": ["ex", "ey", "hx", "hy"],
+                                  "dipole_length_ex": 50.0, "dipole_length_ey": 50.0},
+                     "sites": {"S01": {}}}, root)
+    path = ingest_site(survey, "S01", overwrite=True)
+    table = np.loadtxt(rsp, skiprows=2)
+    k = {"hx": 2.909985e-06, "hy": 2.909481e-06}  # write_b423's %Kmx, %Kmy
+    m = MTH5()
+    m.open_mth5(path, mode="r")
+    try:
+        run = m.get_station("S01", survey="t").get_run("sr1000_0001")
+        chains = {}
+        for comp in ("hx", "hy", "ex"):
+            chains[comp] = run.get_channel(comp).channel_response.filters_list
+        for comp in ("hx", "hy"):
+            stages = chains[comp]
+            got = [(type(f).__name__, f.name, str(f.units_in), str(f.units_out)) for f in stages]
+            assert len(stages) == 3, got
+            coil, linear, scale = stages
+            assert (type(coil).__name__, str(coil.units_in), str(coil.units_out)) == \
+                ("FrequencyResponseTableFilter", "nanoTesla", "nanoTesla"), got
+            assert coil.name.startswith("lemi_120_") and coil.name.endswith("_response"), got
+            assert np.allclose(coil.amplitudes, table[:, 1]) and np.allclose(np.rad2deg(coil.phases), table[:, 2]), comp
+            assert (type(linear).__name__, linear.name, str(linear.units_in), str(linear.units_out)) == \
+                ("CoefficientFilter", f"lemi423_linear_{comp}", "nanoTesla", "digital counts"), got
+            assert abs(float(linear.gain) * k[comp] - 1.0) < 1e-9, (comp, linear.gain)
+            assert (type(scale).__name__, scale.name, float(scale.gain), str(scale.units_in), str(scale.units_out)) == \
+                ("CoefficientFilter", "lemi423_b_scale", -1000.0, "digital counts", "digital counts"), got
+            for a, b in zip(stages, stages[1:]):
+                assert str(b.units_in) == str(a.units_out), (comp, a.name, a.units_out, b.name, b.units_in)
+        ex_names = [f.name for f in chains["ex"]]
+        assert not any(n.startswith("lemi_120_") or n == "lemi423_b_scale" for n in ex_names), ex_names
+    finally:
+        m.close_mth5()
+    print(f"  LEMI-423 with {rsp.name}, h_scale -1000: hx, hy = {[f.name for f in chains['hx']]} "
+          f"(nT -> nT -> counts -> counts, table == numpy); ex {ex_names}")
+
+
 def test_glued_altitude_header_line() -> None:
     """Fails if a B423 header whose altitude line reads `%Alt1060.0,m 12 1`
-    (firmware 2.1, four-digit altitudes, 47 Morocco sites) still raises in
-    mt-io's coordinate parser once mtproc.ingest is imported, or if the
-    ordinary `%Alt 125.2,m 12 1` form parses differently than before."""
-    import mtproc.ingest  # installs the tolerant parser
+    (firmware 2.1, four-digit altitudes, 47 Morocco sites) raises in mt-io's
+    own coordinate parser (the mt-io fork parses it; mtproc patches nothing),
+    or if the ordinary `%Alt 125.2,m 12 1` form parses differently than before."""
     from mt_io.lemi.lemi423 import Read_Lemi_Header
     base = ["%LEMI423 #0011", "%FIRMWARE Ver.2.1", "%MADE in UKRAINE", " ", "%Date 2023/09/19",
             "%Time 16:32:57", "%Ubat 12.57V", "%Current 108.5mA", "%Free 30132MB",

@@ -10,11 +10,15 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
 dependencies = [
-    "mth5==0.6.9",
-    "mt-io==0.0.5",
-    "mt-timeseries==0.0.2",
-    "mt-metadata==1.0.10",
-    "aurora==0.6.2",
+    # The stack comes from the mtproc-fixes branches of the forks: they carry the
+    # fixes logged in docs/upstream_issues.md (README, "Install"), and mtproc patches
+    # none of these packages at runtime. A local clone of a fork installs with
+    # `pip install --no-deps <clone>`.
+    "aurora @ git+https://github.com/bvkay/aurora@mtproc-fixes",
+    "mth5 @ git+https://github.com/bvkay/mth5@mtproc-fixes",
+    "mt-io @ git+https://github.com/bvkay/mt-io@mtproc-fixes",
+    "mt-metadata @ git+https://github.com/bvkay/mt-metadata@mtproc-fixes",
+    "mt-timeseries @ git+https://github.com/bvkay/mt-timeseries@mtproc-fixes",
     "matplotlib",
     "pyyaml",
     "openpyxl",

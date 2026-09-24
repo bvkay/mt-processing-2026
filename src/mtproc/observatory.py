@@ -433,8 +433,6 @@ def to_mth5(code: str, start, end, cache_dir, archive_path, station_id: str | No
                 channels.append(ch)
             run_ts = RunTS(array_list=channels, station_metadata=station, run_metadata=run)
             run_ts.run_metadata.comments.value = comment
-            # RunTS gives its station a phantom ["auxiliary_default"]; a reader's station lists its channels
-            run_ts.station_metadata.channels_recorded = list(CHANNELS)
             if station_group is None:
                 station_group = m.add_station(station_id, survey=survey)
                 station_group.metadata.update(run_ts.station_metadata)

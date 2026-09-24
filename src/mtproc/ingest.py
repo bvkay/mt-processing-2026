@@ -8,6 +8,13 @@ Earth Data PR6-24 sites go through their own mt-io readers,
 `mtproc.instruments.read_run`, with the reader's channel names and filter
 chain). The site's instrument is `Survey.instrument_of(site)`.
 
+LEMI-423 files are read by the mt-io fork's `read_lemi423` as it stands: it
+parses the four-digit altitude line of firmware 2.1 (``%Alt1060.0,m``) and,
+given a `calibration_fn`, builds each magnetic channel's chain physical to
+recorded, [LEMI-120 coil table nT -> nT (normalized), linear nT -> counts],
+with units mt_metadata accepts (docs/upstream_issues.md 1, 2 and 6).
+Nothing of mt-io is patched here; `_apply_h_scale` only appends one stage.
+
 A site's declared filters (`<survey>/filters.yaml`) are applied on top of the
 raw archive, on demand, into a **variant**: `<site>_f<hash>.h5`
 (`variant_path`, `hash` = `filters_hash` of the declared list), built by
@@ -34,27 +41,7 @@ import numpy as np
 import pandas as pd
 from loguru import logger
 import mt_io.lemi.lemi423 as _lemi423
-from mt_io.lemi.lemi423 import Read_Lemi_Header, read_lemi423
-
-
-def _extract_coordinates_tolerant(self, header):
-    """mt-io's `Read_Lemi_Header._extract_coordinates`, tolerant of the
-    altitude line firmware 2.1 writes once the value has four digits:
-    ``%Alt1060.0,m 12 1`` (no space after ``%Alt``), where the reader's
-    ``split()[-1]`` yields ``'%Alt1060.0'`` and ``float()`` raises. 47 of the
-    103 Morocco Atlas sites are above 1000 m (docs/upstream_issues.md, 6).
-    """
-    try:
-        return _mtio_extract_coordinates(self, header)
-    except ValueError:
-        fixed = list(header)
-        fixed[11] = header[11].replace("%Alt", "%Alt ", 1)
-        return _mtio_extract_coordinates(self, fixed)
-
-
-_mtio_extract_coordinates = Read_Lemi_Header._extract_coordinates
-if Read_Lemi_Header._extract_coordinates is not _extract_coordinates_tolerant:
-    Read_Lemi_Header._extract_coordinates = _extract_coordinates_tolerant
+from mt_io.lemi.lemi423 import read_lemi423
 from mth5.mth5 import MTH5
 
 from .instruments import (  # noqa: F401
@@ -64,33 +51,6 @@ from .instruments import (  # noqa: F401
 from .noise import apply_filters_arrays
 from .survey import SiteConfig, Survey
 from .timefreq import _real_runs
-
-
-def _read_coil_response(calibration_fn, coil_number=None):
-    """Copy of mt_io's read_lemi_coil_response with unit names that pass
-    mt_metadata 1.0.10 validation ("millivolts" is rejected, "milliVolt" is
-    accepted). TODO remove once fixed upstream in mt-io."""
-    calibration_fn = Path(calibration_fn)
-    cal_data = np.loadtxt(calibration_fn, skiprows=2)
-    fap = _lemi423.FrequencyResponseTableFilter()
-    fap.frequencies = cal_data[:, 0]
-    fap.amplitudes = cal_data[:, 1]
-    fap.phases = np.deg2rad(cal_data[:, 2])
-    # The .rsp amplitudes are normalized (~1 in passband): a shape-only
-    # deconvolution. Labelling it dimensionless in the count domain keeps
-    # mt_metadata's chain-consistency check happy with the reader's filter
-    # order [linear nT->count, coil]; see docs/upstream_issues.md #2.
-    fap.units_in = "digital counts"
-    fap.units_out = "digital counts"
-    fap.name = (
-        f"lemi_120_{coil_number}_response" if coil_number else "lemi_120_response"
-    )
-    fap.calibration_date = "1970-01-01T00:00:00+00:00"
-    fap.comments = f"LEMI-120 coil response from {calibration_fn.name}"
-    return fap
-
-
-_lemi423.read_lemi_coil_response = _read_coil_response
 
 
 def default_archive_path(survey: Survey, site_name: str, ignore_filters: bool = False) -> Path:
@@ -528,8 +488,8 @@ def _apply_h_scale(run, site: SiteConfig) -> None:
     coef = _lemi423.CoefficientFilter()
     coef.name = "lemi423_b_scale"
     coef.gain = site.h_scale
-    # labelled dimensionless in the count domain to satisfy the chain
-    # consistency check (see docs/upstream_issues.md #2)
+    # appended after the linear stage (nT -> counts), so it maps counts to
+    # counts: the chain's units stay consistent (docs/upstream_issues.md 2)
     coef.units_in = "digital counts"
     coef.units_out = "digital counts"
     coef.comments = (

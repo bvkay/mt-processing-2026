@@ -19,7 +19,8 @@ R's ex and ey never enter the regression: under stock aurora the estimate
 is bit-identical with and without them; the fork no longer transforms them.
 Every estimate runs in a fresh subprocess (`--worker`) with BLAS pinned to
 one thread (OPENBLAS/OMP/MKL_NUM_THREADS=1): its peak memory is its own, and
-PYTHONPATH chooses the aurora it imports.
+PYTHONPATH chooses the aurora it imports (the clone, when it is the one
+tested, ahead of this process's own PYTHONPATH and src).
 
 The fixtures (`tests/fixtures/aurora_stock/`, written by `--make-fixtures`
 under stock aurora 0.6.2):
@@ -35,11 +36,15 @@ under stock aurora 0.6.2):
   working set of the worker process; RSS just before `process_station`), the
   best of `REPS` runs, and the affected bands.
 
-Which aurora is tested: the installed one when its `aurora.__version__`
-carries `+mtproc`; otherwise the clone of the fork at `MTPROC_FORKS/aurora`
-(MTPROC_FORKS defaults to D:\BEN) when its `aurora/__init__.py` carries
-`+mtproc`, run with PYTHONPATH=<clone>;src ahead of site-packages. With
-neither, only check 0 runs and the fork checks are reported as skipped.
+Which aurora is tested: the installed one (what this interpreter imports)
+when its `aurora.__version__` carries `+mtproc`; otherwise the clone of the
+fork at `MTPROC_FORKS/aurora` (MTPROC_FORKS defaults to
+`_scratch.DEFAULT_FORKS`) when its `aurora/__init__.py` carries `+mtproc`,
+run with PYTHONPATH=<clone> ahead of site-packages. With neither, only check
+0 runs and the fork checks are reported as skipped. When the installed aurora
+is the fork and a clone of it is there too, one estimate is also made with
+the clone and compared with the installed fork's, reported, not tested (a
+clone ahead of what is installed may differ).
 
 **This test fails if**
 
@@ -214,11 +219,13 @@ def write_pair(tmp: Path) -> tuple[Path, Path]:
 
 def run_worker(out: Path, local: Path, remote: Path, mode: str, aurora_path: Path | None = None,
                edi_dir: Path | None = None) -> dict:
-    """Runs `worker` in a fresh process; PYTHONPATH is `aurora_path` (if any), then this repo's src."""
+    """Runs `worker` in a fresh process; PYTHONPATH is `aurora_path` (if any), this process's own
+    PYTHONPATH, then this repo's src."""
     env = dict(os.environ)
     for key in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS"):
         env[key] = THREADS
-    env["PYTHONPATH"] = os.pathsep.join(([str(aurora_path)] if aurora_path else []) + [str(REPO / "src")])
+    inherited = [p for p in env.get("PYTHONPATH", "").split(os.pathsep) if p]
+    env["PYTHONPATH"] = os.pathsep.join(([str(aurora_path)] if aurora_path else []) + inherited + [str(REPO / "src")])
     cmd = [sys.executable, str(Path(__file__).resolve()), "--worker", str(out), "--local", str(local),
            "--remote", str(remote), "--mode", mode]
     if edi_dir is not None:
@@ -330,7 +337,10 @@ def worst_rel(a: np.ndarray, b: np.ndarray) -> np.ndarray:
     return np.abs(a - b).max(axis=(1, 2)) / np.abs(b).max(axis=(1, 2))
 
 
-def check_fork(fx: dict, info: dict, aurora_path: Path | None) -> None:
+def check_fork(fx: dict, info: dict, aurora_path: Path | None, clone_too: Path | None = None) -> None:
+    """Checks 1-3 on the fork (`aurora_path` None: the installed one); `clone_too`, a clone of the
+    fork beside an installed fork, gets one estimate compared with the installed fork's, reported."""
+    clone_run = None
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)
         local, remote = write_pair(tmp)
@@ -341,6 +351,8 @@ def check_fork(fx: dict, info: dict, aurora_path: Path | None) -> None:
                 stock_now.append(run_worker(tmp / f"stock{k}.npz", local, remote, "default"))
         config_mask = run_worker(tmp / "config_mask.npz", local, remote, "config_mask", aurora_path)
         runtime_mask = run_worker(tmp / "runtime_mask.npz", local, remote, "runtime_mask", aurora_path)
+        if clone_too is not None:
+            clone_run = run_worker(tmp / "clone.npz", local, remote, "default", clone_too)
     meta = runs[0]["meta"]
     assert FORK_TAG in meta["aurora"], f"the worker imported aurora {meta['aurora']} from {meta['aurora_file']}"
     print(f"  fork: aurora {meta['aurora']} from {meta['aurora_file']}")
@@ -392,6 +404,14 @@ def check_fork(fx: dict, info: dict, aurora_path: Path | None) -> None:
     assert secs < stock_secs, "3. the fork is not faster than stock"
     assert inc < info["best_peak_increment"], "3. the fork's peak memory increment is not below stock's"
 
+    if clone_run is not None:  # reported, not tested
+        same = np.array_equal(clone_run["z"], fork["z"]) and np.array_equal(clone_run["z_err"], fork["z_err"])
+        worst = float(max(worst_rel(clone_run["z"], want_z).max(), worst_rel(clone_run["z_err"], want_e).max()))
+        print(f"  clone: aurora {clone_run['meta']['aurora']} from {clone_run['meta']['aurora_file']}: "
+              + ("bit-identical to the installed fork's estimate: fixed too" if same else
+                 f"differs from the installed fork's estimate (largest difference from the stock/Huber-reset "
+                 f"reference {worst:.2e} of |Z|): the clone is not what is installed"))
+
 
 def _scheme_edges() -> tuple[float, float]:
     sys.path.insert(0, str(REPO / "src"))
@@ -407,8 +427,13 @@ def main() -> int:
 
     installed = aurora.__version__
     clone = fork_clone("aurora")
+    clone_too = None
     if FORK_TAG in installed:
-        path, where = None, f"installed aurora {installed}"
+        path, where = None, f"installed aurora {installed} ({aurora.__file__})"
+        if clone is not None and clone_is_fork(clone) and not Path(aurora.__file__).resolve().is_relative_to(
+                clone.resolve()):
+            clone_too = clone
+            where += f"; the clone at {clone} is the fork too, one estimate compared"
     elif clone is not None and clone_is_fork(clone):
         path, where = clone, f"the clone at {clone} (installed: aurora {installed})"
     else:
@@ -416,7 +441,9 @@ def main() -> int:
         print("\nPASS  aurora_fork_unit (fixtures only)")
         return 0
     print(f"  fork checks on {where}")
-    check_fork(fx, info, path)
+    check_fork(fx, info, path, clone_too)
+    print("\n  " + (f"installed aurora {installed}: the fork, checks 1-3 fixed" if path is None else
+                     f"the clone: checks 1-3 fixed; installed aurora {installed}: stock"))
     print("\nPASS  aurora_fork_unit")
     return 0
 
