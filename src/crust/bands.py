@@ -199,8 +199,9 @@ def build_band_scheme(
         )
     if shift >= factor * (1.0 - 1e-9):
         raise ValueError(
-            f"min_bin {min_bin:g} moves the level boundaries up {shift:.3g}x, which leaves decimation level 0 "
-            f"no band (its lowest edge would be {k_min:.2f} harmonics, the top of a level {factor}x that)"
+            f"min_bin {min_bin:g} puts the lowest band edge at harmonic {k_min:.4g}, {shift:.3g} times the "
+            f"layout's own {k_min / shift:.4g}, which leaves decimation level 0 no band: min_bin must stay "
+            f"below {factor * k_min / shift:.4g} ({factor} times the layout's own)"
         )
 
     band_edges: dict[int, np.ndarray] = {}

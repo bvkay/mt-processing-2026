@@ -64,15 +64,16 @@ The band-layout flags are advanced options that keep every band's period
 and change the FFT harmonics it spans (`crust.bands.build_band_scheme`).
 `--window-samples N` sets the FFT window of every decimation level (128
 samples unless the survey's `processing:` block gives `window:`), so each
-band spans N/128 times as many harmonics. `--min-bin N` sets the lowest
-band edge of every decimated level to the first edge of the layout at or
-above harmonic N (the layout's own is 6.4 at 1000 Hz: 10.16 for 10, 12.8
-for 12); raised, it moves the bands at the foot of each level to the top
-of the next.
-In the survey layout the two lowest bands of each level span two harmonics
-each. The resolution prints `window`, `min_bin` and the resolved
-`lowest_harmonic`; the sidecar records the first two in `band_scheme` and
-the third as `lowest_harmonic`.
+band spans N/128 times as many harmonics; the overlap stays 25 % of the
+window (75 % on levels whose window lasts over 600 s). `--min-bin N` sets
+the lowest band edge of every decimated level to the first edge of the
+layout at or above harmonic N (the layout's own is 6.4 at 1000 Hz: 10.16
+for 10, 12.8 for 12); raised, it moves the bands at the foot of each level
+to the top of the next. In the survey layout the two lowest bands of each
+level span two harmonics each. The resolution prints `window_samples`,
+`min_bin` and the resolved `lowest_harmonic`; the sidecar records the first
+two in `band_scheme` (as `window` and `min_bin`) and the third as
+`lowest_harmonic`.
 
 `--engine mantle` estimates with MANTLE instead of aurora
 (`crust.engine_mantle`): the same processing archives and window, read
@@ -793,7 +794,8 @@ def print_resolution(res: dict) -> None:
             value = ", ".join(f"{f:g}" for f in value)
         elif key == "min_bin" and value is None:
             value = "none (the layout's own)"
-        print(f"{key}: {value}")
+        # the FFT window prints as window_samples: `window` is the processing window's line
+        print(f"{'window_samples' if key == 'window' else key}: {value}")
     print(f"lowest_harmonic: {res['lowest_harmonic']:.4g}")
     extra = {k: v for k, v in res["scheme_kwargs"].items() if k not in BAND_KEYS}
     for key, value in extra.items():
