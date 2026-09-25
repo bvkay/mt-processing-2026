@@ -1349,13 +1349,13 @@ sites:
     longitude: 0.333
     elevation: 532.0
     start: '2023-02-13T00:00:00Z'
-    end: '2023-07-30T00:00:00Z'
-    notes: INTERMAGNET observatory, 1 s, fetched 2026-09-25T07:26:45Z
+    end: '2023-09-28T00:00:00Z'
+    notes: INTERMAGNET observatory, 1 s, fetched 2026-09-25T11:56:55Z
   B01L:
     derived_from: B01
     sample_rate: 1.0
-    dipole_length_ex: 50.0
-    dipole_length_ey: 50.0
+    dipole_length_ex: 54.0
+    dipole_length_ey: 54.0
     azimuth_ex: 0.0
     azimuth_ey: 90.0
     latitude: 32.105506
@@ -1364,12 +1364,12 @@ sites:
     start: '2023-02-14T14:29:42Z'
     end: '2023-02-18T10:09:28Z'
     notes: B01 decimated to 1 Hz from B01_fa5afd228.h5 by scripts/decimate_site.py,
-      2026-09-25T06:48:10Z
+      2026-09-25T11:39:20Z
   B28L:
     derived_from: B28
     sample_rate: 1.0
     dipole_length_ex: 52.8
-    dipole_length_ey: 53.5
+    dipole_length_ey: 33.5
     azimuth_ex: 0.0
     azimuth_ey: 90.0
     latitude: 30.791667
@@ -1377,8 +1377,8 @@ sites:
     elevation: 1143.3
     start: '2023-03-12T12:30:41Z'
     end: '2023-03-14T09:30:22Z'
-    notes: B28 decimated to 1 Hz from B28_fc1dde36c.h5 by scripts/decimate_site.py,
-      2026-09-25T07:44:24Z
+    notes: B28 decimated to 1 Hz from B28_f901799d5.h5 by scripts/decimate_site.py,
+      2026-09-25T11:40:57Z
   B18L:
     derived_from: B18
     sample_rate: 1.0
@@ -1409,8 +1409,8 @@ sites:
   B10L:
     derived_from: B10
     sample_rate: 1.0
-    dipole_length_ex: 50.0
-    dipole_length_ey: 50.0
+    dipole_length_ex: 53.0
+    dipole_length_ey: 53.0
     azimuth_ex: 0.0
     azimuth_ey: 90.0
     latitude: 31.710256
@@ -1418,12 +1418,13 @@ sites:
     elevation: 432.9
     start: '2023-07-20T15:21:08Z'
     end: '2023-07-25T17:05:02Z'
-    notes: B10 decimated to 1 Hz from B10.h5 by scripts/decimate_site.py, 2026-09-25T08:11:13Z
+    notes: B10 decimated to 1 Hz from B10_f81e4c0e6.h5 by scripts/decimate_site.py,
+      2026-09-25T11:40:25Z
   B02L:
     derived_from: B02
     sample_rate: 1.0
-    dipole_length_ex: 50.0
-    dipole_length_ey: 50.0
+    dipole_length_ex: 54.9
+    dipole_length_ey: 54.0
     azimuth_ex: 0.0
     azimuth_ey: 90.0
     latitude: 32.050941
@@ -1431,8 +1432,8 @@ sites:
     elevation: 448.4
     start: '2023-02-15T11:41:08Z'
     end: '2023-02-18T11:25:00Z'
-    notes: B02 decimated to 1 Hz from B02_fa5afd228.h5 by scripts/decimate_site.py,
-      2026-09-25T08:11:35Z
+    notes: B02 decimated to 1 Hz from B02_f98a88596.h5 by scripts/decimate_site.py,
+      2026-09-25T11:39:41Z
   R01L:
     derived_from: R01
     sample_rate: 1.0
@@ -1464,8 +1465,8 @@ sites:
   B14L:
     derived_from: B14
     sample_rate: 1.0
-    dipole_length_ex: 50.0
-    dipole_length_ey: 50.0
+    dipole_length_ex: 53.0
+    dipole_length_ey: 53.0
     azimuth_ex: 0.0
     azimuth_ey: 90.0
     latitude: 31.464129
@@ -1473,7 +1474,8 @@ sites:
     elevation: 677.6
     start: '2023-07-22T13:16:44Z'
     end: '2023-07-25T09:31:31Z'
-    notes: B14 decimated to 1 Hz from B14.h5 by scripts/decimate_site.py, 2026-09-25T08:12:54Z
+    notes: B14 decimated to 1 Hz from B14_f81e4c0e6.h5 by scripts/decimate_site.py,
+      2026-09-25T11:40:44Z
   B09L:
     derived_from: B09
     sample_rate: 1.0
@@ -1517,8 +1519,8 @@ sites:
   B07L:
     derived_from: B07
     sample_rate: 1.0
-    dipole_length_ex: 50.0
-    dipole_length_ey: 50.0
+    dipole_length_ex: 52.0
+    dipole_length_ey: 43.0
     azimuth_ex: 0.0
     azimuth_ey: 90.0
     latitude: 31.835669
@@ -1526,7 +1528,8 @@ sites:
     elevation: 585.8
     start: '2023-07-18T13:22:07Z'
     end: '2023-07-20T10:16:45Z'
-    notes: B07 decimated to 1 Hz from B07.h5 by scripts/decimate_site.py, 2026-09-25T08:14:39Z
+    notes: B07 decimated to 1 Hz from B07_f81e4c0e6.h5 by scripts/decimate_site.py,
+      2026-09-25T11:39:55Z
   B08L:
     derived_from: B08
     sample_rate: 1.0
@@ -1554,3 +1557,325 @@ sites:
     end: '2023-07-28T10:45:17Z'
     notes: B11 decimated to 1 Hz from B11_f81e4c0e6.h5 by scripts/decimate_site.py,
       2026-09-25T08:29:47Z
+  C02L:
+    derived_from: C02
+    sample_rate: 1.0
+    dipole_length_ex: 43.0
+    dipole_length_ey: 44.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: 32.508668
+    longitude: -6.025088
+    elevation: 1575.1
+    start: '2023-09-25T11:47:08Z'
+    end: '2023-09-27T10:12:26Z'
+    notes: C02 decimated to 1 Hz from C02_f768fa47a.h5 by scripts/decimate_site.py,
+      2026-09-25T12:00:39Z
+  C03L:
+    derived_from: C03
+    sample_rate: 1.0
+    dipole_length_ex: 34.0
+    dipole_length_ey: 36.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: 32.476243
+    longitude: -5.981936
+    elevation: 1074.8
+    start: '2023-09-25T13:22:46Z'
+    end: '2023-09-27T10:19:30Z'
+    notes: C03 decimated to 1 Hz from C03_f11316925.h5 by scripts/decimate_site.py,
+      2026-09-25T12:07:41Z
+  C04L:
+    derived_from: C04
+    sample_rate: 1.0
+    dipole_length_ex: 54.0
+    dipole_length_ey: 53.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: 32.446982
+    longitude: -5.803015
+    elevation: 1448.2
+    start: '2023-09-25T14:56:41Z'
+    end: '2023-09-27T09:31:24Z'
+    notes: C04 decimated to 1 Hz from C04_f81e4c0e6.h5 by scripts/decimate_site.py,
+      2026-09-25T12:08:35Z
+  C05L:
+    derived_from: C05
+    sample_rate: 1.0
+    dipole_length_ex: 53.0
+    dipole_length_ey: 53.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: 32.409954
+    longitude: -5.746572
+    elevation: 1395.6
+    start: '2023-09-25T15:08:05Z'
+    end: '2023-09-27T09:16:39Z'
+    notes: C05 decimated to 1 Hz from C05_f22456a9d.h5 by scripts/decimate_site.py,
+      2026-09-25T12:09:29Z
+  C06L:
+    derived_from: C06
+    sample_rate: 1.0
+    dipole_length_ex: 25.0
+    dipole_length_ey: 53.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: 32.347183
+    longitude: -5.7316
+    elevation: 1647.6
+    start: '2023-09-25T16:18:59Z'
+    end: '2023-09-27T08:46:02Z'
+    notes: C06 decimated to 1 Hz from C06_fa5afd228.h5 by scripts/decimate_site.py,
+      2026-09-25T12:10:25Z
+  C07L:
+    derived_from: C07
+    sample_rate: 1.0
+    dipole_length_ex: 52.0
+    dipole_length_ey: 54.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: 32.317966
+    longitude: -5.650251
+    elevation: 1557.6
+    start: '2023-09-25T17:10:20Z'
+    end: '2023-09-27T08:31:24Z'
+    notes: C07 decimated to 1 Hz from C07_fa5afd228.h5 by scripts/decimate_site.py,
+      2026-09-25T12:11:13Z
+  C08L:
+    derived_from: C08
+    sample_rate: 1.0
+    dipole_length_ex: 33.0
+    dipole_length_ey: 53.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: 32.248813
+    longitude: -5.653305
+    elevation: 1790.7
+    start: '2023-09-25T17:29:47Z'
+    end: '2023-09-27T08:05:07Z'
+    notes: C08 decimated to 1 Hz from C08_ff3e66b01.h5 by scripts/decimate_site.py,
+      2026-09-25T12:12:01Z
+  C09L:
+    derived_from: C09
+    sample_rate: 1.0
+    dipole_length_ex: 53.0
+    dipole_length_ey: 52.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: 32.201659
+    longitude: -5.637506
+    elevation: 2299.3
+    start: '2023-09-25T18:25:03Z'
+    end: '2023-09-27T07:39:23Z'
+    notes: C09 decimated to 1 Hz from C09_f2edf7f7f.h5 by scripts/decimate_site.py,
+      2026-09-25T12:12:57Z
+  C10L:
+    derived_from: C10
+    sample_rate: 1.0
+    dipole_length_ex: 53.0
+    dipole_length_ey: 42.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: 32.160712
+    longitude: -5.629404
+    elevation: 2179.1
+    start: '2023-09-24T14:21:13Z'
+    end: '2023-09-27T06:54:58Z'
+    notes: C10 decimated to 1 Hz from C10_f22456a9d.h5 by scripts/decimate_site.py,
+      2026-09-25T12:14:15Z
+  C11L:
+    derived_from: C11
+    sample_rate: 1.0
+    dipole_length_ex: 42.0
+    dipole_length_ey: 54.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: 32.124955
+    longitude: -5.556704
+    elevation: 2228.9
+    start: '2023-09-24T13:11:46Z'
+    end: '2023-09-26T16:35:41Z'
+    notes: C11 decimated to 1 Hz from C11_fa5afd228.h5 by scripts/decimate_site.py,
+      2026-09-25T12:15:40Z
+  C12L:
+    derived_from: C12
+    sample_rate: 1.0
+    dipole_length_ex: 54.0
+    dipole_length_ey: 52.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: 32.090075
+    longitude: -5.495314
+    elevation: 2287.3
+    start: '2023-09-23T17:21:46Z'
+    end: '2023-09-25T10:56:35Z'
+    notes: C12 decimated to 1 Hz from C12_f816deecc.h5 by scripts/decimate_site.py,
+      2026-09-25T12:16:43Z
+  C13L:
+    derived_from: C13
+    sample_rate: 1.0
+    dipole_length_ex: 33.0
+    dipole_length_ey: 52.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: 32.060683
+    longitude: -5.47435
+    elevation: 2315.5
+    start: '2023-09-23T16:10:07Z'
+    end: '2023-09-25T10:31:22Z'
+    notes: C13 decimated to 1 Hz from C13_feb7c3677.h5 by scripts/decimate_site.py,
+      2026-09-25T12:17:37Z
+  C14L:
+    derived_from: C14
+    sample_rate: 1.0
+    dipole_length_ex: 30.0
+    dipole_length_ey: 27.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: 32.01369
+    longitude: -5.484007
+    elevation: 2360.0
+    start: '2023-09-23T14:49:25Z'
+    end: '2023-09-25T10:00:09Z'
+    notes: C14 decimated to 1 Hz from C14_fa5afd228.h5 by scripts/decimate_site.py,
+      2026-09-25T12:18:37Z
+  C15L:
+    derived_from: C15
+    sample_rate: 1.0
+    dipole_length_ex: 41.0
+    dipole_length_ey: 51.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: 31.951622
+    longitude: -5.474414
+    elevation: 2462.9
+    start: '2023-09-23T13:33:57Z'
+    end: '2023-09-25T09:25:55Z'
+    notes: C15 decimated to 1 Hz from C15_f393cd20d.h5 by scripts/decimate_site.py,
+      2026-09-25T12:19:39Z
+  C16L:
+    derived_from: C16
+    sample_rate: 1.0
+    dipole_length_ex: 53.0
+    dipole_length_ey: 53.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: 31.873116
+    longitude: -5.476152
+    elevation: 2689.2
+    start: '2023-09-23T12:28:59Z'
+    end: '2023-09-25T08:54:21Z'
+    notes: C16 decimated to 1 Hz from C16_f07e1aef4.h5 by scripts/decimate_site.py,
+      2026-09-25T12:20:48Z
+  C17L:
+    derived_from: C17
+    sample_rate: 1.0
+    dipole_length_ex: 52.0
+    dipole_length_ey: 20.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: 31.825532
+    longitude: -5.475071
+    elevation: 2057.5
+    start: '2023-09-23T11:07:07Z'
+    end: '2023-09-25T08:09:15Z'
+    notes: C17 decimated to 1 Hz from C17_fa5afd228.h5 by scripts/decimate_site.py,
+      2026-09-25T12:22:03Z
+  C18L:
+    derived_from: C18
+    sample_rate: 1.0
+    dipole_length_ex: 55.0
+    dipole_length_ey: 45.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: 31.772279
+    longitude: -5.460915
+    elevation: 2000.9
+    start: '2023-09-22T12:21:39Z'
+    end: '2023-09-24T10:10:37Z'
+    notes: C18 decimated to 1 Hz from C18_fb647033d.h5 by scripts/decimate_site.py,
+      2026-09-25T12:23:22Z
+  C19L:
+    derived_from: C19
+    sample_rate: 1.0
+    dipole_length_ex: 55.0
+    dipole_length_ey: 55.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: 31.743637
+    longitude: -5.486865
+    elevation: 1912.0
+    start: '2023-09-22T13:57:38Z'
+    end: '2023-09-24T09:46:32Z'
+    notes: C19 decimated to 1 Hz from C19_f7b05dc48.h5 by scripts/decimate_site.py,
+      2026-09-25T12:24:15Z
+  C20L:
+    derived_from: C20
+    sample_rate: 1.0
+    dipole_length_ex: 54.0
+    dipole_length_ey: 54.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: 31.685001
+    longitude: -5.519745
+    elevation: 1780.7
+    start: '2023-09-22T15:16:32Z'
+    end: '2023-09-24T09:13:25Z'
+    notes: C20 decimated to 1 Hz from C20_fa5afd228.h5 by scripts/decimate_site.py,
+      2026-09-25T12:25:15Z
+  C22L:
+    derived_from: C22
+    sample_rate: 1.0
+    dipole_length_ex: 54.0
+    dipole_length_ey: 39.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: 31.590181
+    longitude: -5.595705
+    elevation: 1452.7
+    start: '2023-09-22T18:02:56Z'
+    end: '2023-09-24T08:01:19Z'
+    notes: C22 decimated to 1 Hz from C22_fb080d729.h5 by scripts/decimate_site.py,
+      2026-09-25T12:26:17Z
+  C23L:
+    derived_from: C23
+    sample_rate: 1.0
+    dipole_length_ex: 53.0
+    dipole_length_ey: 54.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: 31.516794
+    longitude: -5.501821
+    elevation: 1288.5
+    start: '2023-09-22T09:02:48Z'
+    end: '2023-09-24T07:09:01Z'
+    notes: C23 decimated to 1 Hz from C23_fa1684b1a.h5 by scripts/decimate_site.py,
+      2026-09-25T12:27:11Z
+  C21newL:
+    derived_from: C21new
+    sample_rate: 1.0
+    dipole_length_ex: 50.0
+    dipole_length_ey: 50.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: 31.656691
+    longitude: -5.577793
+    elevation: 1778.9
+    start: '2023-09-22T16:47:05Z'
+    end: '2023-09-24T08:42:46Z'
+    notes: C21new decimated to 1 Hz from C21new_f4b15686e.h5 by scripts/decimate_site.py,
+      2026-09-25T12:28:02Z
+  C01L:
+    derived_from: C01
+    sample_rate: 1.0
+    dipole_length_ex: 54.0
+    dipole_length_ey: 40.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: 32.567338
+    longitude: -6.022554
+    elevation: 1041.7
+    start: '2023-09-25T10:31:42Z'
+    end: '2023-09-27T10:51:41Z'
+    notes: C01 decimated to 1 Hz from C01_f012bbb9e.h5 by scripts/decimate_site.py,
+      2026-09-25T12:29:13Z
