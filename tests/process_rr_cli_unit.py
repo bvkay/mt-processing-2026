@@ -85,7 +85,9 @@ can raise a false "180 deg out ... declare flip").
 Both sites' time masks. **This test also fails if**, on a scratch copy of
 curnamona_cube whose own masks.yaml holds three D02 masks (one written twice),
 two E08 masks and one mask identical to one of D02's, one for the stack
-STK_E08u and one for the archive-only SYN01, `resolve` for D02 rr E08 does not give `masks_local` D02's
+STK_E08u and one for the archive-only SYN01 (the entries of E08, SYN01 and
+STK_E08u of scope both, so that they apply as a remote; the scope rule
+itself is tests/mask_scope_unit.py's), `resolve` for D02 rr E08 does not give `masks_local` D02's
 three in start order, `masks_remote` E08's three, and `masks` the union in
 start order -- exactly the starts listed in MASK_UNION_STARTS, the shared
 interval once (D02's entry), E08's own entries carrying E08's reasons; the
@@ -419,9 +421,10 @@ def _fake_tf(xy_deg: float, yx_deg: float, periods):
     return tf
 
 
-def _mask(start: str, end: str, reason: str, bands="all") -> dict:
-    """Build one masks.yaml entry found by "time"."""
-    return {"start": start, "end": end, "bands": bands, "reason": reason, "found_by": "time"}
+def _mask(start: str, end: str, reason: str, bands="all", scope: str | None = None) -> dict:
+    """Build one masks.yaml entry found by "time"; `scope` is left out when None."""
+    out = {"start": start, "end": end, "bands": bands, "reason": reason, "found_by": "time"}
+    return out if scope is None else {**out, "scope": scope}
 
 
 MASKS_BOTH = {
@@ -429,11 +432,11 @@ MASKS_BOTH = {
             _mask("2021-06-29T08:00:00Z", "2021-06-29T08:30:00Z", "D02 band", [0.01, 0.1]),
             _mask("2021-06-29T10:00:00Z", "2021-06-29T10:20:00Z", "D02 spike again"),
             _mask("2021-06-30T01:00:00Z", "2021-06-30T01:10:00Z", "D02 night")],
-    REMOTE: [_mask("2021-06-29T12:00:00Z", "2021-06-29T12:05:00Z", "E08 band", [1.0, 10.0]),
-             _mask("2021-06-29T09:00:00Z", "2021-06-29T09:15:00Z", "E08 fence"),
-             _mask("2021-06-30T01:00:00Z", "2021-06-30T01:10:00Z", "E08 same as D02 night")],
-    "SYN01": [_mask("2021-06-29T11:00:00Z", "2021-06-29T11:30:00Z", "SYN01 declared by hand")],
-    "STK_E08u": [_mask("2021-06-29T11:00:00Z", "2021-06-29T11:30:00Z", "a stack has no masks")],
+    REMOTE: [_mask("2021-06-29T12:00:00Z", "2021-06-29T12:05:00Z", "E08 band", [1.0, 10.0], "both"),
+             _mask("2021-06-29T09:00:00Z", "2021-06-29T09:15:00Z", "E08 fence", scope="both"),
+             _mask("2021-06-30T01:00:00Z", "2021-06-30T01:10:00Z", "E08 same as D02 night", scope="both")],
+    "SYN01": [_mask("2021-06-29T11:00:00Z", "2021-06-29T11:30:00Z", "SYN01 declared by hand", scope="both")],
+    "STK_E08u": [_mask("2021-06-29T11:00:00Z", "2021-06-29T11:30:00Z", "a stack has no masks", scope="both")],
 }
 # stated here, not computed from the masks: the union's starts and reasons, earliest first
 MASK_UNION_STARTS = ["2021-06-29T08:00:00Z", "2021-06-29T09:00:00Z", "2021-06-29T10:00:00Z",

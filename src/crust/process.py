@@ -592,8 +592,9 @@ def process_station(
         tag (str, optional): Output file stem; default
             ``<station>_rr-<remote>`` or ``<station>_ss``.
         tweaks (dict, optional): Estimator tweaks, listed above.
-        time_masks (list of dict, optional): The masks of the local and
-            remote sites (`crust.masks.load_masks`, `crust.masks.union_masks`).
+        time_masks (list of dict, optional): The masks applied from the
+            local and remote sites (`crust.masks.masks_for_role`,
+            `crust.masks.union_masks`).
         **config_kwargs: Passed to aurora's
             ``ConfigCreator.create_from_kernel_dataset``.
 

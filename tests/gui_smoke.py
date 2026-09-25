@@ -664,7 +664,8 @@ Usage:
      "all bands" box must be unticked (a time-panel mask covers the shown
      band only unless asked); ticked, "Mask selected" must add one mask,
      chunk 3's start to chunk 4's end, bands all, found_by time; "Save masks"
-     must write the copy's masks.yaml holding exactly that one D02 entry
+     must write the copy's masks.yaml holding exactly that one D02 entry,
+     scope local
      (read here with yaml); the tab moved to E08 and back to D02 must list
      it again from the file; Compute on the same window again must draw
      chunks 3 and 4 hollow (no brush) and the ten others filled, on the |Z|
@@ -1824,7 +1825,7 @@ def crosspower_check(app, window) -> None:
     assert list(written) == [SITE] and len(written[SITE]) == 1, written
     entry = written[SITE][0]
     assert (pd.Timestamp(entry["start"]), pd.Timestamp(entry["end"])) == (want["start"], want["end"]), entry
-    assert entry["bands"] == "all" and entry["found_by"] == "time", entry
+    assert entry["bands"] == "all" and entry["found_by"] == "time" and entry["scope"] == "local", entry
     print(f"    chunks {list(CROSSPOWER_MASKED)} masked and saved: "
           f"{entry['start']} to {entry['end']}, bands {entry['bands']}")
 
