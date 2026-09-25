@@ -10,14 +10,18 @@ site's raw archive (`crust.ingest.default_archive_path`,
 ``<workspace>/mth5/<site>.h5``) and reports, per run and channel, the median
 level in counts, its spread and a verdict.
 
-Each archive is opened read-only with h5py, without an HDF5 file lock, so
-the jobs of a running campaign open it as before. Every electric and
-magnetic channel (the dataset's ``type`` attribute, else the first letter of
-its name: e electric, h or b magnetic) of every run at --rate (default: the
-site's sample rate, `Survey.sample_rate_of`) is read as a subsample: every
-k-th sample, k the smallest step that keeps the read within --sample-seconds
-of samples (default 3600 s, 3.6e6 samples at 1000 Hz), by a stepped slice
-of the dataset. Per channel and run:
+The measure and the verdict are those of `crust.dclevel`, which
+`crust.ingest.ingest_site` also records in the run comments of each archive
+it builds, over that site's channel runs alone; this script classifies the
+channel runs of every site it checks together. Each archive is opened
+read-only with h5py, without an HDF5 file lock, so the jobs of a running
+campaign open it as before. Every electric and magnetic channel (the
+dataset's ``type`` attribute, else the first letter of its name: e
+electric, h or b magnetic) of every run at --rate (default: the site's
+sample rate, `Survey.sample_rate_of`) is read as a subsample: every k-th
+sample, k the smallest step that keeps the read within --sample-seconds of
+samples (default 3600 s, 3.6e6 samples at 1000 Hz), by a stepped slice of
+the dataset (`crust.dclevel.channel_stats`). Per channel and run:
 
     median   the subsample's median, counts
     MAD      the median absolute deviation from it, counts (unscaled)
@@ -61,8 +65,6 @@ from __future__ import annotations
 
 import argparse
 import csv
-import math
-import re
 import sys
 import time
 from pathlib import Path
@@ -71,92 +73,16 @@ REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "src"))
 
 import h5py  # noqa: E402
-import numpy as np  # noqa: E402
 
+from crust.dclevel import (  # noqa: E402
+    OK, OPEN, RAIL_LIMIT, RATIO_LIMIT, RUN_RE, SAMPLE_SECONDS, SATURATED, THRESHOLD_COUNTS, VERDICT_ORDER,
+    channel_stats, channel_type, classify, station_group,
+)
 from crust.ingest import default_archive_path  # noqa: E402
 from crust.survey import OBSERVATORY, Survey  # noqa: E402
 
-OPEN, SATURATED, OK = "open input?", "saturated?", "ok"
-VERDICT_ORDER = {OPEN: 0, SATURATED: 1, OK: 2}
-RAIL_LEVEL = 0.9  # a sample at the rail: at least this share of the largest distance from the median
-RAIL_LIMIT = 0.01  # saturated? above this share of samples at the rail
-RUN_RE = re.compile(r"^sr(\d+(?:p\d+)?)_\d+$")  # run groups sr<rate>_<n>, e.g. sr1000_0002
 CSV_COLUMNS = ("site", "run", "channel", "type", "sample_rate", "n_samples", "step", "n_read", "median_counts",
                "mad_counts", "rail_fraction", "typical_counts", "ratio", "verdict")
-
-
-def channel_type(name: str, dataset: h5py.Dataset) -> str | None:
-    """Return a channel's type, "electric" or "magnetic".
-
-    Args:
-        name (str): Channel name in the run group, e.g. "ey".
-        dataset (h5py.Dataset): The channel's dataset.
-
-    Returns:
-        str | None: The dataset's ``type`` attribute when it is electric or
-        magnetic, else the type the name's first letter gives (e electric,
-        h or b magnetic); None for any other channel.
-    """
-    kind = dataset.attrs.get("type")
-    if isinstance(kind, bytes):
-        kind = kind.decode()
-    if kind in ("electric", "magnetic"):
-        return kind
-    first = name[:1].lower()
-    return "electric" if first == "e" else "magnetic" if first in ("h", "b") else None
-
-
-def rail_fraction(x: np.ndarray, median: float) -> float:
-    """Return the share of samples at the rail.
-
-    On each side of the median, a sample is at the rail when its distance
-    from the median is at least RAIL_LEVEL of the largest distance seen on
-    that side; the larger of the two shares is returned.
-
-    Args:
-        x (np.ndarray): Samples.
-        median (float): Their median.
-
-    Returns:
-        float: Share of samples at the rail, 0 to 1; 1 for a flat channel.
-    """
-    upper = float(x.max()) - median
-    lower = median - float(x.min())
-    return float(max(np.mean(x >= median + RAIL_LEVEL * upper), np.mean(x <= median - RAIL_LEVEL * lower)))
-
-
-def subsample_step(n: int, fs: float, sample_seconds: float) -> int:
-    """Return the smallest step k that keeps n samples at fs within sample_seconds of samples.
-
-    Args:
-        n (int): Samples in the channel.
-        fs (float): Sample rate in Hz.
-        sample_seconds (float): Seconds' worth of samples to read at most.
-
-    Returns:
-        int: The step, at least 1.
-    """
-    return max(1, math.ceil(n / max(1.0, sample_seconds * fs)))
-
-
-def channel_stats(dataset: h5py.Dataset, fs: float, sample_seconds: float) -> dict:
-    """Read a channel's subsample and measure its level.
-
-    Args:
-        dataset (h5py.Dataset): The channel's samples, raw counts.
-        fs (float): Its sample rate in Hz.
-        sample_seconds (float): Seconds' worth of samples to read at most.
-
-    Returns:
-        dict: ``n_samples``, ``step``, ``n_read``, ``median_counts``,
-        ``mad_counts`` and ``rail_fraction``.
-    """
-    n = int(dataset.shape[0])
-    step = subsample_step(n, fs, sample_seconds)
-    x = np.asarray(dataset[::step], dtype="float64")
-    median = float(np.median(x))
-    return dict(n_samples=n, step=step, n_read=int(x.size), median_counts=median,
-                mad_counts=float(np.median(np.abs(x - median))), rail_fraction=rail_fraction(x, median))
 
 
 def run_rate(name: str, group: h5py.Group) -> float:
@@ -164,29 +90,6 @@ def run_rate(name: str, group: h5py.Group) -> float:
     if "sample_rate" in group.attrs:
         return float(group.attrs["sample_rate"])
     return float(RUN_RE.match(name).group(1).replace("p", "."))
-
-
-def station_group(archive: h5py.File, survey_name: str, site: str) -> h5py.Group:
-    """Return a site's station group, Experiment/Surveys/<survey>/Stations/<site>.
-
-    Args:
-        archive (h5py.File): The open archive.
-        survey_name (str): The survey's name, looked in first.
-        site (str): Station id.
-
-    Returns:
-        h5py.Group: The station group.
-
-    Raises:
-        KeyError: If no survey group of the archive holds the station.
-    """
-    surveys = archive.get("Experiment/Surveys")
-    names = [] if surveys is None else sorted(surveys, key=lambda s: s != survey_name)
-    for name in names:
-        path = f"Experiment/Surveys/{name}/Stations/{site}"
-        if path in archive:
-            return archive[path]
-    raise KeyError(f"no station group {site} under Experiment/Surveys ({', '.join(names) or 'no survey'})")
 
 
 def check_archive(path: Path, survey_name: str, site: str, rate: float, sample_seconds: float) -> tuple[list, list]:
@@ -230,36 +133,6 @@ def check_archive(path: Path, survey_name: str, site: str, rate: float, sample_s
                 stats = channel_stats(dataset, fs, sample_seconds)
                 rows.append(dict(site=site, run=run, channel=comp, type=kind, sample_rate=fs, **stats))
     return rows, notes
-
-
-def classify(rows: list[dict], threshold_counts: float, ratio_limit: float) -> dict[str, float]:
-    """Give each row its typical level, ratio and verdict.
-
-    Args:
-        rows (list[dict]): Rows of `check_archive`, completed in place with
-            ``typical_counts``, ``ratio`` and ``verdict``.
-        threshold_counts (float): |median| above which a channel is an open input.
-        ratio_limit (float): Ratio to the typical level above which a channel is an open input.
-
-    Returns:
-        dict[str, float]: The typical level of each channel type, the median
-        |median| over its rows, in counts.
-    """
-    typical = {}
-    for kind in sorted({row["type"] for row in rows}):
-        typical[kind] = float(np.median([abs(r["median_counts"]) for r in rows if r["type"] == kind]))
-    for row in rows:
-        level, ref = abs(row["median_counts"]), typical[row["type"]]
-        row["typical_counts"] = ref
-        row["ratio"] = level / ref if ref > 0 else math.nan
-        if level > threshold_counts or (ref > 0 and row["ratio"] > ratio_limit):
-            row["verdict"] = OPEN
-        elif row["rail_fraction"] > RAIL_LIMIT:
-            row["verdict"] = SATURATED
-        else:
-            row["verdict"] = OK
-    rows.sort(key=lambda r: (VERDICT_ORDER[r["verdict"]], r["site"], r["run"], r["channel"]))
-    return typical
 
 
 def table_lines(rows: list[dict]) -> list[str]:
@@ -341,12 +214,12 @@ def main(argv=None) -> int:
     parser.add_argument("sites", nargs="*", metavar="SITE", help="sites to check (default: every site with an archive)")
     parser.add_argument("--rate", type=float, default=None,
                         help="sample rate of the runs checked, Hz (default: the site's sample rate)")
-    parser.add_argument("--threshold-counts", type=float, default=1e9,
+    parser.add_argument("--threshold-counts", type=float, default=THRESHOLD_COUNTS,
                         help="|median| above which a channel is an open input (default %(default)g)")
-    parser.add_argument("--ratio", type=float, default=30.0,
+    parser.add_argument("--ratio", type=float, default=RATIO_LIMIT,
                         help="ratio to the typical level of the channel type above which a channel is an open "
                              "input (default %(default)g)")
-    parser.add_argument("--sample-seconds", type=float, default=3600.0,
+    parser.add_argument("--sample-seconds", type=float, default=SAMPLE_SECONDS,
                         help="seconds' worth of samples read per channel and run at most (default %(default)g)")
     parser.add_argument("--csv", type=Path, default=None, help="write the rows to this CSV file")
     args = parser.parse_args(argv)
@@ -385,6 +258,7 @@ def main(argv=None) -> int:
 
     if rows:
         typical = classify(rows, args.threshold_counts, args.ratio)
+        rows.sort(key=lambda r: (VERDICT_ORDER[r["verdict"]], r["site"], r["run"], r["channel"]))
         levels = ", ".join(f"{kind} {level:.3e} counts" for kind, level in typical.items())
         print(f"typical |median|: {levels}; open input? above {args.threshold_counts:g} counts or {args.ratio:g} x "
               f"typical, saturated? above {100 * RAIL_LIMIT:g} % at the rail")

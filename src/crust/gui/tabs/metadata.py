@@ -19,6 +19,17 @@ with:
 * the recorder facts `scripts/new_survey.py` read from the B423 headers
   (serial, firmware, start, end), read-only;
 * whether the raw folder and the MTH5 archive exist;
+* the raw DC level the ingest recorded in the archive's run comments
+  (`crust.dclevel.recorded_levels`), per channel its verdict ("ok",
+  "open input?", "saturated?") and median in counts
+  (`crust.dclevel.channel_summary`: the most severe verdict of its runs,
+  followed by "in k of n runs" when only some of its runs have it, and the
+  median of those runs' medians), e.g. "hx ok 4.30e7, hy ok 3.89e7, ex ok
+  2.00e7, ey open input? 1.60e9"; the cell is red with an open input,
+  yellow with a saturated channel, and its tooltip lists every run and
+  channel; "-" for a site without an archive or an archive without the
+  record (built before the ingest recorded it: scripts/dc_level_check.py
+  reads its samples);
 * whether the site has a declared noise filter list (`<survey>/filters.yaml`,
   merged into `Survey.site()` and edited on the Filter Data tab).
 
@@ -41,19 +52,25 @@ Selecting a row sets `State.site`, which the other tabs preselect.
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QAbstractItemView, QFileDialog, QGridLayout, QHBoxLayout, QHeaderView, QLabel, QLineEdit,
     QMessageBox, QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
+from crust.dclevel import OK, OPEN, VERDICT_ORDER, channel_summary, counts_text, recorded_levels
 from crust.survey import OBSERVATORY, read_site_table
 from crust.gui import channels_column, metadata_edit
 from crust.gui.metadata_edit import EDITABLE, format_cell, parse_cell
 from crust.gui.theme import BAD_COLOUR, NOTICE_COLOUR
 
+DC_LEVEL = "dc level"
+NO_RECORD = len(VERDICT_ORDER)  # the dc level cell's sort key without a record: after ok
+NO_RECORD_TIP = ("no dc level recorded: the archive was built before the ingest recorded it; "
+                 "scripts/dc_level_check.py reads its samples, and a rebuild records it")
 COLUMNS = ["site", "instrument", "latitude", "longitude", "elevation", "dipole_length_ex", "dipole_length_ey",
            "azimuth_ex", "azimuth_ey", "timing", "remote", "channels", metadata_edit.ELECTRIC_GAIN, "serial",
-           "firmware", "start", "end", "raw folder", "archive", "filters", "notes"]
+           "firmware", "start", "end", "raw folder", "archive", DC_LEVEL, "filters", "notes"]
 NUMBERS = {"latitude", "longitude", "elevation", "dipole_length_ex", "dipole_length_ey",
            "azimuth_ex", "azimuth_ey"}
 
@@ -109,6 +126,48 @@ def _instrument_text(survey, name: str) -> str:
     if instrument == OBSERVATORY:
         return f"{instrument} ({survey.sample_rate_of(name):g} Hz)"
     return instrument
+
+
+def _dc_level_item(survey_name: str, site: str, path) -> SortableItem:
+    """Return the dc level cell of a site: each channel's recorded verdict and median in counts.
+
+    Args:
+        survey_name (str): The survey's name.
+        site (str): Site name.
+        path (Path | None): The site's archive; None without one.
+
+    Returns:
+        SortableItem: "<channel> <verdict> <median>" per channel
+        (`crust.dclevel.channel_summary`), sorting open input? first, then
+        saturated?, ok and "-"; red text with an open input, yellow with a
+        saturated channel; the tooltip lists every run and channel.
+    """
+    if path is None:
+        return SortableItem("-", NO_RECORD + 1)
+    try:
+        levels = recorded_levels(path, survey_name, site)
+    except (OSError, KeyError) as exc:
+        item = SortableItem("-", NO_RECORD)
+        item.setToolTip(f"archive unreadable: {exc}")
+        return item
+    if not levels:
+        item = SortableItem("-", NO_RECORD)
+        item.setToolTip(NO_RECORD_TIP)
+        return item
+    parts = []
+    for channel in channel_summary(levels):
+        runs = (f" in {channel['n_verdict']} of {channel['n_runs']} runs"
+                if channel["verdict"] != OK and channel["n_verdict"] < channel["n_runs"] else "")
+        parts.append(f"{channel['channel']} {channel['verdict']} {counts_text(channel['median_counts'])}{runs}")
+    worst = min(VERDICT_ORDER[row["verdict"]] for rows in levels.values() for row in rows)
+    item = SortableItem(", ".join(parts), worst)
+    if worst < VERDICT_ORDER[OK]:
+        item.setForeground(QColor(BAD_COLOUR if worst == VERDICT_ORDER[OPEN] else NOTICE_COLOUR))
+    lines = [f"{run} {row['channel']}: median {counts_text(row['median_counts'])} counts, "
+             f"rail {100 * row['rail_fraction']:.2f} %, {row['verdict']}"
+             for run, rows in levels.items() for row in rows]
+    item.setToolTip("\n".join(["raw DC level recorded at ingest, per run and channel:", *lines]))
+    return item
 
 
 class MetadataTab(QWidget):
@@ -240,6 +299,9 @@ class MetadataTab(QWidget):
                     item = _yes_no(name in raw_sites)
                 elif key == "archive":
                     item = _yes_no(self.state.has_archive(name))
+                elif key == DC_LEVEL:
+                    item = _dc_level_item(survey.name, name, self.state.archive_path(name)
+                                          if self.state.has_archive(name) else None)
                 elif key == "filters":
                     item = _yes_no(bool(cfg.filters))
                 else:  # serial, firmware, start, end: header facts, read-only

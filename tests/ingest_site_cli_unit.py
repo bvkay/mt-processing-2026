@@ -10,6 +10,7 @@ Unit test for the batch mode of scripts/ingest_site.py
 - (d) with S04 holding one unreadable file, `--all --parallel 2` or `S04 S03` in this process do not exit 1 and build the rest;
 - (e) S04's row is not failed with its ValueError's first line, the same in both batches, or an S04.h5 is left behind;
 - (f) a single-site call prints other script lines than the single-site script printed before the batch mode, on the same calls;
+- (g) a single-site call on S05, whose ey sits at 1.6e9 counts (the level of the Morocco survey's C05 ey and C13 ey) and ex, hx, hy at +2e7, +4.3e7, +3.9e7 counts with noise, exits other than 0, prints other flagged lines than exactly "S05 sr1000_0001 ey: median 1.60e9 counts, open input?", prints it before its "archive:" line, or prints other script lines than (f)'s;
 - (mutations) (a) and (b) pass a batch given --force, which rebuilds S01, or (d) and (e) pass a script that lets S04's error end the batch.
 
 The survey is written into a scratch folder: three LEMI-423 sites S01, S02
@@ -20,6 +21,9 @@ a variant. S01's raw archive is built first by a single-site call. Every
 check runs the script in a process of its own with the interpreter
 CRUST_PYTHON names (this one by default), which needs the processing
 environment (aurora, mth5, mt-io).
+
+S05 of (g) is a survey of its own, one B423 file of 4 s written with
+those levels (`_write_b423`'s `levels`).
 
 The lines of (f) are those the single-site script printed on the same calls
 before the batch mode: "ingesting <site> (lemi423) from <raw folder>
@@ -81,6 +85,9 @@ EXPECTED_ALL = {"S01": (r"S01\.h5 kept", "none", "kept"),
                 "S02": (r"S02\.h5 built", VARIANT + " built", "built"),
                 "S03": (r"S03\.h5 built", "none", "built")}
 EXPECTED_NAMED = {"S01": EXPECTED_ALL["S01"], "S02": EXPECTED_ALL["S02"]}
+# (g): S05's record fields at (level, Gaussian noise sigma) in counts, ey an open input
+S05_LEVELS = {"Ex": (2.0e7, 2.0e6), "Ey": (1.6e9, 1.0e3), "Bx": (4.3e7, 2.0e6), "By": (3.9e7, 2.0e6)}
+FLAGGED = re.compile(r"^\S+ sr\d+_\d+ \S+: median ")  # a flagged channel run's line
 MUTATION = ("        except (Exception, SystemExit) as exc:\n", "        except SystemExit as exc:\n")
 
 
@@ -288,6 +295,33 @@ def test_f_single_site() -> None:
     assert current.returncode == 0 and script_lines(current.stdout) == want, script_lines(current.stdout)
     print(f"  (f) S01, S02, S01 again (exit 2), S02 --variant: the single-site lines, e.g. "
           f"{script_lines(second.stdout)[-1]!r}")
+
+
+def test_g_dc_level_line() -> None:
+    premise()
+    root = SCRATCH / "dc_level"
+    shutil.rmtree(root, ignore_errors=True)
+    epoch = SITES["S01"]
+    _write_b423(root / "raw" / "S05" / f"{epoch}.B423", epoch=epoch, n=4000, levels=S05_LEVELS, seed=5)
+    config = {"name": "synthetic", "instrument": "lemi423", "sample_rate": 1000,
+              "data_root": str(root / "raw"), "workspace": str(root / "work"),
+              "defaults": {"channels": ["ex", "ey", "hx", "hy"], "dipole_length_ex": 50.0,
+                           "dipole_length_ey": 50.0, "azimuth_ex": 0.0, "azimuth_ey": 90.0},
+              "sites": {"S05": {}}}
+    survey_yaml = root / "survey.yaml"
+    survey_yaml.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+    done = run(survey_yaml, "S05")
+    assert done.returncode == 0, done.stdout[-3000:] + done.stderr[-3000:]
+    lines = done.stdout.splitlines()
+    flagged = [line for line in lines if FLAGGED.match(line)]
+    assert flagged == ["S05 sr1000_0001 ey: median 1.60e9 counts, open input?"], f"(g) flagged lines {flagged}"
+    s05 = archive(survey_yaml, "S05")
+    assert lines.index(flagged[0]) > lines.index(f"archive: {s05}"), "(g) the flagged line precedes archive:"
+    want = [f"ingesting S05 (lemi423) from {root / 'raw' / 'S05'} (LEMI-423 runs of at most {MAX_RUN_FILES} "
+            f"files) -> {s05}", f"archive: {s05}", "variant: none (no declared filters)"]
+    assert script_lines(done.stdout) == want, f"(g) script lines {script_lines(done.stdout)}"
+    print(f"  (g) S05, ey at 1.6e9 counts: exit 0, one flagged line {flagged[0]!r} after archive:, "
+          f"ex, hx, hy unflagged")
 
 
 def test_mutation_force_trips_a_b() -> None:

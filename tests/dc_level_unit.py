@@ -39,8 +39,9 @@ not listed as having no archive, or sr100_0002 is checked at 1000 Hz; the
 exit status is not 0 for the report, 2 for S03 named and 2 for a missing
 survey file; or the CSV does not hold the table's rows.
 
-The mutation: with the rail share taken as the literal share of samples
-whose |counts| are at least 90 % of the largest |counts|, the healthy
+The mutation: with the rail share (`crust.dclevel.rail_fraction`, which
+the script's measure calls) taken as the literal share of samples whose
+|counts| are at least 90 % of the largest |counts|, the healthy
 channels, whose DC level is many times their noise, come back "saturated?";
 the test checks that it does, so the healthy criterion is shown able to
 fail.
@@ -65,6 +66,7 @@ sys.path.insert(0, str(REPO / "src"))
 sys.path.insert(0, str(REPO / "tests"))
 
 from _scratch import scratch_dir  # noqa: E402
+from crust import dclevel  # noqa: E402
 
 SCRIPT = REPO / "scripts" / "dc_level_check.py"
 SCRATCH = scratch_dir("dc_level_unit")
@@ -287,12 +289,12 @@ def main() -> None:
     print("  exit 2 for S03 named without an archive and for a missing survey file")
 
     # the mutation: the literal |counts| share at the rail
-    literal = module.rail_fraction
-    module.rail_fraction = lambda x, median: float(np.mean(np.abs(x) >= 0.9 * np.abs(x).max()))
+    literal = dclevel.rail_fraction
+    dclevel.rail_fraction = lambda x, median: float(np.mean(np.abs(x) >= 0.9 * np.abs(x).max()))
     try:
         _s, mutant, _e = run_main(module, yaml_path, "S01", "S02", "--sample-seconds", SAMPLE_S)
     finally:
-        module.rail_fraction = literal
+        dclevel.rail_fraction = literal
     tripped = [r for r in table_rows(mutant) if (r[0], r[2]) in HEALTHY and r[-1] != "ok"]
     assert tripped, mutant
     print(f"  mutation |counts| >= 90 % of max|counts|: {len(tripped)} of 8 healthy channel runs come back "
