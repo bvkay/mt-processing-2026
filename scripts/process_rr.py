@@ -37,6 +37,17 @@ remote is looked up by its name (`mtproc.masks.remote_masks`), so its masks
 apply whether or not data_root is mounted. `--no-masks` ignores the file for
 both sites.
 
+A derived site (`<site>L`, written by scripts/decimate_site.py at its own
+`sample_rate:`, 1 Hz) is processed from its archive as it is, against a
+remote at the same rate: an observatory (scripts/fetch_observatory.py) or
+another derived site. Its runs are its parent's, so MAX_RUN_FILES shaped
+them at ingest. The band scheme and the quadrant window follow the local's
+rate, and so does the shortest period, `rate_min_period` (4 s at 1 Hz),
+unless --min-period is given. A remote at another rate is refused (exit 2)
+with both rates named. A derived local without a reference EDI of its own
+is compared with its parent's. The sidecar records the rates
+(`sample_rates`) and the parents (`derived_from`).
+
 The estimator flags (--taper ... --tolerance) are advanced options: each
 changes aurora's STFT or robust regression on every decimation level for
 this run only (`mtproc.process.process_station(tweaks=...)`, whose docstring
@@ -74,6 +85,7 @@ import datetime as dt
 import importlib.metadata
 import inspect
 import json
+import math
 import subprocess
 import sys
 from pathlib import Path
@@ -242,10 +254,15 @@ def archive_status(survey: Survey, site: str, raw_sites: dict, use_filters: bool
         and `variant_state` "no filters used" with `use_filters=False`, or
         "none declared" when the site's `filters.yaml` entry is empty;
         otherwise `variant_path` and "ready" (the raw archive exists and
-        `variant_ready`) or "to build (<hash>)". None for a site not in
-        `raw_sites`, such as a stacked remote without a raw archive, which
-        `resolve` handles separately.
+        `variant_ready`) or "to build (<hash>)". A derived site gets its
+        archive, `variant` None and "derived_from" its parent. None for
+        another site not in `raw_sites`, such as a stacked remote without a
+        raw archive, which `resolve` handles separately.
     """
+    parent = survey.parent_of(site)
+    if parent:
+        return {"raw": default_archive_path(survey, site), "variant": None, "derived_from": parent,
+                "variant_state": f"none (derived from {parent}: its archive is used as it is)"}
     if site not in raw_sites:
         return None
     raw = default_archive_path(survey, site)
@@ -284,12 +301,20 @@ def resolve(args, started) -> dict:
     passed to `process_station`. With `--no-masks` all three are [] and
     `masks_ignored` is True.
 
+    `sample_rate` and `remote_sample_rate` are `Survey.sample_rate_of` of
+    the two sites; the band scheme and the quadrant window use
+    `sample_rate`. A local at its own rate (a derived site) starts at
+    `rate_min_period` unless --min-period is given.
+
     Args:
         args (argparse.Namespace): Parsed arguments.
         started (datetime.datetime): Start of the run.
 
     Returns:
         dict: The resolution, printed by `print_resolution`.
+
+    Raises:
+        RateMismatch: When the two sites' sample rates differ.
     """
     survey = Survey.from_yaml(args.survey_yaml)
     scheme_kwargs = dict(survey.processing)
@@ -304,6 +329,17 @@ def resolve(args, started) -> dict:
     defaults = {n: p.default for n, p in inspect.signature(build_band_scheme).parameters.items()}
     for key in BAND_KEYS:
         scheme_kwargs.setdefault(key, defaults[key])
+    # the local's own rate (a derived <site>L at 1 Hz) or the survey's; the
+    # remote's must match, since aurora pairs archives of one rate
+    local_rate = survey.sample_rate_of(args.local)
+    remote_rate = survey.sample_rate_of(args.remote)
+    if not math.isclose(local_rate, remote_rate, rel_tol=1e-9):
+        hint = (f": decimate the local first (scripts/decimate_site.py {args.survey_yaml} {args.local}) and "
+                f"process {args.local}L against {args.remote}" if remote_rate < local_rate else "")
+        raise RateMismatch(f"{args.local} is at {local_rate:g} Hz and {args.remote} at {remote_rate:g} Hz; aurora "
+                           f"needs one sample rate for both{hint}")
+    if args.min_period is None and local_rate != survey.sample_rate:
+        scheme_kwargs["min_period"] = max(float(scheme_kwargs["min_period"]), rate_min_period(local_rate))
 
     try:
         raw_sites = survey.site_dirs()
@@ -311,11 +347,13 @@ def resolve(args, started) -> dict:
         raw_sites = {}
     use_filters = not args.no_filters
     local_h5 = default_archive_path(survey, args.local)
-    # a stacked synthetic remote (scripts/build_stack.py) has no raw folder:
-    # its archive is used as it is, with or without filters, since it is a
-    # product rather than a `processing_archive` variant
+    # a stacked synthetic remote (scripts/build_stack.py), an observatory
+    # (scripts/fetch_observatory.py) and a derived site (scripts/decimate_site.py)
+    # have no raw folder: the archive is used as it is, with or without filters,
+    # since it is a product rather than a `processing_archive` variant
+    remote_parent = survey.parent_of(args.remote)
     stacked = survey.workspace / "mth5" / f"{args.remote}.h5"
-    virtual = args.remote not in raw_sites and stacked.exists()
+    virtual = bool(remote_parent) or (args.remote not in raw_sites and stacked.exists())
     remote_h5 = stacked if virtual else default_archive_path(survey, args.remote)
     ignore_masks = not args.masks
     masks_local = [] if ignore_masks else load_masks(survey, args.local)
@@ -333,7 +371,12 @@ def resolve(args, started) -> dict:
         "local_archive": local_h5,
         "remote_archive": remote_h5,
         "local_status": archive_status(survey, args.local, raw_sites, use_filters),
-        "remote_status": None if virtual else archive_status(survey, args.remote, raw_sites, use_filters),
+        "remote_status": (archive_status(survey, args.remote, raw_sites, use_filters)
+                          if remote_parent or not virtual else None),
+        "local_parent": survey.parent_of(args.local),
+        "remote_parent": remote_parent,
+        "sample_rate": local_rate,
+        "remote_sample_rate": remote_rate,
         "ignore_filters": not use_filters,
         "start": args.start,
         "end": args.end,
@@ -374,6 +417,23 @@ def output_channels(survey, site: str) -> list[str] | None:
         return None
     declared = [c.lower() for c in declared]
     return [c for c in ("ex", "ey", "hz") if c in declared]
+
+
+class RateMismatch(ValueError):
+    """Raised by `resolve` when the local and remote archives are at different sample rates."""
+
+
+def rate_min_period(sample_rate: float) -> float:
+    """Return the shortest period processed at a local's own sample rate: 4 / sample_rate, in s.
+
+    `build_band_scheme` caps the top band edge at a quarter of the sample
+    rate, so this is the shortest period the scheme reaches at that rate.
+    It is twice the Nyquist period, where the anti-alias FIR of
+    scripts/decimate_site.py passes within 0.5 % of unit gain, and at 1 Hz
+    the first level's bands, 4-16 s, span harmonics 8 to 32 of the
+    128-point window.
+    """
+    return 4.0 / float(sample_rate)
 
 
 def quadrant_window(sample_rate: float) -> tuple[float, float]:
@@ -497,6 +557,11 @@ def build_sidecar(res: dict, args, started, finished, edi_path: Path, png_path: 
         "local_archive": _archive_info(res["local_archive"]),
         "remote_archive": _archive_info(res["remote_archive"]),
         "survey_yaml": {"path": res["survey_yaml"], "name": Path(res["survey_yaml"]).name},
+        # the rates the band scheme and quadrant window were built at (`local`),
+        # and the derived sites' parents
+        "sample_rates": {"survey": survey.sample_rate, "local": res.get("sample_rate", survey.sample_rate),
+                         "remote": res.get("remote_sample_rate", survey.sample_rate)},
+        "derived_from": {local: res.get("local_parent"), remote: res.get("remote_parent")},
         "band_scheme": dict(res["scheme_kwargs"]),
         # the full effective set, defaults filled in, so the sidecar says
         # "taper: hann" on a run without --taper too
@@ -581,6 +646,7 @@ def print_resolution(res: dict) -> None:
         print(f"{key}: {value if value is not None else ''}")
     _print_archive_status("local", res["local_status"])
     _print_archive_status("remote", res["remote_status"])
+    print(f"sample_rate: {res['local']} {res['sample_rate']:g} Hz, {res['remote']} {res['remote_sample_rate']:g} Hz")
     oc = res["output_channels"]
     print("output_channels: " + (", ".join(oc) if oc else "aurora default (ex, ey, hz)"))
     for key in BAND_KEYS:
@@ -609,7 +675,11 @@ def main(args) -> None:
         args (argparse.Namespace): Parsed arguments from `build_parser`.
     """
     started = dt.datetime.now().astimezone()
-    res = resolve(args, started)
+    try:
+        res = resolve(args, started)
+    except RateMismatch as exc:
+        print(f"ERROR {exc}", file=sys.stderr)
+        raise SystemExit(2) from None
     survey = res["survey"]
     print_resolution(res)
     if args.dry_run:
@@ -626,12 +696,23 @@ def main(args) -> None:
             f"{site}: Ex {cfg.dipole_length_ex} m @ {cfg.azimuth_ex} deg, "
             f"Ey {cfg.dipole_length_ey} m @ {cfg.azimuth_ey} deg, timing {cfg.timing}"
         )
+    for site, parent, path in ((local, res["local_parent"], res["local_archive"]),
+                               (remote, res["remote_parent"], res["remote_archive"])):
+        if parent and not Path(path).exists():
+            raise FileNotFoundError(f"{site}: no archive at {path} -- decimate {parent} first: "
+                                    f"scripts/decimate_site.py {args.survey_yaml} {parent}")
     # the raw archive first (ingest_site reuses it if it is already there),
     # then the archive processing actually reads: the filtered variant,
     # built from the raw one on demand, or the raw archive itself with
-    # --no-filters (`processing_archive`)
-    ingest_site(survey, local, max_run_files=MAX_RUN_FILES)
-    local_h5 = processing_archive(survey, local, use_filters=use_filters)
+    # --no-filters (`processing_archive`); a derived local's archive is used
+    # as scripts/decimate_site.py wrote it
+    if res["local_parent"]:
+        logger.info(f"{local}: derived from {res['local_parent']} at {res['sample_rate']:g} Hz, "
+                    f"using {res['local_archive']}")
+        local_h5 = res["local_archive"]
+    else:
+        ingest_site(survey, local, max_run_files=MAX_RUN_FILES)
+        local_h5 = processing_archive(survey, local, use_filters=use_filters)
     if res["virtual_remote"]:
         logger.info(f"{remote}: virtual remote, using {res['remote_archive']}")
         remote_h5 = res["remote_archive"]
@@ -641,7 +722,7 @@ def main(args) -> None:
     res["local_archive"], res["remote_archive"] = local_h5, remote_h5
 
     stem = res["stem"]
-    scheme = build_band_scheme(survey.sample_rate, **res["scheme_kwargs"])
+    scheme = build_band_scheme(res["sample_rate"], **res["scheme_kwargs"])
     masks = res["masks"]  # both sites' masks.yaml intervals, joined (`resolve`)
     if res["masks_ignored"]:
         logger.info(f"{local}, {remote}: masks.yaml ignored (--no-masks)")
@@ -664,10 +745,10 @@ def main(args) -> None:
         **({"output_channels": res["output_channels"]} if res["output_channels"] else {}),
     )
 
-    pmin, pmax = quadrant_window(survey.sample_rate)
+    pmin, pmax = quadrant_window(res["sample_rate"])
     logger.info(
         f"{local}: judging phase quadrants over {pmin:g}-{pmax:g} s "
-        f"(sample rate {survey.sample_rate:g} Hz)"
+        f"(sample rate {res['sample_rate']:g} Hz)"
     )
     q = phase_quadrants(tf, pmin=pmin, pmax=pmax)
     msg = f"{local}: median phases {q['pmin']:g}-{q['pmax']:g} s xy {q['xy']:+.0f} deg, yx {q['yx']:+.0f} deg"
@@ -686,6 +767,8 @@ def main(args) -> None:
         logger.info(msg + " (physical quadrants)")
 
     baseline = reference_edi(Path(args.survey_yaml), local)
+    if baseline is None and res["local_parent"]:  # a derived site is compared with its parent's EDI
+        baseline = reference_edi(Path(args.survey_yaml), res["local_parent"])
     if baseline is None:
         logger.warning(f"{local}: no reference EDI mapped — plotting aurora alone")
     out_png = survey.workspace / "tf" / f"{stem}_vs_lemimt.png"

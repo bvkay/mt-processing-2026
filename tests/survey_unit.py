@@ -3,8 +3,8 @@
 Unit test for mtproc.survey
 
 Checks `distance_km`, `Survey.timezone`, the field-sheet survey CSV reader,
-the channel presets, instrument detection and the electric chain gain key.
-Runs without Qt or an archive.
+the channel presets, instrument detection, the electric chain gain key and
+the derived and observatory sites. Runs without Qt or an archive.
 
 Usage:
     python tests/survey_unit.py
@@ -59,6 +59,18 @@ chain, not a PR6-24 pre-amplifier setting): with `defaults: electric_gain: 10.0`
 with no key of its own does not read 10.0 from `Survey.site(...).electric_gain`,
 a site's own number does not win over the default, or a survey without the
 key does not give 1.0 (no filter, the EDL default).
+
+And the sites with an archive and no raw folder: in the same scratch data
+root, with a derived entry S01L (`derived_from: S01`, `sample_rate: 1.0`,
+as scripts/decimate_site.py writes it) and an observatory entry EBR
+(`instrument: intermagnet`, as scripts/fetch_observatory.py writes it),
+`instrument_of` does not give S01L its parent's recorder (lemi423) and EBR
+"intermagnet" without raising; `site_dirs()` lists either; `parent_of` does
+not give S01 for S01L and None for S01 and EBR; `sample_rate_of` does not
+give 1.0 for S01L and EBR, the survey's 1000.0 for S01 and for a name with
+no entry (a stacked remote); `Survey.site("S01L")` does not carry
+`derived_from` and `sample_rate`; or a site derived from itself does not
+raise ValueError.
 """
 
 from __future__ import annotations
@@ -247,6 +259,36 @@ def test_instrument_detection() -> None:
         assert declared.instrument_of("NOFOLDER") == "lemi423"
         print(f"  site_dirs {sorted(expected)}; instruments {got}; MIXED is lemi424 in a lemi424 survey; "
               f"declared wins; unknown raises; no folder -> the survey's")
+
+
+def test_derived_and_observatory_sites() -> None:
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        (root / "S01").mkdir()
+        (root / "S01" / "1624949744.B423").write_bytes(b"")
+        sites = {"S01": {},
+                 "S01L": {"derived_from": "S01", "sample_rate": 1.0, "latitude": -31.5},
+                 "EBR": {"instrument": "intermagnet", "channels": ["hx", "hy", "hz"], "latitude": 40.96},
+                 "LOOP": {"derived_from": "LOOP"}}
+        survey = Survey({"name": "t", "instrument": "lemi423", "sample_rate": 1000, "data_root": str(root),
+                         "sites": sites}, root)
+        assert list(survey.site_dirs()) == ["S01"], list(survey.site_dirs())
+        got = {s: survey.instrument_of(s) for s in ("S01", "S01L", "EBR")}
+        assert got == {"S01": "lemi423", "S01L": "lemi423", "EBR": "intermagnet"}, got
+        parents = {s: survey.parent_of(s) for s in ("S01", "S01L", "EBR")}
+        assert parents == {"S01": None, "S01L": "S01", "EBR": None}, parents
+        rates = {s: survey.sample_rate_of(s) for s in ("S01", "S01L", "EBR", "STK_S01")}
+        assert rates == {"S01": 1000.0, "S01L": 1.0, "EBR": 1.0, "STK_S01": 1000.0}, rates
+        cfg = survey.site("S01L")
+        assert (cfg.derived_from, cfg.sample_rate, cfg.latitude) == ("S01", 1.0, -31.5), cfg
+        try:
+            survey.instrument_of("LOOP")
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("a site derived from itself must raise")
+    print(f"  derived S01L and observatory EBR: instruments {got}, rates {rates}, no raw folder for either")
 
 
 def test_electric_gain_resolve() -> None:

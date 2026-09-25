@@ -500,3 +500,29 @@ sites:
     latitude: -32.752059
     longitude: 140.997292
     elevation: 123.0
+  D02L:
+    derived_from: D02
+    sample_rate: 1.0
+    dipole_length_ex: 37.0
+    dipole_length_ey: 50.0
+    azimuth_ex: 180.0
+    azimuth_ey: 90.0
+    latitude: -30.255749
+    longitude: 139.22817
+    elevation: 519.2
+    start: '2021-06-29T06:56:01Z'
+    end: '2021-07-01T00:11:43Z'
+    notes: D02 decimated to 1 Hz from D02.h5 by scripts/decimate_site.py, 2026-09-25T06:44:28Z
+  E08L:
+    derived_from: E08
+    sample_rate: 1.0
+    dipole_length_ex: 54.0
+    dipole_length_ey: 54.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: -30.498951
+    longitude: 140.751198
+    elevation: 86.0
+    start: '2021-06-29T05:45:00Z'
+    end: '2021-07-01T00:21:05Z'
+    notes: E08 decimated to 1 Hz from E08.h5 by scripts/decimate_site.py, 2026-09-25T06:44:59Z

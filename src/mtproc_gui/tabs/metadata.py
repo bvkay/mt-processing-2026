@@ -8,7 +8,9 @@ with:
 
 * the field-sheet numbers as declared;
 * the recorder, read-only (`Survey.instrument_of`: the site's own
-  `instrument:` or what its folder holds);
+  `instrument:` or what its folder holds), with the parent and rate of a
+  derived site ("lemi423 (B01 at 1 Hz)") and an observatory's rate
+  ("intermagnet (1 Hz)");
 * the site's usual remote-reference partner (`remote:`), which the Process,
   Spectra and Coherence tabs preselect;
 * its channels (`channels_column`);
@@ -44,7 +46,7 @@ from PySide6.QtWidgets import (
     QMessageBox, QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
-from mtproc.survey import read_site_table
+from mtproc.survey import OBSERVATORY, read_site_table
 from mtproc_gui import channels_column, metadata_edit
 from mtproc_gui.metadata_edit import EDITABLE, format_cell, parse_cell
 from mtproc_gui.theme import BAD_COLOUR, NOTICE_COLOUR
@@ -96,6 +98,17 @@ class SortableItem(QTableWidgetItem):
 def _yes_no(flag: bool) -> SortableItem:
     """Return a "yes"/"no" cell that sorts yes after no."""
     return SortableItem("yes" if flag else "no", 1 if flag else 0)
+
+
+def _instrument_text(survey, name: str) -> str:
+    """Return the instrument cell: the recorder, with the parent and rate of a derived site or an observatory's rate."""
+    instrument = survey.instrument_of(name)
+    parent = survey.parent_of(name)
+    if parent:
+        return f"{instrument} ({parent} at {survey.sample_rate_of(name):g} Hz)"
+    if instrument == OBSERVATORY:
+        return f"{instrument} ({survey.sample_rate_of(name):g} Hz)"
+    return instrument
 
 
 class MetadataTab(QWidget):
@@ -209,7 +222,7 @@ class MetadataTab(QWidget):
             cfg = survey.site(name)
             for column, key in enumerate(COLUMNS):
                 if key in ("site", "instrument"):
-                    item = SortableItem(name if key == "site" else survey.instrument_of(name))
+                    item = SortableItem(name if key == "site" else _instrument_text(survey, name))
                 elif key in EDITABLE:
                     text = format_cell(key, getattr(cfg, key))
                     self._shown[(name, key)] = text

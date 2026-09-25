@@ -678,7 +678,7 @@ class CrossPowerTab(QWidget):
         self.remote_combo.blockSignals(True)
         self.remote_combo.clear()
         for name in keep:
-            self.remote_combo.addItem(name if name in raw else f"{name}  (stack)", name)
+            self.remote_combo.addItem(name if name in raw else f"{name}  ({self.state.archive_kind(name)})", name)
         wanted = current if self._hand_remote == site else (self._recommended(site) if site else None)
         index = self.remote_combo.findData(wanted if wanted is not None else current)
         self.remote_combo.setCurrentIndex(max(index, 0) if keep else -1)

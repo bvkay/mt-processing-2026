@@ -37,10 +37,8 @@ the archive and the entry it would write, without writing anything. With
 the GIN out of reach the script exits 1 with one line saying so; the cache
 keeps whole days only.
 
-`mtproc.survey.Survey.instrument_of` accepts the raw-data recorders of
-`mtproc.instruments.INSTRUMENTS` and raises for `intermagnet`, so the GUI's
-Metadata tab, which asks it about every site, fails on a survey holding an
-observatory site. The script prints a warning after writing the entry.
+`mtproc.survey.Survey.instrument_of` gives "intermagnet" for the entry and
+`Survey.sample_rate_of` 1 Hz; the entry has no raw folder.
 
 Usage:
     python scripts/fetch_observatory.py <survey.yaml> <IAGA code> [start] [end]
@@ -197,11 +195,6 @@ def main(argv=None) -> int:
     entry = observatory.survey_entry(meta, summary["runs"])
     rewrite_sites_block(yaml_path, {code: entry})
     print(f"{'refreshed' if held else 'added'} {code} in {yaml_path}: {entry}")
-    try:
-        Survey.from_yaml(yaml_path).instrument_of(code)
-    except ValueError as exc:
-        print(f"  WARNING mtproc.survey does not know this site's instrument yet ({exc}); the GUI's "
-              f"Metadata tab will fail on this survey until it does")
     return 0
 
 

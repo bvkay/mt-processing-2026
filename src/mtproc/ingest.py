@@ -961,9 +961,15 @@ def ingest_site(
         FileNotFoundError: If the coil calibration file is missing or the
             site has no data files.
         ValueError: If a setting does not fit the instrument (see
-            `_electric_gain`, `_keep_channels`, `_standardise_e_orientation`)
-            or no file overlaps the window.
+            `_electric_gain`, `_keep_channels`, `_standardise_e_orientation`),
+            no file overlaps the window, or the site is a derived site
+            (`Survey.parent_of`), whose archive scripts/decimate_site.py
+            writes.
     """
+    parent = survey.parent_of(site_name)
+    if parent:
+        raise ValueError(f"{site_name} is derived from {parent} and has no raw folder: its archive "
+                         f"{default_archive_path(survey, site_name)} is written by scripts/decimate_site.py")
     site = survey.site(site_name)
     site_dir = survey.site_dirs()[site_name]
     instrument = survey.instrument_of(site_name)

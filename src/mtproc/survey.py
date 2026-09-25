@@ -13,7 +13,10 @@ positions) are optional overrides in the YAML, usually generated once from
 the field spreadsheet (see ``scripts/site_table_to_yaml.py``).
 
 `Survey.from_yaml` loads a survey and `Survey.site` returns the merged
-`SiteConfig` of one site. `read_site_table` reads a CSV or XLSX site table,
+`SiteConfig` of one site. A derived site, written by
+``scripts/decimate_site.py`` as ``<site>L``, names the recorded site it was
+decimated from (`derived_from:`, `Survey.parent_of`) and its own
+`sample_rate:` (`Survey.sample_rate_of`). `read_site_table` reads a CSV or XLSX site table,
 and `CHANNEL_PRESETS` lists the channel sets a survey may declare.
 
 @author: ben kay (ben@auscope.org.au)
@@ -34,6 +37,9 @@ from loguru import logger
 from .instruments import INSTRUMENTS, detect_instrument  # noqa: F401  (mtproc.survey.INSTRUMENTS)
 
 EARTH_RADIUS_KM = 6371.0088  # IUGG mean radius
+# `instrument:` of an INTERMAGNET observatory entry (scripts/fetch_observatory.py):
+# an archive of 1 Hz hx hy hz in nT with no raw folder
+OBSERVATORY = "intermagnet"
 
 
 def distance_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -314,6 +320,13 @@ class SiteConfig:
         start (str or None): First instant of the recorded span, UTC ISO
             ("2021-06-29T06:55:44Z").
         end (str or None): Last instant of the recorded span, UTC ISO.
+        derived_from (str or None): The recorded site whose processing
+            archive scripts/decimate_site.py decimated into this site's
+            archive (`D02L` from `D02`). A derived site has no raw folder;
+            `Survey.instrument_of` gives its parent's recorder.
+        sample_rate (float or None): The site's own sample rate in Hz, set
+            on a derived site (1.0); None means the survey's `sample_rate`
+            (`Survey.sample_rate_of`).
     """
 
     name: str
@@ -339,6 +352,8 @@ class SiteConfig:
     firmware: str | None = None
     start: str | None = None
     end: str | None = None
+    derived_from: str | None = None
+    sample_rate: float | None = None
 
 
 class Survey:
@@ -429,7 +444,9 @@ class Survey:
         AppleDouble ``._<epoch>.B423`` twin does not count. The detected
         instrument is recorded for `instrument_of`. A site folder holds that
         site's raw recordings; processing products are written to the
-        workspace.
+        workspace. A derived site (`parent_of`) and an observatory
+        (`OBSERVATORY`) have an archive and no folder, and are not listed; a
+        derived site's parent's folder is ``site_dirs()[parent_of(site)]``.
 
         Returns:
             dict: Site name to folder Path, sorted by name.
@@ -447,7 +464,8 @@ class Survey:
     def instrument_of(self, site: str) -> str:
         """Return the recorder of a site.
 
-        The site's own `instrument:` wins, then the instrument detected in
+        The site's own `instrument:` wins, then, for a derived site, its
+        parent's recorder, then the instrument detected in
         ``data_root/<site>``, then the survey's. Detection runs on the first
         call unless `site_dirs()` has already done it. A missing folder, for
         example on a drive that is not connected, falls back to the survey's
@@ -457,21 +475,68 @@ class Survey:
             site (str): Site name.
 
         Returns:
-            str: Instrument key of INSTRUMENTS.
+            str: Instrument key of INSTRUMENTS, or `OBSERVATORY`
+            ("intermagnet") for an observatory entry written by
+            scripts/fetch_observatory.py (1 Hz hx hy hz, no raw folder).
 
         Raises:
-            ValueError: If the site declares an unknown instrument.
+            ValueError: If the site declares an unknown instrument, or is
+                derived from itself.
         """
         declared = (self._sites.get(site) or {}).get("instrument")
         if declared:
+            if declared == OBSERVATORY:
+                return declared
             if declared not in INSTRUMENTS:
                 raise ValueError(f"{site}: unknown instrument {declared!r} (know: {', '.join(INSTRUMENTS)})")
             return declared
+        parent = self.parent_of(site)
+        if parent:
+            if parent == site:
+                raise ValueError(f"{site}: derived_from names the site itself")
+            return self.instrument_of(parent)
         if site not in self._detected:
             folder = self.data_root / site
             found = detect_instrument(folder, prefer=self.instrument) if folder.is_dir() else None
             self._detected[site] = found or self.instrument
         return self._detected[site]
+
+    def parent_of(self, site: str) -> str | None:
+        """Return the site a derived site was decimated from.
+
+        Args:
+            site (str): Site name.
+
+        Returns:
+            str or None: The site entry's `derived_from:`; None for a
+            recorded site and for a name with no entry.
+        """
+        parent = (self._sites.get(site) or {}).get("derived_from")
+        return str(parent) if parent else None
+
+    def sample_rate_of(self, site: str) -> float:
+        """Return the sample rate of a site's archive in Hz.
+
+        The site entry's own `sample_rate:` wins (a derived site's 1.0); an
+        INTERMAGNET observatory entry (`instrument: intermagnet`, written by
+        scripts/fetch_observatory.py) is at `mtproc.observatory.FS`; every
+        other site, and a name with no entry such as a stacked remote, is at
+        the survey's `sample_rate`.
+
+        Args:
+            site (str): Site name.
+
+        Returns:
+            float: Sample rate in Hz.
+        """
+        entry = self._sites.get(site) or {}
+        if entry.get("sample_rate") is not None:
+            return float(entry["sample_rate"])
+        if entry.get("instrument") == OBSERVATORY:
+            from .observatory import FS
+
+            return float(FS)
+        return self.sample_rate
 
     def site(self, name: str) -> SiteConfig:
         """Return the settings of one site.

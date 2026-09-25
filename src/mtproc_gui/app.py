@@ -54,7 +54,7 @@ from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QFileDialog, QMainWindow, QMessageBox, QSplitter, QTabWidget
 
 from mtproc.ingest import variant_path, variant_ready
-from mtproc.survey import Survey
+from mtproc.survey import OBSERVATORY, Survey
 from mtproc_gui.console import ConsoleStrip, LoguruQtSink
 from mtproc_gui.jobs import JobRunner
 from mtproc_gui.reader import ArchiveLock
@@ -269,7 +269,7 @@ class State(QObject):
         return sorted(p.stem for p in d.glob("*.h5") if not _VARIANT_SUFFIX.search(p.stem))
 
     def stacked_remotes(self) -> list[str]:
-        """Archives with no raw folder, i.e. synthetic remotes from scripts/build_stack.py."""
+        """Archives with no raw folder: stacks from scripts/build_stack.py, observatories and derived sites (`archive_kind`)."""
         raw = self.raw_sites()
         return [s for s in self.archived_sites() if s not in raw]
 
@@ -286,8 +286,28 @@ class State(QObject):
             list[tuple[str, str]]: (display label, remote name) pairs.
         """
         out = [(n, n) for n in sorted(self.raw_sites()) if n != site]
-        out += [(f"{n}  (stack)", n) for n in self.stacked_remotes() if n != site]
+        out += [(f"{n}  ({self.archive_kind(n)})", n) for n in self.stacked_remotes() if n != site]
         return out
+
+    def archive_kind(self, name: str) -> str:
+        """Describe an archive with no raw folder, for the remote lists.
+
+        Args:
+            name (str): Archive stem.
+
+        Returns:
+            str: "derived from <parent>, <rate> Hz" for a derived site,
+            "observatory, <rate> Hz" for an INTERMAGNET entry, else "stack".
+        """
+        if self.survey is None:
+            return "stack"
+        parent = self.survey.parent_of(name)
+        rate = self.survey.sample_rate_of(name)
+        if parent:
+            return f"derived from {parent}, {rate:g} Hz"
+        if ((self.survey.config.get("sites") or {}).get(name) or {}).get("instrument") == OBSERVATORY:
+            return f"observatory, {rate:g} Hz"
+        return "stack"
 
     def default_remote(self, site: str | None) -> str | None:
         """`survey.yaml`'s declared remote for `site`, if it is a usable one."""

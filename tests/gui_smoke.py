@@ -32,7 +32,7 @@ Usage:
 
 (1)  the window cannot be built, or its tabs are not, in order, Metadata,
      Time Series, Spectra, Spectrogram, Coherence, Filter Data, Cross-powers,
-     Process, View EDIs; or the Metadata table does not show 59 sites with a
+     Process, View EDIs; or the Metadata table does not show 61 sites with a
      `remote` column reading E08 for D02, and a `channels` column reading
      "Ex Ey Bx By" (the survey default [ex, ey, hx, hy] as its preset's
      label) for D02 and for A07 (both archived, so both cells drawn in the
@@ -44,8 +44,10 @@ Usage:
      proxy); or an unticked, unlabelled QCheckBox has no pixel at least 64
      lightness levels above the window grey (Fusion alone draws its outline
      from the window grey, darkened, and the box disappears);
-(2)  the Time Series tree does not have 59 site rows, bold and collapsed, of
-     which exactly three (A07, D02, E08, the archived ones) are expandable
+(2)  the Time Series tree does not have 61 site rows, bold and collapsed, of
+     which exactly five (A07, D02, D02L, E08, E08L, the archived ones; D02L
+     and E08L are the 1 Hz sites scripts/decimate_site.py derives from D02
+     and E08) are expandable
      (an indicator and no rows yet) while every other row holds one disabled
      child reading "no MTH5 yet - select the site and press Build MTH5"; or
      a real mouse click on D02's row does not expand it;
@@ -156,7 +158,7 @@ Usage:
      directly for A07 (a saved `replace`, no `A07_f<hash>.h5` variant
      built) "A07 declares: replace (filtered archive will be built first,
      from the raw archive)"; preselect remote E08 from `survey.yaml`; draw a
-     site map of 59 points with D02 green, E08 blue and a distance label
+     site map of 61 points with D02 green, E08 blue and a distance label
      within 2 km of the D02-E08 separation computed here from the YAML
      coordinates by the spherical law of cosines (a different formula from
      the haversine under test); show both recorded spans on the window bar
@@ -328,7 +330,7 @@ Usage:
 (21) "Import site table..." (its `import_site_table`) with a two-row CSV
      (A03: dipole_length_ey 48 and notes "moved 20 m east"; B02:
      dipole_length_ey 51.5 and an empty notes cell) does not change exactly
-     those three cells of the copy's table (every other cell, 59 sites by 20
+     those three cells of the copy's table (every other cell, 61 sites by 20
      columns, reading as before), read "2 of 2 sites matched", and on Save
      (answered Yes) change exactly those three keys of the copy's parsed
      `sites:` block and nothing else;
@@ -724,8 +726,8 @@ SURVEY_YAML = SURVEY_DIR / "survey.yaml"
 SITE = "D02"
 REMOTE = "E08"
 OTHER = "E08"  # the site whose second window is clicked in (8)
-ARCHIVED = ["A07", "D02", "E08"]
-EXPECTED_SITES = 59
+ARCHIVED = ["A07", "D02", "D02L", "E08", "E08L"]  # D02L, E08L: the 1 Hz derived sites
+EXPECTED_SITES = 61
 EXPECTED_CHANNELS = ("hx", "hy", "ex", "ey")  # top to bottom: magnetics first
 # the expected look, stated here rather than taken from the theme's helpers
 WINDOW_GREY, SURFACE_GREY = "#2b2b2b", "#1f1f1f"

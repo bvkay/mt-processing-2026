@@ -16,7 +16,9 @@ remote each use the run that overlaps the other the most
 (`best_overlap_runs`), so a station split into several runs (e.g. by a
 file-timing anomaly) is compared on its best-overlapping run rather than its
 longest. With --stack, the stack's run is the one that best overlaps the
-local run chosen against the remote. The figure goes to
+local run chosen against the remote. The bands are laid out at the local's
+sample rate (`Survey.sample_rate_of`: 1 Hz for a derived <site>L paired
+with an observatory). The figure goes to
 <workspace>/qc/<local>_rr-<remote>_band_coherence.png unless --out is given.
 
 Usage:
@@ -112,7 +114,8 @@ def main(argv=None) -> None:
     """
     args = parse_args(argv)
     survey = Survey.from_yaml(args.survey_yaml)
-    scheme = build_band_scheme(survey.sample_rate, **survey.processing)
+    sr = survey.sample_rate_of(args.local)  # a derived <site>L's own rate, else the survey's
+    scheme = build_band_scheme(sr, **survey.processing)
 
     local_h5 = station_h5(survey, args.local)
     remote_h5 = station_h5(survey, args.remote)
@@ -140,7 +143,6 @@ def main(argv=None) -> None:
 
     keys = list(chans.keys())
     data = dict(zip(keys, align([chans[k] for k in keys])))
-    sr = survey.sample_rate
 
     pairs = [
         ((args.local, "ex"), (args.local, "hy"), f"{args.local} ex-hy (local)", "0.15", "-"),
