@@ -17,6 +17,14 @@ recorded, [LEMI-120 coil table nT -> nT (normalized), linear nT -> counts],
 with units mt_metadata accepts (docs/upstream_issues.md 1, 2 and 6).
 `_apply_h_scale` appends one stage to that chain.
 
+`ingest_site` also measures the raw DC level of each electric and magnetic
+channel of each run it writes (`crust.dclevel`: the median, MAD and rail
+share of a subsample of the samples in memory), classifies the site's
+channel runs together ("open input?", "saturated?" or "ok") and appends the
+medians, rail shares and verdicts to each run's comment
+(`crust.dclevel.level_note`), where `crust.dclevel.recorded_levels` reads
+them.
+
 A site's declared filters (`<survey>/filters.yaml`) are applied to the raw
 archive on demand, producing a variant `<site>_f<hash>.h5` (`variant_path`,
 with `hash` the `filters_hash` of the declared list). `build_variant` builds
@@ -48,6 +56,7 @@ import mt_io.lemi.lemi423 as _lemi423
 from mt_io.lemi.lemi423 import read_lemi423
 from mth5.mth5 import MTH5
 
+from .dclevel import OK, channel_stats, channel_type, classify, flag_line, level_note
 from .instruments import (  # noqa: F401
     INSTRUMENTS, b423_files, edl_electric_gain, edl_sample_rate, edl_sensor, file_start, read_run,
     record_files, recorder_ini_high_gain,
@@ -906,6 +915,65 @@ def _group_contiguous(files: list[Path], max_run_files: int | None = None,
     return groups
 
 
+def _run_levels(run, site_name: str, run_id: str) -> list[dict]:
+    """Measure the raw DC level of a run's electric and magnetic channels.
+
+    Each channel's samples in memory are measured on a subsample of at most
+    `crust.dclevel.SAMPLE_SECONDS` of samples (`crust.dclevel.channel_stats`),
+    the samples the archive stores for the run.
+
+    Args:
+        run (RunTS): The run as it is written.
+        site_name (str): Site name.
+        run_id (str): The run's id in the archive.
+
+    Returns:
+        list[dict]: One row per channel with samples: ``site``, ``run``,
+        ``channel``, ``type``, ``sample_rate`` and the `channel_stats`
+        values.
+    """
+    rows = []
+    for comp in list(run.dataset):
+        channel = run.dataset[comp]
+        kind = channel_type(comp, channel)
+        if kind is None or channel.shape[0] == 0:
+            continue
+        fs = float(run.sample_rate)
+        rows.append(dict(site=site_name, run=run_id, channel=comp, type=kind, sample_rate=fs,
+                         **channel_stats(np.asarray(channel.data), fs)))
+    return rows
+
+
+def _record_levels(run_groups: dict, rows: list[dict], site_name: str) -> None:
+    """Classify a site's channel levels together and record them in the run comments.
+
+    Each run's classified channels (`crust.dclevel.level_note`) follow its
+    comment after "; ", and the run's metadata is written again. The flagged
+    channel runs go to the log.
+
+    Args:
+        run_groups (dict): {run id: the mth5 run group written}.
+        rows (list[dict]): `_run_levels` of every run, classified in place.
+        site_name (str): Site name.
+    """
+    if not rows:
+        return
+    classify(rows)
+    for run_id, run_group in run_groups.items():
+        mine = [r for r in rows if r["run"] == run_id]
+        if not mine:
+            continue
+        prior = _run_comment(run_group)
+        note = level_note(mine)
+        run_group.metadata.comments.value = f"{prior}; {note}" if prior else note
+        run_group.write_metadata()
+    flagged = [r for r in rows if r["verdict"] != OK]
+    for row in flagged:
+        logger.warning(flag_line(row))
+    logger.info(f"{site_name}: dc level of {len(rows)} channel run(s) recorded in the run comments, "
+                f"{len(flagged)} flagged")
+
+
 def ingest_site(
     survey: Survey,
     site_name: str,
@@ -940,6 +1008,17 @@ def ingest_site(
     reversed-dipole flip and the declared electric gain. The declared list
     of `<survey>/filters.yaml`, `replace` included, is applied on demand by
     `build_variant`.
+
+    Each run's electric and magnetic channels are measured as the run is
+    written (`_run_levels`: the median, MAD and rail share of the stored
+    samples, on a subsample of at most an hour of samples). Once every run
+    is written, the site's channel runs are classified together
+    (`crust.dclevel.classify`: "open input?" above 1e9 counts or 30 times
+    the typical level of the channel type, "saturated?" above 1 % at a rail,
+    else "ok"), each run's comment gets a line such as "dc level (median
+    counts, rail %): ex +2.000e+07 0.00 ok, ey +1.600e+09 0.00 open input?"
+    (`_record_levels`), and each flagged channel run is logged as a warning
+    (`crust.dclevel.flag_line`).
 
     Args:
         survey (Survey): The survey.
@@ -1037,6 +1116,8 @@ def ingest_site(
     try:
         m.add_survey(survey.name)
         station_group = None
+        levels: list[dict] = []  # every run's channel levels, classified once the site is written
+        run_groups = {}
         for i, group in enumerate(groups, 1):
             if instrument == "lemi423":
                 run = read_lemi423(group if len(group) > 1 else group[0], **read_kwargs)
@@ -1061,12 +1142,15 @@ def ingest_site(
                 station_group = m.add_station(site_name, survey=survey.name)
                 station_group.metadata.update(run.station_metadata)
                 station_group.write_metadata()
+            levels += _run_levels(run, site_name, run_id)
             run_group = station_group.add_run(run_id)
             run_group.from_runts(run)
+            run_groups[run_id] = run_group
             logger.info(
                 f"{site_name}: run {run_id} <- {len(group)} file(s) "
                 f"({group[0].name} .. {group[-1].name})"
             )
+        _record_levels(run_groups, levels, site_name)
     finally:
         m.close_mth5()
     return out_path
