@@ -107,6 +107,9 @@ ESTIMATOR_DEFAULTS = {
 }
 TAPERS = ("boxcar", "hamming", "hann", "dpss")
 AURORA_TAPER = "boxcar"  # ConfigCreator's taper; a run uses ESTIMATOR_DEFAULTS["taper"] unless tweaked
+# ConfigCreator's window, whose overlap it sets to 32 samples (25 %); it keeps
+# those 32 samples when the band scheme asks for another window length
+AURORA_WINDOW = 128
 DPSS_NW = 3.0  # time-bandwidth product for scipy's dpss window; aurora sets none
 
 
@@ -493,12 +496,15 @@ def build_config(kd, band_scheme: dict | None = None, tweaks: dict | None = None
     """Build the aurora processing config for a kernel dataset.
 
     The config comes from ConfigCreator; levels whose window lasts over
-    600 s get 75 % overlap; then `tweaks` are applied, with the taper
-    defaulting to Hann.
+    600 s get 75 % overlap, the others 25 % of their own window (the 32
+    samples ConfigCreator sets for its 128-sample window, 64 for a
+    256-sample one); then `tweaks` are applied, with the taper defaulting
+    to Hann.
 
     Args:
         kd (KernelDataset): Kernel dataset.
-        band_scheme (dict, optional): Band scheme from `crust.bands`.
+        band_scheme (dict, optional): Band scheme from `crust.bands`; its
+            ``num_samples_window`` sets the window of every level.
         tweaks (dict, optional): Estimator tweaks (see `apply_tweaks`).
         **config_kwargs: Passed to ``ConfigCreator.create_from_kernel_dataset``,
             overriding `band_scheme` keys.
@@ -512,12 +518,15 @@ def build_config(kd, band_scheme: dict | None = None, tweaks: dict | None = None
     config = cc.create_from_kernel_dataset(kd, **config_kwargs)
 
     # deep decimation levels have windows lasting hours: boost their overlap
-    # so the longest-period bands still see a usable number of windows
+    # so the longest-period bands still see a usable number of windows; the
+    # others overlap by the in-use fraction of their own window
     for dec in config.decimations:
         w = dec.stft.window
         window_seconds = w.num_samples / dec.decimation.sample_rate
         if window_seconds > 600.0:
             w.overlap = int(w.num_samples * 0.75)
+        elif w.num_samples != AURORA_WINDOW:
+            w.overlap = round(w.num_samples * ESTIMATOR_DEFAULTS["overlap_pct"] / 100.0)
     tweaks = dict(tweaks or {})
     tweaks.setdefault("taper", ESTIMATOR_DEFAULTS["taper"])  # Hann unless a taper is given
     apply_tweaks(config, tweaks)

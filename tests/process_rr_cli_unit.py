@@ -82,6 +82,24 @@ judged: ..."; or `quadrant_window` does not pick 0.1-10 s at 100 Hz and above
 and 30-3000 s below that (on 10 Hz long-period data the 0.1-10 s window
 can raise a false "180 deg out ... declare flip").
 
+The band layout. **This test also fails if** a plain dry run does not print
+`window_samples: 128`, `min_bin: none (the layout's own)` and
+`lowest_harmonic: 6.4` beside the processing window's own `window` line;
+`--window-samples 256` or `--min-bin 10` does not replace exactly its own
+line (`window_samples: 256`, `min_bin: 10.0`) and move `lowest_harmonic` to 12.8
+or 10.16, with every other line as in the plain run (`--min-period 0.01`
+moves it to 3.2, the other band options leave it at 6.4); building aurora's
+real config for D02 against E08 (as above) with `--window-samples 256` does
+not give every decimation level a 256-sample window, with the 75 % overlap
+on the levels whose window lasts over 600 s and 25 % on the others, and the
+same band centre periods as the plain config; with `--min-bin 10` any band
+of a decimated level starts below harmonic 10 by the index mt_metadata sets
+from the level's own FFT frequencies, level 0 does not lose exactly two
+bands, or a band centre period under 1000 s differs from the plain config's
+by more than 1e-9 of itself; or the sidecar does not carry `window` and
+`min_bin` in `band_scheme` (128 and None without the flags, 256 and 10.0
+with them) and `lowest_harmonic` 6.4 (10.16).
+
 Both sites' time masks. **This test also fails if**, on a scratch copy of
 curnamona_cube whose own masks.yaml holds three D02 masks (one written twice),
 two E08 masks and one mask identical to one of D02's, one for the stack
@@ -191,6 +209,9 @@ def test_defaults_come_from_the_survey() -> None:
     assert got["max_period"] == "5000.0", got["max_period"]
     assert got["periods_per_decade"] == "10.0", got["periods_per_decade"]
     assert got["notch_frequencies"] == "50, 150", got["notch_frequencies"]
+    assert got["window_samples"] == "128", got["window_samples"]
+    assert got["min_bin"] == "none (the layout's own)", got["min_bin"]
+    assert got["lowest_harmonic"] == "6.4", got["lowest_harmonic"]
     # fails if hz is asked for on a broadband site (it made a nonsense tipper)
     assert got["output_channels"] == "ex, ey", got["output_channels"]
     print(f"  defaults: stem {got['stem']}, archives {Path(got['local_archive']).name} / "
@@ -200,18 +221,22 @@ def test_defaults_come_from_the_survey() -> None:
 
 def test_each_band_option_overrides_only_itself() -> None:
     base = dry_run()
-    for option, value, key, expected in (
-        ("--min-period", "0.01", "min_period", "0.01"),
-        ("--max-period", "1000", "max_period", "1000.0"),
-        ("--per-decade", "6", "periods_per_decade", "6.0"),
-        ("--notch", "50,100,150", "notch_frequencies", "50, 100, 150"),
+    for option, value, key, expected, lowest in (
+        ("--min-period", "0.01", "min_period", "0.01", "3.2"),
+        ("--max-period", "1000", "max_period", "1000.0", "6.4"),
+        ("--per-decade", "6", "periods_per_decade", "6.0", "6.4"),
+        ("--notch", "50,100,150", "notch_frequencies", "50, 100, 150", "6.4"),
+        ("--window-samples", "256", "window_samples", "256", "12.8"),
+        ("--min-bin", "10", "min_bin", "10.0", "10.16"),
     ):
         got = dry_run(option, value)
         assert got[key] == expected, f"{option} {value}: {key} {got[key]!r}"
-        others = {k: v for k, v in got.items() if k != key and k not in TIME_KEYS}
-        unchanged = {k: v for k, v in base.items() if k != key and k not in TIME_KEYS}
+        assert got["lowest_harmonic"] == lowest, f"{option} {value}: lowest_harmonic {got['lowest_harmonic']!r}"
+        derived = {key, "lowest_harmonic"} | TIME_KEYS
+        others = {k: v for k, v in got.items() if k not in derived}
+        unchanged = {k: v for k, v in base.items() if k not in derived}
         assert others == unchanged, f"{option} changed more than {key}: {others} vs {unchanged}"
-        print(f"  {option} {value} -> {key} {got[key]}, nothing else moved")
+        print(f"  {option} {value} -> {key} {got[key]}, lowest_harmonic {lowest}, nothing else moved")
     cleared = dry_run("--notch", "")
     assert cleared["notch_frequencies"] == "", cleared["notch_frequencies"]
     print("  --notch \"\" -> no notch frequencies at all")
@@ -369,6 +394,46 @@ def test_tweaks_reach_every_decimation_level() -> None:
           f"in use {IN_USE['type']}, overlap 25 %/75 %, r0 {IN_USE['r0']}; tweaked hamming, overlap "
           f"50 % on every level, prewhitening off, r0 2.0; dpss builds; built while both archives were "
           f"held read-only, a second read-only handle opened, mtimes unchanged")
+
+
+def test_band_layout_reaches_every_decimation_level() -> None:
+    sys.path.insert(0, str(REPO / "src"))
+    from crust.bands import build_band_scheme
+    from crust.process import build_config, kernel_dataset
+
+    process_rr = _load_process_rr()
+    started = dt.datetime.now().astimezone()
+    configs = {}
+    for name, flags in (("plain", []), ("window 256", ["--window-samples", "256"]), ("min_bin 10", ["--min-bin", "10"])):
+        res = process_rr.resolve(process_rr.build_parser().parse_args([str(SURVEY), LOCAL, REMOTE, *flags]), started)
+        scheme = build_band_scheme(res["survey"].sample_rate, **res["scheme_kwargs"])
+        kd = kernel_dataset(res["local_archive"], LOCAL, res["remote_archive"], REMOTE)
+        configs[name] = build_config(kd, scheme, None, output_channels=res["output_channels"])
+
+    def periods(config, below=float("inf")):
+        """Every band's centre period in s under `below`, sorted."""
+        return sorted(float(b.center_period) for dec in config.decimations for b in dec.bands
+                      if float(b.center_period) < below)
+
+    long_levels = 0
+    for dec in configs["window 256"].decimations:
+        n, seconds = dec.stft.window.num_samples, dec.stft.window.num_samples / dec.decimation.sample_rate
+        assert n == 256, (dec.decimation.level, n)
+        want = int(n * 0.75) if seconds > 600.0 else round(n * 0.25)
+        long_levels += seconds > 600.0
+        assert dec.stft.window.overlap == want, (dec.decimation.level, dec.stft.window.overlap, want)
+    assert long_levels >= 1, "no level has a window over 600 s: the boost is never exercised"
+    assert periods(configs["window 256"]) == periods(configs["plain"]), "the periods moved with the window"
+    plain, moved = configs["plain"].decimations, configs["min_bin 10"].decimations
+    first = {int(dec.decimation.level): min(int(b.index_min) for b in dec.bands) for dec in moved}
+    assert all(k >= 10 for level, k in first.items() if level > 0), first
+    assert len(plain[0].bands) - len(moved[0].bands) == 2, (len(plain[0].bands), len(moved[0].bands))
+    got, want = periods(configs["min_bin 10"], 1000.0), periods(configs["plain"], 1000.0)
+    assert len(got) == len(want) and all(abs(g - w) <= 1e-9 * w for g, w in zip(got, want)), (got, want)
+    print(f"  config D02 rr E08: --window-samples 256 -> 256 samples on all {len(configs['window 256'].decimations)} "
+          f"levels ({long_levels} at 75 % overlap), the same {len(periods(configs['plain']))} periods; --min-bin 10 -> "
+          f"first harmonic {min(k for level, k in first.items() if level > 0)} on the decimated levels (7 plain), "
+          f"level 0 {len(moved[0].bands)} bands (6 plain), the {len(got)} periods under 1000 s unchanged")
 
 
 def test_dry_run_writes_nothing() -> None:
@@ -551,6 +616,15 @@ def test_build_sidecar_with_a_fake_tf() -> None:
     assert sidecar["seconds"] == 137.0, sidecar["seconds"]
     assert sidecar["window"] == {"start": "2021-06-29T12:55:00+00:00", "end": "2021-06-29T14:55:00+00:00"},         sidecar["window"]
     assert sidecar["band_scheme"]["min_period"] == 0.005, sidecar["band_scheme"]
+    assert sidecar["band_scheme"]["window"] == 128 and sidecar["band_scheme"]["min_bin"] is None, sidecar["band_scheme"]
+    assert sidecar["lowest_harmonic"] == 6.4, sidecar["lowest_harmonic"]
+    layout_args = process_rr.build_parser().parse_args(
+        [str(SURVEY), LOCAL, REMOTE, "--window-samples", "256", "--min-bin", "10"])
+    layout = process_rr.build_sidecar(process_rr.resolve(layout_args, started), layout_args, started, finished,
+                                      edi_path, png_path, process_rr.phase_quadrants(
+                                          _fake_tf(45.0, -135.0, np.geomspace(0.1, 10.0, 8))), [])
+    assert layout["band_scheme"]["window"] == 256 and layout["band_scheme"]["min_bin"] == 10.0, layout["band_scheme"]
+    assert round(layout["lowest_harmonic"], 2) == 10.16, layout["lowest_harmonic"]
     assert sidecar["tweaks"] == process_rr.ESTIMATOR_DEFAULTS, "no --taper given: must fall back to the default"
     assert sidecar["tweaks"]["taper"] == "hann", sidecar["tweaks"]
     assert sidecar["argv"] == list(sys.argv), sidecar["argv"]

@@ -7,7 +7,13 @@ periods in log space (about 10 per decade) from `min_period` out to
 `max_period`, across cascaded factor-4 decimation levels. Each level covers
 one factor-4 slice of frequency, so band positions relative to the FFT
 harmonics are identical at every level, and the lowest edge sits about 6
-harmonics above DC.
+harmonics above DC (6.4 at 1000 Hz with a `min_period` of 0.005 s).
+
+`min_bin` sets that lowest edge to the first edge of the same layout at or
+above harmonic `min_bin` (`lowest_harmonic`): the level boundaries move by
+whole bands, so every band keeps its period. Raised, the bands at the foot
+of a level move to the top of the next decimation level, where they span
+four times as many harmonics.
 
 The returned dictionary is passed as keyword arguments to aurora's
 ``ConfigCreator.create_from_kernel_dataset``.
@@ -52,6 +58,72 @@ def _apply_notches(
     return bands
 
 
+def _level_shift(
+    sample_rate: float,
+    min_period: float,
+    periods_per_decade: float,
+    window: int,
+    factor: int,
+    min_bin: float | None,
+) -> tuple[float, float]:
+    """Return the lowest band edge in FFT harmonics and the level-boundary shift it takes.
+
+    Args:
+        sample_rate (float): Sample rate of the run in Hz.
+        min_period (float): Shortest period in s.
+        periods_per_decade (float): Number of bands per decade of period.
+        window (int): FFT window length in samples.
+        factor (int): Decimation factor between levels.
+        min_bin (float or None): Lowest band edge asked for, in harmonics.
+
+    Returns:
+        tuple: ``(k_lo, shift)``. `k_lo` is the lowest band edge of every
+        decimated level in harmonics; `shift` is the factor by which the
+        level boundaries move up in frequency, a whole number of band
+        steps of the layout (1.0 when `min_bin` is None).
+    """
+    f_top = min(1.0 / min_period, 0.25 * sample_rate)
+    k_lo = f_top * window / (factor * sample_rate)
+    if min_bin is None:
+        return k_lo, 1.0
+    step = float(factor) ** (1.0 / max(1, round(periods_per_decade * np.log10(factor))))
+    n_steps = int(np.ceil(np.log(float(min_bin) / k_lo) / np.log(step) - 1e-9))
+    shift = step**n_steps
+    return k_lo * shift, shift
+
+
+def lowest_harmonic(
+    sample_rate: float,
+    min_period: float = 0.005,
+    periods_per_decade: float = 10.0,
+    window: int = 128,
+    factor: int = 4,
+    min_bin: float | None = None,
+    **_other,
+) -> float:
+    """Return the lowest band edge of the decimated levels in FFT harmonics of the level.
+
+    The keyword arguments are those of `build_band_scheme`, so a scheme's
+    keyword dictionary can be passed whole; its other keys are accepted and
+    have no effect here.
+
+    Args:
+        sample_rate (float): Sample rate of the run in Hz.
+        min_period (float): Shortest period in s.
+        periods_per_decade (float): Number of bands per decade of period.
+        window (int): FFT window length in samples.
+        factor (int): Decimation factor between levels.
+        min_bin (float or None): Lowest band edge asked for, in harmonics.
+
+    Returns:
+        float: The edge: f_top * window / (factor * sample_rate) with
+        `min_bin` None (6.4 at 1000 Hz with the survey defaults), else the
+        first edge of the same layout at or above `min_bin` (10.16 for 10,
+        12.8 for 12 at 1000 Hz).
+    """
+    return _level_shift(sample_rate, min_period, periods_per_decade, window, factor, min_bin)[0]
+
+
 def build_band_scheme(
     sample_rate: float,
     min_period: float = 0.005,
@@ -61,12 +133,22 @@ def build_band_scheme(
     factor: int = 4,
     notch_frequencies: tuple = (),
     notch_fraction: float = 0.08,
+    min_bin: float | None = None,
 ) -> dict:
     """Build keyword arguments for aurora's ConfigCreator.create_from_kernel_dataset.
 
     Bands are spaced evenly in log period on each decimation level. Any band
     touching one of `notch_frequencies` has a guard of +/-`notch_fraction`
     carved out of it, so no band integrates energy from those lines.
+
+    With `min_bin`, the boundary between each pair of levels moves up by
+    the whole number of band steps that brings the lowest edge of every
+    decimated level to or above harmonic `min_bin` (`lowest_harmonic`).
+    The band edges stay those of the layout without it, so the periods are
+    unchanged except on a partial last level; level 0 loses the bands at
+    its foot to level 1, and each decimated level reaches up to `factor`
+    times its lowest edge (0.32 of its sample rate for a `min_bin` of 10,
+    0.4 for 12, at 1000 Hz with the survey defaults).
 
     Args:
         sample_rate (float): Sample rate of the run in Hz.
@@ -80,6 +162,10 @@ def build_band_scheme(
             example mains at 50 Hz and its harmonics.
         notch_fraction (float): Half-width of each notch guard as a fraction
             of the line frequency.
+        min_bin (float, optional): Lowest band edge of the decimated levels
+            in FFT harmonics; None keeps the layout's own,
+            ``min(1 / min_period, sample_rate / 4) * window / (factor *
+            sample_rate)`` harmonics.
 
     Returns:
         dict: ``{"band_edges", "decimation_factors", "num_samples_window"}``,
@@ -87,7 +173,8 @@ def build_band_scheme(
 
     Raises:
         ValueError: If `max_period` does not exceed `min_period`, if the
-            lowest band edge sits below FFT harmonic 1.5, or if a band of
+            lowest band edge sits below FFT harmonic 1.5, if `min_bin`
+            leaves level 0 without a band, or if a band of
             the even layout is narrower than one FFT harmonic spacing of its
             level. The last message names the level and the band and
             suggests a fix. The lowest band of a level spans
@@ -103,19 +190,26 @@ def build_band_scheme(
     if f_floor >= f_top:
         raise ValueError("max_period must exceed min_period")
 
-    # lowest band edge in units of FFT harmonics (same at every level)
-    k_min = f_top * window / (factor * sample_rate)
+    # lowest band edge in units of FFT harmonics (same at every decimated level)
+    k_min, shift = _level_shift(sample_rate, min_period, periods_per_decade, window, factor, min_bin)
     if k_min < 1.5:
         raise ValueError(
             f"lowest band edge would sit at FFT harmonic {k_min:.2f}; "
             f"increase window or min_period"
         )
+    if shift >= factor * (1.0 - 1e-9):
+        raise ValueError(
+            f"min_bin {min_bin:g} puts the lowest band edge at harmonic {k_min:.4g}, {shift:.3g} times the "
+            f"layout's own {k_min / shift:.4g}, which leaves decimation level 0 no band: min_bin must stay "
+            f"below {factor * k_min / shift:.4g} ({factor} times the layout's own)"
+        )
 
     band_edges: dict[int, np.ndarray] = {}
     level = 0
     while True:
-        f_hi = f_top / factor**level
-        f_lo = max(f_hi / factor, f_floor)
+        f_level = f_top / factor**level
+        f_hi = f_level * (shift if level else 1.0)
+        f_lo = max(f_level * shift / factor, f_floor)
         n_bands = max(1, round(periods_per_decade * np.log10(f_hi / f_lo)))
         edges = np.geomspace(f_lo, f_hi, n_bands + 1)
         bands = np.column_stack([edges[:-1], edges[1:]])
