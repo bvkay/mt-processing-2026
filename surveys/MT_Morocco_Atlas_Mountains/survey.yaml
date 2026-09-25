@@ -1540,3 +1540,17 @@ sites:
     start: '2023-07-20T12:04:28Z'
     end: '2023-07-24T09:38:32Z'
     notes: B08 decimated to 1 Hz from B08.h5 by scripts/decimate_site.py, 2026-09-25T08:15:04Z
+  B11L:
+    derived_from: B11
+    sample_rate: 1.0
+    dipole_length_ex: 45.0
+    dipole_length_ey: 53.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: 31.650964
+    longitude: -7.948485
+    elevation: 463.4
+    start: '2023-07-24T12:08:43Z'
+    end: '2023-07-28T10:45:17Z'
+    notes: B11 decimated to 1 Hz from B11_f81e4c0e6.h5 by scripts/decimate_site.py,
+      2026-09-25T08:29:47Z
