@@ -12,7 +12,8 @@ its periods; its y row at 631 s is NaN, so the EDI holds the EMPTY value
 there. Each product is a 1D half-space of its own resistivity (A 100, B
 400 ohm-m) with diagonal terms, errors and a location of its own, so every
 component and error names its source. The merge runs through the script's
-`main`, and the merged EDI is read back with mt_metadata.
+`main` (which calls `merge_files`, the entry scripts/campaign.py uses),
+and the merged EDI is read back with mt_metadata.
 
 Usage:
     python tests/merge_modes_unit.py

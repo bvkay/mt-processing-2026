@@ -36,13 +36,37 @@ process_rr.py calls it before every run. Stages:
   top, the one agreeing best with the others, lowest median |dlog10 rho|),
   one process_rr.py run per plan config. The choice is kept in
   best_remote.json so a resume keeps it. A config may name the MANTLE
-  engine (`mantle: [--engine, mantle]`): its run gets `--no-masks` whatever
-  `runner.masks` says, its inputs carry no masks hash, and its report JSON
-  and fine-grid EDI move into <campaign>/tf/ with the EDI. A config that
+  engine (`mantle: [--engine, mantle, --mantle-max-hours, "72"]`): its run
+  gets `--no-masks` whatever `runner.masks` says, its inputs carry no masks
+  hash, and its report JSON and fine-grid EDI move into <campaign>/tf/ with
+  the EDI. A MANTLE product stops where its cascade does (about 1000 s on a
+  day's window); crust.quality scores it over its own periods inside the
+  scoring window, so the long-period tail it lacks neither counts for nor
+  against it, and scores.csv's `period_max` shows how far each product
+  reaches. A config that
   turns masks.yaml on while `runner.masks` is off (`masked: [--masks]`) is
   skipped for a site when masks.yaml holds no entry for the site and no
   entry of scope both for its remote (no entry for either under
   `--mask-scope union`), since the run would repeat the default.
+
+Per-site decisions in the plan: `remotes: {SITE: REMOTE}` makes REMOTE (a
+plan site or a stack) the site's stage 3 remote in place of the best stage
+1 remote; it is scored, drawn and reported as the best is, the stored
+choice stays the campaign's own, and its stage 3 rows carry the note
+"remote override (the campaign's pick: <remote>)". `modes: {SITE: [xy]}`
+scores the site over the listed modes only: each product's score is the
+mean of those modes' crust.quality scores (the tie-break agreement is that
+mode's), and summary.md marks the site "xy-only". `windows: {SITE: {yx:
+[start, end], merge: true}}` adds to stage 3 one default run of the site
+on its stage 3 remote over each mode's window (UTC, config
+`default-<mode>win`, e.g. tag <name>-default-yxwin); with `merge: true`
+(one mode window) the runner then writes, in this process with
+scripts/merge_modes.py's `merge_files`, the merged product (config
+`default-merged`, kind merge): the other mode's row from the full-record
+default run on that remote (stage 1, or stage 2 for a stack), the window
+mode's row from the window run. summary.md shows the merged product's
+score as the site's default, with a note, and compares the stacks and the
+options with the full-record default.
 
 Readiness: before each stage the runner checks, in a fresh child process,
 that crust.ingest has processing_archive or build_variant (stage 0), that
@@ -64,18 +88,25 @@ PNG and the .json sidecar are moved into <campaign>/tf/ (plan
 Runner: up to --parallel jobs at once within a stage (variant and stack
 builds too). A job starts when psutil's available memory, less what the
 running jobs are still expected to grow by (the `peak_percentile` of the
-`peak_recent` most recently finished peaks of their kind, else the plan's
+`peak_recent` most recently finished peaks of their class, else the plan's
 `expected_peak_gb`), is at least `min_available_gb` and `peak_factor` x that
-percentile over every kind; waiting slots log every 5 min. Children run at
-below-normal priority, each with its own log in <campaign>/logs/<run_id>.log;
-RSS (with children) is polled every 2 s.
+percentile over every class; waiting slots log every 5 min. A job's class
+is its kind (variant, stack, rr), or its stage 3 config when
+`runner.expected_peak_gb` names that config (`mantle: 65`): such a class is
+held back by its own figure, its jobs start only with `peak_factor` x that
+figure available, and its peaks stay out of the other classes' percentile.
+`runner.minutes_per_job` may name a config likewise for the dry run's
+hours. Children run at below-normal priority, each with its own log in
+<campaign>/logs/<run_id>.log; RSS (with children) is polled every 2 s.
 
 Outputs in <workspace>/campaign/<name>/: ledger.csv (one row per run id:
-stage, kind, local, remote, config, tag, status, exit code, start, seconds,
-peak RSS MB, EDI/sidecar/figure paths, the variant or stack archive and its
-size, the inputs' signature, error text; rewritten atomically at every start
-and finish), runs.log, scores.csv (crust.quality of every product, after
-every block), figures/<site>_remotes.png, <site>_stacks.png,
+stage, kind, local, remote, config, tag, engine (the sidecar's `engine`,
+aurora when the sidecar names none), status, exit code, start, seconds, peak RSS MB,
+EDI/sidecar/figure paths, the variant or stack archive and its size, the
+inputs' signature, error text; rewritten atomically at every start and
+finish), runs.log, scores.csv (crust.quality of every product with its
+engine and period range, after every block), figures/<site>_remotes.png,
+<site>_stacks.png,
 <site>_options.png, <name>_best_pseudosection.png, <name>_scores.png, and
 summary.md. A run is skipped when the ledger has it done with the same
 inputs: per site the hash of its filters.yaml entry and its raw archive's
@@ -99,9 +130,12 @@ from __future__ import annotations
 
 import argparse
 import ast
+import contextlib
 import csv
 import datetime as dt
 import hashlib
+import importlib.util
+import io
 import json
 import os
 import re
@@ -111,6 +145,7 @@ import subprocess
 import sys
 import time
 from dataclasses import dataclass, field
+from functools import lru_cache
 from pathlib import Path
 
 import numpy as np
@@ -129,7 +164,7 @@ try:  # optional: without the variant API the campaign runs and waits for it
     from crust.ingest import variant_path as _api_variant_path  # noqa: E402
 except ImportError:
     _api_filters_hash = _api_variant_path = None
-from crust.quality import MODES, agreement, curves, flat_quality, pairwise_spread, tf_quality  # noqa: E402
+from crust.quality import MODES, PERIOD_RTOL, agreement, curves, flat_quality, pairwise_spread, tf_quality  # noqa: E402
 from crust.survey import Survey, distance_km  # noqa: E402
 
 PY = sys.executable
@@ -139,11 +174,13 @@ POLL_S = 2.0
 WAIT_LOG_S = 300.0
 API_POLL_S = 300.0
 STAGES = {0: "variants", 1: "remotes", 2: "stacks", 3: "options"}
-KINDS = ("variant", "stack", "rr")
+KINDS = ("variant", "stack", "rr", "merge")
+WINDOW_CONFIG = "default-{mode}win"  # a site's default run over one mode's window
+MERGED_CONFIG = "default-merged"  # the product merged from that run and the full-record default
 LEDGER_COLUMNS = [
-    "run_id", "stage", "kind", "group", "local", "remote", "config", "tag", "status", "exit_code",
+    "run_id", "stage", "kind", "group", "local", "remote", "config", "tag", "engine", "status", "exit_code",
     "started", "finished", "seconds", "peak_rss_mb", "edi", "sidecar", "figure", "archive", "size_mb",
-    "check", "inputs", "provisional", "error", "log", "runner_pid", "child_pid", "cmd",
+    "check", "inputs", "provisional", "error", "note", "log", "runner_pid", "child_pid", "cmd",
 ]
 NAME_RE = re.compile(r"^[A-Za-z0-9_]+(-[A-Za-z0-9_]+)*$")
 FILTER_PREFIX = "ingest filters (in order): "
@@ -183,6 +220,23 @@ def stamp() -> str:
     return now().strftime("%Y%m%d-%H%M%S")
 
 
+def mode_score(q: dict, modes=None) -> float:
+    """Return a `tf_quality` result's score over `modes`: the overall score for both, else the mean of theirs."""
+    modes = list(modes or MODES)
+    if set(modes) == set(MODES):
+        return float(q["overall"]["score"])
+    return float(np.mean([q[m]["score"] for m in modes]))
+
+
+@lru_cache(maxsize=1)
+def merge_modes_module():
+    """Import scripts/merge_modes.py, whose `merge_files` writes the merged products."""
+    spec = importlib.util.spec_from_file_location("merge_modes", REPO / "scripts" / "merge_modes.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 # ------------------------------------------------------------------ the plan
 
 
@@ -203,7 +257,8 @@ class Plan:
     tie_tolerance: float = 0.02
     pmin: float | None = None
     pmax: float | None = None
-    minutes: dict[str, float] = field(default_factory=lambda: {"rr": 8.0, "variant": 8.0, "stack": 1.0})
+    minutes: dict[str, float] = field(default_factory=lambda: {"rr": 8.0, "variant": 8.0, "stack": 1.0,
+                                                               "merge": 0.0})
     min_available_gb: float = 40.0
     peak_factor: float = 1.2
     expected_peak_gb: dict[str, float] = field(default_factory=lambda: {"rr": 35.0, "variant": 20.0, "stack": 8.0})
@@ -211,10 +266,22 @@ class Plan:
     peak_recent: int = 30
     move_products: bool = True
     masks: bool = False       # rr runs apply masks.yaml, the local's entries and the remote's of scope both (else --no-masks: every remote and option on the same data)
+    remotes: dict[str, str] = field(default_factory=dict)       # site -> its stage 3 remote
+    modes: dict[str, list[str]] = field(default_factory=dict)   # site -> the modes its score uses
+    windows: dict[str, dict] = field(default_factory=dict)      # site -> {"modes": {mode: (start, end)}, "merge"}
 
     def group_of(self, site: str) -> str:
         """Return the name of the group that holds `site`."""
         return next(g for g, members in self.groups.items() if site in members)
+
+    def scored_modes(self, site: str) -> list[str]:
+        """Return the modes a site's scores use: its `modes:` entry, else both."""
+        return list(self.modes.get(site) or MODES)
+
+    def modes_mark(self, site: str) -> str:
+        """Return "xy-only" or "yx-only" for a site scored on one mode, else ""."""
+        modes = self.scored_modes(site)
+        return f"{modes[0]}-only" if len(modes) == 1 else ""
 
     def tag(self, config: str) -> str:
         """Return the process_rr.py tag of a config: <name>-<config>."""
@@ -224,6 +291,78 @@ class Plan:
         """Return `sites` in processing order: by group in plan order, then as listed in the group."""
         wanted = set(sites)
         return [s for members in self.groups.values() for s in members if s in wanted]
+
+
+def utc_text(value) -> str:
+    """Return a time as "YYYY-MM-DD HH:MM:SS" UTC; a time without a zone is taken as UTC.
+
+    Raises:
+        ValueError: When `value` is not a time.
+    """
+    t = pd.Timestamp(str(value))
+    if pd.isna(t):
+        raise ValueError(f"{value!r} is not a time")
+    t = t.tz_localize("UTC") if t.tzinfo is None else t.tz_convert("UTC")
+    return t.strftime("%Y-%m-%d %H:%M:%S")
+
+
+def site_decisions(raw: dict, sites: list[str], errors: list[str]) -> tuple[dict, dict, dict]:
+    """Read the plan's per-site `remotes:`, `modes:` and `windows:`, appending each problem to `errors`.
+
+    Args:
+        raw (dict): The plan YAML as read.
+        sites (list[str]): The plan's sites.
+        errors (list[str]): The plan's problems so far.
+
+    Returns:
+        tuple: ``(remotes, modes, windows)``: {site: remote}, {site: [mode]}
+        and {site: {"modes": {mode: (start, end)}, "merge": bool}}, the
+        times as `utc_text`.
+    """
+    remotes, modes, windows = {}, {}, {}
+    for site, remote in (raw.get("remotes") or {}).items():
+        site, remote = str(site), str(remote)
+        if site not in sites:
+            errors.append(f"remotes {site}: not in sites")
+        if remote == site or (remote not in sites and not is_stack(remote)):
+            errors.append(f"remotes {site}: {remote}: another plan site or a stack (STK_...)")
+        remotes[site] = remote
+    for site, listed in (raw.get("modes") or {}).items():
+        site, listed = str(site), [str(m) for m in (listed or [])]
+        if site not in sites:
+            errors.append(f"modes {site}: not in sites")
+        if not listed or len(set(listed)) != len(listed) or any(m not in MODES for m in listed):
+            errors.append(f"modes {site}: {listed}: one or both of {', '.join(MODES)}")
+        modes[site] = listed
+    for site, spec in (raw.get("windows") or {}).items():
+        site, spec = str(site), dict(spec or {})
+        if site not in sites:
+            errors.append(f"windows {site}: not in sites")
+        merge = spec.pop("merge", False)
+        if not isinstance(merge, bool):
+            errors.append(f"windows {site} merge: {merge!r}: true or false")
+        spans = {}
+        for mode, span in spec.items():
+            mode = str(mode)
+            if mode not in MODES:
+                errors.append(f"windows {site} {mode}: a mode ({', '.join(MODES)}) or merge")
+                continue
+            try:
+                if not isinstance(span, (list, tuple)) or len(span) != 2:
+                    raise ValueError
+                start, end = utc_text(span[0]), utc_text(span[1])
+                if end <= start:
+                    raise ValueError
+            except (TypeError, ValueError):
+                errors.append(f"windows {site} {mode}: {span}: [start, end] in UTC, the end after the start")
+                continue
+            spans[mode] = (start, end)
+        if not spans:
+            errors.append(f"windows {site}: no mode window")
+        elif merge and len(spans) != 1:
+            errors.append(f"windows {site}: merge takes one mode's window, {len(spans)} given")
+        windows[site] = {"modes": spans, "merge": bool(merge)}
+    return remotes, modes, windows
 
 
 def load_plan(path) -> Plan:
@@ -288,7 +427,12 @@ def load_plan(path) -> Plan:
         if not args or not args[0].startswith("--") or any(a in ("--tag", "--dry-run") for a in args):
             errors.append(f"config {cname}: {args}: process_rr.py flags, without --tag/--dry-run")
         configs[cname] = args
+    remotes, modes, windows = site_decisions(raw, sites, errors)
     runner = raw.get("runner") or {}
+    for key in ("minutes_per_job", "expected_peak_gb"):
+        for k in (runner.get(key) or {}):
+            if str(k) not in KINDS and str(k) not in configs:
+                errors.append(f"runner {key} {k}: neither a job kind ({', '.join(KINDS)}) nor a stage 3 config")
     scoring = raw.get("scoring") or {}
     if errors:
         raise ValueError(f"{path}:\n  " + "\n  ".join(errors))
@@ -300,12 +444,12 @@ def load_plan(path) -> Plan:
         pmin=None if scoring.get("pmin") is None else float(scoring["pmin"]),
         pmax=None if scoring.get("pmax") is None else float(scoring["pmax"]),
         move_products=bool(runner.get("move_products", True)),
-        masks=bool(runner.get("masks", False)),
+        masks=bool(runner.get("masks", False)), remotes=remotes, modes=modes, windows=windows,
         min_available_gb=float(runner.get("min_available_gb", 40.0)),
         peak_factor=float(runner.get("peak_factor", 1.2)),
     )
-    plan.minutes.update({k: float(v) for k, v in (runner.get("minutes_per_job") or {}).items()})
-    plan.expected_peak_gb.update({k: float(v) for k, v in (runner.get("expected_peak_gb") or {}).items()})
+    plan.minutes.update({str(k): float(v) for k, v in (runner.get("minutes_per_job") or {}).items()})
+    plan.expected_peak_gb.update({str(k): float(v) for k, v in (runner.get("expected_peak_gb") or {}).items()})
     plan.peak_percentile = float(runner.get("peak_percentile", 90.0))
     plan.peak_recent = int(runner.get("peak_recent", 30))
     return plan
@@ -626,7 +770,8 @@ class Ledger:
                  f"written at the next change")
         return False
 
-    def peak_mb(self, kind: str | None = None, percentile: float = 90.0, recent: int = 0) -> float:
+    def peak_mb(self, kind: str | None = None, percentile: float = 90.0, recent: int = 0,
+                config: str | None = None, exclude_configs=()) -> float:
         """Return a percentile of the peak RSS of finished jobs, in MB.
 
         The gate keys on a percentile (`runner.peak_percentile` in the plan,
@@ -640,12 +785,18 @@ class Ledger:
             kind (str | None): Job kind, or None for all kinds.
             percentile (float): Percentile of the peaks.
             recent (int): Number of most recent jobs to use; 0 for all.
+            config (str | None): Only the jobs of this config.
+            exclude_configs (iterable of str): Configs whose rr jobs are
+                left out.
 
         Returns:
             float: The peak in MB, 0 when no job has finished.
         """
+        skip = set(exclude_configs)
         rows = [r for r in self.rows.values()
-                if r["peak_rss_mb"] and (kind is None or r["kind"] == kind)]
+                if r["peak_rss_mb"] and (kind is None or r["kind"] == kind)
+                and (config is None or r["config"] == config)
+                and not (r["kind"] == "rr" and r["config"] in skip)]
         if recent > 0:
             rows = sorted(rows, key=lambda r: r["finished"] or r["started"])[-recent:]
         vals = sorted(float(r["peak_rss_mb"]) for r in rows)
@@ -660,7 +811,11 @@ class Ledger:
 
 @dataclass
 class Job:
-    """One campaign job: an rr run, a variant build or a stack build."""
+    """One campaign job: an rr run, a variant build, a stack build or a merge.
+
+    A merge (kind "merge") runs in the runner's process: its `deps` are the
+    run ids of its xy source and its yx source, in that order.
+    """
 
     run_id: str
     stage: int
@@ -675,6 +830,7 @@ class Job:
     input_sites: list[str] = field(default_factory=list)
     output: Path | None = None
     note: str = ""
+    window: tuple[str, str] | None = None  # (start, end) UTC of a windowed run
 
 
 @dataclass
@@ -734,6 +890,17 @@ def parse_products(text: str) -> dict:
             if line.startswith(label) and not out[key]:
                 out[key] = line[len(label):].strip()
     return out
+
+
+def read_sidecar(path) -> dict:
+    """Read a product's .json sidecar; {} when the path is empty, missing or unreadable."""
+    if not path or not Path(path).exists():
+        return {}
+    try:
+        out = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return out if isinstance(out, dict) else {}
 
 
 def last_error(text: str) -> str:
@@ -859,7 +1026,7 @@ class Campaign:
     def inputs(self, job: Job) -> str:
         """Return the input signature of a job; a change means the job is re-run."""
         sig = ";".join(self.signature(s) for s in job.input_sites)
-        if job.kind == "rr" and self.rr_masks_on(job.config):
+        if job.kind in ("rr", "merge") and self.rr_masks_on(job.config):
             # process_rr applies every masks.yaml entry of the local and the remote's entries
             # of scope both, or all of them under --mask-scope union (a stack has none of its
             # own, by the name rule of crust.masks.is_stack). The hash covers the entries a
@@ -873,6 +1040,8 @@ class Campaign:
                            for m in masks_for_role(load_masks(self.survey, site), role, rule)]
                 digest = hashlib.sha1(json.dumps(applied, sort_keys=True).encode()).hexdigest()[:8]
                 sig += f";{site}:m{digest}"
+        if job.window:
+            sig += f";window {job.window[0]}/{job.window[1]}"
         return sig
 
     def config_engine(self, config: str) -> str:
@@ -915,23 +1084,26 @@ class Campaign:
                 on = False
         return on
 
-    def rr_cmd(self, local: str, remote: str, config: str) -> list[str]:
+    def rr_cmd(self, local: str, remote: str, config: str, window: tuple[str, str] | None = None) -> list[str]:
         """Build the process_rr.py command line of one rr run.
 
-        The runner's `--no-masks` goes before the config's flags so that a
-        config declaring `--masks` wins; a MANTLE config gets `--no-masks`
-        whatever the plan's `runner.masks` says.
+        A window's start and end follow the pair as process_rr.py's
+        positional arguments. The runner's `--no-masks` goes before the
+        config's flags so that a config declaring `--masks` wins; a MANTLE
+        config gets `--no-masks` whatever the plan's `runner.masks` says.
         """
         extra = self.plan.configs.get(config, []) if config != "default" else []
         masks = [] if self.plan.masks and self.config_engine(config) != "mantle" else ["--no-masks"]
-        return [PY, str(SCRIPTS / "process_rr.py"), self.survey_yaml, local, remote, *masks, *extra,
-                "--tag", self.plan.tag(config)]
+        return [PY, str(SCRIPTS / "process_rr.py"), self.survey_yaml, local, remote, *(window or ()), *masks,
+                *extra, "--tag", self.plan.tag(config)]
 
-    def rr_job(self, stage: int, local: str, remote: str, config: str, run_id: str, deps=()) -> Job:
-        """Build one rr job."""
+    def rr_job(self, stage: int, local: str, remote: str, config: str, run_id: str, deps=(),
+               window: tuple[str, str] | None = None) -> Job:
+        """Build one rr job, over `window` (start, end UTC) when given."""
         return Job(run_id=run_id, stage=stage, kind="rr", group=self.plan.group_of(local), local=local,
-                   remote=remote, config=config, tag=self.plan.tag(config), cmd=self.rr_cmd(local, remote, config),
-                   deps=list(deps), input_sites=[local, remote])
+                   remote=remote, config=config, tag=self.plan.tag(config),
+                   cmd=self.rr_cmd(local, remote, config, window), deps=list(deps), input_sites=[local, remote],
+                   window=window)
 
     # ------------------------------------------------------------ job builders
 
@@ -979,17 +1151,25 @@ class Campaign:
         return sorted(jobs, key=lambda j: (order[j.local], j.kind != "stack"))
 
     def stage3_jobs(self, sites, dry: bool = False) -> list[Job]:
-        """Build the stage 3 jobs: one rr run per plan config on each site's best remote."""
+        """Build the stage 3 jobs: per site, one rr run per plan config on its stage 3 remote, then its windows.
+
+        The stage 3 remote is the best stage 1 remote or the plan's
+        `remotes:` entry for the site (`best_remotes`), whose jobs are
+        noted "remote override". The window runs and the merge are those of
+        `window_jobs`.
+        """
         jobs = []
         chosen = self.best_remotes(sites, persist=not dry)
         for s in sites:
-            remote = chosen.get(s, {}).get("remote")
+            best = chosen.get(s, {})
+            remote = best.get("remote")
             if not remote:
                 if dry:
                     remote = "<best-of-stage-1>"
                 else:
                     self.log(f"stage 3: {s}: no stage 1 product to choose a remote from: skipped")
                     continue
+            note = f"remote override (the campaign's pick: {best.get('pick') or 'none'})" if best.get("override") else ""
             for config in self.plan.configs:
                 rule = self.config_mask_scope(config)
                 if (self.rr_masks_on(config) and not self.plan.masks and remote != "<best-of-stage-1>"
@@ -998,7 +1178,51 @@ class Campaign:
                     which = f"{s} or {remote}" if rule == "union" else f"{s} and none of scope both for {remote}"
                     self.log(f"stage 3: {s}: {config}: no masks.yaml entry for {which}: skipped")
                     continue
-                jobs.append(self.rr_job(3, s, remote, config, f"s3_{s}_rr-{remote}_{config}"))
+                job = self.rr_job(3, s, remote, config, f"s3_{s}_rr-{remote}_{config}")
+                job.note = note
+                jobs.append(job)
+            jobs += self.window_jobs(s, remote, note)
+        return jobs
+
+    def window_jobs(self, site: str, remote: str, note: str = "") -> list[Job]:
+        """Build a site's `windows:` jobs on its stage 3 remote.
+
+        One default rr run per mode window over that window (config
+        `default-<mode>win`); with `merge: true` a merge job (config
+        `default-merged`) whose xy source is the xy mode's run and whose yx
+        source the yx mode's: the window run for the window mode, the
+        full-record default run on `remote` (stage 1, or stage 2 for a
+        stack) for the other.
+
+        Args:
+            site (str): Local site.
+            remote (str): Its stage 3 remote.
+            note (str): The stage 3 note ("remote override ..." or "").
+
+        Returns:
+            list[Job]: The window runs, then the merge; [] without a
+            `windows:` entry.
+        """
+        spec = self.plan.windows.get(site)
+        if not spec:
+            return []
+        jobs = []
+        for mode, window in spec["modes"].items():
+            config = WINDOW_CONFIG.format(mode=mode)
+            job = self.rr_job(3, site, remote, config, f"s3_{site}_rr-{remote}_{config}", window=window)
+            job.note = "; ".join(x for x in (f"{mode} from {window[0]} to {window[1]} UTC", note) if x)
+            jobs.append(job)
+        if spec["merge"]:
+            win = jobs[0]
+            mode = next(iter(spec["modes"]))
+            full = f"{'s2' if is_stack(remote) else 's1'}_{site}_rr-{remote}"
+            deps = [full, win.run_id] if mode == "yx" else [win.run_id, full]
+            other = "yx" if mode == "xy" else "xy"
+            jobs.append(Job(
+                run_id=f"s3_{site}_rr-{remote}_{MERGED_CONFIG}", stage=3, kind="merge", group=self.plan.group_of(site),
+                local=site, remote=remote, config=MERGED_CONFIG, tag=self.plan.tag(MERGED_CONFIG), deps=deps,
+                input_sites=[site, remote], window=win.window,
+                note="; ".join(x for x in (f"{other} from {full}, {mode} from {win.run_id}", note) if x)))
         return jobs
 
     def has_masks(self, local: str, remote: str, rule: str = "role") -> bool:
@@ -1021,14 +1245,19 @@ class Campaign:
     # --------------------------------------------------------------- choices
 
     def best_remotes(self, sites, persist: bool = True, df: pd.DataFrame | None = None) -> dict:
-        """Return each site's best stage 1 remote.
+        """Return each site's stage 3 remote: its best stage 1 remote, or the plan's override.
 
         The choice stored in best_remote.json is used when present; otherwise
-        it is made now from the stage 1 scores and stored. A choice made from
-        provisional products (--allow-raw) is not stored.
+        it is made now from the stage 1 scores (over the site's `modes:`)
+        and stored. A choice made from provisional products (--allow-raw) is
+        not stored. A site in the plan's `remotes:` gets that remote, with
+        the score of its full-record default product (NaN without one),
+        `override` True and `pick` the campaign's own choice ("" without
+        one); best_remote.json keeps the campaign's choice.
 
         Returns:
-            dict: {site: {"remote", "score", "why"}}.
+            dict: {site: {"remote", "score", "why"}}, plus "override" and
+            "pick" for an overridden site.
         """
         path = self.dir / "best_remote.json"
         stored = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
@@ -1038,14 +1267,23 @@ class Campaign:
             s1 = df[(df["stage"] == 1) & (df["local"] == s)] if len(df) else df
             if s in stored and stored[s]["remote"] in set(s1.get("remote", [])):
                 out[s] = stored[s]
-                continue
-            pick = choose_best(s1, self.plan.tie_tolerance, self.pmin, self.pmax)
-            if pick:
-                out[s] = pick
-                clean = len(s1) == 0 or not s1.get("provisional", pd.Series(dtype=str)).fillna("").astype(str).str.strip().any()
-                if clean:
-                    stored[s] = {**pick, "chosen": now().isoformat(timespec="seconds")}
-                    changed = True
+            else:
+                pick = choose_best(s1, self.plan.tie_tolerance, self.pmin, self.pmax, self.plan.modes.get(s))
+                if pick:
+                    out[s] = pick
+                    clean = len(s1) == 0 or not s1.get("provisional", pd.Series(dtype=str)).fillna("").astype(str).str.strip().any()
+                    if clean:
+                        stored[s] = {**pick, "chosen": now().isoformat(timespec="seconds")}
+                        changed = True
+            forced = self.plan.remotes.get(s)
+            if forced:
+                pick = out.get(s)
+                full = df[df["stage"].isin([1, 2]) & (df["local"] == s) & (df["remote"] == forced)
+                          & (df["config"] == "default")] if len(df) else df
+                why = "remote override" + (f" (the campaign's pick: {pick['remote']}, {float(pick['score']):.3f})"
+                                           if pick else " (no stage 1 pick)")
+                out[s] = {"remote": forced, "score": float(full["score"].iloc[0]) if len(full) else float("nan"),
+                          "why": why, "override": True, "pick": pick["remote"] if pick else ""}
         if persist and changed:
             path.write_text(json.dumps(stored, indent=2) + "\n", encoding="utf-8")
         return out
@@ -1071,7 +1309,11 @@ class Campaign:
                 yield f"stage {st} {STAGES[st]} group {g}", st, g, gs, builder(gs)
 
     def already_done(self, job: Job) -> bool:
-        """Check whether the ledger has the job done, with the same inputs and its product present."""
+        """Check whether the ledger has the job done, with the same inputs and its product present.
+
+        A merge is done only while its sources are the EDIs it was built
+        from (`merge_cmd`).
+        """
         row = self.ledger.rows.get(job.run_id)
         if not row or row["status"] != "done" or str(row["exit_code"]) != "0":
             return False
@@ -1083,7 +1325,77 @@ class Campaign:
             return bool(row["archive"]) and Path(row["archive"]).exists()
         if job.kind == "stack":
             return job.output is not None and job.output.exists()
+        if job.kind == "merge" and row["cmd"] != self.merge_cmd(job):
+            return False
         return bool(row["edi"]) and Path(row["edi"]).exists()
+
+    # ------------------------------------------------------------------ merges
+
+    def merge_sources(self, job: Job) -> tuple[str, str]:
+        """Return the EDIs of a merge's xy and yx sources as the ledger has them ("" for one not done)."""
+        edis = []
+        for rid in job.deps:
+            row = self.ledger.rows.get(rid) or {}
+            edis.append(row.get("edi", "") if row.get("status") == "done" else "")
+        return edis[0], edis[1]
+
+    def merge_cmd(self, job: Job) -> str:
+        """Describe a merge by its sources, as the ledger's `cmd` records it."""
+        xy, yx = self.merge_sources(job)
+        return f"merge_modes.merge_files --xy {xy} --yx {yx} --tag {job.tag}"
+
+    def run_merge(self, job: Job) -> bool:
+        """Build a merged product in this process and record it in the ledger.
+
+        `merge_files` of scripts/merge_modes.py takes the x row from the
+        job's first source and the y row from its second. The EDI,
+        <local>_rr-<remote>_<YYYYMMDD-HHMM>_<tag>.edi, and its sidecar go
+        into <campaign>/tf/ (runner.move_products) or <workspace>/tf/, and
+        what the merge prints into <campaign>/logs/<run_id>.log.
+
+        Returns:
+            bool: True when the merged EDI was written.
+        """
+        started, t0 = now(), time.monotonic()
+        xy, yx = self.merge_sources(job)
+        dest = (self.dir / "tf") if self.plan.move_products else (self.survey.workspace / "tf")
+        out = dest / f"{job.local}_rr-{job.remote}_{started.strftime('%Y%m%d-%H%M')}_{job.tag}.edi"
+        cmd = self.merge_cmd(job)
+        buf = io.StringIO()
+        try:
+            with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
+                status = merge_modes_module().merge_files(
+                    out, xy, yx, tag=job.tag, argv=["merge_modes.py", str(out), "--xy", xy, "--yx", yx, "--tag", job.tag])
+        except Exception as exc:  # a source that cannot be read fails this merge alone
+            status = 1
+            buf.write(f"{type(exc).__name__}: {exc}\n")
+        text = buf.getvalue()
+        log_path = self.dir / "logs" / f"{job.run_id}.log"
+        with open(log_path, "a", encoding="utf-8") as fh:
+            fh.write(f"\n=== {started.isoformat(timespec='seconds')} {cmd}\n{text}")
+        ok = status == 0 and out.exists()
+        side = read_sidecar(out.with_suffix(".json")) if ok else {}
+        self.ledger.upsert(self._row(
+            job, status="done" if ok else "failed", exit_code=status, started=started.isoformat(timespec="seconds"),
+            finished=now().isoformat(timespec="seconds"), seconds=f"{time.monotonic() - t0:.0f}", peak_rss_mb="",
+            edi=str(out) if ok else "", sidecar=str(out.with_suffix(".json")) if ok else "", figure="", archive="",
+            size_mb="", check="", engine=str(side.get("engine") or "aurora") if side else "",
+            error="" if ok else (last_error(text) or f"exit code {status}"), log=str(log_path),
+            inputs=self.inputs(job), provisional=self.provisional_reason(job), runner_pid=os.getpid(), child_pid="",
+            cmd=cmd, note=job.note))
+        tail = f" -- {self.ledger.rows[job.run_id]['error']}"
+        if ok:
+            try:
+                tail = f", score {self.product_score(out, job.local):.3f}"
+            except Exception as exc:  # a product that cannot be read is reported, not fatal
+                tail = f", score unreadable ({exc})"
+        self.log(f"{'DONE' if ok else 'FAILED'} {job.run_id}: {Path(xy).name} (xy) + {Path(yx).name} (yx) -> "
+                 f"{out.name}{tail}")
+        return ok
+
+    def product_score(self, edi, site: str) -> float:
+        """Return a product's score over the scoring window and the site's scored modes."""
+        return mode_score(tf_quality(edi, self.pmin, self.pmax), self.plan.scored_modes(site))
 
     # --------------------------------------------------------------- readiness
 
@@ -1117,20 +1429,66 @@ class Campaign:
 
     # ------------------------------------------------------------------ memory
 
-    def expected_peak_mb(self, kind: str) -> float:
-        """Return the expected peak RSS of a job kind in MB, from the ledger or the plan."""
-        return (self.ledger.peak_mb(kind, self.plan.peak_percentile, self.plan.peak_recent)
-                or self.plan.expected_peak_gb.get(kind, 35.0) * 1024.0)
+    def job_class(self, kind: str, config: str, table: dict) -> str:
+        """Return the key of a job in a runner table: its rr config when `table` names it, else its kind.
 
-    def gate(self) -> tuple[bool, str]:
+        Args:
+            kind (str): Job kind.
+            config (str): Job config.
+            table (dict): `plan.expected_peak_gb` or `plan.minutes`.
+
+        Returns:
+            str: The config or the kind.
+        """
+        if kind == "rr" and config in table and config in self.plan.configs and config not in KINDS:
+            return config
+        return kind
+
+    def own_peak_configs(self) -> list[str]:
+        """Return the stage 3 configs with an `expected_peak_gb` figure of their own."""
+        return [k for k in self.plan.expected_peak_gb if k in self.plan.configs and k not in KINDS]
+
+    def finished_peak_mb(self, cls: str | None = None) -> float:
+        """Return the percentile of the finished peaks of a memory class, in MB.
+
+        Args:
+            cls (str | None): A kind, a config of `own_peak_configs`, or None
+                for every job outside those configs.
+
+        Returns:
+            float: The peak in MB, 0 when no job of the class has finished.
+        """
+        own = self.own_peak_configs()
+        pct, recent = self.plan.peak_percentile, self.plan.peak_recent
+        if cls in own:
+            return self.ledger.peak_mb("rr", pct, recent, config=cls)
+        return self.ledger.peak_mb(cls, pct, recent, exclude_configs=own)
+
+    def expected_peak_mb(self, cls: str) -> float:
+        """Return the expected peak RSS of a memory class in MB, from the ledger or the plan."""
+        return (self.finished_peak_mb(cls)
+                or self.plan.expected_peak_gb.get(cls, self.plan.expected_peak_gb.get("rr", 35.0)) * 1024.0)
+
+    def gate(self, job: Job | None = None) -> tuple[bool, str]:
         """Check the memory gate for starting another job.
+
+        Args:
+            job (Job | None): The job to start; a job of a config with its
+                own `expected_peak_gb` also needs `peak_factor` x that
+                config's expected peak.
 
         Returns:
             tuple[bool, str]: (enough memory, explanation).
         """
         avail = psutil.virtual_memory().available / MB
-        reserve = sum(max(0.0, self.expected_peak_mb(r.job.kind) - r.rss_mb) for r in self._running.values())
-        need = max(self.plan.min_available_gb * 1024.0, self.plan.peak_factor * self.ledger.peak_mb(None, self.plan.peak_percentile, self.plan.peak_recent))
+        table = self.plan.expected_peak_gb
+        reserve = sum(max(0.0, self.expected_peak_mb(self.job_class(r.job.kind, r.job.config, table)) - r.rss_mb)
+                      for r in self._running.values())
+        need = max(self.plan.min_available_gb * 1024.0, self.plan.peak_factor * self.finished_peak_mb(None))
+        if job is not None:
+            cls = self.job_class(job.kind, job.config, table)
+            if cls != job.kind:
+                need = max(need, self.plan.peak_factor * self.expected_peak_mb(cls))
         ok = avail - reserve >= need
         return ok, (f"available {avail / 1024:.1f} GB, {reserve / 1024:.1f} GB held back for "
                     f"{len(self._running)} running job(s), need {need / 1024:.1f} GB")
@@ -1158,7 +1516,7 @@ class Campaign:
     def _row(self, job: Job, **kw) -> dict:
         """Build a ledger row for a job with extra fields."""
         row = {"run_id": job.run_id, "stage": job.stage, "kind": job.kind, "group": job.group, "local": job.local,
-               "remote": job.remote, "config": job.config, "tag": job.tag}
+               "remote": job.remote, "config": job.config, "tag": job.tag, "note": job.note}
         row.update(kw)
         return row
 
@@ -1179,6 +1537,11 @@ class Campaign:
                 row = self.ledger.rows.get(f"s2_build_{s}")
                 if row and row["provisional"]:
                     why.append(f"{s} is provisional")
+        if job.kind == "merge":
+            for rid in job.deps:
+                row = self.ledger.rows.get(rid)
+                if row and row["provisional"]:
+                    why.append(f"{rid} is provisional")
         return "; ".join(why)
 
     def start(self, job: Job) -> str:
@@ -1227,7 +1590,7 @@ class Campaign:
         self.n_started += 1
         self.ledger.upsert(self._row(
             job, status="running", exit_code="", started=started.isoformat(timespec="seconds"), finished="",
-            seconds="", peak_rss_mb="", edi="", sidecar="", figure="", archive="", size_mb="", check="", error="",
+            engine="", seconds="", peak_rss_mb="", edi="", sidecar="", figure="", archive="", size_mb="", check="", error="",
             log=str(log_path), inputs=inputs, provisional=provisional, runner_pid=os.getpid(),
             child_pid=popen.pid, cmd=subprocess.list2cmdline(job.cmd)))
         what = {"rr": f"{job.local} rr {job.remote} [{job.config}]",
@@ -1271,6 +1634,9 @@ class Campaign:
             if ok and self.plan.move_products:
                 prod = self.move_products(job, prod)
             row.update(prod)
+            if ok:  # the sidecar's engine, aurora when it names none; "" without a readable sidecar
+                side = read_sidecar(prod.get("sidecar"))
+                row["engine"] = str(side.get("engine") or "aurora") if side else ""
         elif job.kind == "variant":
             m = re.findall(r"^variant: (.+?)\s*$", text, flags=re.M)
             path = Path(m[-1]) if m else None
@@ -1304,8 +1670,7 @@ class Campaign:
         tail = ""
         if ok and job.kind == "rr":
             try:
-                q = tf_quality(row["edi"], self.pmin, self.pmax)
-                tail = f", score {q['overall']['score']:.3f}"
+                tail = f", score {self.product_score(row['edi'], job.local):.3f}"
             except Exception as exc:  # a product that cannot be read is reported, not fatal
                 tail = f", score unreadable ({exc})"
         elif ok:
@@ -1327,14 +1692,10 @@ class Campaign:
         dest_dir = self.dir / "tf"
         out = dict(prod)
         extras: dict[str, str] = {}
-        if prod.get("sidecar") and Path(prod["sidecar"]).exists():
-            try:
-                sidecar = json.loads(Path(prod["sidecar"]).read_text(encoding="utf-8"))
-                for key in ("mantle_report", "mantle_fine_edi"):
-                    if sidecar.get(key):
-                        extras[key] = str(Path(prod["sidecar"]).with_name(str(sidecar[key])))
-            except (OSError, ValueError):
-                pass
+        sidecar = read_sidecar(prod.get("sidecar"))
+        for key in ("mantle_report", "mantle_fine_edi"):
+            if sidecar.get(key):
+                extras[key] = str(Path(prod["sidecar"]).with_name(str(sidecar[key])))
         for key, value in extras.items():
             prod = {**prod, key: value}
         for key in ("edi", "sidecar", "figure", *extras):
@@ -1355,7 +1716,11 @@ class Campaign:
     # ------------------------------------------------------------------ blocks
 
     def run_block(self, label: str, jobs: list[Job]) -> None:
-        """Run one block of jobs in parallel, respecting dependencies and the memory gate."""
+        """Run one block of jobs in parallel, respecting dependencies and the memory gate.
+
+        A merge runs in this process (`run_merge`) once its sources are
+        done, outside the memory gate.
+        """
         done, failed = set(), set()
         pending = []
         for job in jobs:
@@ -1382,8 +1747,12 @@ class Campaign:
                 pending = []
             if pending and len(self._running) < self.parallel:
                 job = self._next(pending, done, failed)
+                if job is not None and job.kind == "merge":
+                    pending.remove(job)
+                    (done if self.run_merge(job) else failed).add(job.run_id)
+                    continue
                 if job is not None:
-                    ok, msg = self.gate()
+                    ok, msg = self.gate(job)
                     if ok:
                         pending.remove(job)
                         if self.start(job) == "skipped":
@@ -1482,11 +1851,20 @@ class Campaign:
     def scores(self, write: bool = True) -> pd.DataFrame:
         """Build the scores.csv frame, rescoring products whose EDI changed, and write it atomically.
 
+        Each row carries the product's engine (the ledger's, else the
+        config's) and `period_min`/`period_max`, the range of its periods
+        inside the scoring window. crust.quality scores a product over the
+        periods it holds, so a product that stops short of `pmax` (MANTLE's
+        at about 1000 s) is scored over its own range. `score` and
+        `score_full` are over the site's scored modes (`modes`: "xy,yx",
+        or the plan's `modes:` entry); `overall_score` stays the mean of
+        both modes.
+
         Args:
             write (bool): Whether to write scores.csv.
 
         Returns:
-            pd.DataFrame: One row per scored rr product.
+            pd.DataFrame: One row per scored rr or merged product.
         """
         path = self.dir / "scores.csv"
         cache = {}
@@ -1498,20 +1876,26 @@ class Campaign:
                 cache = {}
         rows = []
         for row in self.ledger.rows.values():
-            if row["kind"] != "rr" or row["status"] != "done" or not row["edi"] or not Path(row["edi"]).exists():
+            if (row["kind"] not in ("rr", "merge") or row["status"] != "done" or not row["edi"]
+                    or not Path(row["edi"]).exists()):
                 continue
             edi = Path(row["edi"])
             key = (str(edi), int(edi.stat().st_mtime))
+            modes = self.plan.scored_modes(row["local"])
             base = {"run_id": row["run_id"], "stage": int(row["stage"]), "group": row["group"],
                     "local": row["local"], "remote": row["remote"], "config": row["config"],
+                    "engine": row.get("engine") or self.config_engine(row["config"]),
                     "remote_kind": "stack" if row["remote"].startswith("STK_") else "site",
-                    "provisional": row["provisional"], "edi": str(edi), "edi_mtime": key[1]}
-            if key in cache:
+                    "provisional": row["provisional"], "edi": str(edi), "edi_mtime": key[1],
+                    "modes": ",".join(modes)}
+            if key in cache and "period_max" in cache[key] and cache[key].get("modes") == base["modes"]:
                 rows.append({**cache[key], **base})
                 continue
             try:
-                q = flat_quality(tf_quality(edi, self.pmin, self.pmax))
-                full = tf_quality(edi)["overall"]["score"]
+                qw = tf_quality(edi, self.pmin, self.pmax)
+                q = {**flat_quality(qw), "score": mode_score(qw, modes), "period_min": qw["period_min"],
+                     "period_max": qw["period_max"]}
+                full = mode_score(tf_quality(edi), modes)
             except Exception as exc:
                 self.log(f"scores: {edi.name} unreadable: {exc}")
                 continue
@@ -1565,10 +1949,16 @@ class Campaign:
                 if j.kind == "rr":
                     ov = overlap_hours(self.spans[j.local], self.spans[j.remote]) if j.remote in self.spans else None
                     km = _km(self.survey, j.local, j.remote) if j.remote in self.spans else None
-                    extra = " ".join(self.plan.configs.get(j.config, [])) if j.config != "default" else "defaults"
+                    extra = " ".join(self.plan.configs.get(j.config, [])) or "defaults"
+                    if j.window:
+                        extra += f", {j.window[0]} to {j.window[1]} UTC"
                     info = f"{j.local} rr {j.remote} [{extra}]" + (f" ({ov:.1f} h overlap, {km:.1f} km)" if ov else "")
+                    if j.note and not j.window:
+                        info += f"; {j.note}"
                 elif j.kind == "stack":
                     info = f"{j.remote}: {j.note}"
+                elif j.kind == "merge":
+                    info = f"merge {j.local} rr {j.remote}: {j.note}"
                 else:
                     row = self.ledger.rows.get(j.run_id) or {}
                     have = f"built: {Path(row['archive']).name}" if done else "to build"
@@ -1577,7 +1967,7 @@ class Campaign:
                 c = counts.setdefault(st, {k: 0 for k in KINDS})
                 if not done:
                     c[j.kind] += 1
-                    todo_min += self.plan.minutes.get(j.kind, 8.0)
+                    todo_min += self.plan.minutes.get(self.job_class(j.kind, j.config, self.plan.minutes), 8.0)
         print("\ntotals (still to run):")
         total = {k: 0 for k in KINDS}
         for st in sorted(counts):
@@ -1586,29 +1976,34 @@ class Campaign:
             for k in KINDS:
                 total[k] += c[k]
         hours = todo_min / self.parallel / 60.0
-        mins = ", ".join(f"{self.plan.minutes.get(k, 8.0):g} min per {k}" for k in KINDS)
+        per = [*(k for k in KINDS if k != "merge"),
+               *(k for k in self.plan.minutes if k in self.plan.configs and k not in KINDS)]
+        mins = ", ".join(f"{self.plan.minutes.get(k, 8.0):g} min per {k}" for k in per)
         print(f"  all: {total['rr']} rr run(s), {total['variant']} variant build(s), {total['stack']} stack "
-              f"build(s); at {mins} over {self.parallel} slot(s): {hours:.1f} h (more when the memory gate "
+              f"build(s)" + (f", {total['merge']} merge(s)" if total["merge"] else "")
+              + f"; at {mins} over {self.parallel} slot(s): {hours:.1f} h (more when the memory gate "
               f"holds a slot or the variant API is not there yet)")
         return {"counts": counts, "total": total, "hours": hours}
 
 
-def choose_best(s1: pd.DataFrame, tie_tolerance: float, pmin=None, pmax=None) -> dict | None:
+def choose_best(s1: pd.DataFrame, tie_tolerance: float, pmin=None, pmax=None, modes=None) -> dict | None:
     """Choose the best stage 1 remote from a site's scores.
 
     The highest score wins; among remotes within `tie_tolerance` of it, the
     one with the lowest median |dlog10 rho| against the site's other stage 1
-    products is chosen.
+    products is chosen, over both modes or over the one mode in `modes`.
 
     Args:
         s1 (pd.DataFrame): The site's stage 1 scores.
         tie_tolerance (float): Score margin counted as a tie.
         pmin (float | None): Shortest period of the agreement window.
         pmax (float | None): Longest period of the agreement window.
+        modes (list[str] | None): The site's scored modes; None for both.
 
     Returns:
         dict | None: {"remote", "score", "why"}, or None without scores.
     """
+    part = modes[0] if modes and len(modes) == 1 else "overall"
     if s1 is None or len(s1) == 0:
         return None
     s1 = s1.sort_values("score", ascending=False)
@@ -1620,7 +2015,7 @@ def choose_best(s1: pd.DataFrame, tie_tolerance: float, pmin=None, pmax=None) ->
     best, best_d = None, None
     for _, cand in tied.iterrows():
         others = [o for o in s1["edi"] if o != cand["edi"]]
-        d = np.nanmedian([agreement(cand["edi"], o, pmin, pmax)["overall"]["dlog_rho"] for o in others])
+        d = np.nanmedian([agreement(cand["edi"], o, pmin, pmax)[part]["dlog_rho"] for o in others])
         if best_d is None or d < best_d:
             best, best_d = cand, d
     return {"remote": best["remote"], "score": float(best["score"]),
@@ -1999,6 +2394,21 @@ def _fmt(v, spec=".3f") -> str:
         return str(v)
 
 
+def _merge_text(plan: Plan, site: str) -> str:
+    """Describe a site's merged product: which mode comes from the full record and which from its window."""
+    mode, (start, end) = next(iter(plan.windows[site]["modes"].items()))
+    other = "yx" if mode == "xy" else "xy"
+    return f"{other} from the full record, {mode} from {start} to {end} UTC"
+
+
+def _period_max(r) -> float:
+    """Return a scores row's longest period in the scoring window, NaN without one."""
+    try:
+        return float(r.get("period_max"))
+    except (TypeError, ValueError):
+        return float("nan")
+
+
 def write_summary(c: "Campaign", df: pd.DataFrame, bests: dict, out: Path) -> None:
     """Write summary.md: the exclusions, stage 0's variants, the best remote/stack/options per site, and line-wide options.
 
@@ -2021,7 +2431,8 @@ def write_summary(c: "Campaign", df: pd.DataFrame, bests: dict, out: Path) -> No
           + (", ".join(f"{v} {k}" for k, v in sorted(by_status.items())) or "none") + ").",
           f"Scores: `crust.quality.tf_quality` over {_window_text(c)}: score = Q x S x exp(-5 B / N) "
           "(Q the fraction of periods in the physical phase quadrant, S the mean per-step smoothness "
-          "exp(-(|dlog10 rho| / 0.25)^2), B blow-ups out of N periods), mean of xy and yx; higher is better. "
+          "exp(-(|dlog10 rho| / 0.25)^2), B blow-ups out of N periods), mean of xy and yx (of the listed "
+          "modes for a site under the plan's `modes:`, marked xy-only or yx-only); higher is better. "
           "The figures are the judgement; the score only ranks.", ""]
     L += ["## Excluded", ""] + [f"- **{s}**: {r}" for s, r in plan.exclude.items()] + [""]
 
@@ -2049,22 +2460,34 @@ def write_summary(c: "Campaign", df: pd.DataFrame, bests: dict, out: Path) -> No
     for s in plan.ordered(plan.sites):
         b = bests.get(s)
         sdf = df[df["local"] == s] if len(df) else df
-        if not b:
+        site = f"{s} ({plan.modes_mark(s)})" if plan.modes_mark(s) else s
+        if not b or not len(sdf):
             n1 = int((sdf["stage"] == 1).sum()) if len(sdf) else 0
-            L.append(f"| {s} | {plan.group_of(s)} | - | - | {n1} stage 1 product(s) | - | - | - | - |")
+            why = b["why"] if b else f"{n1} stage 1 product(s)"
+            L.append(f"| {site} | {plan.group_of(s)} | {b['remote'] if b else '-'} | - | {why} | - | - | - | - |")
             continue
-        base = sdf[(sdf["stage"] == 1) & (sdf["remote"] == b["remote"])]
+        base = sdf[sdf["stage"].isin([1, 2]) & (sdf["remote"] == b["remote"]) & (sdf["config"] == "default")]
         bscore = float(base["score"].iloc[0]) if len(base) else float("nan")
+        breach = _period_max(base.iloc[0]) if len(base) else float("nan")
         st2 = sdf[sdf["stage"] == 2].sort_values("score", ascending=False)
         stack, sscore = (st2["remote"].iloc[0], float(st2["score"].iloc[0])) if len(st2) else ("-", float("nan"))
+        s3 = sdf[(sdf["stage"] == 3) & (sdf["remote"] == b["remote"])]
         moved = []
-        for _, r in sdf[(sdf["stage"] == 3) & (sdf["remote"] == b["remote"])].iterrows():
+        for _, r in s3[s3["config"].isin(list(plan.configs))].iterrows():
             d = float(r["score"]) - bscore
             if r["config"] in opt_delta and np.isfinite(d):
                 opt_delta[r["config"]].append(d)
             if np.isfinite(d) and abs(d) > 0.05:
-                moved.append(f"{r['config']} {d:+.2f}")
-        L.append(f"| {s} | {plan.group_of(s)} | {b['remote']} | {_fmt(bscore)} | {b.get('why', '')} | {stack} | "
+                reach = _period_max(r)
+                short = np.isfinite(reach) and np.isfinite(breach) and reach < breach * (1.0 - PERIOD_RTOL)
+                moved.append(f"{r['config']} {d:+.2f}" + (f" (to {reach:.4g} s)" if short else ""))
+        shown, why = bscore, b.get("why", "")
+        merged = s3[s3["config"] == MERGED_CONFIG]
+        if len(merged) and plan.windows.get(s, {}).get("merge"):
+            shown = float(merged["score"].iloc[0])
+            why += (f"; the default is the merged product ({_merge_text(plan, s)}); the full-record default "
+                    f"scores {_fmt(bscore)}, and the stacks and options are compared with it")
+        L.append(f"| {site} | {plan.group_of(s)} | {b['remote']} | {_fmt(shown)} | {why.lstrip('; ')} | {stack} | "
                  f"{_fmt(sscore)} | {_fmt(sscore - bscore, '+.3f')} | {', '.join(moved) or 'none'} |")
     L.append("")
 
@@ -2078,7 +2501,9 @@ def write_summary(c: "Campaign", df: pd.DataFrame, bests: dict, out: Path) -> No
                  f"{int((np.abs(ds) <= 0.05).sum())} | {_fmt(np.median(ds) if ds.size else np.nan, '+.3f')} | {ds.size} |")
     L += ["", "The per-decade configs change the band layout, so their score is over other periods; a "
           "max-period config is scored over the same window as the rest (its longer periods show in the "
-          "figure only).", ""]
+          "figure only). A product that stops short of the window (a MANTLE product at about 1000 s) is "
+          "scored over its own periods, marked \"(to <period> s)\" above: the long-period tail of the "
+          "default is in the default's score and not in its own (`period_max` in scores.csv).", ""]
 
     L += ["## Stacks", "", "| site | members | group | common span (h) |", "|---|---|---|---|"]
     for s in plan.ordered(plan.sites):
