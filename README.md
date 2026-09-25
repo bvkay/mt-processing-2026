@@ -87,7 +87,7 @@ tests/             unit tests (no Qt) plus the GUI smoke test
 | before ingest: file-boundary slips, clock offset vs remote, GPS status | `scripts/timing_qc.py <survey.yaml> <local> <remote>` |
 | quick look at raw noise (Welch PSD, mains zoom) | `scripts/noise_psd.py <survey.yaml> <site>` |
 | ingest a site's RAW archive into `<workspace>/mth5/<site>.h5` (its run length as `process_rr.py`'s), then build its filtered variant too if it declares any (`--raw` for the archive alone, `--variant` for the variant alone); refuses to rebuild an existing raw archive or an already-current variant without `--force`; several sites, or `--all` (every site of survey.yaml with a raw data folder, the others listed as skipped), make a batch that keeps existing archives and current variants, builds `--parallel N` sites at once, each in its own process logged to `<workspace>/logs/ingest_<site>.log` (default 1: one after another on the console), goes on past a failed site and ends with a table of each site's archive, variant, seconds and status (built, kept, failed with its error), exit 1 when a site failed; also the GUI's Time Series tab "Build MTH5" | `scripts/ingest_site.py <survey.yaml> <site> [<site> ...] [--raw \| --variant] [--max-run-files N] [--force] [--parallel N]`, `scripts/ingest_site.py <survey.yaml> --all [...]` |
-| ingest both sites, remote-reference TF, overlay on lemimt (advanced: `--taper`, `--overlap`, `--no-prewhiten`, `--r0` ... on every decimation level); writes `<local>_rr-<remote>_<YYYYMMDD-HHMM>[_<tag>].edi` (the stamp is when the run started, local time, so re-running the same pair and window never overwrites an earlier EDI) plus the matching `_vs_lemimt.png` and a `.json` sidecar of everything about the run (timing, archives, band scheme, tweaks, declared filters, argv, the phase-quadrant verdict, package versions) | `scripts/process_rr.py <survey.yaml> <local> <remote> [start] [end]` |
+| ingest both sites, remote-reference TF, overlay on lemimt (advanced: `--taper`, `--overlap`, `--no-prewhiten`, `--r0` ... on every decimation level); writes `<local>_rr-<remote>_<YYYYMMDD-HHMM>[_<tag>].edi` (the stamp is when the run started, local time, so re-running the same pair and window never overwrites an earlier EDI) plus the matching `_vs_lemimt.png` and a `.json` sidecar of everything about the run (timing, archives, band scheme, tweaks, declared filters, argv, the phase-quadrant verdict, package versions); `--engine mantle` estimates with MANTLE (`mtproc.engine_mantle`: the same archives and window through MANTLE's MTH5 reader, its robust remote-reference cascade with jackknife error bars, the EDI pooled onto the same band scheme, plus MANTLE's fine-grid EDI and report JSON beside it; the sidecar gains `engine`, `engine_version`, `engine_config`, `mantle_report`, `mantle_fine_edi`; the aurora estimator flags and masks are refused with it) | `scripts/process_rr.py <survey.yaml> <local> <remote> [start] [end] [--engine aurora\|mantle]` |
 | aurora EDI vs every one of lemimt's unmerged per-rate/per-chunk EDIs for a site (e.g. Morocco Atlas Line D): rho/phase overlay by rate plus a per-rate median-difference table | `scripts/compare_unmerged.py <aurora.edi> <unmerged_dir> <site> [--remote NAME] [--out PNG] [--title TEXT]` |
 | per-site QC set: overview, band coherence vs time, coherogram, spectrogram | `scripts/site_qc.py <survey.yaml> <site> [--remote R]` |
 | whole-record PSD per channel from the archive, remote overlaid, lines marked, before/after filters | `scripts/psd_qc.py <survey.yaml> <site> [--remote R] [--before]` |
@@ -207,10 +207,18 @@ a loaded window (raw behind filtered, time series and PSD) and drives
 `<survey>/filters.yaml`, a
 Process tab (rows of station and remote, window bar, queue buttons, options
 and queue) that queues the scripts
-above as subprocesses (Add to queue, then Run queue as a separate step),
+above as subprocesses (Add to queue, then Run queue as a separate step;
+its Engine combo, aurora or mantle, becomes `--engine mantle`, the queue
+label carries "[mantle]" and, when the pair declares masks, `--no-masks`
+goes with it and the status line says so),
 a Build MTH5 button on the Time Series tab for a site with no archive yet,
 a satellite basemap under the Process tab's site map, fetched when a survey
-is opened, and a View EDIs tab drawn with mtpy-v2. **No product** (archive, transfer
+is opened, and a View EDIs tab drawn with mtpy-v2, which labels each product
+by its sidecar's engine ("[aurora]", "[mantle]", "[mantle fine grid]") and,
+for a MANTLE product, draws its verdict strip under the resistivity panels
+from `<stem>.mantle_report.json` (one row per verdict word over the periods
+it covers), shows the sidecar's verdict word counts and opens the report's
+notes as plain text (`src/mtproc_gui/mantle_products.py`). **No product** (archive, transfer
 function, EDI, report figure) is computed in the GUI, and no PNG is ever
 displayed in it. Full detail: `src/mtproc_gui/README.md`.
 
@@ -225,6 +233,8 @@ running it):
 
 ```bash
 QT_QPA_PLATFORM=offscreen python tests/gui_smoke.py
+QT_QPA_PLATFORM=offscreen python tests/process_tab_unit.py  # the Process tab's masks switch and the engine combo (mantle: --no-masks with --engine mantle, the status line)
+python tests/campaign_unit.py        # campaign.py: plan, overlap rule, stacks, resume, dry-run counts, runner, filter check, masks signature, a MANTLE stage 3 config
 python tests/windows_unit.py
 python tests/segment_unit.py
 python tests/psd_ladder_unit.py
@@ -234,6 +244,7 @@ python tests/noise_unit.py           # the filter kinds on synthetic arrays; ing
 python tests/filter_trial_unit.py    # scripts/filter_trial.py: line excess, floor, coherence and burst/step metrics on a synthetic window with a coherent pair and two lines; a notch removes its line and leaves the coherence; inputs unchanged; the figures and JSON written
 python tests/virtual_unit.py         # synthetic remote from real tiny member archives: the plain stack byte-identical to before; coherence weights (dead coil -> 0, burst chunk down-weighted); streamed == single shot; missing archive, off-grid run, partial run
 python tests/process_rr_cli_unit.py  # process_rr.py --dry-run, the estimator tweaks, run_stem, the sidecar, the quadrant window
+python tests/engine_mantle_unit.py   # the MANTLE engine: options -> ProcessingConfig, levels_for, band pooling with the jackknife variance, to_tf round trip, the sidecar keys, --engine on the command line (skips when MANTLE is not installed)
 python tests/decimate_unit.py        # decimate_site.py on a synthetic two-run LEMI-423 site: 100 s and 20 s sines within 0.5 % and 0.5 deg at 1 Hz, a 0.7 Hz sine gone, the calibration chain copied, starts on whole seconds, --force, the survey entry; process_rr.py at 1 Hz
 python tests/basemap_unit.py         # fetch_basemap.py: warp, provider, zoom rule; network mocked
 python tests/new_survey_unit.py      # new_survey.py on synthetic B423s, a mixed LEMI-423/424/EDL root, Curnamona

@@ -6,7 +6,10 @@ mtpy-v2 transfer function plots over a checkable tree with two groups. The
 first lists every `*.edi` in `<workspace>/tf` written by
 `scripts/process_rr.py`, ordered by stem so the newest run of a pair is last.
 A stem in `run_stem`'s format is labelled by `_run_label`
-("S01 rr S02, 23 Sep 21:15, hann"); any other EDI keeps its file name. The
+("S01 rr S02, 23 Sep 21:15, hann"); any other EDI keeps its file name. A
+row with a sidecar ends with its engine in brackets, "[aurora]" or
+"[mantle]" (`mantle_products.describe`; a MANTLE run's fine-grid EDI reads
+"[mantle fine grid]"). The
 second group lists the lemimt reference EDIs declared in
 `<survey>/reference_edis.yaml` (site -> {edi, distance_km}), which are read
 from the field drive. Ticked rows are overlaid on one matplotlib canvas
@@ -42,6 +45,13 @@ the max, or either at or below zero, is not applied and is reported on the
 status line. Like Phase, the values apply to every EDI drawn and persist
 until changed.
 
+A MANTLE product among the rows drawn (the quick-view row first, then the
+ticked rows) adds its verdict strip under the resistivity panels
+(`tf_plot.draw(verdicts=...)`, from `<stem>.mantle_report.json` through
+`mantle_products.word_ranges`), its verdict word counts from the sidecar
+on `mantle_label` under the tree, and the "MANTLE notes..." button, which
+opens the report's summary and notes as plain text (`show_notes`).
+
 @author: ben kay (ben@auscope.org.au)
 
 :license: MIT
@@ -61,10 +71,12 @@ from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QBrush, QColor, QDoubleValidator
 from PySide6.QtWidgets import (
     QCheckBox,
+    QDialog,
     QGroupBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QPlainTextEdit,
     QPushButton,
     QRadioButton,
     QSplitter,
@@ -74,7 +86,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from mtproc_gui import tf_plot
+from mtproc_gui import mantle_products, tf_plot
 
 # redraw delay, so holding an arrow key queues one mtpy draw
 DEBOUNCE_MS = 150
@@ -183,6 +195,13 @@ class EdiTab(QWidget):
         self.refresh_button.clicked.connect(self.reload)
         self.status_label = QLabel("", self)
         self.status_label.setWordWrap(True)
+        self.mantle_label = QLabel("", self)
+        self.mantle_label.setWordWrap(True)
+        self.notes_button = QPushButton("MANTLE notes...", self, enabled=False)
+        self.notes_button.setToolTip("the summary and plain-language notes of the MANTLE report drawn")
+        self.notes_button.clicked.connect(self.show_notes)
+        self._mantle_row: tuple[str, Path] | None = None
+        self._notes_dialog: QDialog | None = None
 
         self.figure = Figure(figsize=(9.0, 7.0), dpi=100)
         self.canvas = FigureCanvasQTAgg(self.figure)
@@ -201,6 +220,8 @@ class EdiTab(QWidget):
         left_layout.addWidget(plot_box)
         left_layout.addWidget(phase_box)
         left_layout.addWidget(rho_box)
+        left_layout.addWidget(self.mantle_label)
+        left_layout.addWidget(self.notes_button)
         left_layout.addWidget(self.refresh_button)
 
         right = QWidget(self)
@@ -234,13 +255,15 @@ class EdiTab(QWidget):
         self.tree.blockSignals(True)
         self.tree.clear()
         tf_dir = self.state.tf_dir()
-        aurora = QTreeWidgetItem(self.tree, [f"aurora ({tf_dir})" if tf_dir else "aurora"])
-        aurora.setFlags(Qt.ItemIsEnabled)
+        processed = QTreeWidgetItem(self.tree, [f"processed ({tf_dir})" if tf_dir else "processed"])
+        processed.setFlags(Qt.ItemIsEnabled)
         if tf_dir is not None and tf_dir.exists():
             # ordered by stem, not path: a run_stem stamp sorts chronologically as a
             # string (zero-padded YYYYMMDD-HHMM), so the newest run of a pair is last
             for path in sorted(tf_dir.glob("*.edi"), key=lambda p: p.stem):
-                self._add_leaf(aurora, _run_label(path.stem) or path.name, path)
+                label = _run_label(mantle_products.product_stem(path)) or path.name
+                suffix = mantle_products.describe(path)
+                self._add_leaf(processed, f"{label} {suffix}" if suffix else label, path)
         lemimt = QTreeWidgetItem(self.tree, ["lemimt reference"])
         lemimt.setFlags(Qt.ItemIsEnabled)
         for site, entry in self._references().items():
@@ -405,6 +428,47 @@ class EdiTab(QWidget):
         """Request a redraw in `DEBOUNCE_MS`, replacing any pending one."""
         self._timer.start()
 
+    def mantle_row(self, rows) -> tuple[str, Path] | None:
+        """Return the first row that is a MANTLE product with a report, or None."""
+        for label, path in rows:
+            if mantle_products.engine_of(path) == "mantle" and mantle_products.report_of(path):
+                return label, path
+        return None
+
+    def _describe_mantle(self, row: tuple[str, Path] | None) -> None:
+        """Show the verdict word counts of the MANTLE product drawn and enable its notes button."""
+        self._mantle_row = row
+        if row is None:
+            self.mantle_label.setText("")
+            self.notes_button.setEnabled(False)
+            return
+        label, path = row
+        sidecar = mantle_products.sidecar_of(path) or {}
+        counts = mantle_products.word_counts(sidecar)
+        tally = ", ".join(f"{word} {n}" for word, n in counts.items()) or "none recorded"
+        gate = (sidecar.get("engine_config") or {}).get("snr_gate_ran")
+        self.mantle_label.setText(f"MANTLE verdicts of {label}: {tally}"
+                                  + ("" if gate is None else f"; snr gate ran: {gate}"))
+        self.notes_button.setEnabled(True)
+
+    def show_notes(self) -> QDialog | None:
+        """Open the MANTLE report's summary and notes as plain text; returns the dialog."""
+        if self._mantle_row is None:
+            return None
+        label, path = self._mantle_row
+        text = mantle_products.notes_text(mantle_products.report_of(path), title=f"MANTLE report of {label}")
+        if self._notes_dialog is None:
+            self._notes_dialog = QDialog(self)
+            self._notes_dialog.setWindowTitle("MANTLE notes")
+            self._notes_dialog.resize(720, 480)
+            layout = QVBoxLayout(self._notes_dialog)
+            self._notes_view = QPlainTextEdit(self._notes_dialog, readOnly=True)
+            layout.addWidget(self._notes_view)
+        self._notes_view.setPlainText(text)
+        self._notes_dialog.show()
+        self._notes_dialog.raise_()
+        return self._notes_dialog
+
     def redraw(self) -> None:
         """Draw the current rows with mtpy, on the GUI thread."""
         self._timer.stop()
@@ -415,10 +479,15 @@ class EdiTab(QWidget):
         title = " + ".join(label for label, _p in rows)
         if quick is not None:
             title = f"{title}   [quick view: {quick[1].name}]"
+        mantle = self.mantle_row(rows)
+        verdicts = None
+        if mantle is not None:
+            verdicts = (mantle[0], mantle_products.word_ranges(mantle_products.report_of(mantle[1])))
+        self._describe_mantle(mantle)
         started = time.perf_counter()
         drawn, problems = tf_plot.draw(
             self.figure, rows, self.choice(), title=title, hint=EMPTY_HINT,
-            phase_range=self.phase_range(), rho_limits=self.rho_limits(),
+            phase_range=self.phase_range(), rho_limits=self.rho_limits(), verdicts=verdicts,
         )
         self.canvas.draw_idle()
         self.last_seconds = time.perf_counter() - started

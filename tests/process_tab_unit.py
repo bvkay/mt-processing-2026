@@ -21,7 +21,14 @@ read exactly "apply masks.yaml (D02: 3, E08: 2)" (each site's own count,
 duplicates in the file collapsed as `load_masks` does), ticked and enabled,
 with a tooltip naming the Cross-powers tab and the remote; `RunOptions.flags`
 holds --no-masks while it is ticked, or lacks it once unticked, or the
-process_rr argv the tab queues lacks it then; a remote change to A07 (no
+process_rr argv the tab queues lacks it then; with the engine combo on
+"mantle" and the switch ticked the flags are not exactly `--no-masks
+--engine mantle` (in that order, the queued argv ending the same way), the
+switch and the aurora estimator block are not disabled, the status line
+lacks "engine mantle" or "--no-masks is passed (D02: 3, E08: 2)", the queue
+label does not start "process_rr D02 rr-E08 [mantle]", or back on "aurora"
+the flags are not empty with the switch enabled and ticked and the status
+line free of the engine note; a remote change to A07 (no
 masks) does not make the label "(D02: 3, A07: 0)"; station A02 with remote
 A03 (neither has masks) does not leave the switch disabled and ticked again
 (it was unticked on the pair before) reading "apply masks.yaml (no masks
@@ -170,6 +177,28 @@ def main() -> int:
     assert argv is not None and "--no-masks" in argv, argv
     print(f"  unticked: flags {options.flags()}, queued argv ends {argv[-3:]}")
     box.setChecked(True)
+
+    # the MANTLE engine on a pair with masks: --no-masks goes with --engine
+    # mantle whatever the switch says, the switch and the aurora block are
+    # disabled, and the status line says so
+    options.engine_combo.setCurrentText("mantle")
+    pump(app)
+    assert options.flags() == ["--no-masks", "--engine", "mantle"], options.flags()
+    assert not box.isEnabled() and box.isChecked(), (box.isEnabled(), box.isChecked())
+    assert not options.advanced.isEnabled(), "the aurora estimator block stayed enabled with mantle"
+    status = tab.status_label.text()
+    assert "engine mantle" in status and "--no-masks is passed (D02: 3, E08: 2)" in status, status
+    argv = tab.queue_process()
+    assert argv is not None and argv[-3:] == ["--no-masks", "--engine", "mantle"], argv
+    label = tab.runner.jobs[-1].label
+    assert label.startswith("process_rr D02 rr-E08 [mantle]"), label
+    print(f"  engine mantle: flags {options.flags()}, switch disabled and ticked, status {status!r}, "
+          f"queue label {label!r}")
+    options.engine_combo.setCurrentText("aurora")
+    pump(app)
+    assert options.flags() == [] and box.isEnabled() and box.isChecked(), (options.flags(), box.isEnabled())
+    assert options.advanced.isEnabled() and "engine mantle" not in tab.status_label.text(), tab.status_label.text()
+    print(f"  back to aurora: flags {options.flags()}, switch enabled again")
 
     set_remote(tab, "A07")
     pump(app)

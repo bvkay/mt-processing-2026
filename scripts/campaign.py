@@ -35,7 +35,10 @@ process_rr.py calls it before every run. Stages:
   score over the scoring window; among remotes within `tie_tolerance` of the
   top, the one agreeing best with the others, lowest median |dlog10 rho|),
   one process_rr.py run per plan config. The choice is kept in
-  best_remote.json so a resume keeps it.
+  best_remote.json so a resume keeps it. A config may name the MANTLE
+  engine (`mantle: [--engine, mantle]`): its run gets `--no-masks` whatever
+  `runner.masks` says, its inputs carry no masks hash, and its report JSON
+  and fine-grid EDI move into <campaign>/tf/ with the EDI.
 
 Readiness: before each stage the runner checks, in a fresh child process,
 that mtproc.ingest has processing_archive or build_variant (stage 0), that
@@ -864,13 +867,24 @@ class Campaign:
                 sig += f";{site}:m{digest}"
         return sig
 
+    def config_engine(self, config: str) -> str:
+        """Return the engine a config's flags name (`--engine <name>`), "aurora" without the flag."""
+        flags = self.plan.configs.get(config, []) if config != "default" else []
+        for i, flag in enumerate(flags):
+            if flag == "--engine":
+                return flags[i + 1] if i + 1 < len(flags) else "aurora"
+        return "aurora"
+
     def rr_masks_on(self, config: str) -> bool:
         """Return whether an rr run of `config` applies masks.yaml.
 
         The plan's `runner.masks` sets the default and a config's own
         `--masks` or `--no-masks` overrides it, as the later flag wins on the
-        process_rr command line.
+        process_rr command line. A MANTLE config (`--engine mantle`) applies
+        none: process_rr.py takes that engine with `--no-masks` only.
         """
+        if self.config_engine(config) == "mantle":
+            return False
         on = self.plan.masks
         for flag in (self.plan.configs.get(config, []) if config != "default" else []):
             if flag == "--masks":
@@ -883,10 +897,11 @@ class Campaign:
         """Build the process_rr.py command line of one rr run.
 
         The runner's `--no-masks` goes before the config's flags so that a
-        config declaring `--masks` wins.
+        config declaring `--masks` wins; a MANTLE config gets `--no-masks`
+        whatever the plan's `runner.masks` says.
         """
         extra = self.plan.configs.get(config, []) if config != "default" else []
-        masks = [] if self.plan.masks else ["--no-masks"]
+        masks = [] if self.plan.masks and self.config_engine(config) != "mantle" else ["--no-masks"]
         return [PY, str(SCRIPTS / "process_rr.py"), self.survey_yaml, local, remote, *masks, *extra,
                 "--tag", self.plan.tag(config)]
 
@@ -1265,13 +1280,27 @@ class Campaign:
     def move_products(self, job: Job, prod: dict) -> dict:
         """Move an rr run's EDI, sidecar and figure into <campaign>/tf/.
 
+        A MANTLE run's report JSON and fine-grid EDI, named in its sidecar
+        (`mantle_report`, `mantle_fine_edi`), move with them.
+
         Returns:
             dict: The product paths after the move.
         """
         tf_dir = (self.survey.workspace / "tf").resolve()
         dest_dir = self.dir / "tf"
         out = dict(prod)
-        for key in ("edi", "sidecar", "figure"):
+        extras: dict[str, str] = {}
+        if prod.get("sidecar") and Path(prod["sidecar"]).exists():
+            try:
+                sidecar = json.loads(Path(prod["sidecar"]).read_text(encoding="utf-8"))
+                for key in ("mantle_report", "mantle_fine_edi"):
+                    if sidecar.get(key):
+                        extras[key] = str(Path(prod["sidecar"]).with_name(str(sidecar[key])))
+            except (OSError, ValueError):
+                pass
+        for key, value in extras.items():
+            prod = {**prod, key: value}
+        for key in ("edi", "sidecar", "figure", *extras):
             p = Path(prod[key]) if prod[key] else None
             if p is None or not p.exists():
                 continue

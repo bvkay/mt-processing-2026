@@ -12,7 +12,8 @@ them. The tab is laid out in rows, top to bottom:
    at its left end, the end field at its right and the sync status centred
    above between two lamps.
 3. Add to queue, Run queue, Reset queue and Build stack.
-4. The Aurora options (`stack_builder.RunOptions`).
+4. The run options (`stack_builder.RunOptions`): the engine, the bands,
+   filters, masks, tag and the aurora estimator block.
 5. The queue table over the script log (`queue_table.QueuePanel`).
 
 Beside rows 3-5 are the site map (`site_map.SiteMap`), the stack builder and
@@ -37,7 +38,11 @@ which adds `--no-filters` and processes both sites from their raw archives.
 the survey is opened and the tab is shown, since masks are saved on the
 Cross-powers tab. process_rr applies the station's and the remote site's
 masks; switching it off adds `--no-masks`, which ignores both. A remote is
-required, since every product is remote-referenced.
+required, since every product is remote-referenced. The engine combo's
+"mantle" adds `--engine mantle`: the run goes to MANTLE on the same
+archives and window, the queue label carries "[mantle]", the aurora
+estimator block is disabled, and `--no-masks` goes with it whenever the pair
+declares masks, which the status line says (`_engine_note`).
 
 Add to queue and Build stack add jobs with `JobRunner.add` (`_queue`)
 without starting them; Run queue runs them, so adding a job and running the
@@ -121,6 +126,7 @@ class ProcessTab(QWidget):
         self._build_layout()
         self.runner.job_finished.connect(self._job_finished)
         self.runner.queue_changed.connect(self._refresh_status)
+        self.options.engine_changed.connect(lambda _engine: self._refresh_status())
         self.state.site_changed.connect(self.select_station)
 
     def _button(self, text: str, slot, tip: str) -> QPushButton:
@@ -273,16 +279,24 @@ class ProcessTab(QWidget):
             return f"{queued} job(s) queued - press Run queue"
         return None
 
+    def _engine_note(self) -> str:
+        """Describe what the chosen engine leaves out: "" for aurora, the masks and estimator note for MANTLE."""
+        if self.options.engine() == "aurora":
+            return ""
+        note = "engine mantle: the aurora estimator options above do not reach it"
+        if self.options.masks_declared():
+            masks = self.options.masks_check.text().split(self.options.MASKS_TEXT, 1)[1].strip()
+            note += f"; masks.yaml is left out, --no-masks is passed {masks}"
+        return note
+
     def _refresh_status(self) -> None:
-        """Show the queued-jobs notice, or else the station and remote reminder when either is missing."""
-        text = self._queue_status()
-        if text is None:
-            ready = bool(self.station_combo.currentData()) and bool(self.remote_combo.currentData())
-            text = "" if ready else (
-                "A station and a remote are both required: every product here is "
-                "remote-referenced (adjacent site, dedicated remote, or a stack)."
-            )
-        self.status_label.setText(text)
+        """Show the queued-jobs notice and the engine note, or else the station and remote reminder when either is missing."""
+        parts = [text for text in (self._queue_status(), self._engine_note()) if text]
+        ready = bool(self.station_combo.currentData()) and bool(self.remote_combo.currentData())
+        if not parts and not ready:
+            parts = ["A station and a remote are both required: every product here is "
+                     "remote-referenced (adjacent site, dedicated remote, or a stack)."]
+        self.status_label.setText(" | ".join(parts))
 
     @property
     def products(self) -> list[Path]:
@@ -343,9 +357,11 @@ class ProcessTab(QWidget):
             return None
         survey_yaml, station, remote = pair
         options = self.options.flags()
+        engine = self.options.engine()
         argv = [self.state.python_exe, self.state.script("process_rr.py"),
                 survey_yaml, station, remote, *window, *options]
-        label = f"process_rr {station} rr-{remote}" + (f" {' '.join(window)}" if window else "")
+        label = (f"process_rr {station} rr-{remote}" + (f" [{engine}]" if engine != "aurora" else "")
+                 + (f" {' '.join(window)}" if window else ""))
         shown = " to ".join(window) if len(window) == 2 else f"from {window[0]}" if window else "full overlap"
         self._queue(label + (f" {' '.join(options)}" if options else ""), argv, station=station,
                     remote=remote, window=shown, options=" ".join(options) or "defaults")

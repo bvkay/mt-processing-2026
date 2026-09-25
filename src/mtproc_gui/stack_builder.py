@@ -171,13 +171,22 @@ class StackBuilder(QGroupBox):
 
 
 class RunOptions(QGroupBox):
-    """Settings a single run may change: the band kwargs, the ingest filters, the masks and the tag.
+    """Settings a single run may change: the engine, the band kwargs, the ingest filters, the masks and the tag.
+
+    The engine combo picks aurora (the default, no flag) or MANTLE
+    (`--engine mantle`). MANTLE runs on its own estimator, so with it the
+    aurora estimator block is disabled and passes nothing, and masks.yaml is
+    left out of the run: `--no-masks` is passed whenever the pair declares
+    masks, whatever the masks switch says (`engine_changed` lets the tab
+    say so on its status line).
 
     Args:
         state: The shared `mtproc_gui.app.State`.
         parent (QWidget | None): Qt parent.
     """
 
+    ENGINES = ("aurora", "mantle")
+    engine_changed = Signal(str)
     MASKS_TEXT = "apply masks.yaml"
     MASKS_TIP = (
         "On (default): the run leaves out the intervals in masks.yaml. Masks are declared "
@@ -187,9 +196,20 @@ class RunOptions(QGroupBox):
     )
 
     def __init__(self, state, parent=None):
-        super().__init__("Aurora options (survey defaults; only what you change is passed)", parent)
+        super().__init__("Run options (survey defaults; only what you change is passed)", parent)
         self.state = state
         self.defaults: dict = {}
+
+        self.engine_combo = QComboBox(self)
+        self.engine_combo.addItems(self.ENGINES)
+        self.engine_combo.setToolTip(
+            "aurora (default): the IAGA-DVI stack's estimator, with the options below. mantle: MANTLE's "
+            "DPSS multitaper, robust remote-reference cascade with block-jackknife error bars, on the same "
+            "archives and window (--engine mantle); its EDI is pooled onto the same band scheme, and MANTLE's "
+            "fine-grid EDI and report JSON land beside it. The aurora estimator block and masks.yaml do "
+            "not reach a MANTLE run."
+        )
+        self.engine_combo.currentTextChanged.connect(self._engine_changed)
 
         self.min_spin = QDoubleSpinBox(self, decimals=4, minimum=0.0001, maximum=100.0,
                                        singleStep=0.001, suffix=" s")
@@ -220,10 +240,10 @@ class RunOptions(QGroupBox):
             (0, 2, QLabel("Max period", self)), (0, 3, self.max_spin),
             (0, 4, QLabel("Periods per decade", self)), (0, 5, self.decade_spin),
             (1, 0, QLabel("Notch (Hz)", self)), (1, 1, self.notch_edit),
-            (1, 2, QLabel("Output tag suffix", self)),
+            (1, 2, QLabel("Output tag suffix", self)), (1, 3, self.tag_edit),
+            (1, 4, QLabel("Engine", self)), (1, 5, self.engine_combo),
         ):
             grid.addWidget(widget, row, column)
-        grid.addWidget(self.tag_edit, 1, 3, 1, 3)
         grid.addWidget(self.filters_check, 2, 0, 1, 2)
         grid.addWidget(self.filters_label, 2, 2, 1, 4)
         grid.addWidget(self.masks_check, 3, 0, 1, 6)
@@ -233,7 +253,7 @@ class RunOptions(QGroupBox):
             grid.setColumnStretch(column, 1)
 
     def reload(self) -> None:
-        """Reset to the survey's band block with filters and masks on and no tag."""
+        """Reset to the survey's band block with aurora, filters and masks on and no tag."""
         self.defaults = band_defaults(self.state.survey)
         for spin, key in ((self.min_spin, "min_period"), (self.max_spin, "max_period"),
                           (self.decade_spin, "periods_per_decade")):
@@ -242,7 +262,23 @@ class RunOptions(QGroupBox):
         self.filters_check.setChecked(True)
         self.masks_check.setChecked(True)
         self.tag_edit.clear()
+        self.engine_combo.setCurrentText(self.ENGINES[0])
         self.advanced.reset()
+
+    def engine(self) -> str:
+        """Return the engine chosen, "aurora" or "mantle"."""
+        return self.engine_combo.currentText()
+
+    def _engine_changed(self, engine: str) -> None:
+        """Disable the aurora estimator block and the masks switch for MANTLE, and tell the tab."""
+        aurora = engine == self.ENGINES[0]
+        self.advanced.setEnabled(aurora)
+        self.masks_check.setEnabled(aurora and self._masks_declared)
+        self.engine_changed.emit(engine)
+
+    def masks_declared(self) -> bool:
+        """Return whether the pair shown declares masks.yaml entries (`describe_masks`)."""
+        return self._masks_declared
 
     def describe_filters(self, station, remote=None) -> None:
         """Show the filters the station and the remote declare in `filters.yaml`.
@@ -305,7 +341,7 @@ class RunOptions(QGroupBox):
             return
         self.masks_check.setToolTip(self.MASKS_TIP)
         self._masks_declared = any(n for _site, n in counts)
-        self.masks_check.setEnabled(self._masks_declared)
+        self.masks_check.setEnabled(self._masks_declared and self.engine() == self.ENGINES[0])
         if not self._masks_declared:
             self.masks_check.setChecked(True)
         detail = (", ".join(f"{site}: {n}" for site, n in counts) if self._masks_declared
@@ -317,7 +353,8 @@ class RunOptions(QGroupBox):
 
         Covers --min-period, --max-period, --per-decade, --notch,
         --no-filters, --no-masks (when the pair has masks), --tag and the
-        estimator flags.
+        estimator flags; with MANTLE chosen, `--engine mantle`, `--no-masks`
+        whenever the pair has masks, and no estimator flag.
 
         Returns:
             list[str]: The flags.
@@ -333,11 +370,14 @@ class RunOptions(QGroupBox):
             out += ["--notch", wanted]
         if not self.filters_check.isChecked():
             out.append("--no-filters")
-        if self._masks_declared and not self.masks_check.isChecked():
+        mantle = self.engine() != self.ENGINES[0]
+        if self._masks_declared and (mantle or not self.masks_check.isChecked()):
             out.append("--no-masks")
         tag = self.tag_edit.text().strip()
         if tag:
             out.append(f"--tag={tag}")  # the '=' form survives a tag typed with a leading dash
+        if mantle:
+            return out + ["--engine", self.engine()]
         return out + self.advanced.flags()
 
 

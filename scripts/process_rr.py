@@ -54,6 +54,19 @@ this run only (`mtproc.process.process_station(tweaks=...)`, whose docstring
 gives the default in use for each). The flags given become tweaks; with none
 the run uses the defaults, and the resolution prints "tweaks: none".
 
+`--engine mantle` estimates with MANTLE instead of aurora
+(`mtproc.engine_mantle`): the same processing archives and window, read
+through MANTLE's own MTH5 reader, its robust remote-reference cascade with
+block-jackknife error bars, and the EDI pooled onto the same band scheme, so
+the figure, the sidecar, the GUI's EDI list and the campaign's scores read
+it as they read an aurora product. Two more files land beside it, MANTLE's
+fine-grid EDI (`<stem>_fine.edi`) and its report JSON
+(`<stem>.mantle_report.json`), and the sidecar gains `engine`,
+`engine_version`, `engine_config`, `mantle_report` and `mantle_fine_edi`; a
+sidecar without `engine` is an aurora run. The aurora estimator flags and
+masks.yaml entries are refused with it (`--no-masks` runs without them).
+`--mantle-whiten diff` first-differences every channel before the cascade.
+
 Outputs: <workspace>/mth5/<site>.h5, <workspace>/tf/<stem>.edi,
 <workspace>/tf/<stem>_vs_lemimt.png and <workspace>/tf/<stem>.json, where
 <stem> is <local>_rr-<remote>_<YYYYMMDD-HHMM> (the local time this run
@@ -74,6 +87,7 @@ Usage:
         [--taper {boxcar,hamming,hann,dpss}] [--overlap PCT] [--no-prewhiten]
         [--min-windows N] [--max-iterations N] [--redescending-iterations N]
         [--r0 X] [--u0 X] [--tolerance X]
+        [--engine {aurora,mantle}] [--mantle-whiten {none,diff}]
 
 @author: ben kay (ben@auscope.org.au)
 
@@ -105,6 +119,8 @@ from mtproc.process import ESTIMATOR_DEFAULTS, TAPERS, process_station
 from mtproc.survey import Survey
 
 MAX_RUN_FILES = 34  # 34 x 90 min = 51 h per run
+ENGINES = ("aurora", "mantle")
+MANTLE_WHITEN = ("none", "diff")  # mtproc.engine_mantle.WHITEN, spelt here so the parser builds without MANTLE
 # the band-scheme keys this CLI can override; anything else in the survey's
 # `processing:` block (window, factor, notch_fraction) is passed through
 BAND_KEYS = ("min_period", "max_period", "periods_per_decade", "notch_frequencies")
@@ -152,6 +168,13 @@ def build_parser() -> argparse.ArgumentParser:
                      help="redescending threshold (in use: 2.8)")
     adv.add_argument("--tolerance", type=float, default=None, metavar="X",
                      help="regression convergence tolerance (in use: 0.005)")
+    eng = p.add_argument_group("the engine")
+    eng.add_argument("--engine", choices=ENGINES, default="aurora",
+                     help="transfer-function engine: aurora (default) or mantle (MANTLE's robust remote-reference "
+                          "cascade on the same archives and window; the aurora flags above are refused with it)")
+    eng.add_argument("--mantle-whiten", choices=MANTLE_WHITEN, default="none", metavar="KIND",
+                     help="mantle only: 'diff' first-differences every channel before the cascade (cancels in Z, "
+                          "removes red-spectrum leakage); in use: none")
     return p
 
 
@@ -360,6 +383,17 @@ def resolve(args, started) -> dict:
     # by name (`remote_masks`), not by `virtual`: with data_root unmounted every
     # remote that has an archive looks virtual, and its masks would be dropped
     masks_remote = [] if ignore_masks else remote_masks(survey, args.remote)
+    tweaks = tweaks_from(args)
+    engine = getattr(args, "engine", "aurora")
+    if engine == "mantle":
+        # MANTLE has its own estimator (DPSS multitaper, bounded-influence solve, block jackknife):
+        # aurora's STFT and regression flags have no counterpart there, and masks act inside
+        # aurora's kernel dataset and regression, so both are refused rather than silently dropped
+        if tweaks:
+            raise SystemExit(f"--engine mantle takes none of the aurora estimator flags (given: {sorted(tweaks)})")
+        if masks_local or masks_remote:
+            raise SystemExit(f"--engine mantle applies no masks.yaml entries yet ({args.local} {len(masks_local)}, "
+                             f"{args.remote} {len(masks_remote)} declared): run it with --no-masks")
 
     return {
         "survey": survey,
@@ -392,11 +426,13 @@ def resolve(args, started) -> dict:
         # without a `channels:` declaration keeps aurora's default.
         "output_channels": output_channels(survey, args.local),
         # the advanced estimator flags given on the command line
-        "tweaks": tweaks_from(args),
+        "tweaks": tweaks,
         "masks_local": masks_local,
         "masks_remote": masks_remote,
         "masks": union_masks(masks_local, masks_remote),
         "masks_ignored": ignore_masks,
+        "engine": engine,
+        "mantle_whiten": getattr(args, "mantle_whiten", "none"),
     }
 
 
@@ -610,15 +646,20 @@ def edi_info_lines(sidecar: dict) -> list[str]:
     Returns:
         list[str]: The INFO lines.
     """
-    tw = sidecar["tweaks"]
-    return [
+    lines = [
         f"mtproc.version={sidecar['versions']['mtproc']}",
         f"mtproc.started={sidecar['started']}",
         f"mtproc.tag={sidecar['tag'] or ''}",
-        f"mtproc.taper={tw['taper']}",
+    ]
+    if sidecar.get("engine", "aurora") == "aurora":
+        lines.append(f"mtproc.taper={sidecar['tweaks']['taper']}")
+    else:
+        lines += [f"mtproc.engine={sidecar['engine']}", f"mtproc.engine_version={sidecar['engine_version']}"]
+    lines += [
         f"mtproc.quadrant_verdict={sidecar['quadrant']['verdict']}",
         f"mtproc.sidecar={sidecar['edi'].rsplit('.', 1)[0]}.json",
     ]
+    return lines
 
 
 def _print_archive_status(label: str, status: dict | None) -> None:
@@ -639,7 +680,7 @@ def print_resolution(res: dict) -> None:
     """Print the resolution as `key: value` lines, as --dry-run and the log show it."""
     for key in ("survey_yaml", "local", "remote", "local_archive", "remote_archive",
                 "virtual_remote", "ignore_filters", "start", "end", "window",
-                "started", "tag", "stem"):
+                "started", "tag", "stem", "engine"):
         value = res[key]
         if key == "started" and value is not None:
             value = value.isoformat()
@@ -666,6 +707,8 @@ def print_resolution(res: dict) -> None:
         print(f"tweak.{key}: {value}")
     if not res["tweaks"]:
         print("tweaks: none")
+    if res["engine"] == "mantle":
+        print(f"mantle.whiten: {res['mantle_whiten']}")
 
 
 def main(args) -> None:
@@ -737,13 +780,31 @@ def main(args) -> None:
             logger.info(f"{remote} (remote): {len(res['masks_remote'])} mask(s) declared "
                         f"({all_band(res['masks_remote'])} all-band, applied as time cuts)")
             logger.info(f"{local} rr {remote}: {len(masks)} mask(s) applied (both sites' entries joined)")
-    tf = process_station(
-        local_h5, local, remote_h5, remote,
-        out_dir=survey.workspace / "tf", band_scheme=scheme,
-        start=args.start, end=args.end, tag=stem, tweaks=res["tweaks"] or None,
-        time_masks=masks or None,
-        **({"output_channels": res["output_channels"]} if res["output_channels"] else {}),
-    )
+    extras: dict = {}
+    if res["engine"] == "mantle":
+        # the second engine: the same archives and window, MANTLE's cascade, the EDI on the same
+        # band grid; imported here so an aurora run needs no MANTLE install
+        from mtproc import engine_mantle
+
+        site_cfg = survey.site(local)
+        tf, extras = engine_mantle.process_pair(
+            local_h5, local, remote_h5, remote,
+            survey_name=survey.name, latitude=site_cfg.latitude, longitude=site_cfg.longitude,
+            elevation=site_cfg.elevation if site_cfg.elevation is not None else 0.0,
+            out_dir=survey.workspace / "tf", stem=stem, scheme=scheme, start=args.start, end=args.end,
+            options=engine_mantle.MantleOptions(whiten=res["mantle_whiten"]),
+        )
+        edi_path = survey.workspace / "tf" / f"{stem}.edi"
+        tf.write(fn=edi_path, file_type="edi")
+        logger.info(f"wrote {edi_path}")
+    else:
+        tf = process_station(
+            local_h5, local, remote_h5, remote,
+            out_dir=survey.workspace / "tf", band_scheme=scheme,
+            start=args.start, end=args.end, tag=stem, tweaks=res["tweaks"] or None,
+            time_masks=masks or None,
+            **({"output_channels": res["output_channels"]} if res["output_channels"] else {}),
+        )
 
     pmin, pmax = quadrant_window(res["sample_rate"])
     logger.info(
@@ -774,8 +835,8 @@ def main(args) -> None:
     out_png = survey.workspace / "tf" / f"{stem}_vs_lemimt.png"
     plot_comparison(
         tf, baseline=baseline,
-        title=f"{local} RR {remote} — aurora vs lemimt ({res['window']})",
-        out_png=out_png,
+        title=f"{local} RR {remote} — {res['engine']} vs lemimt ({res['window']})",
+        out_png=out_png, main_label=res["engine"],
     )
     logger.info(f"wrote {out_png}")
     print(f"comparison figure: {out_png}")
@@ -783,6 +844,7 @@ def main(args) -> None:
     finished = dt.datetime.now().astimezone()
     edi_path = survey.workspace / "tf" / f"{stem}.edi"
     sidecar = build_sidecar(res, args, started, finished, edi_path, out_png, q, flipped)
+    sidecar.update(extras)  # the mantle engine's keys; an aurora run adds none
     sidecar_path = edi_path.with_suffix(".json")
     write_sidecar(sidecar_path, sidecar)
     logger.info(f"wrote {sidecar_path}")
