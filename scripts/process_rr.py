@@ -66,6 +66,11 @@ fine-grid EDI (`<stem>_fine.edi`) and its report JSON
 sidecar without `engine` is an aurora run. The aurora estimator flags and
 masks.yaml entries are refused with it (`--no-masks` runs without them).
 `--mantle-whiten diff` first-differences every channel before the cascade.
+MANTLE holds the whole window in memory and refuses one longer than
+`--mantle-max-hours` (24 h by default); a limit above 24 h logs the peak
+memory the window is expected to need, about 1.35 GB per hour of window at
+1000 Hz with six channels. The sidecar records the limit as
+`engine_config.options.max_hours`.
 
 Outputs: <workspace>/mth5/<site>.h5, <workspace>/tf/<stem>.edi,
 <workspace>/tf/<stem>_vs_lemimt.png and <workspace>/tf/<stem>.json, where
@@ -87,7 +92,7 @@ Usage:
         [--taper {boxcar,hamming,hann,dpss}] [--overlap PCT] [--no-prewhiten]
         [--min-windows N] [--max-iterations N] [--redescending-iterations N]
         [--r0 X] [--u0 X] [--tolerance X]
-        [--engine {aurora,mantle}] [--mantle-whiten {none,diff}]
+        [--engine {aurora,mantle}] [--mantle-whiten {none,diff}] [--mantle-max-hours H]
 
 @author: ben kay (ben@auscope.org.au)
 
@@ -121,6 +126,7 @@ from crust.survey import Survey
 MAX_RUN_FILES = 34  # 34 x 90 min = 51 h per run
 ENGINES = ("aurora", "mantle")
 MANTLE_WHITEN = ("none", "diff")  # crust.engine_mantle.WHITEN, spelt here so the parser builds without MANTLE
+MANTLE_MAX_HOURS = 24.0  # crust.engine_mantle.MAX_HOURS, likewise
 # the band-scheme keys this CLI can override; anything else in the survey's
 # `processing:` block (window, factor, notch_fraction) is passed through
 BAND_KEYS = ("min_period", "max_period", "periods_per_decade", "notch_frequencies")
@@ -178,6 +184,10 @@ def build_parser() -> argparse.ArgumentParser:
     eng.add_argument("--mantle-whiten", choices=MANTLE_WHITEN, default="none", metavar="KIND",
                      help="mantle only: 'diff' first-differences every channel before the cascade (cancels in Z, "
                           "removes red-spectrum leakage); in use: none")
+    eng.add_argument("--mantle-max-hours", type=float, default=MANTLE_MAX_HOURS, metavar="H",
+                     help="mantle only: the longest window accepted, in hours (in use: 24); MANTLE holds the "
+                          "window in memory, about 1.35 GB per hour at 1000 Hz, and a limit above 24 logs the "
+                          "window's expected peak")
     return p
 
 
@@ -422,6 +432,9 @@ def resolve(args, started) -> dict:
         if masks_local or masks_remote:
             raise SystemExit(f"--engine mantle applies no masks.yaml entries yet ({args.local} {len(masks_local)}, "
                              f"{args.remote} {len(masks_remote)} declared): run it with --no-masks")
+    max_hours = float(getattr(args, "mantle_max_hours", MANTLE_MAX_HOURS))
+    if not max_hours > 0.0:
+        raise SystemExit(f"--mantle-max-hours takes a positive number of hours; given {max_hours:g}")
 
     return {
         "survey": survey,
@@ -462,6 +475,7 @@ def resolve(args, started) -> dict:
         "mask_origins": sorted(origins) if origins is not None else None,
         "engine": engine,
         "mantle_whiten": getattr(args, "mantle_whiten", "none"),
+        "mantle_max_hours": max_hours,
     }
 
 
@@ -740,6 +754,7 @@ def print_resolution(res: dict) -> None:
         print("tweaks: none")
     if res["engine"] == "mantle":
         print(f"mantle.whiten: {res['mantle_whiten']}")
+        print(f"mantle.max_hours: {res['mantle_max_hours']:g}")
 
 
 def main(args) -> None:
@@ -823,7 +838,7 @@ def main(args) -> None:
             survey_name=survey.name, latitude=site_cfg.latitude, longitude=site_cfg.longitude,
             elevation=site_cfg.elevation if site_cfg.elevation is not None else 0.0,
             out_dir=survey.workspace / "tf", stem=stem, scheme=scheme, start=args.start, end=args.end,
-            options=engine_mantle.MantleOptions(whiten=res["mantle_whiten"]),
+            options=engine_mantle.MantleOptions(whiten=res["mantle_whiten"], max_hours=res["mantle_max_hours"]),
         )
         edi_path = survey.workspace / "tf" / f"{stem}.edi"
         tf.write(fn=edi_path, file_type="edi")
