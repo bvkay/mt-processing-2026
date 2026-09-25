@@ -37,16 +37,23 @@ when that pair is shown again.
 The band is drawn on its own level's grid (`band_view`): one estimate per
 base chunk at the levels whose windows fit it, one per m base chunks at a
 deeper level (`level_multiples`), none where one such chunk is longer than
-the window. The time panel shows log10 |Z|, phase, coherence and log10 |H|
-and |E| against time, with a bar over each chunk of several base chunks;
-the polar plane shows (log10 |Z|, phase) per mode. A chunk is filled when
-no mask applying to the band touches it, lighter when a mask takes some of
-its kept windows and hollow when one takes them all (`masked_chunks`).
+the window. The time panel shows log10 |Z|, phase (each mode's angle),
+coherence and log10 |H| and |E| against time, with a bar over each chunk of
+several base chunks; the polar plane shows (log10 |Z|, phase) per mode,
+the yx phase plus 180 deg, wrapped to (-180, 180]
+(`crust.crosspower.mode_phase`, the convention of scripts/cluster_masks.py),
+so the Earth's phases of both modes lie in 0-90 deg and a near-field
+source's yx phases near 0 deg, clear of the +/-180 deg edges. A chunk is
+filled when no mask applying to the band touches it, lighter when a mask
+takes some of its kept windows and hollow when one takes them all
+(`masked_chunks`).
 
-A left-drag selects chunks on the level it was made on. "Mask selected"
-adds one mask per run of selected chunks: all bands from the time panel
-with "all bands" ticked (offered at a band shown per base chunk), else the
-band's [pmin, pmax]. "Unmask selected" cuts the chunks out of the masks
+A left-drag selects chunks on the level it was made on, by the spots
+drawn inside the rubber band (on the yx polar panel, by the phase plus
+180 deg drawn there). "Mask selected" adds one mask per run of selected
+chunks: all bands from the time panel with "all bands" ticked (offered
+at a band shown per base chunk), else the band's [pmin, pmax]. "Unmask
+selected" cuts the chunks out of the masks
 applying to the band, the all-band ones only at a level shown per base
 chunk. Masks are declared per site, whatever the remote; Save masks writes
 the site's block of masks.yaml and a change of site reloads it. A new mask
@@ -81,6 +88,7 @@ from PySide6.QtWidgets import (
 from crust.bands import build_band_scheme
 from crust.crosspower import (
     BIN_S, CHUNKS_S, band_table, band_view, bin_windows, compute_windows, level_multiples, masked_chunks,
+    mode_phase,
 )
 from crust.masks import applies, iso, load_masks, normalise, save_masks, utc
 from crust.survey import distance_km
@@ -93,6 +101,7 @@ from crust.gui.window_bar import WindowBar, overlap
 from crust.gui.windows import window_label, window_list
 
 XY_COLOUR, YX_COLOUR = theme.B_COLOUR, theme.E_COLOUR  # as mtpy draws xy and yx on View EDIs
+POLAR_PHASE = {"xy": "phase (deg)", "yx": "phase yx + 180 (deg)"}  # the polar panels' left labels (`mode_phase`)
 WORKERS = 4
 DEFAULT_PERIOD_S = 0.05
 SIZE, SELECTED_SIZE = 8, 12
@@ -384,7 +393,7 @@ class CrossPowerTab(QWidget):
             plot.setXLink(self.time_plots[0])
         share_x_axis(self.time_plots)
         self.time_plots[-1].setLabel("bottom", "UTC (a spot at its chunk's centre; a bar over a chunk of several)")
-        self.polar_plots = {mode: self._plot("phase (deg)", panel=f"polar {mode}") for mode in ("xy", "yx")}
+        self.polar_plots = {mode: self._plot(POLAR_PHASE[mode], panel=f"polar {mode}") for mode in ("xy", "yx")}
         for mode, plot in self.polar_plots.items():
             plot.setLabel("bottom", f"log10 |Z{mode}|")
         left, right = self._column(self.time_plots), self._column(list(self.polar_plots.values()))
@@ -1119,8 +1128,8 @@ class CrossPowerTab(QWidget):
                                   (t, np.degrees(np.angle(zyx)), YX_COLOUR, None)]),
             (self.time_plots[2], [(t, v["coh_xy"], XY_COLOUR, None), (t, v["coh_yx"], YX_COLOUR, None)]),
             (self.time_plots[3], [(t, lh, theme.B_COLOUR, "|H|"), (t, le, theme.E_COLOUR, "|E|")]),
-            (self.polar_plots["xy"], [(lxy, np.degrees(np.angle(zxy)), XY_COLOUR, None)]),
-            (self.polar_plots["yx"], [(lyx, np.degrees(np.angle(zyx)), YX_COLOUR, None)]),
+            (self.polar_plots["xy"], [(lxy, mode_phase(zxy, "xy"), XY_COLOUR, None)]),
+            (self.polar_plots["yx"], [(lyx, mode_phase(zyx, "yx"), YX_COLOUR, None)]),
         ]
         for plot, series in rows:
             if any(name for *_rest, name in series):
