@@ -49,10 +49,21 @@ Usage:
     without `engine` it gives the crust.taper line and no engine line;
 
 (6) `process_rr.py --engine mantle --dry-run` does not exit 0 and print
-    `engine: mantle` and `mantle.whiten: none` with the same archives, stem
-    and band block as the aurora dry run, a plain dry run does not print
-    `engine: aurora`, or `--engine mantle --taper hann` does not exit
-    non-zero naming the flag.
+    `engine: mantle`, `mantle.whiten: none` and `mantle.max_hours: 24` with
+    the same archives, stem and band block as the aurora dry run, with
+    `--mantle-max-hours 72` does not print `mantle.max_hours: 72`, a plain
+    dry run does not print `engine: aurora`, or `--engine mantle --taper
+    hann` or `--mantle-max-hours 0` does not exit non-zero naming the flag;
+
+(7) the window limit is wrong: `check_window` accepts a 42 h window at the
+    default (it must raise "the window is 42.0 h; ... at most 24 h apart"),
+    refuses it with a limit of 72 h, refuses 80 h under that limit without
+    naming 72 h, logs no warning line naming about 57 GB (1.35 GB per hour)
+    for 42 h under 72 h, or logs one under the default; `MantleOptions`
+    accepts max_hours 0 or its `to_dict` lacks max_hours; or `process_pair`
+    on a stub reader whose archives share 42 h does not refuse before
+    reading with the default options, or does not go on to read with
+    `MantleOptions(max_hours=72)`.
 
 Proven red (2026-09-25) by returning the arithmetic mean of the per-bin
 variances instead of the quadratic form in `band_pool` (criterion 3) and by
@@ -292,14 +303,104 @@ def test_engine_flag_on_the_command_line() -> None:
     code, mantle, _ = _dry_run("--engine", "mantle")
     assert code == 0, code
     assert mantle["engine"] == "mantle" and mantle["mantle.whiten"] == "none", mantle
+    assert mantle["mantle.max_hours"] == "24", mantle.get("mantle.max_hours")
     for key in ("local_archive", "remote_archive", "min_period", "max_period", "periods_per_decade",
                 "notch_frequencies", "window", "output_channels"):
         assert mantle[key] == plain[key], (key, mantle[key], plain[key])
-    assert "mantle.whiten" not in plain
+    assert "mantle.whiten" not in plain and "mantle.max_hours" not in plain
+    code, longer, _ = _dry_run("--engine", "mantle", "--mantle-max-hours", "72")
+    assert code == 0 and longer["mantle.max_hours"] == "72", (code, longer.get("mantle.max_hours"))
     code, _, text = _dry_run("--engine", "mantle", "--taper", "hann")
     assert code != 0 and "taper" in text, text[-300:]
+    code, _, text = _dry_run("--engine", "mantle", "--mantle-max-hours", "0")
+    assert code != 0 and "--mantle-max-hours" in text, text[-300:]
     print(f"  dry runs: aurora and mantle resolve the same archives ({Path(plain['local_archive']).name}, "
-          f"{Path(plain['remote_archive']).name}); --taper with mantle refused")
+          f"{Path(plain['remote_archive']).name}); mantle.max_hours 24, 72 with the flag; --taper with mantle "
+          f"and --mantle-max-hours 0 refused")
+
+
+class _Reached(Exception):
+    """Raised by the stub reader once `process_pair` goes on to read the archives."""
+
+
+class _StubReader:
+    """An io.mth5_reader stand-in: both archives span `hours` from epoch 0; reading raises `_Reached`."""
+
+    def __init__(self, hours: float):
+        self.hours = hours
+
+    def open_station(self, path):
+        class _Station:
+            span = (0.0, self.hours * 3600.0)
+        return _Station()
+
+    @staticmethod
+    def to_epoch(t):
+        return float(t)
+
+    @staticmethod
+    def assemble_rr(*args):
+        raise _Reached()
+
+
+def test_window_limit() -> None:
+    from loguru import logger
+
+    warnings = []
+    sink = logger.add(lambda message: warnings.append(str(message)), level="WARNING", format="{message}")
+    try:
+        engine_mantle.check_window(23.5)
+        assert not warnings, warnings
+        try:
+            engine_mantle.check_window(42.0)
+        except ValueError as exc:
+            refused = str(exc)
+        else:
+            raise AssertionError("check_window accepted 42 h at the default limit")
+        assert refused.startswith("the window is 42.0 h;") and "at most 24 h apart" in refused, refused
+        engine_mantle.check_window(42.0, 72.0)
+        assert len(warnings) == 1 and "57 GB" in warnings[0] and "72 h" in warnings[0], warnings
+        try:
+            engine_mantle.check_window(80.0, 72.0)
+        except ValueError as exc:
+            assert "at most 72 h apart" in str(exc), str(exc)
+        else:
+            raise AssertionError("check_window accepted 80 h under a 72 h limit")
+    finally:
+        logger.remove(sink)
+    try:
+        engine_mantle.MantleOptions(max_hours=0.0)
+    except ValueError as exc:
+        assert "max_hours" in str(exc), str(exc)
+    else:
+        raise AssertionError("MantleOptions accepted max_hours 0")
+    assert engine_mantle.MantleOptions(max_hours=72.0).to_dict()["max_hours"] == 72.0
+
+    # process_pair applies the option before it reads a sample
+    original = engine_mantle._mantle.module
+    engine_mantle._mantle.module = lambda dotted: _StubReader(42.0) if dotted == "io.mth5_reader" else None
+    kwargs = dict(survey_name="synth", latitude=-30.0, longitude=139.0, elevation=0.0, stem="stub",
+                  scheme={"band_edges": {}})
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            try:
+                engine_mantle.process_pair("a.h5", "S01", "b.h5", "R01", out_dir=tmp, **kwargs)
+            except ValueError as exc:
+                default_refusal = str(exc)
+            else:
+                raise AssertionError("process_pair read a 42 h window at the default limit")
+            try:
+                engine_mantle.process_pair("a.h5", "S01", "b.h5", "R01", out_dir=tmp,
+                                           options=engine_mantle.MantleOptions(max_hours=72.0), **kwargs)
+            except _Reached:
+                pass
+            else:
+                raise AssertionError("process_pair with max_hours 72 did not go on to read the archives")
+    finally:
+        engine_mantle._mantle.module = original
+    assert "at most 24 h apart" in default_refusal, default_refusal
+    print(f"  check_window: 42 h refused at 24 h ({refused!r}), accepted at 72 h with {warnings[0]!r}; "
+          f"process_pair refuses before reading at the default and reads with max_hours 72")
 
 
 if __name__ == "__main__":

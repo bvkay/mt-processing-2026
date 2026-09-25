@@ -23,6 +23,13 @@ depth the window supports. The keys `sidecar_extras` adds to the run's
 sidecar are `engine`, `engine_version`, `engine_config`, `mantle_report`
 and `mantle_fine_edi`.
 
+The cascade holds the whole window in memory, so `check_window` refuses a
+window longer than `MantleOptions.max_hours` (MAX_HOURS, 24 h, by default).
+Its peak is about GB_PER_HOUR (1.35) GB per hour of window at 1000 Hz with
+six channels, as measured on a 23.5 h window (31.8 GB); a limit above 24 h
+logs one warning line with the peak `expected_peak_gb` gives for the
+window.
+
 @author: ben kay (ben@auscope.org.au)
 
 :license: MIT
@@ -44,7 +51,8 @@ from . import _mantle
 ENGINE = "mantle"
 WHITEN = ("none", "diff")
 MAX_LEVELS = 8
-MAX_HOURS = 24.0  # the cascade holds the whole window in memory: 1000 Hz x 6 channels x 24 h is 4 GB of float64
+MAX_HOURS = 24.0  # the default window limit (MantleOptions.max_hours, process_rr.py --mantle-max-hours)
+GB_PER_HOUR = 1.35  # peak memory per hour of window at 1000 Hz with six channels (31.8 GB at 23.5 h)
 
 
 @dataclass(frozen=True)
@@ -58,7 +66,8 @@ class MantleOptions:
     prewhitening off. `n_levels` None takes `levels_for` on the window.
     `whiten` "diff" applies one first difference to every channel before
     `run_site`, which cancels in Z and removes the leakage of a red spectrum
-    from the multitaper estimate.
+    from the multitaper estimate. `max_hours` is the longest window
+    `check_window` accepts.
 
     Attributes:
         nperseg (int): Multitaper segment length in samples.
@@ -73,6 +82,7 @@ class MantleOptions:
         snr_gate (bool): MANTLE's SNR-availability gate.
         min_segments (int): Fewest independent segments a band needs.
         whiten (str): "none" or "diff".
+        max_hours (float): Longest window accepted, in hours.
     """
 
     nperseg: int = 4096
@@ -87,10 +97,13 @@ class MantleOptions:
     snr_gate: bool = True
     min_segments: int = 3
     whiten: str = "none"
+    max_hours: float = MAX_HOURS
 
     def __post_init__(self) -> None:
         if self.whiten not in WHITEN:
             raise ValueError(f"whiten {self.whiten!r} is not one of {WHITEN}")
+        if not float(self.max_hours) > 0.0:
+            raise ValueError(f"max_hours {self.max_hours!r} is not a positive number of hours")
 
     def to_dict(self) -> dict:
         """The options as a JSON-ready dict."""
@@ -119,6 +132,30 @@ def levels_for(n_samples: int, nperseg: int = 4096, decim: int = 4, min_segments
         return 1
     k_max = int(math.floor(math.log(n_samples / (min_segments * nperseg)) / math.log(decim)))
     return max(1, min(max_levels, k_max + 1))
+
+
+def expected_peak_gb(hours: float) -> float:
+    """Return the peak memory of a MANTLE run in GB: GB_PER_HOUR per hour of window (1000 Hz, six channels)."""
+    return GB_PER_HOUR * float(hours)
+
+
+def check_window(hours: float, max_hours: float = MAX_HOURS) -> None:
+    """Refuse a window longer than `max_hours`; log the expected peak when the limit is above MAX_HOURS.
+
+    Args:
+        hours (float): Length of the window in hours.
+        max_hours (float): Longest window accepted, in hours.
+
+    Raises:
+        ValueError: If `hours` exceeds `max_hours`.
+    """
+    if hours > max_hours:
+        raise ValueError(f"the window is {hours:.1f} h; MANTLE holds the whole window in memory, so give "
+                         f"process_rr.py a start and end at most {max_hours:g} h apart")
+    if max_hours > MAX_HOURS:
+        logger.warning(f"{ENGINE}: window limit {max_hours:g} h, above the default {MAX_HOURS:g} h: this "
+                       f"{hours:.1f} h window needs about {expected_peak_gb(hours):.0f} GB at its peak "
+                       f"({GB_PER_HOUR:g} GB per hour of window at 1000 Hz with six channels)")
 
 
 def band_list(scheme: dict) -> list[tuple[float, float]]:
@@ -324,7 +361,8 @@ def process_pair(local_h5, station: str, remote_h5, remote: str, *, survey_name:
         `sidecar_extras`.
 
     Raises:
-        ValueError: If the window exceeds `MAX_HOURS` or leaves no overlap.
+        ValueError: If the window exceeds `options.max_hours` (`check_window`)
+            or leaves no overlap.
     """
     reader = _mantle.module("io.mth5_reader")
     run = _mantle.module("processing.run")
@@ -335,9 +373,7 @@ def process_pair(local_h5, station: str, remote_h5, remote: str, *, survey_name:
 
     t0, t1 = _window_of(reader, local_h5, remote_h5, start, end)
     hours = (t1 - t0) / 3600.0
-    if hours > MAX_HOURS:
-        raise ValueError(f"the window is {hours:.1f} h; MANTLE holds the whole window in memory, so give "
-                         f"process_rr.py a start and end at most {MAX_HOURS:g} h apart")
+    check_window(hours, opts.max_hours)
     started = time.perf_counter()
     data, local, remote_w = reader.assemble_rr(local_h5, remote_h5, t0, t1)
     fs = float(local.fs)
