@@ -10,6 +10,9 @@ B02:
     harmonics: 9
     q: 30.0
     passes: 2
+    extra:
+    - 7.2
+    - 12.05
 C01:
 - mains:
     f0: 50.0
@@ -312,7 +315,37 @@ B28:
     channels:
     - hx
     - hy
+- notch:
+    f0: 16.67
+    harmonics: 1
+    q: 80.0
+    passes: 1
+    extra:
+    - 10.04
+    - 37.5
+    - 62.51
+    - 83.33
+    - 110.06
+    - 183.35
+    channels:
+    - hy
+- notch:
+    f0: 60.0
+    harmonics: 1
+    q: 80.0
+    passes: 1
+    extra:
+    - 82.0
+    channels:
+    - hx
+    - ex
+    - ey
 B26:
+- mains:
+    f0: 50.0
+    harmonics: 9
+    block_s: 1.0
+    step_fraction: 0.3
 - notch:
     f0: 50.0
     harmonics: 9
@@ -328,6 +361,11 @@ B25:
     passes: 2
     extra:
     - 82.0
+- notch:
+    f0: 60.0
+    harmonics: 1
+    q: 100.0
+    passes: 2
 B24:
 - mains:
     f0: 50.0
@@ -340,14 +378,32 @@ B24:
     q: 30.0
     passes: 2
     extra:
+    - 9.948
     - 60.0
     - 82.0
     - 99.15
 - notch:
-    f0: 10.0
-    harmonics: 20
-    q: 60.0
-    passes: 1
+    f0: 69.89
+    harmonics: 1
+    q: 200.0
+    passes: 2
+    extra:
+    - 90.04
+    - 109.94
+    - 119.9
+    - 129.83
+    - 169.87
+    - 179.75
+    - 190.02
+    - 209.92
+    - 229.85
+    - 239.75
+    - 279.71
+    - 289.99
+    - 309.91
+    - 359.65
+    - 389.99
+    - 409.93
 C17:
 - notch:
     f0: 50.0
@@ -498,4 +554,194 @@ R04:
     f0: 50.0
     harmonics: 9
     q: 50.0
+    passes: 2
+A30:
+- mains:
+    f0: 50.0
+    harmonics: 9
+    block_s: 1.0
+    step_fraction: 0.3
+- notch:
+    f0: 50.0
+    harmonics: 9
+    q: 30.0
+    passes: 2
+    extra:
+    - 25.5
+    - 74.5
+B09:
+- mains:
+    f0: 50.0
+    harmonics: 9
+    block_s: 1.0
+    step_fraction: 0.3
+- notch:
+    f0: 50.0
+    harmonics: 9
+    q: 30.0
+    passes: 2
+B06:
+- mains:
+    f0: 50.0
+    harmonics: 9
+    block_s: 1.0
+    step_fraction: 0.3
+- notch:
+    f0: 50.0
+    harmonics: 9
+    q: 30.0
+    passes: 2
+B07:
+- mains:
+    f0: 50.0
+    harmonics: 9
+    block_s: 1.0
+    step_fraction: 0.3
+- notch:
+    f0: 50.0
+    harmonics: 9
+    q: 30.0
+    passes: 2
+B08:
+- mains:
+    f0: 50.0
+    harmonics: 9
+    block_s: 1.0
+    step_fraction: 0.3
+- notch:
+    f0: 50.0
+    harmonics: 9
+    q: 30.0
+    passes: 2
+B10:
+- mains:
+    f0: 50.0
+    harmonics: 9
+    block_s: 1.0
+    step_fraction: 0.3
+- notch:
+    f0: 50.0
+    harmonics: 9
+    q: 30.0
+    passes: 2
+B11:
+- mains:
+    f0: 50.0
+    harmonics: 9
+    block_s: 1.0
+    step_fraction: 0.3
+- notch:
+    f0: 50.0
+    harmonics: 9
+    q: 30.0
+    passes: 2
+B13:
+- mains:
+    f0: 50.0
+    harmonics: 9
+    block_s: 1.0
+    step_fraction: 0.3
+- notch:
+    f0: 50.0
+    harmonics: 9
+    q: 30.0
+    passes: 2
+B14:
+- mains:
+    f0: 50.0
+    harmonics: 9
+    block_s: 1.0
+    step_fraction: 0.3
+- notch:
+    f0: 50.0
+    harmonics: 9
+    q: 30.0
+    passes: 2
+B15:
+- mains:
+    f0: 50.0
+    harmonics: 9
+    block_s: 1.0
+    step_fraction: 0.3
+- notch:
+    f0: 50.0
+    harmonics: 9
+    q: 30.0
+    passes: 2
+B16:
+- mains:
+    f0: 50.0
+    harmonics: 9
+    block_s: 1.0
+    step_fraction: 0.3
+- notch:
+    f0: 50.0
+    harmonics: 9
+    q: 30.0
+    passes: 2
+B17:
+- mains:
+    f0: 50.0
+    harmonics: 9
+    block_s: 1.0
+    step_fraction: 0.3
+- notch:
+    f0: 50.0
+    harmonics: 9
+    q: 30.0
+    passes: 2
+B18:
+- mains:
+    f0: 50.0
+    harmonics: 9
+    block_s: 1.0
+    step_fraction: 0.3
+- notch:
+    f0: 50.0
+    harmonics: 9
+    q: 30.0
+    passes: 2
+B19:
+- mains:
+    f0: 50.0
+    harmonics: 9
+    block_s: 1.0
+    step_fraction: 0.3
+- notch:
+    f0: 50.0
+    harmonics: 9
+    q: 30.0
+    passes: 2
+B20:
+- mains:
+    f0: 50.0
+    harmonics: 9
+    block_s: 1.0
+    step_fraction: 0.3
+- notch:
+    f0: 50.0
+    harmonics: 9
+    q: 30.0
+    passes: 2
+B21:
+- mains:
+    f0: 50.0
+    harmonics: 9
+    block_s: 1.0
+    step_fraction: 0.3
+- notch:
+    f0: 50.0
+    harmonics: 9
+    q: 30.0
+    passes: 2
+B27:
+- mains:
+    f0: 50.0
+    harmonics: 9
+    block_s: 1.0
+    step_fraction: 0.3
+- notch:
+    f0: 50.0
+    harmonics: 9
+    q: 30.0
     passes: 2
