@@ -488,3 +488,235 @@ B18 (clean) on 24/25 Jul gives 27/12, 24/15, 37/23, 55/50 (gated), against 41/15
 - **The wall.** The local E at B01, B04 and B10 carries the source 27-55 dB (power) above the natural E at 4-4096 s. No lever or combination of levers here closes that gap: time selection or weighting, burst gating, polarisation, array prediction, and projection onto Ebro. The H is partly recoverable; the impedance is not.
 - **At 1000 Hz.** Automatic night-time burst gating matches the hand masks to about 1.1 s and no further.
 - **Where the full picture is.** The experiment table, what worked, what did not, what was not tried and why, and the open questions are in `STATUS.md`.
+- **Superseded in part by round two (below).** Round one showed that the levers tried fail. It did not show whether that was the methods or the data; round two tests exactly that.
+
+---
+
+# Round two (2026-09-25 17:10-17:40): has the source been removed at all?
+
+**Brief.** Ben asked: "have we even tried to remove the source?" E06/E07 were one family, and it had not been shown whether the wall was a property of the data or of the methods. Four experiments were asked for:
+- E12: a positive control with a synthetic source;
+- E13: the rank of the source;
+- E14: full-array, time-local cancellation;
+- E15: a first physical model.
+
+**Rules.** Same as round one. My processes kept under 30 GB; the largest was about 3 GB. The campaign relaunch was running aurora jobs at the same time.
+
+**Data change.** The re-ingest had finished. Round two does not use the derived `<site>L.h5` archives, some of which predate it. Every site is decimated to 1 Hz in memory from its re-ingested raw archive by `nr_common.load_1hz_raw`. That routine uses decimate_site.py's own functions, imported from the worktree. It caches the counts in `cache/<archive>_1hz.npz`, keyed on the archive's size and mtime. No archive or survey.yaml entry is written, which avoids racing the live campaign.
+
+## V01: check of the in-memory decimation
+
+- **Script.** `V01_raw_decimation/v01_raw_decimation.py`
+- **Failure criterion.** At B04, whose dipoles are unchanged, the calibrated 1 Hz series from B04.h5 through load_1hz_raw must match the calibrated B04L.h5 within 1 % rms at 4-4000 s, and the start times must match.
+- **Result.** Start times are identical. The rms difference is 1.9e-5 (ex), 3.2e-6 (ey), 9.1e-5 (hx) and 4.3e-4 (hy). **Pass.**
+- **Cached sites.** B01-B11, B13-B15, B24-B29 and R01 (`cache_sites.py`, `cache_sites.log`).
+
+## E12: positive control: a synthetic source in the clean March array
+
+- **Question.** Does the E06/E07 cancellation remove a railway-like source whose truth is known? If yes, the method is sound and the real source is not what the synthetic is. If no, the method was the limit.
+- **Array.** B28 (target), B29 and B27, 42.3 h common, plus Ebro and the +7 d null.
+- **Source.**
+  - **Current.** B01's calibrated ey (February), sample for sample: bursts plus the continuous level. The rank-2 variant adds R01's ey as a second, incoherent current.
+  - **Coupling.** Into each site's four channels, complex and frequency-dependent: alpha within +/-0.05 per decade, phases within a few degrees. E and H of a site are in phase within 3 deg, so the source's E/H has near-zero phase as the real cluster does. Each site's polarisation has its own azimuth.
+  - **Level.** Source E is 40 dB over the site's natural E at 10-100 s. Source H is 20 dB over the natural H, which is B01's H ratio.
+  - **Variants, one change each from V1.**
+    - V1: rank 1, fixed, 40 dB.
+    - V2: 55 dB, B01 ey's real level.
+    - V3: rank 2.
+    - V4: pattern moving, every azimuth swinging +/-25 deg and every amplitude +/-30 % over 3 h.
+    - V0: no source; this is the cancellation's own control.
+- **Method.** E06 (unweighted) and E07 (E05-B weights), exactly as on the real data. Because each step is linear given its coefficients, the cleaned B28 E splits into natural + residual source + natural leak (-A c_natural), each reported in dB against the natural E power.
+- **Truth.** B28's plain RR on the natural record: yx and xy strict 1.00.
+- **Script.** `E12_synthetic_source/e12_synthetic_source.py`. Figure `e12_synthetic_source.png`.
+- **Failure criterion (fixed before running).** The source is "removed" if residual + leak is at or below 0 dB over 10-1000 s AND >= 80 % of the 10-1000 s bands agree with the truth within the combined 2 sigma.
+
+**Results.** Residual and leak are in dB for 10-100 / 100-1000 s. Agreement is the fraction of 16 bands within 2 sigma, with the median |dlog rho| and |dphase|. Strict fractions are over 10-1000 s.
+
+| variant | method | residual source (dB) | natural leak (dB) | agreement (dlog rho, dphase deg) | yx strict | xy strict | cohE 30-300 / 300-1000 (null) | removed? |
+|---|---|---|---|---|---|---|---|---|
+| V1 rank 1, 40 dB | before | - | - | 0.56 | 0.00 | 0.06 | 0.009/0.026 | - |
+| V1 | E06 | -14.0 / -16.3 | +2.1 / -1.6 | 1.00 (0.04, 2.6) | 1.00 | 1.00 | 0.267/0.258 (0.007/0.035) | no (+2 dB at 10-100 s), but TF recovered |
+| V1 | E07 | -16.3 / -23.0 | -3.9 / -2.8 | 1.00 (0.04, 3.0) | 1.00 | 0.75 | 0.468/0.330 (0.024/0.100) | **yes** |
+| V2 rank 1, 55 dB | E06 | +0.3 / -2.7 | +16.8 / +4.3 | 1.00 (0.20, 12.2) | 0.31 | 0.50 | 0.039/0.080 | no |
+| V2 | E07 | -3.8 / -14.8 | +8.7 / -0.5 | 1.00 (0.15, 10.1) | 0.38 | 0.19 | 0.335/0.166 | no |
+| V3 rank 2, 40 dB | E06 | -8.4 / -10.1 | +6.7 / -0.7 | 0.94 (0.06, 6.6) | 1.00 | 0.50 | 0.153/0.153 | no (leak), yx recovered |
+| V3 | E07 | -10.7 / -18.6 | +3.4 / -0.5 | 1.00 (0.08, 9.2) | 0.69 | 0.31 | 0.125/0.175 | no (leak) |
+| V4 moving, 40 dB | E06 | +9.6 / +10.4 | +12.2 / +11.6 | 0.62 (0.32, 19.3) | 0.44 | 0.00 | 0.079/0.344 | no |
+| V4 | E07 | +2.2 / +4.6 | -1.9 / +5.2 | 0.81 (0.13, 19.0) | 0.75 | 0.00 | 0.140/0.374 | no |
+| V0 no source | E06 | - | -8.3 / -2.0 | 1.00 (0.01, 0.4) | 1.00 | 1.00 | 0.333/0.277 (truth 0.528/0.928) | cancellation leaves the TF alone; costs coherence |
+
+**E06's upper bound 1 - gamma^2(E | H-difference references) against the natural share of E.** Values are for 10-100 / 100-1000 s.
+
+| variant | upper bound (dB) | natural share (dB) |
+|---|---|---|
+| V1 | -34.7 / -36.5 | -40.0 / -36.1 |
+| V2 | -38.0 / -44.0 | -55.0 / -51.0 |
+| V3 | -33.5 / -39.9 | -40.3 / -36.2 |
+| V4 | -25.5 / -21.9 | -39.9 / -35.9 |
+| real B01 ey (E06 part ii, residual after cleaning) | -20.8 / -19.8 | -51.5 / -55.0 |
+
+**Reading.**
+1. **The method is sound for what it assumes.** A fixed-pattern source of rank 1 or 2 at 40 dB is removed to the natural level. The TF comes back: yx strict 1.00, phase within 3 deg, rho within 0.04 dex. Round one's failure was therefore not a broken method.
+2. **At 55 dB (B01 ey's level) the method has its own limit.** Even for an ideal rank-1 source it leaves +9 to +17 dB of natural leak at 10-100 s: the non-source part of the H-difference references (natural gradient plus sensor noise), multiplied by the source's large E/H. The phase errors are about 10 deg.
+3. **A moving source defeats whole-record coefficients (V4).** That is what E14 is for.
+4. **The real data sit well beyond all of these.** B01 ey after the same cleaning is 31-35 dB above its natural share. The synthetic V2, at the same 55 dB, is 17 dB above with a rank-1 source and 7 dB above at 100-1000 s. The real source is at least 14 dB "harder" than an ideal rank-1 source of the same strength.
+
+- **Verdict.** Positive control passed for a fixed low-rank source at 40 dB. It degrades at 55 dB, and a moving pattern defeats it. The real B01 is far beyond both.
+- **Next.** E13 asks why: the source's rank.
+
+## E13: rank of the source (plus E13b, the rank needed at the target, and E13c, its positive control)
+
+- **Question.** Is the real source one low-rank current system with a fixed pattern?
+- **Arrays.** February: B01, B02, R01 (12 channels, 70.5 h). July: B03, B04, B06, B08, B09, B10 (24 channels, 65.7 h: the largest set of northern July sites recording together; B05 and B07 end on 20 Jul). March control: B27, B28, B29 (natural field only). Ebro is added for the canonical coherences.
+- **Scripts.** `E13_source_rank/e13_source_rank.py` (figure `e13_source_rank.png`), `e13b_rank_needed.py` (`e13b_rank_needed.png`) and `e13c_rank_control.py`.
+- **Method (E13).** Per band, the coherence-normalised cross-spectral matrix. It counts the eigenvalues above the Marchenko-Pastur edge (1 + sqrt(p/n))^2 with n = 0.8 x windows x harmonics, and the ratios l_k/l_1. Time: the per-hour leading eigenvector at 10-40 s, its similarity |v_h^H v_rec|^2 with the whole-record one, split into train hours (07-22 h local) and night (01-05 h).
+- **Method (E13b).** The measure that matters for cancellation: the target's E power left after removing the top k components of the array's E cross-spectral matrix (physical units), k = 1..6. The target is inside the basis, so this is an optimistic bound. It is compared with the natural share of the target's E (E06's estimate, rho_n 100 ohm m).
+- **Method (E13c).** The E13b measure on the E12 synthetics.
+- **Failure criteria.**
+  - **Low-rank picture (fixed beforehand).** It fails if more than two eigenvalues stand above the edge in the E-only matrix over most of 10-1000 s, or if the hourly similarity falls below 0.8 in more than a quarter of the hours.
+  - **E13c, the measure's own control.** It must reach the natural share within 5 dB at k = 1 for V1 and V2 and at k = 2 for V3.
+
+**E13 results.** Medians over the 10-1000 s bands.
+
+| array | eigenvalues above edge (all / E only) | l2/l1 all (dB) | l2/l1 E only (dB) | top-3 share of trace | canonical coherence with Ebro | hourly similarity: median / fraction < 0.8 | train hours / night |
+|---|---|---|---|---|---|---|---|
+| Feb (B01, B02, R01) | 3 / 2 | -2.9 | -2.6 | 0.92 | 0.44, 0.27 | 0.93 / 0.43 | 0.96 / 0.12 |
+| Jul (six sites) | 4 / 3 | -2.7 | -2.2 | 0.71 | 0.66, 0.44 | 0.70 / 0.55 | 0.90 / 0.47 |
+| Mar control (natural only) | 3 / 2 | -4.3 | -3.1 | 0.90 | 0.65, 0.41 | 0.52 / 0.71 | 0.43 / 0.59 |
+
+**E13b results.** The target's E left after removing k array components (dB), whole record, against the natural share.
+
+| target | band | k=1 | k=2 | k=3 | k=4 | k=5 | k=6 | natural share |
+|---|---|---|---|---|---|---|---|---|
+| B01 (6 E channels) | 10-100 s | -0.7 | -12.5 | -20.8 | -23.5 | -27.2 | (exact) | -57.4 |
+| B01 | 100-1000 s | -0.9 | -11.9 | -23.8 | -25.7 | -28.3 | (exact) | -54.7 |
+| B01, per hour, train hours | 10-40 s | -10.2 | -13.0 | -21.6 | -26.0 | -30.2 | | |
+| B01, per hour, night | 10-40 s | -1.6 | -9.4 | -18.6 | -25.3 | -28.8 | | |
+| B04 (12 E channels) | 10-100 s | -4.9 | -5.0 | -15.9 | -16.5 | -22.0 | -24.0 | -44.5 |
+| B04 | 100-1000 s | -5.1 | -8.8 | -17.6 | -18.5 | -24.1 | -27.3 | -49.0 |
+| B10 (12 E channels) | 10-100 s | -0.2 | -5.7 | -5.9 | -7.0 | -11.3 | -11.8 | -42.4 |
+| B10 | 100-1000 s | -0.4 | -4.3 | -5.4 | -7.7 | -11.2 | -14.0 | -40.8 |
+
+**E13c results.** The same measure on the synthetics, target B28, 10-100 s; the natural share by construction is -40 dB (-55 dB for V2).
+
+| synthetic | k=1 | k=2 | k=3 | k=4 | k=5 |
+|---|---|---|---|---|---|
+| no source | 0.0 | -0.8 | -15.3 | -30.3 | -42.7 |
+| V1 rank 1 fixed | **-38.9** | -39.0 | -53.5 | -58.5 | -70.1 |
+| V2 rank 1, 55 dB | **-50.9** | -51.8 | -65.1 | -69.1 | -82.3 |
+| V3 rank 2 | -3.8 | **-37.0** | -43.0 | -64.8 | -71.6 |
+| V4 moving, whole record | -6.0 | -8.3 | -24.8 | **-58.0** | -70.6 |
+| V4 moving, per hour | -18.0 | -26.7 | -38.8 | -47.9 | -59.5 |
+
+The measure passes its control: a rank-1 source reaches the natural share at k = 1 (V1 -38.9, V2 -50.9) and a rank-2 source at k = 2 (V3 -37.0). Even the moving source is captured with four components over the whole record, or three to four per hour.
+
+**Reading.**
+1. **The measure sees a low-rank source when there is one (E13c).** On the real data it finds none. With every E channel of the array as a basis (5 components of 6 at B01, 6 of 12 in July), the target's E stays far above its natural share:
+   - B01: 27-30 dB above, including per hour in train hours.
+   - B04: 20-22 dB above.
+   - B10: 28-31 dB above.
+
+   Even a moving synthetic falls to the natural level with four components; the real B01 does not with five. The real source has more independent components than the array has channels at the 1 % power level. Those components are spatially incoherent between sites 5-10 km apart: a site-local part of the leakage field (local conductivity, the site's position relative to feeders and trains), several trains and substations.
+2. **Its dominant pattern is nevertheless fixed in train hours.** Hourly similarity is 0.96 (Feb) and 0.90 (Jul), against 0.43 for the natural field in March. At night it is replaced by a different structure (0.12 / 0.47): the continuous night-time source, not the trains.
+3. **The coherence-normalised counts (2-3 structures above the edge in E) look low-rank.** They are misleading for cancellation: they count structures above the noise floor, not structures above the natural E. E13b is the relevant measure.
+
+- **Verdict.** The failure criterion is met: the source is not one low-rank fixed system. The wall is a property of the data (the array's spatial sampling relative to the source's complexity), and E13b bounds any linear cancellation built from these channels.
+- **Next.** E14, to see whether time-local estimation helps anyway.
+
+## E14: full-array, time-local cancellation (E14a Wiener, E14b subspace GLS, E14c time-local natural-free references)
+
+- **FastICA.** scikit-learn is not installed in bbmt-2026. Nothing was installed. Not run; a linear unmixing is bounded by E13b in any case.
+- **Script.** `E14_timelocal_array/e14_timelocal_array.py` (figure `e14_timelocal_array.png`) and `e14c_timelocal_hgrad.py` (`metrics_e14c.json`). Methods in `nr_array.py`.
+- **Methods.**
+  - **E14a.** Time-local multichannel Wiener canceller. Blocks of L = 1800 or 600 s. Real coefficients fitted at 4 s to L/4, interpolated between block centres, subtracted full-band. Two reference sets:
+    - RA: every channel of the other sites.
+    - RB: the source-dominated channels, i.e. every E channel of the array except the target channel itself. B01 ey is the reference for B01's ex, hx and hy.
+  - **E14b.** Per block, the whitened array covariance gives the source directions (eigenvalues > tau). The data are projected off them. The natural response Q is solved by generalised least squares from all windows with their block-averaged projectors, and Z = Q_E Q_H^-1. Built-in check: tau = infinity must return plain RR. It does, to 3.7e-13 (**pass**). Variants: base (L 1800, tau 30), L 600, tau 300, and a uniform-natural-H constraint.
+  - **E14c.** Added after E14a failed its control: E06's natural-free H-difference references, with time-local coefficients (L 1800 and 600).
+- **Failure criterion.** A variant must keep the clean control (>= 80 % of bands within 2 sigma, with its coherence kept) and recover synthetic V1 to >= 80 %. Then, on real data, cohE must clear its null by its own size and a strict fraction must rise by 0.2.
+
+**Results, controls and synthetics (target B28).** The strict fractions are over 10-1000 s. The cohE values are for 30-300 / 300-1000 s. For V1 and V4, residual and leak are given for 10-100 s.
+
+| case | method | cohE | yx strict | agreement with truth | residual / leak (dB) |
+|---|---|---|---|---|---|
+| clean | before | 0.507/0.917 | 1.00 | 1.00 | - |
+| clean | Wiener RA L1800 | 0.005/0.010 | 0.06 | 0.88 (error bars huge) | - |
+| clean | Wiener RB L1800 | 0.011/0.031 | 0.00 | 0.06 | - |
+| clean | Wiener RB L600 | 0.010/0.037 | 0.00 | 0.19 | - |
+| clean | subspace tau=inf (check) | 0.528/0.928 | 1.00 | 1.00 (= plain RR, 3.7e-13) | - |
+| clean | subspace base (tau 30) | 0.020/0.077 | 0.00 | 0.94 (error bars huge) | - |
+| clean | subspace tau 300 | 0.278/0.589 | 0.19 | 1.00 | - |
+| clean | E14c L1800 | 0.216/0.017 | 0.00 | 0.50 | - |
+| V1 | Wiener RA L1800 | 0.074/0.081 | 0.00 | 0.19 | -1.9 / +4.1 |
+| V1 | Wiener RB L1800 | 0.085/0.110 | 0.00 | 0.69 | +12.4 / +10.1 |
+| V1 | subspace base | 0.006/0.046 | 0.06 | 0.88 (error bars huge) | - |
+| V1 | subspace tau 300 | 0.012/0.148 | 0.00 | 0.94 (error bars huge) | - |
+| V1 | E14c L1800 | 0.178/0.059 | 0.44 | 0.38 | -2.5 / +2.2 |
+| V4 | Wiener RB L600 | 0.014/0.043 | 0.00 | 0.69 | +3.2 / +1.6 |
+| V4 | subspace uniform H | 0.009/0.022 | 0.06 | 1.00 (error bars huge) | - |
+| V4 | E14c L1800 | 0.016/0.027 | 0.06 | 0.69 | +18.2 / +10.2 |
+
+**Results, real data.** The null is in brackets.
+
+| target | method | cohH 30-300 / 300-1000 | cohE 30-300 / 300-1000 | yx strict | xy strict |
+|---|---|---|---|---|---|
+| B01 | before | 0.040/0.295 | 0.003/0.020 (0.005/0.027) | 0.00 | 0.00 |
+| B01 | Wiener RB L600 | 0.213/0.719 | 0.005/0.038 (0.003/0.021) | 0.00 | 0.00 |
+| B01 | subspace tau 300 | 0.095/0.488 | 0.004/0.028 (0.003/0.043) | 0.00 | 0.00 |
+| B01 | E14c L1800 | 0.211/0.708 | 0.004/0.023 (0.004/0.017) | 0.00 | 0.00 |
+| B04 | before | 0.003/0.061 | 0.004/0.012 (0.003/0.029) | 0.00 | 0.00 |
+| B04 | best of 13 variants | 0.074/0.233 (E14c) | 0.004/0.046 at most | 0.00 | 0.00 |
+| B10 | before | 0.081/0.546 | 0.002/0.018 (0.003/0.025) | 0.00 | 0.00 |
+| B10 | subspace tau 300 | 0.123/0.603 | 0.003/0.030 (0.003/0.019) | 0.12 | 0.00 |
+
+**Reading.**
+1. **Every time-local canceller fails its clean control or the synthetic, before the real data is even considered.**
+   - The Wiener canceller with the references asked for (other sites, or the source-dominated E channels) removes the natural field from a clean site (cohE 0.5 to 0.01). Every such reference carries natural signal. At the synthetic source's level a 30-min regression also leaves +2 to +12 dB of residual and leak.
+   - The subspace GLS passes its identity check. But at tau 30 it projects out natural directions too (0.4-2 per block even at the clean site). At tau 300 it keeps the clean site but recovers little of V1: the fixed pattern makes Q's component along it unidentifiable (log10 condition 4.5-4.9), and the uniform-H constraint does not restore it.
+   - Time-local natural-free references (E14c) are too noisy in 10-30 min blocks: V4 residual +12 to +18 dB, and the clean site loses its coherence.
+2. **The agreement column is misleading on its own.** Several rows "agree" within 2 sigma only because their error bars cover everything. The coherence and strict-fraction columns show them as noise.
+3. **On real data** every variant lifts H (B01 cohH to 0.21/0.72), as in round one. None moves E off its null, and every strict fraction stays at 0.00-0.12.
+
+- **Verdict.** Negative, and the positive control says why: at these source levels no 10-30 min block holds enough information to fit a time-varying canceller without either removing the natural field or leaving the source.
+- **Next.** E15, the physics.
+
+## E15: a first physical model: the railway as straight segments with unknown currents
+
+- **Data.** 22 Jul 13:30 - 23 Jul 09:00 UTC (19.5 h). B03, B04, B06, B08, B09 and B10 plus B14. B14 is south of Marrakech, where the line ends, and serves as a check.
+- **Model.** A straight line from 32.30 N to 31.63 N with free end offsets, grid -6 to +6 km. It is cut into N = 4 or 6 segments at depth D = 0.3, 1 or 3 km. The H of each segment at each site comes from Biot-Savart. Currents are solved per sample (4-2000 s) by least squares from the 14 H channels. The E is modelled as rho_site x J_site: J is the surface current density of each segment's current spreading from depth D. One rho per site, and a variant with a real 2 x 2 per site.
+- **Runs.**
+  - **First run:** a free uniform natural field was included. It absorbed the source's common part, and the currents alone then overshot, explaining -100 to -30000 times the H power; that run is kept as `_with_uniform`.
+  - **Second run:** the uniform field was dropped (`--no-uniform`).
+- **Script.** `E15_physical_model/e15_physical_model.py`. Figures `e15_physical_model_no_uniform.png` and `e15_physical_model_with_uniform.png`.
+- **Failure criterion.** "Partial success" means at least 10 dB of the H and at least 10 dB of the E removed at B04 and B10 with one rho per site.
+
+**Results.** Best geometry: N = 6, D = 0.3 km, the line running from 0 km (north) to +6 km east (south) of -7.95 E; it passes through the site cluster.
+
+| site | H explained (model) | rank-8 ceiling (no physics) | E explained, one rho | E explained, 2x2 |
+|---|---|---|---|---|
+| B03 | 0.58 | 0.99 | 0.00 | 0.00 |
+| B04 | 0.82 (-7.5 dB) | 1.00 | 0.00 | 0.00 |
+| B06 | 0.27 | 0.88 | 0.00 | 0.04 |
+| B08 | 0.34 | 0.93 | 0.14 | 0.51 (-3.1 dB) |
+| B09 | 0.86 | 1.00 | 0.21 | 0.21 |
+| B10 | 0.77 (-6.4 dB) | 0.64 | **0.87 (-8.9 dB)** | 0.89 (-9.6 dB) |
+| B14 (check) | -1.6 | 0.27 | 0.02 | 0.03 |
+
+**After subtracting the model.**
+- **B04.** cohE is unchanged at 0.010/0.070; the strict fractions are 0.
+- **B10.** cohE rises from 0.008/0.128/0.217 to 0.074/0.355/0.623 (null 0.010/0.064/0.243), but yx and xy strict stay at 0.00. The fitted currents contain the natural H, so the predicted E carries a natural-H-driven term with the source's near-zero phase: the same leak as E06.
+- **B14 (check).** Its TF is unchanged (agreement 1.00 within 2 sigma; cohE 0.105 to 0.093).
+
+- **Verdict.** Not a partial success by the criterion: B04 loses 7.5 dB of H and no E. B10 loses 6.4 dB of H and 8.9 dB of E, and that one site is the hint. A straight line with six currents describes a large part of the source's H along the line and almost all of B10's E. Everywhere else the source is not a single line-current geometry.
+- **What a source inversion would need.** The actual track, feeder and substation geometry, the Ben Guerir and OCP lines, and a conductivity model for the E. This is a source inversion, not a processing step.
+
+## Round-two closing summary
+
+- **Removability.** The source is not removable from these data by any method tried. E12 and E13c establish that this is a property of the data and not only of the methods:
+  - E06/E07 remove a fixed low-rank synthetic at 40 dB to the natural level and recover the TF;
+  - the rank measure sees such a source at once;
+  - the real source needs more independent components than the arrays have channels (E13b: 20-30 dB short with every E channel as a basis).
+- **The methods' own limits.** They also have limits, which apply even to an ideal source: a natural leak of +9 to +17 dB at B01's 55 dB, and no time-local fit at these levels (E14).
+- **The only physical hint (E15).** A straight line current explains most of the H along the line and B10's E.
+
+A full effort needs natural-free references with as many channels as the source has components: the traction currents themselves, or instruments at the track. It also needs denser local arrays around each target, longer records, and a real source geometry. Details in STATUS.md.

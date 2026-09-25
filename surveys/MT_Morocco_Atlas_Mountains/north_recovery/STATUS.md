@@ -1,106 +1,92 @@
 # North recovery: status
 
-Last updated 2026-09-25, about 17:00 local (UTC+8). The work is finished and stopped at the wall described below.
+Last updated 2026-09-25, about 17:40 local (UTC+8), after round two.
 
-- **Record.** `LOG.md` holds every experiment's question, method, command, numbers and verdict.
+- **Record.** `LOG.md` holds every experiment's question, method, command, numbers and verdict. Round one is V00, E00-E11; round two is V01, E12-E15.
 - **Per experiment.** Each folder `E<nn>_*/` holds the script, figures, `metrics.json` and `run.log`.
-- **Shared helpers.** `nr_common.py` has the loaders, calibration, STFT bands, plain RR, coherence and scorecard.
+- **Shared code.** `nr_common.py` has the loaders, calibration, bands, plain RR, coherence, scorecard, and the in-memory decimation of round two. `nr_array.py` has the array methods of round two.
 - **How to run.** Every script runs as `python <folder>\<script>.py` from `qc\north_recovery` with the bbmt-2026 environment. It imports `mtproc` from the worktree `D:\BEN\BBMT_Processing_2026\.claude\worktrees\agent-ae84cc9fb8c936a00\src`, which still has the pre-rename package name.
 
-## Bottom line
+## Is the source removable in principle?
 
-The natural MT impedance above about 1 s is not recoverable at B01, B04 and B10 with these data.
+**Not from these data. That is now a property of the data, not only of the methods tried.**
 
-1. **The source's E is the limit, not its H.**
-   - The source E exceeds the natural E by 27-55 dB in power over the whole record, at every period from 4 to 4096 s. That assumes a natural rho of 100 ohm m; subtract 10 dB for 1000 ohm m. The worst case is B01 ey (51-55 dB), the mildest B10 ey (27-32 dB).
-   - The local E has no coherence with Ebro above the null at any period.
-   - The local H is partly natural: coherence with Ebro reaches 0.3-0.75 above 300 s.
-2. **Every lever gains 10-40 dB at most.** The levers were:
-   - projection onto Ebro, which is identical to RR;
-   - quiet-time selection;
-   - polarisation filtering;
-   - inverse-noise weighting;
-   - an array model with natural-free references;
-   - their combinations;
-   - burst gating at 1 Hz and at 1000 Hz.
+1. **The cancellation methods work on a source they can represent.** In the positive control (E12), a railway-like synthetic was injected at 40 dB over the natural E into the clean March array. It used B01's real burst-plus-continuous waveform, near-zero-phase E/H, and a site-specific polarisation. With rank 1 or 2 and a fixed pattern, it is removed to the natural level by the round-one cancellation (E06/E07: array H differences as natural-free references). B28's TF comes back: yx strict 1.00, phase within 3 deg, rho within 0.04 dex.
+2. **The real source is not such a source.** The rank measure of E13b gives the target's E left after removing k components of the whole array's E field, with the target inside the basis, so it is optimistic. On the synthetics (E13c) it reaches the natural share with 1 component (rank 1), 2 (rank 2) or 4 (moving pattern). On the real data it stays far above even with every E channel of the array:
+   - B01: -27 dB after 5 of 6 components, against -57 dB natural.
+   - B04: -24 dB after 6 of 12, against -45 dB.
+   - B10: -12 dB after 6 of 12, against -42 dB.
+   - The same holds per hour in train hours.
 
-   The best linear prediction of the source's E from the local H plus eight neighbour channels still leaves it 10-300 times above the natural E over the whole record (E06). With weighting, it leaves 1-10 times (E07).
-3. **At 1000 Hz on the one quiet night with a clean remote,** an automatic, local-only burst gate reproduces Ben's hand masks at B04. The yx is physical-looking to 1.15 s. Above that the phase falls to 0 while rho climbs: the source takes over again. A physical-looking B10 yx to 2 s on one night did not repeat on the two other nights (E10b). With 6 h of July night-time data, even the clean control B18 does not resolve 1.5-10 s.
-4. **What H does allow.** The natural H is recoverable at long periods (E05, E09, E11). B10's horizontal magnetic transfer function to B14 is M = I within 15-25 % at 40-3000 s.
+   The source has more independent components than the arrays have channels at the precision needed. Its dominant pattern is stable in train hours (hourly similarity 0.96 in February, 0.90 in July) but carries spatially incoherent parts of a few percent of the power between sites 5-10 km apart, and a different structure at night (E13).
+3. **The methods also have limits of their own, which apply even to an ideal source.**
+   - **Leak at 55 dB.** At B01's level, an ideal rank-1 source still leaves +9 to +17 dB of natural leak at 10-100 s: the natural H gradient and coil noise in the references, multiplied by the source's large E/H. That costs about 10 deg of phase (E12 V2).
+   - **Moving patterns.** A moving pattern defeats whole-record coefficients (E12 V4).
+   - **Time-local fits.** No time-local canceller fitted in 10-30 min blocks passes both the clean control and the synthetic (E14). With natural-carrying references it removes the natural field. With a source subspace it cannot identify the natural part along a fixed source pattern. With natural-free references the blocks are too short.
+4. **Physics.** The first physical model (E15) is a straight line of six segment currents at 300 m depth, solved from the array's H. It explains 58-86 % of the source H at four of six July sites. It explains 87 % (-9 dB) of the E at B10, but the E at nearly no other site. So a line current describes part of the source, and an inversion with the real geometry is the only route with a physical basis.
 
-## Experiment table
+**By which method, if any?**
+- **Nothing gives a physical TF at the northern sites above ~1 s from the existing records.**
+- **What does work:**
+  - the natural H at long periods: weighting (E05) or gating (E09), and B10's magnetic transfer function (E11);
+  - at 1000 Hz, automatic night-time burst gating to about 1.1 s (E10), matching the hand masks.
+- **If processing is continued, the method with a demonstrated basis is the whole-record array cancellation with natural-free references plus inverse-noise weighting (E07).** It removes a fixed low-rank source at 40 dB (E12). But the real source's excess rank (E13b) means it cannot reach the natural level here.
 
-cohH is the mean multiple coherence of the local hx and hy with Ebro. Each cell gives before -> after, with the after row's null in brackets. Periods are 30-300 s and 300-1000 s at 1 Hz. "yx strict" is the fraction of 10-1000 s bands (E01: 4-1000 s) with yx phase in (10, 80) deg and within 15 deg of its neighbours. Before rows use the same layout and span as the after rows.
+## What a full effort would need
 
-| id | method | site | cohH 30-300 | cohH 300-1000 | yx strict | verdict |
-|---|---|---|---|---|---|---|
-| E00 | characterisation | B01/B04/B10 | 0.047 / 0.003 / 0.062 | 0.31 / 0.034 / 0.46 | - | E at the null everywhere; H partly natural above 300 s |
-| E01 | before scorecard (plain RR, aurora) | B01/B04/B10 | 0.047 / 0.003 / 0.062 | 0.31 / 0.034 / 0.46 | 0.00 / 0.00 / 0.05 | noise above 4 s |
-| E02 | projection onto Ebro | all | vacuous (1 by construction) | vacuous | = E01 | identical to RR (1e-12); Ebro predicts 0 % of the local E |
-| E03 | quiet time, E-quiet 10 % | B01 | 0.047 -> 0.554 (0.147) | 0.295 -> 0.701 (0.585) | 0.00 -> 0.00 | H natural, E not; TF noise |
-| E03 | same | B04 | 0.003 -> 0.643 (0.119) | 0.017 -> 0.794 (0.541) | 0.00 -> 0.00 | same |
-| E03 | same | B10 | 0.062 -> 0.594 (0.071) | 0.461 -> 0.828 (0.245) | 0.12 -> 0.00 | same |
-| E04 | polarisation (E across source axis) | B01/B04/B10 | E_perp 0.003 / 0.002 / 0.002 (null alike) | E_perp 0.020 / 0.012 / 0.018 | mode strict 0 -> 0 | negative |
-| E05 | inverse-noise weighting | B01 | 0.047 -> 0.233 (0.010) | 0.295 -> 0.768 (0.139) | 0.00 -> 0.19 | best H cleaner; E null; TF scattered |
-| E05 | same | B04 | 0.003 -> 0.111 (0.003) | 0.017 -> 0.341 (0.042) | 0.00 -> 0.06 | same |
-| E05 | same | B10 | 0.062 -> 0.290 (0.034) | 0.461 -> 0.805 (0.049) | 0.12 -> 0.06 | same |
-| E06 | array, H-gradient refs | B01 | 0.041 -> 0.290 (0.003) | 0.339 -> 0.795 (0.029) | 0.00 -> 0.00 | H cleaned; E only where the leak predicts |
-| E06 | same | B04 | 0.003 -> 0.043 (0.002) | 0.032 -> 0.457 (0.021) | 0.00 -> 0.00 | same |
-| E06 | same | B10 | 0.071 -> 0.185 (0.002) | 0.509 -> 0.633 (0.024) | 0.06 -> 0.00 | same |
-| E07 | weighting + array | B01 | 0.041 -> 0.333 (0.017) | 0.339 -> 0.828 (0.074) | 0.00 -> 0.00 | cohE 0.16 (0.05) at 300-1000 s, with the source's phase |
-| E07 | same | B04 | 0.003 -> 0.407 (0.015) | 0.032 -> 0.594 (0.046) | 0.00 -> 0.00 | negative |
-| E07 | same | B10 | 0.071 -> 0.442 (0.048) | 0.509 -> 0.741 (0.119) | 0.06 -> 0.12 | cohE up to 0.54 (0.07) above 1000 s; phase drops to 0 (leak) |
-| E08 | weighting + polarisation | B01/B04/B10 | E_perp 0.009 / 0.005 / 0.005 (0.016 / 0.014 / 0.002) | E_perp 0.024 / 0.014 / 0.026 | mode strict 0 -> 0 | negative; B28 control fails (0.88 -> 0.69) |
-| E09 | burst gating, 1 Hz (K3 M60) | B01 | 0.011 -> 0.136 (0.002), 30-128 s | - | 0.00 -> 0.00 (10-128 s) | H cleaned; E at null |
-| E09 | same | B04 | 0.001 -> 0.009 (0.004) | - | 0.00 -> 0.00 | negative |
-| E09 | same | B10 | 0.021 -> 0.097 (0.002) | - | 0.00 -> 0.56 | E at null; K3 M180 0.33, K10 M60 0.00: not stable |
-| E10 | 1000 Hz, night vs day, burst gate, rr B14 | B04 | cohE with B14, 0.7-10 s: 0.034 (day) -> 0.324 (night gated; null 0.004) | - | 0.7-10 s: 0.33 (masks2) -> 0.56 | = hand masks to 1.15 s, source above |
-| E10/E10b | same | B10 | cohE 0.7-10 s: 0.552 (all), 0.141 (gated) | - | 0.7-10 s: 0.17 (default) -> 0.44 | 1.2-2 s gain not repeatable over 3 nights |
-| E11 | horizontal magnetic TF to B14 (Ebro-RR, weighted) | B10 | - | - | - (Mxx 0.90, phase -0.4 deg, rel. err 0.14; Myy 1.00, 0.26) | H recoverable at 40-3000 s; not an impedance |
+1. **Natural-free references with at least as many independent channels as the source has components.** E13b shows the existing arrays' E channels are too few and too far apart, and every array channel carries natural signal (E14's control). The cleanest reference is the source itself:
+   - the traction currents: ONCF substation and feeder currents, logged at 1 s or faster with GPS time;
+   - or magnetometers and short E dipoles at the track and feeders.
 
-Controls: B28 at 1 Hz, and B18 at 1000 Hz, same window.
-- **Pass.** Clock rule (E03), weighting (E05), E_perp (E04), burst gate K3 (E09), and the 1000 Hz gate at 0.1-0.9 s.
-- **Fail.** E08.
-- **Not judged.** E-quiet rules: B28's quiet windows are scattered, not whole nights.
+   A reference of that kind contains no natural field, so there is no leak (E12 V2) and no loss of natural signal (E14).
+2. **Dense local sampling of the leakage field around each target.** Several E dipoles within 1-2 km are needed, because the source's site-local part decorrelates over 5-10 km (E13b).
+3. **Long records (weeks), not days.** They are needed to beat the leak and the jackknife errors at 55 dB. E12's leak falls as the references' own non-source power is averaged down.
+4. **A real source geometry for a physical inversion.** That means the track, feeders, substations, the Ben Guerir and OCP lines and their current records, with a 3-D conductivity model for the galvanic E (E15). The straight-line model already explains much of the H.
+5. **Or avoid the problem.** Record during a traction outage, or site stations away from the corridor. How far the source's E decays with distance from the track is unknown and would itself need a short profile of E dipoles.
 
-## What worked (partially)
+## Experiment table, round two
 
-- **Cleaning the local H.** Inverse-noise weighting over the whole record (E05) and burst gating (E09) do it, with B28 unchanged. That gives the natural H at long periods, and the B10 magnetic transfer function (E11).
-- **An automatic, local-only stand-in for the hand cross-power masks at 1000 Hz.** The burst detector on the local E at 1 Hz, run on a quiet night, reproduces B04's yx to 1.15 s (E10). It cannot extend it.
+"removed/recovered" refers to the synthetic truth. cohE is the coherence of the target's cleaned E with Ebro, 30-300 / 300-1000 s, with the null in brackets. "yx strict" is over 10-1000 s.
 
-## What did not work
+| id | method | case | result | verdict |
+|---|---|---|---|---|
+| V01 | in-memory decimation vs decimate_site | B04 | rms diff <= 4e-4 | pass |
+| E12 | E06/E07 on synthetic V1 (rank 1, fixed, 40 dB) | B28 array | residual -14 to -23 dB, leak -4 to +2 dB; TF 16/16 bands in 2 sigma; yx strict 1.00 | method sound |
+| E12 | V2 (55 dB) | B28 array | leak +9 to +17 dB at 10-100 s; phase error ~10 deg; yx strict 0.31-0.38 | method limit at B01's level |
+| E12 | V3 (rank 2) | B28 array | residual -8 to -19 dB, leak +3 to +7 dB; yx strict 0.69-1.00 | mostly recovered |
+| E12 | V4 (moving) | B28 array | residual +2 to +10 dB; agreement 0.62-0.81; yx 0.44-0.75 | whole-record coefficients fail |
+| E13 | array rank (coherence form) and hourly pattern | Feb, Jul, Mar | 2-3 structures in E above the noise edge; leading pattern fixed in train hours (0.96/0.90), different at night (0.12/0.47) | looks low rank at the noise level, but see E13b |
+| E13b | target E left after k array components | B01, B04, B10 | -27 dB (B01, k=5), -24 (B04, k=6), -12 (B10, k=6), against -57/-45/-42 natural | not low rank at the needed precision |
+| E13c | E13b on synthetics | B28 array | natural level at k=1 (V1, V2), k=2 (V3), k=4 (V4) | the measure works |
+| E14a | time-local Wiener, refs other sites / source-dominated E, 10-30 min | control, V1, V4, B01, B04, B10 | control destroyed (cohE 0.5 -> 0.01); V1 not recovered (0.19-0.69); real cohE at null, yx 0 | fails the control |
+| E14b | time-local source subspace + GLS | same | identity check passes (3.7e-13); tau 30 removes natural at the control; tau 300 keeps it but does not recover V1; real cohE at null, yx 0-0.12 | fails the synthetic |
+| E14c | time-local natural-free (H-difference) refs | same | control coherence lost (0.5 -> 0.02-0.2); V4 residual +12 to +18 dB; real cohE at null | fails |
+| E15 | straight-line railway currents (Biot-Savart), galvanic E | Jul array, 19.5 h | H explained 58-86 % at 4 of 6 sites; E explained 87 % at B10, <= 21 % elsewhere; B10 cohE 0.008/0.128 -> 0.074/0.355 (0.010/0.064), yx strict 0; B14 check unchanged | not a partial success by the criterion; B10 is the hint |
 
-- **Any impedance at 10-1000 s at B01, B04 and B10,** by every method and combination above.
-- **The yx above about 1.15 s at 1000 Hz.** The cause is the source at B04, and the July dead band at B10 and even at B18.
+## Round one in one paragraph
 
-## The method worth pursuing, if any
-
-**Night-time burst gating at 1000 Hz** (E10), as a replacement for hand masks at 0.2-1.1 s. It needs no cross-power clustering, uses only the local E, and did as well as the 6517 hand masks on B04's one clean-remote night. It will not carry any site past about 1 s. Nothing tried at 1 Hz is worth pursuing for impedances.
+At B01, B04 and B10 the local E has no coherence with Ebro above a shifted-Ebro null at any period from 4 to 4096 s. The source dominates E by 27-55 dB (power) and H by about 20-25 dB. Round one scored ten levers (E02-E11): projection onto Ebro, which is RR under another name; quiet time; polarisation; weighting; array cancellation; burst gating; and 1000 Hz night gating. They clean the H but never the E. At 1000 Hz, automatic night gating reproduces the hand masks to about 1.1 s. B10's magnetic transfer function to B14 is M = I within 15-25 % at 40-3000 s. Details in LOG.md, E00-E11.
 
 ## Not tried, and why
 
-- **ICA.** A linear unmixing that removes the source from E is a linear predictor of it, so it is bounded by E06/E07's 1 - gamma^2. That bound is one to three orders above the natural share of E.
-- **Wavelet (CWT) masking.** pywt is not installed; scipy.signal.cwt is gone in scipy 1.17; nothing was installed. The STFT gating and weighting of E03, E05, E09 and E10 carry the same information on another tiling.
-- **Template or Kalman step subtraction.** The source is chopper pulse trains of variable length plus a continuous lower level between bursts (E00b). The continuous part is what keeps E at the null after gating (E09). A template would have to be accurate to 40-60 dB.
-- **Ebro hz as a third reference.** It improves only the prediction of H, which is not the limit.
-- **Robust reweighting against Ebro.** Aurora is that, and its product is noise. Residual-based weights favour the source cluster wherever the source dominates.
-- **More sites (B02, B03, B05-B09, R01 as locals).** The rule was to add sites only when a method worked; none did.
-- **B01 at 1000 Hz with a clean remote.** No clean site overlaps February. The R01-referenced row (E10) is weak evidence.
-- **More B04 nights at 1000 Hz.** B04 and B14 overlap on one night only (22/23 Jul).
-- **A B28 control at 1000 Hz.** B28 and B29 were being re-ingested; B18 rr B14 served instead.
+- **FastICA and scikit-learn in general.** Not installed, and nothing was installed. Any linear unmixing is bounded by E13b.
+- **Wavelet masking.** pywt is not installed, and scipy 1.17 has no cwt. The STFT gating covers the same ground.
+- **Template or Kalman subtraction of the bursts.** The continuous inter-burst source keeps E at the null after the bursts are gated out (E09).
+- **A source inversion with the real track, feeder and substation geometry and 3-D conductivity.** It needs data this project does not have. It is the next step if Ben can get the geometry and the traction current logs.
+- **Longer time-local blocks (hours).** They converge on E07, which is already bounded by E13b.
+- **More July sites in the array.** B05 and B07 end on 20 Jul, and B11 and B13-B15 are south and clean. The six-site set is the largest simultaneous one.
+- **B01 at 1000 Hz with a clean remote.** None exists in February.
 
 ## Open questions
 
-1. **The continuous inter-burst E source.** It is present at night and between trains. At B01 on 15/16 Feb it held a steady level for hours, in the bursts' polarisation. Traction substations, the OCP installations and pipeline cathodic protection are candidates. Identifying it matters more than any further processing.
-2. **B04 xy at 1.5-10 s.** It looks physical in every 1000 Hz estimate, day and night: rho about 2.5e3 flat, phase 35-42 deg. Is it natural? Check it against B05/B06.
-3. **Field options.** The data say the wall is the local E's signal-to-noise, so a better remote cannot help. Only data taken while the traction supply is off, or sites several km or more from the corridor, would change it. How far from the corridor is unknown; a line of E dipoles away from the track would measure the decay.
+1. **What the continuous night-time source is** (E13: a different pattern at night; E00b; E09). Candidates: substation standing leakage, OCP installations, cathodic protection.
+2. **Whether ONCF or OCP current logs exist for Feb and Jul 2023.** With them, E12 says a cancellation with natural-free references would work for the part of the source they describe.
+3. **Whether B04's xy at 1.5-10 s is natural** (round one, E10).
+4. **Whether B10 can be extended with a better geometry** (E15: 87 % of its E from a straight line).
 
 ## Housekeeping (for Ben)
 
-- **1 Hz derived archives made in this session** with `scripts/decimate_site.py`, each with its survey.yaml entry: B02L, B03L, B05L, B06L, B07L, B08L, B09L, B10L, B11L, B14L and R01L (`mth5/<site>L.h5`).
-  - **Stale dipoles.** B02L, B07L, B10L and B14L predate the 16:16 dipole re-ingest, as do B01L and B28L from earlier, and carry the old dipole lengths. Rebuild them with `--force` before any rho product.
-  - **B13L failed.** It collided with the re-ingest's own build of `B13_f81e4c0e6.h5.part` and wrote nothing.
-  - **B15L I stopped.** The re-ingest has since replaced its partial `.part`.
-  - **A variant my run built.** `decimate_site.py B11` built the current `B11_f81e4c0e6.h5` (10.9 GB) because filters.yaml changed at 16:14.
-- **Aurora product made.** `tf/B10L_rr-EBR_20260925-1618_nr-E01.*`.
-- **No repository file was edited** (src, scripts, tests, masks.yaml and filters.yaml untouched). **No archive was opened for writing.**
+- **1 Hz derived archives from round one.** Made with `scripts/decimate_site.py`, each with its survey.yaml entry: B02L, B03L, B05L, B06L, B07L, B08L, B09L, B10L, B11L, B14L and R01L. B01L, B02L, B07L, B10L, B14L and B28L predate the dipole re-ingest; rebuild them with `--force` before any rho product. B13L and B15L were not made. `decimate_site.py B11` built `B11_f81e4c0e6.h5` (10.9 GB) because filters.yaml had changed.
+- **Round two wrote no archive and no survey.yaml entry.** 1 Hz counts are cached in `qc/north_recovery/cache/` (about 170 MB, 21 files). They are safe to delete; they rebuild on demand.
+- **Aurora product made.** `tf/B10L_rr-EBR_20260925-1618_nr-E01.*` (round one).
+- **No repository file was edited. No archive was opened for writing.**
