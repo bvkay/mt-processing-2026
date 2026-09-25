@@ -36,7 +36,9 @@ channel's metadata and filter chain: dipole length, coil response table,
 linear and `lemi423_b_scale` coefficients, azimuth, units. Aurora and
 `crust.timefreq.load_station` calibrate it as they do the source. Each run
 comment names the source archive and run, the stages and the source run's
-own comment. An existing archive is kept unless --force.
+own comment. Each run group's `mth5_type` is "Run", as in an archive
+`crust.ingest` writes, so a reader matching that attribute exactly (MANTLE's
+MTH5 reader) finds the runs. An existing archive is kept unless --force.
 
 survey.yaml gains, or has refreshed, the entry
 ``<site>L: {derived_from, sample_rate, dipole_length_ex/ey, azimuth_ex/ey,
@@ -201,6 +203,23 @@ def _metadata_copy(meta):
     return out
 
 
+def _run_metadata(meta):
+    """Copy a run group's metadata into a plain mt_metadata Run, less its HDF5 reference and group type.
+
+    A run group updated from it keeps the `mth5_type` "Run" that add_run
+    gave it, as `RunGroup.from_runts` keeps it when it takes a RunTS's run
+    metadata.
+    """
+    from mt_metadata.timeseries import Run
+
+    values = meta.to_dict(single=True)
+    for key in ("hdf5_reference", "mth5_type"):
+        values.pop(key, None)
+    out = Run()
+    out.from_dict(values)
+    return out
+
+
 def _run_comment(run_group) -> str:
     """Return a run's comment text, "" when there is none."""
     comment = run_group.metadata.comments
@@ -312,7 +331,7 @@ def write_derived(source: Path, site: str, out_path: Path, rate: float, min_free
                 run_out.from_channel_ts(ts)
                 logger.info(f"{site} {run_id} {comp}: {n} samples at {fs_in:g} Hz -> {y.size} at {rate:g} Hz "
                             f"in {time.perf_counter() - started:.1f} s")
-            run_out.metadata.update(_metadata_copy(run_in.metadata))
+            run_out.metadata.update(_run_metadata(run_in.metadata))
             run_out.metadata.id = out_id
             run_out.metadata.sample_rate = rate
             run_out.metadata.comments = (
