@@ -6961,3 +6961,102 @@ B08:
   reason: 'line noise profile (hourly, 20 min per hour): max(step_ey, shift_ey) > 0.05; proposed for the
     line B campaign''s masked config, not reviewed by hand'
   found_by: time
+B13:
+- start: '2023-07-25T05:00:00Z'
+  end: '2023-07-25T06:00:00Z'
+  bands: all
+  reason: 'line noise profile (hourly, 20 min per hour): max(step_ey, shift_ey) > 0.05; proposed for the
+    line B campaign''s masked config, not reviewed by hand'
+  found_by: time
+- start: '2023-07-25T10:00:00Z'
+  end: '2023-07-25T11:00:00Z'
+  bands: all
+  reason: 'line noise profile (hourly, 20 min per hour): max(step_ey, shift_ey) > 0.05; proposed for the
+    line B campaign''s masked config, not reviewed by hand'
+  found_by: time
+- start: '2023-07-25T23:00:00Z'
+  end: '2023-07-26T01:00:00Z'
+  bands: all
+  reason: 'line noise profile (hourly, 20 min per hour): max(step_ey, shift_ey) > 0.05; proposed for the
+    line B campaign''s masked config, not reviewed by hand'
+  found_by: time
+- start: '2023-07-26T23:00:00Z'
+  end: '2023-07-27T00:00:00Z'
+  bands: all
+  reason: 'line noise profile (hourly, 20 min per hour): max(step_ey, shift_ey) > 0.05; proposed for the
+    line B campaign''s masked config, not reviewed by hand'
+  found_by: time
+- start: '2023-07-27T01:00:00Z'
+  end: '2023-07-27T02:00:00Z'
+  bands: all
+  reason: 'line noise profile (hourly, 20 min per hour): max(step_ey, shift_ey) > 0.05; proposed for the
+    line B campaign''s masked config, not reviewed by hand'
+  found_by: time
+- start: '2023-07-27T05:00:00Z'
+  end: '2023-07-27T06:00:00Z'
+  bands: all
+  reason: 'line noise profile (hourly, 20 min per hour): max(step_ey, shift_ey) > 0.05; proposed for the
+    line B campaign''s masked config, not reviewed by hand'
+  found_by: time
+B14:
+- start: '2023-07-23T11:00:00Z'
+  end: '2023-07-23T12:00:00Z'
+  bands: all
+  reason: 'line noise profile (hourly, 20 min per hour): max(step_ey, shift_ey) > 0.05; proposed for the
+    line B campaign''s masked config, not reviewed by hand'
+  found_by: time
+- start: '2023-07-24T10:00:00Z'
+  end: '2023-07-24T12:00:00Z'
+  bands: all
+  reason: 'line noise profile (hourly, 20 min per hour): max(step_ey, shift_ey) > 0.05; proposed for the
+    line B campaign''s masked config, not reviewed by hand'
+  found_by: time
+- start: '2023-07-24T19:00:00Z'
+  end: '2023-07-24T20:00:00Z'
+  bands: all
+  reason: 'line noise profile (hourly, 20 min per hour): max(step_ey, shift_ey) > 0.05; proposed for the
+    line B campaign''s masked config, not reviewed by hand'
+  found_by: time
+B18:
+- start: '2023-07-23T17:00:00Z'
+  end: '2023-07-23T18:00:00Z'
+  bands: all
+  reason: 'line noise profile (hourly, 20 min per hour): max(step_ey, shift_ey) > 0.05; proposed for the
+    line B campaign''s masked config, not reviewed by hand'
+  found_by: time
+- start: '2023-07-23T19:00:00Z'
+  end: '2023-07-23T20:00:00Z'
+  bands: all
+  reason: 'line noise profile (hourly, 20 min per hour): max(step_ey, shift_ey) > 0.05; proposed for the
+    line B campaign''s masked config, not reviewed by hand'
+  found_by: time
+- start: '2023-07-23T22:00:00Z'
+  end: '2023-07-24T01:00:00Z'
+  bands: all
+  reason: 'line noise profile (hourly, 20 min per hour): max(step_ey, shift_ey) > 0.05; proposed for the
+    line B campaign''s masked config, not reviewed by hand'
+  found_by: time
+- start: '2023-07-24T11:00:00Z'
+  end: '2023-07-24T12:00:00Z'
+  bands: all
+  reason: 'line noise profile (hourly, 20 min per hour): max(step_ey, shift_ey) > 0.05; proposed for the
+    line B campaign''s masked config, not reviewed by hand'
+  found_by: time
+- start: '2023-07-24T16:00:00Z'
+  end: '2023-07-24T17:00:00Z'
+  bands: all
+  reason: 'line noise profile (hourly, 20 min per hour): max(step_ey, shift_ey) > 0.05; proposed for the
+    line B campaign''s masked config, not reviewed by hand'
+  found_by: time
+- start: '2023-07-24T19:00:00Z'
+  end: '2023-07-24T20:00:00Z'
+  bands: all
+  reason: 'line noise profile (hourly, 20 min per hour): max(step_ey, shift_ey) > 0.05; proposed for the
+    line B campaign''s masked config, not reviewed by hand'
+  found_by: time
+- start: '2023-07-25T23:00:00Z'
+  end: '2023-07-26T01:00:00Z'
+  bands: all
+  reason: 'line noise profile (hourly, 20 min per hour): max(step_ey, shift_ey) > 0.05; proposed for the
+    line B campaign''s masked config, not reviewed by hand'
+  found_by: time
