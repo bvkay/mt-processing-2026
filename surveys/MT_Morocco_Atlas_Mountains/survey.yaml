@@ -36,6 +36,9 @@ processing:
   periods_per_decade: 10.0
   # keep bands clear of mains and its first in-range harmonic
   notch_frequencies: [50.0, 150.0]
+  # the two lowest bands of every decimation level (harmonics 7-10) are labelled
+  # 4-5 % below their harmonics and read 3-6 % high in rho: start at harmonic 10
+  min_bin: 10
 sites:
   A01:
     dipole_length_ex: 55.0
