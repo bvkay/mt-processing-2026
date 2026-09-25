@@ -682,8 +682,14 @@ Usage:
      plot and on both polar plots, and the count label read "2 of 12 chunks
      masked" (both fully masked: a count summing `masked_chunks`' 0/1/2
      codes says 4); and the real survey folder's masks.yaml, if any, must be
-     left unchanged. The compute times are printed and the tab shot to
-     work/qc/gui_crosspower_overlap.png (the whole overlap),
+     left unchanged. The polar plane must then draw each chunk's xy spot at
+     the angle of its Zxy and its yx spot at the angle of its Zyx plus 180
+     deg, wrapped to (-180, 180] (both computed here from the band's zxy and
+     zyx, within 1e-9 deg), under the left labels "phase (deg)" and "phase
+     yx + 180 (deg)"; a rubber band round one yx spot at the phase drawn
+     must select exactly that chunk, on "polar yx", and the same rubber band
+     at the angle of its Zyx none. The compute times are printed and the
+     tab shot to work/qc/gui_crosspower_overlap.png (the whole overlap),
      gui_crosspower_deep.png (the deep band) and gui_crosspower.png (the QC
      window), none counted in (17); the level-5 band and the two 1 min bands
      to the scratch copy's folder (gui_crosspower_level5.png,
@@ -1862,6 +1868,32 @@ def crosspower_check(app, window) -> None:
     print(f"    reloaded from the file: chunks {list(CROSSPOWER_MASKED)} hollow on the |Z| and both polar "
           f"plots, the other ten filled, \"{tab.count_label.text()}\"; the real survey folder's masks.yaml "
           f"untouched; {shot.name} and {shot_deep.name} saved")
+
+    # the polar plane: xy at its angle, yx at its angle plus 180 deg wrapped to (-180, 180], computed here
+    from PySide6.QtCore import QRectF
+
+    polar_view = band_view(tab.result, tab.band())
+    labels = {"xy": "phase (deg)", "yx": "phase yx + 180 (deg)"}
+    for mode in ("xy", "yx"):
+        plot = tab.polar_plots[mode]
+        (_item, _x, y, idx, _colour), = tab.items[plot]
+        raw = np.degrees(np.angle(polar_view["z" + mode][idx]))
+        want = raw if mode == "xy" else np.where(raw <= 0.0, raw + 180.0, raw - 180.0)
+        assert np.allclose(y, want, atol=1e-9, rtol=0.0), (mode, y, want)
+        label = plot.getPlotItem().getAxis("left").labelText
+        assert label == labels[mode], (mode, label)
+    yx_plot = tab.polar_plots["yx"]
+    (_item, x, y, idx, _colour), = tab.items[yx_plot]
+    raw0 = float(np.degrees(np.angle(polar_view["zyx"][idx[0]])))
+    yx_plot.getViewBox().selected.emit(QRectF(x[0] - 1e-6, y[0] - 1e-6, 2e-6, 2e-6))
+    pump(app, 0.1)
+    assert tab.selected == {int(idx[0])} and tab.selected_on == "polar yx", (tab.selected, tab.selected_on)
+    yx_plot.getViewBox().selected.emit(QRectF(x[0] - 1e-6, raw0 - 1e-6, 2e-6, 2e-6))
+    pump(app, 0.1)
+    assert tab.selected == set(), tab.selected
+    print(f"    polar plane: xy at its angle, yx at its angle + 180 deg ({want.min():+.1f} to {want.max():+.1f} deg "
+          f"for the angles {raw.min():+.1f} to {raw.max():+.1f}), labels {list(labels.values())}; a rubber band "
+          f"at chunk {int(idx[0])}'s drawn yx phase {y[0]:+.1f} deg selects it, at its angle {raw0:+.1f} deg none")
 
 
 def check_dc_level_column(window, table, columns: list[str]) -> None:

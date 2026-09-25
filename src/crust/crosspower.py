@@ -8,8 +8,9 @@ the E that Z predicts, the number of STFT windows averaged and the
 stretch's mean |H| and |E|. The bands, their decimation levels and windows
 are those of the survey's band scheme, the dict
 `crust.bands.build_band_scheme` returns. The GUI's Cross-powers tab draws
-the estimates against time and in the (log10 |Z|, phase) plane, where a
-stretch that sits apart from the others can be masked (`crust.masks`).
+the estimates against time and in the (log10 |Z|, phase) plane, with the yx
+phase plus 180 deg (`mode_phase`), where a stretch that sits apart from the
+others can be masked (`crust.masks`).
 
 `compute_windows` reads the two archives once and keeps the band sums of
 the STFT windows in a `WindowStore`; `bin_windows` groups them into chunks
@@ -1028,6 +1029,28 @@ def bin_windows(store: WindowStore, chunk_s: float = CHUNK_S, start=None, end=No
         "n_windows": n_win, "h_amp": h_amp, "e_amp": e_amp, "er": er, "hr": hr,
         "store": store, "items": items,
     }
+
+
+def mode_phase(z, mode: str) -> np.ndarray:
+    """Return an impedance mode's phase as the polar plane draws it, in degrees.
+
+    Zxy's phase is its angle; Zyx's is its angle plus 180 deg, wrapped to
+    (-180, 180], as scripts/cluster_masks.py draws it. The Earth's phases
+    of both modes then lie in 0-90 deg, and a near-field source's yx phases
+    near 0 deg.
+
+    Args:
+        z: Impedances of the mode, complex.
+        mode (str): "xy" or "yx".
+
+    Returns:
+        np.ndarray: Phases in degrees, in (-180, 180].
+    """
+    phase = np.degrees(np.angle(np.asarray(z)))
+    if mode == "yx":
+        phase = phase + 180.0
+        phase = np.where(phase > 180.0, phase - 360.0, phase)
+    return phase
 
 
 def band_view(result: dict, j: int) -> dict:

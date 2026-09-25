@@ -202,7 +202,15 @@ Usage:
     the result reports) and its er sum be that of the store's minute bins
     from 660 s to 1260 s (1e-12 relative), and level 3's one group exactly
     the kept windows lying inside [660, 1740) s. A result that labels the
-    requested start while summing the whole first minute fails this.
+    requested start while summing the whole first minute fails this;
+18. the phase the polar plane draws (`mode_phase`) of a Zyx whose angle is
+    -170 deg is not +10 deg, or of Zyx at +170, 0 and 180 deg not -10, 180
+    and 0 deg (plus 180 deg, wrapped to (-180, 180]), within 1e-9 deg; or
+    Zxy's is not its own angle (-170, 170, 0 and 180 deg); or the chunk Zyx
+    of the synthetic store (-1.5) at a level-0 band, whose angle lies within
+    5 deg of +/-180 deg in every chunk, is not drawn within 5 deg of 0 deg
+    in every chunk. A plane drawing yx with its angle alone gives -170 deg
+    for the first and fails this.
 """
 
 from __future__ import annotations
@@ -226,7 +234,7 @@ from loguru import logger  # noqa: E402
 from crust.bands import build_band_scheme  # noqa: E402
 from crust.crosspower import (  # noqa: E402
     MARGIN_S, MIN_GROUPS, SUMS, WindowStore, _margin_n, _plan_levels, band_view, bin_windows, chunk_impedances,
-    compute_windows, level_multiples, masked_chunks, stack_impedance,
+    compute_windows, level_multiples, masked_chunks, mode_phase, stack_impedance,
 )
 from crust.timefreq import MIN_WINDOWS  # noqa: E402
 
@@ -470,7 +478,7 @@ def kept_starts(store, level: int) -> np.ndarray:
 
 
 def main() -> int:
-    """Build the archives and stores, check criteria 1-17 and print one line per criterion."""
+    """Build the archives and stores, check criteria 1-18 and print one line per criterion."""
     data = field_and_channels()
     reads: list[int] = []
     real_getitem = h5py.Dataset.__getitem__
@@ -973,6 +981,23 @@ def main() -> int:
     print(f"  17. [{MID_S[0]:g}, {MID_S[1]:g}) s asked: covered and reported as [{edge0:g}, {edge1:g}) s, chunks from "
           f"{edge0:g} and 1260 s; chunk 0 sums {counts17} windows at levels 0-{store.binned_level}, all centred at or "
           f"after {edge0:g} s (counted here), level 3 its {want3} windows lying inside")
+
+    # 18. the polar plane's phase: yx plus 180 deg, wrapped to (-180, 180]; xy its own angle
+    angles = np.array([-170.0, 170.0, 0.0, 180.0])
+    z18 = np.exp(1j * np.radians(angles))
+    yx18, xy18 = mode_phase(z18, "yx"), mode_phase(z18, "xy")
+    assert np.allclose(yx18, [10.0, -10.0, 180.0, 0.0], atol=1e-9, rtol=0.0), yx18
+    assert np.allclose(xy18, angles, atol=1e-9, rtol=0.0), xy18
+    level0 = np.flatnonzero(level_of == 0)
+    j18 = int(level0[level0.size // 2])
+    v18 = band_view(one, j18)
+    drawn = mode_phase(v18["zyx"], "yx")
+    raw = np.degrees(np.angle(v18["zyx"]))
+    assert np.all(np.abs(raw) > 175.0) and np.all(np.abs(drawn) < 5.0), (j18, raw, drawn)
+    print(f"  18. polar plane: Zyx at -170 deg drawn at {yx18[0]:+.1f} deg, at 170 / 0 / 180 deg at "
+          f"{yx18[1]:+.1f} / {yx18[2]:+.1f} / {yx18[3]:+.1f} deg; Zxy at its own angle; level-0 band {j18}'s "
+          f"chunk Zyx (-1.5) drawn at {drawn.min():+.2f} to {drawn.max():+.2f} deg, its angle "
+          f"{raw.min():+.1f} to {raw.max():+.1f} deg")
     print("\nPASS  crosspower_unit")
     return 0
 

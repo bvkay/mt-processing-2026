@@ -361,7 +361,11 @@ fetch), `geopandas`, `rasterio`, `pyproj`, `simpeg`, `bokeh` and `panel`.
       chunks long enough for 4 windows and 32 degrees of freedom, regrouped
       instantly without reading the archives, a window inside a larger store
       rounded out to whole minutes; |Z|, phase, coherence, |H| and |E|
-      against time and the polar plane; masks per window and band saved per
+      against time and the polar plane (log10 |Z| against phase per mode,
+      the yx phase plus 180 deg wrapped to (-180, 180] as `cluster_masks.py`
+      draws it, `crust.crosspower.mode_phase`, so a near-field source's yx
+      cluster sits near 0 deg rather than across the +/-180 deg edges);
+      masks per window and band saved per
       site as UTC intervals in `<survey>/masks.yaml`, `process_rr.py`
       applying the station's and the remote's of scope both (Process tab
       "apply masks.yaml"). Each entry's `scope` is `local` (the default,
