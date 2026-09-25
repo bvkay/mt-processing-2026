@@ -66,7 +66,7 @@ from loguru import logger
 
 MASKS_FILE = "masks.yaml"
 MIN_PIECE_S = 600.0  # a run piece a mask leaves shorter than this is dropped
-FOUND_BY = ("time", "polar", "cluster")
+FOUND_BY = ("time", "polar", "cluster", "night", "gate")
 HEADER = (
     "# Time masks declared on the GUI's Cross-powers tab (crust.masks): per site, the\n"
     "# intervals processing leaves out. bands: all (cut in time), or [pmin_s, pmax_s] (left\n"

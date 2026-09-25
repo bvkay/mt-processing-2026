@@ -83,7 +83,7 @@ next to the EDI. A short summary also goes into the EDI's INFO block
 Usage:
     python scripts/process_rr.py <survey.yaml> <local> <remote> [start] [end]
         [--min-period S] [--max-period S] [--per-decade N] [--notch "50,150"]
-        [--no-filters] [--no-masks | --masks] [--tag SUFFIX] [--dry-run]
+        [--no-filters] [--no-masks | --masks] [--mask-origins LIST] [--tag SUFFIX] [--dry-run]
         [--taper {boxcar,hamming,hann,dpss}] [--overlap PCT] [--no-prewhiten]
         [--min-windows N] [--max-iterations N] [--redescending-iterations N]
         [--r0 X] [--u0 X] [--tolerance X]
@@ -114,7 +114,7 @@ from loguru import logger
 from crust.bands import build_band_scheme
 from crust.compare import phase_quadrants, plot_comparison
 from crust.ingest import default_archive_path, filters_hash, ingest_site, processing_archive, variant_path, variant_ready
-from crust.masks import load_masks, remote_masks, union_masks
+from crust.masks import FOUND_BY, load_masks, remote_masks, union_masks
 from crust.process import ESTIMATOR_DEFAULTS, TAPERS, process_station
 from crust.survey import Survey
 
@@ -148,6 +148,9 @@ def build_parser() -> argparse.ArgumentParser:
                    help="ignore masks.yaml for both sites (a campaign run: every remote and option on the same data)")
     p.add_argument("--masks", dest="masks", action="store_true", default=True,
                    help="apply masks.yaml (the default; after --no-masks, the later flag wins)")
+    p.add_argument("--mask-origins", default=None, metavar="LIST",
+                   help="apply only the masks.yaml entries found by these origins, a comma list of "
+                        + ", ".join(FOUND_BY) + " (default: every entry)")
     p.add_argument("--tag", default=None, help="suffix appended to the output stem")
     p.add_argument("--dry-run", action="store_true",
                    help="print what this run resolved to and exit, opening nothing")
@@ -300,6 +303,27 @@ def archive_status(survey: Survey, site: str, raw_sites: dict, use_filters: bool
     return {"raw": raw, "variant": vpath, "variant_state": state}
 
 
+def mask_origins(text: str | None) -> set[str] | None:
+    """Return the set of mask origins named in `--mask-origins`, or None for every origin.
+
+    Args:
+        text (str | None): The comma list given on the command line.
+
+    Returns:
+        set[str] | None: The origins, each one of `crust.masks.FOUND_BY`.
+
+    Raises:
+        SystemExit: If a name is not a known origin or the list is empty.
+    """
+    if text is None:
+        return None
+    names = {s.strip() for s in text.split(",") if s.strip()}
+    unknown = sorted(names - set(FOUND_BY))
+    if unknown or not names:
+        raise SystemExit(f"--mask-origins takes a comma list of {', '.join(FOUND_BY)}; given {text!r}")
+    return names
+
+
 def resolve(args, started) -> dict:
     """Resolve everything the run needs before any file is opened.
 
@@ -383,6 +407,10 @@ def resolve(args, started) -> dict:
     # by name (`remote_masks`), not by `virtual`: with data_root unmounted every
     # remote that has an archive looks virtual, and its masks would be dropped
     masks_remote = [] if ignore_masks else remote_masks(survey, args.remote)
+    origins = mask_origins(getattr(args, "mask_origins", None))
+    if origins is not None:
+        masks_local = [m for m in masks_local if m["found_by"] in origins]
+        masks_remote = [m for m in masks_remote if m["found_by"] in origins]
     tweaks = tweaks_from(args)
     engine = getattr(args, "engine", "aurora")
     if engine == "mantle":
@@ -431,6 +459,7 @@ def resolve(args, started) -> dict:
         "masks_remote": masks_remote,
         "masks": union_masks(masks_local, masks_remote),
         "masks_ignored": ignore_masks,
+        "mask_origins": sorted(origins) if origins is not None else None,
         "engine": engine,
         "mantle_whiten": getattr(args, "mantle_whiten", "none"),
     }
@@ -610,6 +639,7 @@ def build_sidecar(res: dict, args, started, finished, edi_path: Path, png_path: 
         # the existing sidecar readers use)
         "masks_local": list(res.get("masks_local") or []),
         "masks_remote": list(res.get("masks_remote") or []),
+        "mask_origins": res.get("mask_origins"),
         "masks": list(res.get("masks") or []),
         "masks_ignored": bool(res.get("masks_ignored")),
         "argv": list(sys.argv),
@@ -702,7 +732,8 @@ def print_resolution(res: dict) -> None:
         print("masks: ignored (--no-masks)")
     else:
         print(f"masks: {res['local']} {len(res['masks_local'])}, {res['remote']} "
-              f"{len(res['masks_remote'])} ({len(res['masks'])} applied)")
+              f"{len(res['masks_remote'])} ({len(res['masks'])} applied"
+              + (f"; origins {', '.join(res['mask_origins'])}" if res.get("mask_origins") else "") + ")")
     for key, value in res["tweaks"].items():
         print(f"tweak.{key}: {value}")
     if not res["tweaks"]:
