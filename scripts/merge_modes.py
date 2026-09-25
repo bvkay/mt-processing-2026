@@ -29,7 +29,8 @@ of their sidecars), the rule, the counts of xy periods copied, interpolated
 and set to NaN, and the UTC time of the merge, in the indented JSON of
 process_rr.py's sidecar. Exit status: 0 written, 2 when a source is
 missing, the --yx product has no usable y row, or the stations or remotes
-differ without --force.
+differ without --force. `merge_files` is the same merge for a caller in
+Python, scripts/campaign.py's merged products among them.
 
 Usage:
     python scripts/merge_modes.py OUT.edi --xy A.edi --yx B.edi [--tag TAG] [--force]
@@ -254,13 +255,15 @@ def _engine(side_xy: dict | None, side_yx: dict | None) -> str | None:
     return e_xy if e_xy == e_yx else f"{e_xy}/{e_yx}"
 
 
-def build_sidecar(out: Path, args, tf_xy: TF, sources: dict, counts: dict, found: list[str],
-                  created: str, remote: str | None, engine: str | None) -> dict:
+def build_sidecar(out: Path, tag: str | None, force: bool, argv: list[str], tf_xy: TF, sources: dict,
+                  counts: dict, found: list[str], created: str, remote: str | None, engine: str | None) -> dict:
     """Build the merged product's sidecar.
 
     Args:
         out (Path): The merged EDI.
-        args (argparse.Namespace): Parsed arguments.
+        tag (str | None): The label given with --tag.
+        force (bool): Whether --force was given.
+        argv (list[str]): The command line recorded.
         tf_xy (TF): The merged TF.
         sources (dict): ``{"xy": source_entry, "yx": source_entry}``.
         counts (dict): Output of `merge`.
@@ -276,15 +279,15 @@ def build_sidecar(out: Path, args, tf_xy: TF, sources: dict, counts: dict, found
         "local": tf_xy.station_metadata.id,
         "remote": remote,
         "created": created,
-        "tag": args.tag,
+        "tag": tag,
         "edi": out.name,
         "merge": {"rule": RULE, "log10_period_tolerance": LOG_TOL,
                   **{k: v for k, v in counts.items() if k != "kind"},
                   "tipper": "xy" if tf_xy.has_tipper() else None},
         "sources": sources,
-        "forced": bool(args.force),
+        "forced": bool(force),
         "mismatches": found,
-        "argv": list(sys.argv),
+        "argv": list(argv),
         "versions": {"crust": crust.__version__, "mt_metadata": importlib.metadata.version("mt_metadata")},
     }
     if engine is not None:
@@ -300,26 +303,27 @@ def info_lines(side: dict) -> list[str]:
             f"crust.sidecar={Path(side['edi']).with_suffix('.json').name}"]
 
 
-def main(argv=None) -> int:
-    """Merge the xy row of one EDI and the yx row of another.
+def merge_files(out, xy, yx, tag: str | None = None, force: bool = False, argv: list[str] | None = None) -> int:
+    """Write the merged EDI and its sidecar from two EDI files, printing what was taken from each.
+
+    scripts/campaign.py calls it for a site's windowed products.
 
     Args:
-        argv (list[str] | None): Command-line arguments; sys.argv when None.
+        out (str | Path): Merged EDI to write; the sidecar goes beside it as
+            .json.
+        xy (str | Path): EDI giving the x row, the tipper and the periods.
+        yx (str | Path): EDI giving the y row.
+        tag (str | None): Label recorded in the sidecar and the INFO block.
+        force (bool): Merge sources whose stations or remotes differ.
+        argv (list[str] | None): Command line recorded in the sidecar;
+            sys.argv when None.
 
     Returns:
         int: 0 when written, 2 when a source is missing, the yx source has
         no usable y row, or the sources differ in station or remote without
-        --force.
+        `force`.
     """
-    parser = argparse.ArgumentParser(description=__doc__.strip().splitlines()[0])
-    parser.add_argument("out", help="merged EDI to write; its sidecar is written beside it as .json")
-    parser.add_argument("--xy", required=True, help="EDI giving the x row (Zxx, Zxy), the tipper and the periods")
-    parser.add_argument("--yx", required=True, help="EDI giving the y row (Zyx, Zyy)")
-    parser.add_argument("--tag", default=None, help="label recorded in the sidecar and the INFO block")
-    parser.add_argument("--force", action="store_true", help="merge sources whose stations or remotes differ")
-    args = parser.parse_args(argv)
-
-    out, a_path, b_path = Path(args.out).resolve(), Path(args.xy).resolve(), Path(args.yx).resolve()
+    out, a_path, b_path = Path(out).resolve(), Path(xy).resolve(), Path(yx).resolve()
     for path in (a_path, b_path):
         if not path.is_file():
             print(f"ERROR {path}: no such file", file=sys.stderr)
@@ -329,7 +333,7 @@ def main(argv=None) -> int:
     side_b_path, side_b = read_sidecar(b_path)
 
     found = mismatches(tf_xy, tf_yx, side_a, side_b)
-    if found and not args.force:
+    if found and not force:
         for line in found:
             print(f"ERROR {line} ({a_path.name} and {b_path.name}); --force merges them", file=sys.stderr)
         return 2
@@ -360,7 +364,8 @@ def main(argv=None) -> int:
 
     created = dt.datetime.now(dt.timezone.utc).strftime(ISO)
     remote = (side_a or {}).get("remote", (side_b or {}).get("remote"))
-    side = build_sidecar(out, args, tf, sources, counts, found, created, remote, _engine(side_a, side_b))
+    side = build_sidecar(out, tag, force, sys.argv if argv is None else argv, tf, sources, counts, found, created,
+                         remote, _engine(side_a, side_b))
     tf.station_metadata.transfer_function.processing_parameters = info_lines(side)
     out.parent.mkdir(parents=True, exist_ok=True)
     tf.write(fn=str(out), file_type="edi")
@@ -369,6 +374,25 @@ def main(argv=None) -> int:
     print(f"edi: {out}")
     print(f"sidecar: {side_path}")
     return 0
+
+
+def main(argv=None) -> int:
+    """Merge the xy row of one EDI and the yx row of another.
+
+    Args:
+        argv (list[str] | None): Command-line arguments; sys.argv when None.
+
+    Returns:
+        int: The status of `merge_files`.
+    """
+    parser = argparse.ArgumentParser(description=__doc__.strip().splitlines()[0])
+    parser.add_argument("out", help="merged EDI to write; its sidecar is written beside it as .json")
+    parser.add_argument("--xy", required=True, help="EDI giving the x row (Zxx, Zxy), the tipper and the periods")
+    parser.add_argument("--yx", required=True, help="EDI giving the y row (Zyx, Zyy)")
+    parser.add_argument("--tag", default=None, help="label recorded in the sidecar and the INFO block")
+    parser.add_argument("--force", action="store_true", help="merge sources whose stations or remotes differ")
+    args = parser.parse_args(argv)
+    return merge_files(args.out, args.xy, args.yx, tag=args.tag, force=args.force)
 
 
 if __name__ == "__main__":

@@ -7,18 +7,10 @@
 #
 # Outputs go to <workspace>/campaign/lineC2/.
 #
-# PLAN FEATURES THE RUNNER DOES NOT HAVE YET (do not launch before they land,
-# one commit each, after the line B campaign has finished):
-#   1. `remotes:` per-site override of the stage 3 remote (C19 -> C22).
-#   2. `windows:` per-site, per-mode processing windows and a merged product
-#      (C05: yx from the short window, xy from the full record).
-#   3. `modes:` per-site list of modes worth scoring/keeping (xy-only sites).
-#   4. the `mantle` stage 3 config: `--engine mantle --mantle-max-hours 72`
-#      (engine_mantle.MAX_HOURS becomes a CLI override) with its own
-#      expected_peak_gb; MANTLE refuses masks, so its jobs run --no-masks.
-#   5. mask scope: a masks.yaml entry applies only when its site is the
-#      local (or is channel-scoped); today process_rr unions local+remote.
-#   6. stage 2 stacks for every group (the machinery exists; group A only ran).
+# The runner features this plan uses landed on 26 Sep 2026 (`remotes:`,
+# `windows:` with a merged product, `modes:`, the `mantle` config with its own
+# expected_peak_gb and minutes_per_job, masks.yaml `scope`, stacks for every
+# group); see README's campaign row. MANTLE jobs get --no-masks from the runner.
 name: lineC2
 description: >
   Line C round 2: every site rr every concurrent site with aurora (default),
@@ -52,7 +44,7 @@ remotes:
 modes:
   C18: [xy]         # ey is a channel fault outside its bursts (317x ex, coherence <= 0.03)
   C21new: [xy]      # the recorded E pair is nearly rank 1; only the x row is recoverable
-  C05: [xy, yx]     # yx only from the short window below
+  C05: [xy]         # the best remote is chosen on xy; yx comes from the window run below, merged in
 windows:
   C05:
     yx: ["2023-09-27T05:10:00Z", "2023-09-27T09:16:49Z"]   # ey recovered at ~05:00 UTC; the raw record ends 09:16:49
@@ -66,8 +58,8 @@ stages:
   options:                         # stage 3, on the best stage 1 remote (or the override)
     tie_tolerance: 0.02
     configs:
-      masked: [--masks]                                   # masks.yaml with as-local scope (feature 5)
-      mantle: [--engine, mantle, --mantle-max-hours, "72", --no-masks]   # feature 4
+      masked: [--masks]                                   # masks.yaml, each entry in its scope (local by default)
+      mantle: [--engine, mantle, --mantle-max-hours, "72"]   # the runner adds --no-masks (MANTLE refuses masks)
       pd8: [--per-decade, "8"]                            # the one option that beat the default at C01 in round 1
 
 scoring:
@@ -78,7 +70,7 @@ runner:
   minutes_per_job: {rr: 8, variant: 2, stack: 1, mantle: 12}
   min_available_gb: 40
   peak_factor: 1.0
-  expected_peak_gb: {rr: 35, variant: 24, stack: 8, mantle: 65}   # MANTLE: 31.8 GB at 23.5 h, ~60 GB at 42 h
+  expected_peak_gb: {rr: 35, variant: 24, stack: 8, mantle: 70}   # MANTLE 1.35 GB per hour of window: 31.8 GB at 23.5 h, ~69 GB for the 51 h C10-C11 overlap
   peak_recent: 30
   move_products: false
   masks: false                     # stage 1 unmasked; the masked config is stage 3
