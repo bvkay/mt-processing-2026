@@ -87,8 +87,11 @@ def clone_ok(path: Path) -> bool:
 # --------------------------------------------------------------------------- worker (imports mt_io only)
 
 def _write_b423(path: Path, epoch: int = 1624510579, n: int = 2000, rate: int = 1000,
-                alt_line: str = "%Alt 119.9,m 12 2") -> Path:
+                alt_line: str = "%Alt 119.9,m 12 2", levels: dict | None = None, seed: int = 0) -> Path:
     """Write a synthetic B423 file.
+
+    Ex holds the record index and the other channels 0, unless `levels`
+    sets them.
 
     Args:
         path (Path): File to write.
@@ -96,6 +99,10 @@ def _write_b423(path: Path, epoch: int = 1624510579, n: int = 2000, rate: int = 
         n (int): Number of records.
         rate (int): Records per second.
         alt_line (str): The header's altitude line.
+        levels (dict | None): {record field ("Ex", "Ey", "Bx", "By",
+            "Bz"): (level, Gaussian noise sigma)} in counts, written as
+            int32 in place of those fields.
+        seed (int): Seed of the noise.
 
     Returns:
         Path: `path`.
@@ -117,6 +124,10 @@ def _write_b423(path: Path, epoch: int = 1624510579, n: int = 2000, rate: int = 
     records["time"] = epoch + index // rate
     records["tick"] = (index % rate) * (1000 // rate)
     records["Ex"] = index
+    rng = np.random.default_rng(seed)
+    for field, (level, sigma) in (levels or {}).items():
+        records[field] = np.round(level + sigma * rng.standard_normal(n)).astype("int32")
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(header + records.tobytes())
     return path
 

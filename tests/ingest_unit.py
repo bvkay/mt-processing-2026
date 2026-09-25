@@ -24,7 +24,8 @@ Usage:
 only for old call sites); `ingest_site` applies a site's declared filters, or
 its `replace` entry, to the raw archive at all -- whatever `ignore_filters`
 is, neither is ever touched and the run comment carries nothing about
-filters (only the PR6-24 high-gain note, when there is one) -- or
+filters (only the PR6-24 high-gain note, when there is one, and the dc
+level record) -- or
 `ignore_filters` changes anything else (the channel keep, the dipole
 polarity, the coil/h_scale steps must still run once per run).
 
@@ -116,6 +117,22 @@ comment must carry "electric gain 10 on ['ex', 'ey'] (declared from the field
 notes)" and the default-gain archive's no such line. The key in the own entry
 of a site that is not an EDL must raise before the existing archive is
 touched.
+
+**The raw DC level at ingest**: a LEMI-423 site ingested from two
+synthetic B423 files of 4 s, one run each (`max_run_files` 1), with ex,
+hx and hy at +2e7, +4.3e7 and +3.9e7 counts (Gaussian noise 2e6) in both
+runs and ey at 1.6e9 counts (noise 1e3, the level of the Morocco survey's
+C05 ey and C13 ey) in sr1000_0001 and at -3e7 (noise 2e6) in sr1000_0002,
+fails the test if sr1000_0001's comment, read with h5py, does not record
+ey "open input?" and ex, hx and hy "ok", or sr1000_0002's does not record
+all four "ok"; if a recorded median differs from the median of the
+channel's samples read here from the archive with h5py and numpy by more
+than the record's rounding (4 significant digits); if
+`crust.dclevel.recorded_levels` does not give back those verdicts; if
+`crust.dclevel.flag_line` of the one flagged row is not "S01 sr1000_0001
+ey: median 1.60e9 counts, open input?"; or if
+`crust.dclevel.channel_summary` does not give ey "open input?" at 1.6e9 in
+1 of its 2 runs and the other channels "ok".
 
 It also fails if `readable_b423` does not leave out a B423 file whose
 1024-byte header block is all zero (naming it, with the reason) or a
@@ -1033,6 +1050,67 @@ def test_lemi423_coil_chain() -> None:
         m.close_mth5()
     print(f"  LEMI-423 with {rsp.name}, h_scale -1000: hx, hy = {[f.name for f in chains['hx']]} "
           f"(nT -> nT -> counts -> counts, table == numpy); ex {ex_names}")
+
+
+def test_dc_level_recorded_at_ingest() -> None:
+    """Check the raw DC level `ingest_site` records in the run comments.
+
+    Fails if an ey at 1.6e9 counts in the first of two runs is not recorded
+    "open input?" there, a healthy channel is flagged, a recorded median
+    differs from the median of the archived samples read here with h5py
+    beyond the record's rounding, or `recorded_levels`, `flag_line` and
+    `channel_summary` do not give back the record.
+    """
+    import shutil
+    import h5py
+    import numpy as np
+    from crust.dclevel import OK, OPEN, channel_summary, flag_line, parse_level_note, recorded_levels
+    from mtio_fork_unit import _write_b423
+
+    root = SCRATCH / "dc_level"
+    shutil.rmtree(root, ignore_errors=True)
+    healthy = {"Ex": (2.0e7, 2.0e6), "Bx": (4.3e7, 2.0e6), "By": (3.9e7, 2.0e6)}
+    epoch = 1624510579
+    _write_b423(root / "raw" / "S01" / f"{epoch}.B423", epoch=epoch, n=4000,
+                levels={**healthy, "Ey": (1.6e9, 1.0e3)}, seed=1)
+    _write_b423(root / "raw" / "S01" / f"{epoch + 4}.B423", epoch=epoch + 4, n=4000,
+                levels={**healthy, "Ey": (-3.0e7, 2.0e6)}, seed=2)
+    survey = Survey({"name": "t", "instrument": "lemi423", "sample_rate": 1000, "data_root": str(root / "raw"),
+                     "workspace": str(root / "work"),
+                     "defaults": {"channels": ["ex", "ey", "hx", "hy"], "dipole_length_ex": 50.0,
+                                  "dipole_length_ey": 50.0},
+                     "sites": {"S01": {}}}, root)
+    path = ingest_site(survey, "S01", overwrite=True, max_run_files=1)
+    want = {"sr1000_0001": {"ex": OK, "ey": OPEN, "hx": OK, "hy": OK},
+            "sr1000_0002": {"ex": OK, "ey": OK, "hx": OK, "hy": OK}}
+    independent = {}
+    with h5py.File(path, "r") as f:
+        station = f["Experiment/Surveys/t/Stations/S01"]
+        runs = sorted(r for r in station if r.startswith("sr"))
+        assert runs == sorted(want), runs
+        for run in runs:
+            comment = station[run].attrs.get("comments")
+            comment = comment.decode() if isinstance(comment, bytes) else str(comment)
+            rows = {r["channel"]: r for r in parse_level_note(comment)}
+            got = {c: r["verdict"] for c, r in rows.items()}
+            assert got == want[run], (run, comment)
+            for comp, row in rows.items():
+                truth = float(np.median(station[run][comp][()].astype("float64")))
+                independent[(run, comp)] = truth
+                assert abs(row["median_counts"] - truth) <= 5e-4 * abs(truth), (run, comp, row, truth)
+    levels = recorded_levels(path, "t", "S01")
+    assert {run: {r["channel"]: r["verdict"] for r in rows} for run, rows in levels.items()} == want, levels
+    ey = next(r for r in levels["sr1000_0001"] if r["channel"] == "ey")
+    assert abs(ey["median_counts"] - 1.6e9) < 1e6, ey
+    flagged = [flag_line(r) for rows in levels.values() for r in rows if r["verdict"] != OK]
+    assert flagged == ["S01 sr1000_0001 ey: median 1.60e9 counts, open input?"], flagged
+    summary = {c["channel"]: c for c in channel_summary(levels)}
+    assert (summary["ey"]["verdict"], summary["ey"]["n_verdict"], summary["ey"]["n_runs"]) == (OPEN, 1, 2), summary
+    assert abs(summary["ey"]["median_counts"] - 1.6e9) < 1e6, summary["ey"]
+    assert all(summary[c]["verdict"] == OK for c in ("ex", "hx", "hy")), summary
+    print(f"  dc level recorded: sr1000_0001 ey open input? at {ey['median_counts']:.4g} counts (h5py median "
+          f"{independent[('sr1000_0001', 'ey')]:.10g}), every other channel run ok; flagged {flagged}; "
+          f"summary ey open input? in {summary['ey']['n_verdict']} of {summary['ey']['n_runs']} runs")
 
 
 def test_glued_altitude_header_line() -> None:

@@ -38,7 +38,17 @@ Usage:
      label) for D02 and for A07 (both archived, so both cells drawn in the
      disabled grey #7a7a7a with the tooltip "archive built with the old set -
      Delete archive then Build MTH5 to change it") and for A02 (no archive)
-     with no tooltip and not in that grey; or the dark theme is not on: the
+     with no tooltip and not in that grey; or its `dc level` column does not
+     follow `archive`, or reads other than "-" for A02 (no tooltip) and, with
+     the tooltip `metadata.NO_RECORD_TIP`, for D02 and A07 when their
+     archives' run comments (read here with h5py) hold no "dc level (" record;
+     or the tab's dc level cell of an archive written here with h5py, two
+     runs whose comments record hx +4.300e+07, hy +3.900e+07 and ex
+     +2.000e+07 ok in both and ey +1.600e+09 open input? in the first and
+     -3.000e+07 ok in the second, does not read "hx ok 4.30e7, hy ok 3.90e7,
+     ex ok 2.00e7, ey open input? 1.60e9 in 1 of 2 runs" in #ef5350
+     (`theme.BAD_COLOUR`), sort first (key 0) and list the eight channel runs
+     in its tooltip; or the dark theme is not on: the
      application palette's Window colour is not #2b2b2b (`theme.WINDOW`),
      its Base not #1f1f1f, or the style not Fusion (behind the theme's
      proxy); or an unticked, unlabelled QCheckBox has no pixel at least 64
@@ -672,8 +682,14 @@ Usage:
      plot and on both polar plots, and the count label read "2 of 12 chunks
      masked" (both fully masked: a count summing `masked_chunks`' 0/1/2
      codes says 4); and the real survey folder's masks.yaml, if any, must be
-     left unchanged. The compute times are printed and the tab shot to
-     work/qc/gui_crosspower_overlap.png (the whole overlap),
+     left unchanged. The polar plane must then draw each chunk's xy spot at
+     the angle of its Zxy and its yx spot at the angle of its Zyx plus 180
+     deg, wrapped to (-180, 180] (both computed here from the band's zxy and
+     zyx, within 1e-9 deg), under the left labels "phase (deg)" and "phase
+     yx + 180 (deg)"; a rubber band round one yx spot at the phase drawn
+     must select exactly that chunk, on "polar yx", and the same rubber band
+     at the angle of its Zyx none. The compute times are printed and the
+     tab shot to work/qc/gui_crosspower_overlap.png (the whole overlap),
      gui_crosspower_deep.png (the deep band) and gui_crosspower.png (the QC
      window), none counted in (17); the level-5 band and the two 1 min bands
      to the scratch copy's folder (gui_crosspower_level5.png,
@@ -752,6 +768,7 @@ sys.path.insert(0, str(REPO / "src"))
 from crust.survey import Survey  # noqa: E402
 from crust.timefreq import BANDS_S, line_excess  # noqa: E402
 from crust.gui import channels_column, metadata_edit, tf_plot, theme  # noqa: E402
+from crust.gui.tabs import metadata as metadata_module  # noqa: E402
 from crust.gui.app import MainWindow  # noqa: E402
 from crust.gui.jobs import JobRunner  # noqa: E402
 
@@ -1852,6 +1869,76 @@ def crosspower_check(app, window) -> None:
           f"plots, the other ten filled, \"{tab.count_label.text()}\"; the real survey folder's masks.yaml "
           f"untouched; {shot.name} and {shot_deep.name} saved")
 
+    # the polar plane: xy at its angle, yx at its angle plus 180 deg wrapped to (-180, 180], computed here
+    from PySide6.QtCore import QRectF
+
+    polar_view = band_view(tab.result, tab.band())
+    labels = {"xy": "phase (deg)", "yx": "phase yx + 180 (deg)"}
+    for mode in ("xy", "yx"):
+        plot = tab.polar_plots[mode]
+        (_item, _x, y, idx, _colour), = tab.items[plot]
+        raw = np.degrees(np.angle(polar_view["z" + mode][idx]))
+        want = raw if mode == "xy" else np.where(raw <= 0.0, raw + 180.0, raw - 180.0)
+        assert np.allclose(y, want, atol=1e-9, rtol=0.0), (mode, y, want)
+        label = plot.getPlotItem().getAxis("left").labelText
+        assert label == labels[mode], (mode, label)
+    yx_plot = tab.polar_plots["yx"]
+    (_item, x, y, idx, _colour), = tab.items[yx_plot]
+    raw0 = float(np.degrees(np.angle(polar_view["zyx"][idx[0]])))
+    yx_plot.getViewBox().selected.emit(QRectF(x[0] - 1e-6, y[0] - 1e-6, 2e-6, 2e-6))
+    pump(app, 0.1)
+    assert tab.selected == {int(idx[0])} and tab.selected_on == "polar yx", (tab.selected, tab.selected_on)
+    yx_plot.getViewBox().selected.emit(QRectF(x[0] - 1e-6, raw0 - 1e-6, 2e-6, 2e-6))
+    pump(app, 0.1)
+    assert tab.selected == set(), tab.selected
+    print(f"    polar plane: xy at its angle, yx at its angle + 180 deg ({want.min():+.1f} to {want.max():+.1f} deg "
+          f"for the angles {raw.min():+.1f} to {raw.max():+.1f}), labels {list(labels.values())}; a rubber band "
+          f"at chunk {int(idx[0])}'s drawn yx phase {y[0]:+.1f} deg selects it, at its angle {raw0:+.1f} deg none")
+
+
+def check_dc_level_column(window, table, columns: list[str]) -> None:
+    """Check the Metadata tab's dc level column and its cell of a recorded archive, criterion (1)."""
+    dc_col = columns.index(metadata_module.DC_LEVEL)
+    assert columns[dc_col - 1] == "archive", columns
+    shown = {}
+    for site in (SITE, "A07", UNARCHIVED):
+        cell = table.item(next(r for r in range(table.rowCount()) if table.item(r, 0).text() == site), dc_col)
+        shown[site] = cell.text()
+        path = window.state.archive_path(site)
+        recorded = False
+        if path.exists():
+            with h5py.File(path, "r", locking=False) as f:
+                station = f[f"Experiment/Surveys/{next(iter(f['Experiment/Surveys']))}/Stations/{site}"]
+                recorded = any("dc level (" in str(station[run].attrs.get("comments", ""))
+                               for run in station if run.startswith("sr"))
+        if recorded:
+            assert cell.text() != "-", (site, cell.text())
+        else:
+            want = ("-", metadata_module.NO_RECORD_TIP if path.exists() else "")
+            assert (cell.text(), cell.toolTip()) == want, (site, cell.text(), cell.toolTip())
+    comments = {
+        "sr1000_0001": ("skipped unreadable file(s): x.B423; dc level (median counts, rail %): hx +4.300e+07 0.10 ok, "
+                        "hy +3.900e+07 0.10 ok, ex +2.000e+07 0.05 ok, ey +1.600e+09 0.05 open input?"),
+        "sr1000_0002": ("dc level (median counts, rail %): hx +4.300e+07 0.10 ok, hy +3.900e+07 0.10 ok, "
+                        "ex +2.000e+07 0.05 ok, ey -3.000e+07 0.08 ok"),
+    }
+    path = SCRATCH / "dc_level" / "S05.h5"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with h5py.File(path, "w") as f:
+        station = f.create_group("Experiment/Surveys/t/Stations/S05")
+        station.create_group("Transfer_Functions")
+        for run, text in comments.items():
+            station.create_group(run).attrs["comments"] = text
+    item = metadata_module._dc_level_item("t", "S05", path)
+    want = "hx ok 4.30e7, hy ok 3.90e7, ex ok 2.00e7, ey open input? 1.60e9 in 1 of 2 runs"
+    assert item.text() == want, item.text()
+    assert item.foreground().color().name() == theme.BAD_COLOUR == "#ef5350", item.foreground().color().name()
+    assert item.sort_key() == 0, item.sort_key()
+    tip = item.toolTip().splitlines()
+    assert len(tip) == 9 and "sr1000_0001 ey: median 1.60e9 counts, rail 0.05 %, open input?" in tip, tip
+    print(f"  dc level column after archive: {shown}; a recorded archive's cell {item.text()!r} in "
+          f"{theme.BAD_COLOUR}")
+
 
 def main() -> int:
     """Build the window over the real survey, check criteria (1)-(34) in the order they run and return 0."""
@@ -1886,6 +1973,7 @@ def main() -> int:
             (site, cell.foreground().color().name(), cell.toolTip())
     print(f"  metadata: {table.rowCount()} sites, {SITE}'s remote column {REMOTE}; channels "
           f"{DEFAULT_CHANNELS!r} for {SITE}, A07 (greyed, archive tooltip) and {UNARCHIVED} (plain)")
+    check_dc_level_column(window, table, columns)
     palette = app.palette()
     window_grey = palette.color(QPalette.Window).name()
     base_grey = palette.color(QPalette.Base).name()

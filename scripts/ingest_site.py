@@ -22,7 +22,12 @@ builds the variant only, from an existing raw archive.
 
 For one site the script prints "archive: <path>" for the raw step and
 "variant: <path>" for the variant step (or "variant: none (no declared
-filters)"). An existing raw archive is rebuilt only with --force, since
+filters)"). The raw step records the DC level of each channel and run in
+the run comments (`crust.ingest.ingest_site`, `crust.dclevel`); after the
+"archive:" line the script reads them back (`crust.dclevel.recorded_levels`)
+and prints one line per flagged channel run, "<site> <run> <channel>:
+median 1.60e9 counts, open input?" (or the share at the rail and
+"saturated?"). An existing raw archive is rebuilt only with --force, since
 every transfer function of the site may have been made from it. A variant
 already current for the site's declared filters
 (`crust.ingest.variant_ready`) is likewise kept unless --force is given. A
@@ -72,6 +77,7 @@ REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "src"))
 sys.path.insert(0, str(REPO / "scripts"))
 
+from crust.dclevel import OK, flag_line, recorded_levels  # noqa: E402
 from crust.ingest import build_variant, default_archive_path, ingest_site, variant_path, variant_ready  # noqa: E402
 from crust.survey import Survey  # noqa: E402
 from process_rr import MAX_RUN_FILES  # noqa: E402  (shared with process_rr.py)
@@ -437,6 +443,10 @@ def main(argv=None) -> int:
             _remove_partial(out)
             raise
         print(f"archive: {path}")
+        for rows in recorded_levels(path, survey.name, site).values():
+            for row in rows:
+                if row["verdict"] != OK:
+                    print(flag_line(row))
 
     if not args.raw:
         declared = survey.site(site).filters or []
