@@ -414,7 +414,7 @@ C16:
 - notch:
     f0: 50.0
     harmonics: 3
-    q: 50.0
+    q: 150.0
     passes: 1
     extra:
     - 82.0
@@ -668,6 +668,17 @@ B15:
     harmonics: 9
     q: 30.0
     passes: 2
+    extra:
+    - 96.0
+    - 98.0
+    - 148.0
+- notch:
+    f0: 20.0
+    harmonics: 1
+    q: 200.0
+    passes: 1
+    extra:
+    - 80.0
 B16:
 - mains:
     f0: 50.0
@@ -679,6 +690,32 @@ B16:
     harmonics: 9
     q: 30.0
     passes: 2
+    extra:
+    - 96.0
+    - 97.0
+    - 98.0
+    - 99.0
+- notch:
+    f0: 25.0
+    harmonics: 1
+    q: 80.0
+    passes: 1
+    extra:
+    - 75.0
+    - 125.0
+    - 175.0
+- notch:
+    f0: 20.0
+    harmonics: 1
+    q: 200.0
+    passes: 1
+    extra:
+    - 30.0
+    - 70.0
+    - 90.0
+    - 110.0
+    - 130.0
+    - 170.0
 B17:
 - mains:
     f0: 50.0
