@@ -49,7 +49,10 @@ with "all bands" ticked (offered at a band shown per base chunk), else the
 band's [pmin, pmax]. "Unmask selected" cuts the chunks out of the masks
 applying to the band, the all-band ones only at a level shown per base
 chunk. Masks are declared per site, whatever the remote; Save masks writes
-the site's block of masks.yaml and a change of site reloads it. In
+the site's block of masks.yaml and a change of site reloads it. A new mask
+is written with scope local (`crust.masks`): it applies when the site is
+the local of a pair, and the pairs that use the site as a remote keep its
+windows; an entry set to scope both in masks.yaml keeps that scope. In
 processing an all-band mask is a time cut and a band mask drops the
 windows it overlaps in its bands (`MASK_ROUTE`).
 
@@ -104,7 +107,8 @@ MASK_ROUTE = "all-band masks: time cuts; band masks: their windows dropped in th
 ALL_BANDS_TIP = ("ticked: a time-panel mask is a time cut, every band left out (bands: all); unticked: it "
                  "covers the shown band only, like a polar-panel mask")
 MASKS_TIP = ("this site's masks (its block of <survey>/masks.yaml): declared per site, they apply whichever remote "
-             "it is processed with; at processing the remote's own masks apply too (Process tab, \"apply "
+             "it is processed with; new masks are scope local, applied when this site is the local of a pair, and "
+             "a mask set to scope both in masks.yaml applies when it is the remote too (Process tab, \"apply "
              "masks.yaml\", on by default)")
 
 
@@ -1201,7 +1205,7 @@ class CrossPowerTab(QWidget):
                 "start": v["starts"][run[0]], "end": v["ends"][run[-1]],
                 "bands": "all" if whole else [pmin, pmax],
                 "reason": f"{self.selected_on} panel, {period:.4g} s band{grid}",
-                "found_by": "time" if self.selected_on == "time" else "polar"}))
+                "found_by": "time" if self.selected_on == "time" else "polar", "scope": "local"}))
         self._edited()
         span_s = sum((v["ends"][run[-1]] - v["starts"][run[0]]).total_seconds() for run in runs)
         self.status.setText(

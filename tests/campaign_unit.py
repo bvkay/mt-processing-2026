@@ -74,15 +74,22 @@ Usage:
 
 (9) the masks signature is wrong: with the plan's runner.masks on, an rr
     job A rr B's inputs do not name both A's and B's masks.yaml hash
-    (";A:m<8 hex>" and ";B:m<8 hex>"), or do not change when a mask is added
-    to B alone (the remote: process_rr applies it too) or then to A; a job
-    against a stack STK_Au names a masks hash for the stack; or its command
-    carries --no-masks. With runner.masks off: any ":m" hash in the inputs,
+    (";A:m<8 hex>" and ";B:m<8 hex>"), or do not change when a mask of
+    scope both is added to B alone (the remote: process_rr applies it too)
+    or then to A; a job against a stack STK_Au names a masks hash for the
+    stack; or its command carries --no-masks. The scope: a mask of scope
+    local (written without the key) added to B alone changes A rr B's
+    inputs, or leaves B rr A's unchanged; a config [--mask-scope union]
+    does not name that mask in A rr B's inputs; or a scope key set on a
+    mask the run applies either way (A's own, from local to both) changes
+    A rr B's inputs. With runner.masks off: any ":m" hash in the inputs,
     or a command without --no-masks; a config declared as [--masks] whose
     command does not put --masks after the runner's --no-masks, or whose
     inputs name no masks hash; with runner.masks on, a config [--no-masks]
     whose inputs name one; a stage 3 [--masks] job built for A rr B while
-    masks.yaml names neither, or not built once it names B;
+    masks.yaml names neither, or not built once B holds a mask of scope
+    both; built while B holds only a mask of scope local, or a
+    [--masks, --mask-scope union] job not built then;
 
 (10) a MANTLE config is handled wrongly: with runner.masks on, a config
      `mantle: [--engine, mantle]` does not give `rr_masks_on` False,
@@ -487,9 +494,10 @@ def test_inputs_masks_both_sites() -> None:
     assert re.search(r";A:m[0-9a-f]{8}", bare) and re.search(r";B:m[0-9a-f]{8}", bare), bare
     assert "--no-masks" not in job.cmd, job.cmd
 
-    def mask(h0: float) -> dict:
-        """Build a 30 min all-band mask from h0 hours after T0."""
-        return {"start": iso(h0), "end": iso(h0 + 0.5), "bands": "all", "reason": "test", "found_by": "time"}
+    def mask(h0: float, scope: str | None = "both") -> dict:
+        """Build a 30 min all-band mask from h0 hours after T0; scope None leaves the key out (scope local)."""
+        out = {"start": iso(h0), "end": iso(h0 + 0.5), "bands": "all", "reason": "test", "found_by": "time"}
+        return out if scope is None else {**out, "scope": scope}
 
     (root / "masks.yaml").write_text(yaml.safe_dump({"B": [mask(10)]}), encoding="utf-8")
     remote_masked = c.inputs(job)
@@ -500,6 +508,25 @@ def test_inputs_masks_both_sites() -> None:
     assert both_masked != remote_masked, "a mask added to the local did not change the inputs"
     stack_sig = c.inputs(stack_job)
     assert ";A:m" in stack_sig and "STK_Au:m" not in stack_sig, stack_sig
+
+    # the scope: B's mask of scope local is B's own as the local, and no part of A rr B
+    reverse = c.rr_job(1, "B", "A", "default", "s1_B_rr-A")
+    reverse_bare = c.inputs(reverse)
+    (root / "masks.yaml").write_text(yaml.safe_dump({"B": [mask(10, None)]}), encoding="utf-8")
+    assert c.inputs(job) == bare, ("a local-scoped mask of the remote changed the inputs", bare, c.inputs(job))
+    assert c.inputs(reverse) != reverse_bare, "a local-scoped mask of the local left the inputs unchanged"
+    c.plan.configs["union"] = ["--mask-scope", "union"]
+    union_job = c.rr_job(3, "A", "B", "union", "s3_A_rr-B_union")
+    assert c.config_mask_scope("union") == "union" and c.config_mask_scope("default") == "role"
+    assert c.inputs(union_job) == remote_masked, (c.inputs(union_job), remote_masked)
+    (root / "masks.yaml").write_text(yaml.safe_dump({"A": [mask(20, None)], "B": [mask(10, "local")]}),
+                                     encoding="utf-8")
+    local_scoped = c.inputs(job)
+    (root / "masks.yaml").write_text(yaml.safe_dump({"A": [mask(20, "both")], "B": [mask(10, "local")]}),
+                                     encoding="utf-8")
+    assert c.inputs(job) == local_scoped, "A's scope changed, not its masks, and A rr B's inputs moved"
+    print(f"  B's local-scoped mask: A rr B {c.inputs(job)} (as bare), B rr A changed; "
+          f"[--mask-scope union] names it: {c.inputs(union_job)}")
 
     off = cp.Campaign(survey_yaml, cp.load_plan(make_plan(root / "off")), parallel=2, create=False)
     off_job = off.rr_job(1, "A", "B", "default", "s1_A_rr-B")
@@ -528,7 +555,14 @@ def test_inputs_masks_both_sites() -> None:
     (root / "masks.yaml").write_text(yaml.safe_dump({"B": [mask(10)]}), encoding="utf-8")
     some = [j.config for j in off.stage3_jobs(["A"])]
     assert none == ["hamming"] and some == ["masked", "hamming"], (none, some)
-    print(f"  stage 3 with no masks.yaml entry for A or B: {none}; with one for B: {some}")
+    print(f"  stage 3 with no masks.yaml entry for A or B: {none}; with one of scope both for B: {some}")
+    # B's only mask of scope local: the masked run would repeat the default, the union run would not
+    off.plan.configs = {"masked": ["--masks"], "masked_union": ["--masks", "--mask-scope", "union"],
+                        "hamming": ["--taper", "hamming"]}
+    (root / "masks.yaml").write_text(yaml.safe_dump({"B": [mask(10, None)]}), encoding="utf-8")
+    local_only = [j.config for j in off.stage3_jobs(["A"])]
+    assert local_only == ["masked_union", "hamming"], local_only
+    print(f"  stage 3 with one mask of scope local for B: {local_only}")
 
 
 def test_mantle_config() -> None:

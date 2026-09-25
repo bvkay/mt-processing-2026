@@ -8,7 +8,9 @@ of the Cross-powers tab (`crust.crosspower`) such a band splits into two
 clusters in the (log10 |Z|, phase) plane: the Earth's, at a physical phase,
 and the source's, near zero phase. The script finds the two clusters band by
 band and writes a band mask over every chunk of the source cluster, the mask
-a selection on the tab's polar panel records, with found_by "cluster".
+a selection on the tab's polar panel records, with found_by "cluster" and
+scope local (`crust.masks`): the masks apply when the site is the local of
+a pair, and the pairs that use it as a remote keep those windows.
 
 The pair's window store is computed over the overlap of the two stations, or
 over [start, end), with `compute_windows` (4 threads) on the archives
@@ -343,7 +345,7 @@ def mask_records(starts, ends, masked, pmin: float, pmax: float, component: str,
         dilated (int): The groups either side of the source's that `masked` holds, for the reason text.
 
     Returns:
-        list of dict: Normalised masks with found_by "cluster".
+        list of dict: Normalised masks with found_by "cluster" and scope "local".
     """
     if not np.any(masked):
         return []
@@ -352,7 +354,7 @@ def mask_records(starts, ends, masked, pmin: float, pmax: float, component: str,
               f"|Z| {split['source_z']:.3g}, Earth cluster phase {split['earth_phase']:.1f} deg, separation "
               f"{split['separation']:.1f} deg, {split['n_source']}/{split['n']} chunks{grown} (cluster_masks.py)")
     return [normalise({"start": starts[a], "end": ends[b], "bands": [pmin, pmax], "reason": reason,
-                       "found_by": FOUND_BY}) for a, b in runs(masked)]
+                       "found_by": FOUND_BY, "scope": "local"}) for a, b in runs(masked)]
 
 
 def replace_cluster_masks(existing, new, origin: str = FOUND_BY) -> list[dict]:

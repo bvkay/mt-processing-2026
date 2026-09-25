@@ -29,13 +29,19 @@ raw and variant archive status, window, product stem) and exits without
 opening a file or building a variant.
 
 Time masks (`<survey>/masks.yaml`, declared per site on the GUI's
-Cross-powers tab) are applied from both sites of the pair: the local and
-remote entries are joined (`crust.masks.union_masks`). A remote-referenced
-estimate uses both stations' samples, so an interval that is bad at either
-one is left out. A stacked remote (`STK_...`) has no entry of its own; the
-remote is looked up by its name (`crust.masks.remote_masks`), so its masks
-apply whether or not data_root is mounted. `--no-masks` ignores the file for
-both sites.
+Cross-powers tab or by scripts/cluster_masks.py and scripts/gate_masks.py)
+are applied by role: every entry of the local site, and the entries of the
+remote site whose `scope` is `both`, joined with `crust.masks.union_masks`.
+An entry of scope `local`, the default, applies only when its site is the
+local, so a mask of a site's electric channels keeps its windows in the
+pairs that use the site as a remote, where its magnetics alone are used. A
+stacked remote (`STK_...`) has no entry of its own; the remote is looked up
+by its name (`crust.masks.remote_masks`), so its masks apply whether or not
+data_root is mounted. `--mask-scope union` applies every entry of both
+sites, whatever its scope, for comparison. The sidecar records the rule
+(`mask_scope`) and the counts applied from each site (`mask_counts`: local,
+remote, and remote_left_out, the remote's entries of scope local left out).
+`--no-masks` ignores the file for both sites.
 
 A derived site (`<site>L`, written by scripts/decimate_site.py at its own
 `sample_rate:`, 1 Hz) is processed from its archive as it is, against a
@@ -83,7 +89,8 @@ next to the EDI. A short summary also goes into the EDI's INFO block
 Usage:
     python scripts/process_rr.py <survey.yaml> <local> <remote> [start] [end]
         [--min-period S] [--max-period S] [--per-decade N] [--notch "50,150"]
-        [--no-filters] [--no-masks | --masks] [--mask-origins LIST] [--tag SUFFIX] [--dry-run]
+        [--no-filters] [--no-masks | --masks] [--mask-origins LIST] [--mask-scope {role,union}]
+        [--tag SUFFIX] [--dry-run]
         [--taper {boxcar,hamming,hann,dpss}] [--overlap PCT] [--no-prewhiten]
         [--min-windows N] [--max-iterations N] [--redescending-iterations N]
         [--r0 X] [--u0 X] [--tolerance X]
@@ -114,7 +121,7 @@ from loguru import logger
 from crust.bands import build_band_scheme
 from crust.compare import phase_quadrants, plot_comparison
 from crust.ingest import default_archive_path, filters_hash, ingest_site, processing_archive, variant_path, variant_ready
-from crust.masks import FOUND_BY, load_masks, remote_masks, union_masks
+from crust.masks import FOUND_BY, SCOPE_RULES, load_masks, masks_for_role, remote_masks, union_masks
 from crust.process import ESTIMATOR_DEFAULTS, TAPERS, process_station
 from crust.survey import Survey
 
@@ -151,6 +158,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--mask-origins", default=None, metavar="LIST",
                    help="apply only the masks.yaml entries found by these origins, a comma list of "
                         + ", ".join(FOUND_BY) + " (default: every entry)")
+    p.add_argument("--mask-scope", choices=SCOPE_RULES, default="role",
+                   help="role (the default): every masks.yaml entry of the local and the remote's entries of "
+                        "scope both; union: every entry of both sites, whatever its scope")
     p.add_argument("--tag", default=None, help="suffix appended to the output stem")
     p.add_argument("--dry-run", action="store_true",
                    help="print what this run resolved to and exit, opening nothing")
@@ -342,11 +352,16 @@ def resolve(args, started) -> dict:
     (`crust.ingest.processing_archive`, which builds a missing variant) and
     overwrites these two entries before the sidecar is written.
 
-    `masks_local`/`masks_remote` are each site's `masks.yaml` entries
-    (`load_masks`, and `remote_masks` for the remote, which gives [] for a
-    stack named `STK_...`), and `masks` is their union in start order, as
-    passed to `process_station`. With `--no-masks` all three are [] and
-    `masks_ignored` is True.
+    `masks_local`/`masks_remote` are the `masks.yaml` entries applied from
+    each site (`masks_for_role` under the rule `mask_scope`: every entry of
+    the local, the remote's entries of scope both, or all of them under
+    `--mask-scope union`; `remote_masks` gives [] for a stack named
+    `STK_...`), each narrowed to `--mask-origins` when given, and `masks` is
+    their union in start order, as passed to `process_station`.
+    `mask_counts` holds the number applied from the local and from the
+    remote, and `remote_left_out` the remote's entries its scope leaves out.
+    With `--no-masks` all three lists are [], every count 0 and
+    `masks_ignored` True.
 
     `sample_rate` and `remote_sample_rate` are `Survey.sample_rate_of` of
     the two sites; the band scheme and the quadrant window use
@@ -403,14 +418,17 @@ def resolve(args, started) -> dict:
     virtual = bool(remote_parent) or (args.remote not in raw_sites and stacked.exists())
     remote_h5 = stacked if virtual else default_archive_path(survey, args.remote)
     ignore_masks = not args.masks
-    masks_local = [] if ignore_masks else load_masks(survey, args.local)
+    scope_rule = getattr(args, "mask_scope", "role")
+    masks_local = [] if ignore_masks else masks_for_role(load_masks(survey, args.local), "local", scope_rule)
     # by name (`remote_masks`), not by `virtual`: with data_root unmounted every
-    # remote that has an archive looks virtual, and its masks would be dropped
-    masks_remote = [] if ignore_masks else remote_masks(survey, args.remote)
+    # remote that has an archive looks virtual, and its masks would be dropped;
+    # every entry is read once, and the scope rule picks the ones applied
+    declared_remote = [] if ignore_masks else remote_masks(survey, args.remote, rule="union")
     origins = mask_origins(getattr(args, "mask_origins", None))
     if origins is not None:
         masks_local = [m for m in masks_local if m["found_by"] in origins]
-        masks_remote = [m for m in masks_remote if m["found_by"] in origins]
+        declared_remote = [m for m in declared_remote if m["found_by"] in origins]
+    masks_remote = masks_for_role(declared_remote, "remote", scope_rule)
     tweaks = tweaks_from(args)
     engine = getattr(args, "engine", "aurora")
     if engine == "mantle":
@@ -421,7 +439,7 @@ def resolve(args, started) -> dict:
             raise SystemExit(f"--engine mantle takes none of the aurora estimator flags (given: {sorted(tweaks)})")
         if masks_local or masks_remote:
             raise SystemExit(f"--engine mantle applies no masks.yaml entries yet ({args.local} {len(masks_local)}, "
-                             f"{args.remote} {len(masks_remote)} declared): run it with --no-masks")
+                             f"{args.remote} {len(masks_remote)} to apply): run it with --no-masks")
 
     return {
         "survey": survey,
@@ -460,6 +478,9 @@ def resolve(args, started) -> dict:
         "masks": union_masks(masks_local, masks_remote),
         "masks_ignored": ignore_masks,
         "mask_origins": sorted(origins) if origins is not None else None,
+        "mask_scope": scope_rule,
+        "mask_counts": {"local": len(masks_local), "remote": len(masks_remote),
+                        "remote_left_out": len(declared_remote) - len(masks_remote)},
         "engine": engine,
         "mantle_whiten": getattr(args, "mantle_whiten", "none"),
     }
@@ -635,11 +656,14 @@ def build_sidecar(res: dict, args, started, finished, edi_path: Path, png_path: 
             local: _declared_filters(survey, local, raw_sites),
             remote: _declared_filters(survey, remote, raw_sites),
         },
-        # each site's masks.yaml entries, and the union actually applied (the key
-        # the existing sidecar readers use)
+        # the masks.yaml entries applied from each site, the scope rule that chose the
+        # remote's and the counts, and the union actually applied (the key the
+        # existing sidecar readers use)
         "masks_local": list(res.get("masks_local") or []),
         "masks_remote": list(res.get("masks_remote") or []),
         "mask_origins": res.get("mask_origins"),
+        "mask_scope": res.get("mask_scope", "role"),
+        "mask_counts": dict(res.get("mask_counts") or {"local": 0, "remote": 0, "remote_left_out": 0}),
         "masks": list(res.get("masks") or []),
         "masks_ignored": bool(res.get("masks_ignored")),
         "argv": list(sys.argv),
@@ -731,9 +755,12 @@ def print_resolution(res: dict) -> None:
     if res["masks_ignored"]:
         print("masks: ignored (--no-masks)")
     else:
+        left_out = res.get("mask_counts", {}).get("remote_left_out", 0)
+        scope = ("; --mask-scope union" if res.get("mask_scope") == "union" else
+                 f"; {res['remote']} {left_out} of scope local left out" if left_out else "")
         print(f"masks: {res['local']} {len(res['masks_local'])}, {res['remote']} "
               f"{len(res['masks_remote'])} ({len(res['masks'])} applied"
-              + (f"; origins {', '.join(res['mask_origins'])}" if res.get("mask_origins") else "") + ")")
+              + (f"; origins {', '.join(res['mask_origins'])}" if res.get("mask_origins") else "") + scope + ")")
     for key, value in res["tweaks"].items():
         print(f"tweak.{key}: {value}")
     if not res["tweaks"]:
@@ -797,7 +824,7 @@ def main(args) -> None:
 
     stem = res["stem"]
     scheme = build_band_scheme(res["sample_rate"], **res["scheme_kwargs"])
-    masks = res["masks"]  # both sites' masks.yaml intervals, joined (`resolve`)
+    masks = res["masks"]  # the masks.yaml intervals applied from both sites, joined (`resolve`)
     if res["masks_ignored"]:
         logger.info(f"{local}, {remote}: masks.yaml ignored (--no-masks)")
     else:
@@ -807,9 +834,13 @@ def main(args) -> None:
         if res["masks_local"]:
             logger.info(f"{local}: {len(res['masks_local'])} mask(s) declared in masks.yaml "
                         f"({all_band(res['masks_local'])} all-band, applied as time cuts)")
+        left_out = res["mask_counts"]["remote_left_out"]
+        if res["masks_remote"] or left_out:
+            chosen = "every entry (--mask-scope union)" if res["mask_scope"] == "union" else "scope both"
+            logger.info(f"{remote} (remote): {len(res['masks_remote'])} mask(s) applied, {chosen} "
+                        f"({all_band(res['masks_remote'])} all-band, applied as time cuts); "
+                        f"{left_out} of scope local left out")
         if res["masks_remote"]:
-            logger.info(f"{remote} (remote): {len(res['masks_remote'])} mask(s) declared "
-                        f"({all_band(res['masks_remote'])} all-band, applied as time cuts)")
             logger.info(f"{local} rr {remote}: {len(masks)} mask(s) applied (both sites' entries joined)")
     extras: dict = {}
     if res["engine"] == "mantle":
