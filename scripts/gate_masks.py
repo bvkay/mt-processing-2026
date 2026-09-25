@@ -9,7 +9,10 @@ no window is given) and masks the rest of every day of the site's record,
 found_by "night", so that a run with `process_rr.py --mask-origins night`
 processes the nights alone. `--gate` masks the spans where the local
 electric field carries bursts, found_by "gate". The record is the site's
-`start` to `end` in survey.yaml.
+`start` to `end` in survey.yaml. Both kinds are scope local
+(`crust.masks`): they apply when the site is the local of a pair, and the
+pairs that use it as a remote, where its magnetics alone are used, keep
+those windows.
 
 The burst detector reads ex and ey of the site's derived 1 Hz archive (the
 site whose `derived_from:` names it, written by scripts/decimate_site.py),
@@ -89,8 +92,9 @@ def parse_args(argv=None) -> argparse.Namespace:
 
 
 def spans_to_masks(spans, reason: str, origin: str) -> list[dict]:
-    """Return all-band masks over (start, end) spans."""
-    return [normalise({"start": a, "end": b, "bands": "all", "reason": reason, "found_by": origin})
+    """Return all-band masks of scope local over (start, end) spans."""
+    return [normalise({"start": a, "end": b, "bands": "all", "reason": reason, "found_by": origin,
+                       "scope": "local"})
             for a, b in spans if b > a]
 
 

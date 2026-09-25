@@ -15,8 +15,9 @@ Stack builder and run options of the Process tab
 
 `StackBuilder.argv` and `RunOptions.flags` assemble command lines from a
 `WindowBar`, the survey's `processing:` block (`band_defaults`) and the
-estimator defaults. The masks switch shows the `crust.masks.load_masks`
-count for the pair; the masks are applied by process_rr.py.
+estimator defaults. The masks switch shows, for the pair, the count of the
+station's masks (`crust.masks.load_masks`) and of the remote's masks of
+scope both (`crust.masks.remote_masks`), the ones process_rr.py applies.
 
 @author: ben kay (ben@auscope.org.au)
 
@@ -190,9 +191,10 @@ class RunOptions(QGroupBox):
     MASKS_TEXT = "apply masks.yaml"
     MASKS_TIP = (
         "On (default): the run leaves out the intervals in masks.yaml. Masks are declared "
-        "per site on the Cross-powers tab and apply with any remote; the remote site's own "
-        "masks apply too (a stacked remote, STK_..., has none). Off adds --no-masks: "
-        "masks.yaml is ignored for both sites."
+        "per site on the Cross-powers tab and apply with any remote; the remote site's masks "
+        "of scope both apply too (scope local, the default, applies only when the site is the "
+        "local; a stacked remote, STK_..., has none). Off adds --no-masks: masks.yaml is "
+        "ignored for both sites."
     )
 
     def __init__(self, state, parent=None):
@@ -314,10 +316,12 @@ class RunOptions(QGroupBox):
     def describe_masks(self, station, remote=None) -> None:
         """Label the masks switch with the mask count of each site of the pair.
 
-        The label reads 'apply masks.yaml (<station>: n, <remote>: m)' from
-        `load_masks` and `remote_masks`. A stacked remote (`is_stack`, the
-        name rule process_rr uses, independent of `data_root` being mounted)
-        has no masks and is left out. When neither site has masks the switch
+        The label reads 'apply masks.yaml (<station>: n, <remote>: m)', the
+        masks process_rr applies from each site: n from `load_masks`, m from
+        `remote_masks` (the remote's masks of scope both). A stacked remote
+        (`is_stack`, the name rule process_rr uses, independent of
+        `data_root` being mounted) has no masks and is left out. When
+        neither site has masks to apply the switch
         is disabled and ticked, reading '(no masks declared)', so a greyed box
         is not mistaken for switched off. An unreadable file shows
         '(masks.yaml unreadable)' with the error in the tooltip.

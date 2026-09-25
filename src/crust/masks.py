@@ -11,6 +11,7 @@ A mask is an interval that processing leaves out. The file is written by the
       bands: all                      # or [pmin_s, pmax_s]
       reason: mains switching         # free text
       found_by: time                  # time | polar: the panel it was picked on
+      scope: local                    # local | both: the roles of a pair it applies in
 
 `load_masks(survey, site)` and `save_masks(survey, site, masks)` read and
 write one site's block. Saving rewrites that site's block of the file's text
@@ -20,12 +21,21 @@ KernelDataset. `applies(mask, period_s)` decides which bands a mask covers;
 the Cross-powers tab, `crust.crosspower.masked_chunks` and
 `crust.crosspower.stack_impedance` all use it.
 
-Masks in processing: scripts/process_rr.py loads the masks of the local site
-and of the remote site (`remote_masks`; a stacked remote named `STK_...` has
-none), joins them with `union_masks`, and passes the union to
-`crust.process.process_station(time_masks=...)`. A remote-referenced
-estimate uses the samples of both stations, so noise at either one is left
-out. `process_station` calls `apply_time_masks` with the masks whose `bands`
+A mask's `scope` says in which role of a remote-referenced pair it applies.
+`local`, the default for an entry without the key, applies when its site is
+the local of the pair; `both` applies when its site is the local and when it
+is the remote. A mask leaves out whole STFT windows of every channel, so a
+mask declared for noise on a site's electric channels is `local`: the pairs
+that use the site as a remote take only its magnetics and keep those
+windows. `masks_for_role(masks, role)` gives the masks of one site that
+apply in a role, and `remote_masks` those of a pair's remote.
+
+Masks in processing: scripts/process_rr.py takes every mask of the local
+site and the masks of scope `both` of the remote site (`remote_masks`; a
+stacked remote named `STK_...` has none), joins them with `union_masks`,
+and passes the union to `crust.process.process_station(time_masks=...)`.
+Its `--mask-scope union` takes every mask of both sites, whatever its
+scope. `process_station` calls `apply_time_masks` with the masks whose `bands`
 is `all`, which splits each run interval around them so aurora receives none
 of those samples. A band-limited mask (`bands: [pmin_s, pmax_s]`, recorded by
 a selection on the polar panel of the Cross-powers tab) reaches aurora
@@ -67,10 +77,15 @@ from loguru import logger
 MASKS_FILE = "masks.yaml"
 MIN_PIECE_S = 600.0  # a run piece a mask leaves shorter than this is dropped
 FOUND_BY = ("time", "polar", "cluster", "night", "gate")
+SCOPES = ("local", "both")        # a mask applies to its site as the local, or as the local and the remote
+ROLES = ("local", "remote")       # the roles of a site in a remote-referenced pair
+SCOPE_RULES = ("role", "union")   # role: by each mask's scope; union: every mask in both roles
 HEADER = (
     "# Time masks declared on the GUI's Cross-powers tab (crust.masks): per site, the\n"
     "# intervals processing leaves out. bands: all (cut in time), or [pmin_s, pmax_s] (left\n"
     "# out of the bands whose centre period lies inside; see crust.masks). Times are UTC.\n"
+    "# scope: local (the default) applies when the site is the local of a pair, both also\n"
+    "# when it is the remote.\n"
 )
 
 
@@ -124,16 +139,17 @@ def normalise(mask: dict) -> dict:
 
     Args:
         mask (dict): Mask with ``start`` and ``end`` and optional ``bands``,
-            ``reason`` and ``found_by``.
+            ``reason``, ``found_by`` and ``scope``.
 
     Returns:
-        dict: ``{"start", "end", "bands", "reason", "found_by"}``, times as
-        ISO UTC text, ``bands`` as ``"all"`` or a sorted ``[pmin_s, pmax_s]``.
+        dict: ``{"start", "end", "bands", "reason", "found_by", "scope"}``,
+        times as ISO UTC text, ``bands`` as ``"all"`` or a sorted
+        ``[pmin_s, pmax_s]``, ``scope`` ``"local"`` when the mask has none.
 
     Raises:
         ValueError: If start or end is missing or unparseable, end is not
-            after start, bands is malformed, or found_by is not one of
-            `FOUND_BY`.
+            after start, bands is malformed, found_by is not one of
+            `FOUND_BY`, or scope is not one of `SCOPES`.
     """
     try:
         start, end = utc(mask["start"]), utc(mask["end"])
@@ -151,8 +167,11 @@ def normalise(mask: dict) -> dict:
     found_by = str(mask.get("found_by", "time"))
     if found_by not in FOUND_BY:
         raise ValueError(f"mask found_by must be one of {FOUND_BY}, not {found_by!r}")
+    scope = str(mask.get("scope", "local"))
+    if scope not in SCOPES:
+        raise ValueError(f"mask scope must be one of {SCOPES}, not {scope!r}")
     return {"start": iso(start), "end": iso(end), "bands": bands,
-            "reason": str(mask.get("reason") or ""), "found_by": found_by}
+            "reason": str(mask.get("reason") or ""), "found_by": found_by, "scope": scope}
 
 
 def _ordered(masks) -> list[dict]:
@@ -277,25 +296,64 @@ def is_stack(site) -> bool:
     return str(site or "").startswith(STACK_PREFIX)
 
 
-def remote_masks(survey, remote) -> list[dict]:
+def masks_for_role(masks, role: str, rule: str = "role") -> list[dict]:
+    """Return the masks of one site that apply when the site plays `role` in a pair.
+
+    Under the rule ``role`` every mask applies to the local, and a mask of
+    scope ``both`` applies to the remote as well. Under the rule ``union``
+    every mask applies in both roles.
+
+    Args:
+        masks (iterable of dict): The site's masks; None is treated as empty.
+        role (str): ``local`` or ``remote`` (`ROLES`).
+        rule (str): ``role`` (the default) or ``union`` (`SCOPE_RULES`).
+
+    Returns:
+        list of dict: The masks that apply, normalised, in the order given.
+
+    Raises:
+        ValueError: If role is not one of `ROLES`, rule is not one of
+            `SCOPE_RULES`, or a mask does not pass `normalise`.
+    """
+    if role not in ROLES:
+        raise ValueError(f"role must be one of {ROLES}, not {role!r}")
+    if rule not in SCOPE_RULES:
+        raise ValueError(f"mask scope rule must be one of {SCOPE_RULES}, not {rule!r}")
+    masks = [normalise(m) for m in masks or []]
+    if role == "local" or rule == "union":
+        return masks
+    return [m for m in masks if m["scope"] == "both"]
+
+
+def remote_masks(survey, remote, rule: str = "role") -> list[dict]:
     """Return the masks a run takes from its remote.
 
-    The choice depends on the remote's name alone (`is_stack`), so a site's
-    masks apply whether or not its raw folder or archive is available.
-    scripts/process_rr.py, the campaign signature and the GUI Process tab
-    all use this function. A stack built under another name (a
-    scripts/build_stack.py name without the prefix) is read like a site, and
-    whatever masks.yaml holds under that name applies.
+    These are the remote's masks of scope ``both`` (`masks_for_role`), or
+    all of its masks under the rule ``union``. The choice depends on the
+    remote's name alone (`is_stack`), so a site's masks apply whether or not
+    its raw folder or archive is available. scripts/process_rr.py, the
+    campaign signature and the GUI Process tab all use this function. A
+    stack built under another name (a scripts/build_stack.py name without
+    the prefix) is read like a site, and whatever masks.yaml holds under
+    that name applies.
 
     Args:
         survey (Survey or str or Path): Survey, survey.yaml path or folder.
         remote (str): Remote site id, or empty for a single-site run.
+        rule (str): ``role`` (the default) or ``union`` (`SCOPE_RULES`).
 
     Returns:
-        list of dict: ``load_masks(survey, remote)``, or an empty list for
-        no remote or a stack.
+        list of dict: The remote's masks that apply as the remote, or an
+        empty list for no remote or a stack.
+
+    Raises:
+        ValueError: If rule is not one of `SCOPE_RULES`.
     """
-    return [] if not remote or is_stack(remote) else load_masks(survey, remote)
+    if rule not in SCOPE_RULES:
+        raise ValueError(f"mask scope rule must be one of {SCOPE_RULES}, not {rule!r}")
+    if not remote or is_stack(remote):
+        return []
+    return masks_for_role(load_masks(survey, remote), "remote", rule)
 
 
 def applies(mask: dict, period_s: float) -> bool:

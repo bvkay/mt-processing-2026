@@ -38,7 +38,11 @@ process_rr.py calls it before every run. Stages:
   best_remote.json so a resume keeps it. A config may name the MANTLE
   engine (`mantle: [--engine, mantle]`): its run gets `--no-masks` whatever
   `runner.masks` says, its inputs carry no masks hash, and its report JSON
-  and fine-grid EDI move into <campaign>/tf/ with the EDI.
+  and fine-grid EDI move into <campaign>/tf/ with the EDI. A config that
+  turns masks.yaml on while `runner.masks` is off (`masked: [--masks]`) is
+  skipped for a site when masks.yaml holds no entry for the site and no
+  entry of scope both for its remote (no entry for either under
+  `--mask-scope union`), since the run would repeat the default.
 
 Readiness: before each stage the runner checks, in a fresh child process,
 that crust.ingest has processing_archive or build_variant (stage 0), that
@@ -118,7 +122,7 @@ REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "src"))
 
 from crust.ingest import default_archive_path  # noqa: E402
-from crust.masks import is_stack, load_masks, remote_masks  # noqa: E402
+from crust.masks import is_stack, load_masks, masks_for_role, remote_masks  # noqa: E402
 
 try:  # optional: without the variant API the campaign runs and waits for it
     from crust.ingest import filters_hash as _api_filters_hash  # noqa: E402
@@ -206,7 +210,7 @@ class Plan:
     peak_percentile: float = 90.0
     peak_recent: int = 30
     move_products: bool = True
-    masks: bool = False       # rr runs apply the local's and the remote's masks.yaml (else --no-masks: every remote and option on the same data)
+    masks: bool = False       # rr runs apply masks.yaml, the local's entries and the remote's of scope both (else --no-masks: every remote and option on the same data)
 
     def group_of(self, site: str) -> str:
         """Return the name of the group that holds `site`."""
@@ -856,14 +860,18 @@ class Campaign:
         """Return the input signature of a job; a change means the job is re-run."""
         sig = ";".join(self.signature(s) for s in job.input_sites)
         if job.kind == "rr" and self.rr_masks_on(job.config):
-            # process_rr applies the local's and the remote's masks.yaml entries (a stack
-            # has none of its own, by the name rule of crust.masks.is_stack); an edit
-            # to either makes the product stale
-            for site in (job.local, job.remote):
+            # process_rr applies every masks.yaml entry of the local and the remote's entries
+            # of scope both, or all of them under --mask-scope union (a stack has none of its
+            # own, by the name rule of crust.masks.is_stack). The hash covers the entries a
+            # run applies, each without its scope key, so an edit that changes them makes
+            # the product stale
+            rule = self.config_mask_scope(job.config)
+            for site, role in ((job.local, "local"), (job.remote, "remote")):
                 if not site or is_stack(site):
                     continue
-                masks = load_masks(self.survey, site)
-                digest = hashlib.sha1(json.dumps(masks, sort_keys=True).encode()).hexdigest()[:8]
+                applied = [{k: v for k, v in m.items() if k != "scope"}
+                           for m in masks_for_role(load_masks(self.survey, site), role, rule)]
+                digest = hashlib.sha1(json.dumps(applied, sort_keys=True).encode()).hexdigest()[:8]
                 sig += f";{site}:m{digest}"
         return sig
 
@@ -874,6 +882,20 @@ class Campaign:
             if flag == "--engine":
                 return flags[i + 1] if i + 1 < len(flags) else "aurora"
         return "aurora"
+
+    def config_mask_scope(self, config: str) -> str:
+        """Return the mask scope rule a config's flags name (`--mask-scope <rule>`), "role" without the flag.
+
+        The last `--mask-scope` given wins, as on the process_rr command line.
+        """
+        flags = self.plan.configs.get(config, []) if config != "default" else []
+        rule = "role"
+        for i, flag in enumerate(flags):
+            if flag == "--mask-scope" and i + 1 < len(flags):
+                rule = flags[i + 1]
+            elif flag.startswith("--mask-scope="):
+                rule = flag.split("=", 1)[1]
+        return rule
 
     def rr_masks_on(self, config: str) -> bool:
         """Return whether an rr run of `config` applies masks.yaml.
@@ -969,17 +991,32 @@ class Campaign:
                     self.log(f"stage 3: {s}: no stage 1 product to choose a remote from: skipped")
                     continue
             for config in self.plan.configs:
+                rule = self.config_mask_scope(config)
                 if (self.rr_masks_on(config) and not self.plan.masks and remote != "<best-of-stage-1>"
-                        and not self.has_masks(s, remote)):
-                    # the run would repeat the default: masks.yaml names neither site
-                    self.log(f"stage 3: {s}: {config}: no masks.yaml entry for {s} or {remote}: skipped")
+                        and not self.has_masks(s, remote, rule)):
+                    # the run would repeat the default: masks.yaml holds no entry it applies
+                    which = f"{s} or {remote}" if rule == "union" else f"{s} and none of scope both for {remote}"
+                    self.log(f"stage 3: {s}: {config}: no masks.yaml entry for {which}: skipped")
                     continue
                 jobs.append(self.rr_job(3, s, remote, config, f"s3_{s}_rr-{remote}_{config}"))
         return jobs
 
-    def has_masks(self, local: str, remote: str) -> bool:
-        """Return whether masks.yaml names `local` or `remote` (a stack has none)."""
-        return bool(load_masks(self.survey, local)) or bool(remote_masks(self.survey, remote))
+    def has_masks(self, local: str, remote: str, rule: str = "role") -> bool:
+        """Return whether masks.yaml holds an entry an rr run of `local` against `remote` applies.
+
+        Every entry of the local applies; of the remote, the entries of scope
+        both, or all of them under the rule union (`crust.masks.remote_masks`;
+        a stack has none).
+
+        Args:
+            local (str): The local site.
+            remote (str): The remote site or stack.
+            rule (str): The mask scope rule, "role" or "union".
+
+        Returns:
+            bool: True when the run applies at least one entry.
+        """
+        return bool(load_masks(self.survey, local)) or bool(remote_masks(self.survey, remote, rule))
 
     # --------------------------------------------------------------- choices
 
