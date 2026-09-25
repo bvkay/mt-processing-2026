@@ -18,8 +18,11 @@ description: >
   remote the masked, MANTLE full-window and per-site-window products.
   Decisions from the 25 Sep diagnoses: C05 yx from 27 Sep 05:10-09:16 UTC
   only (ey channel fault before that), C19's remote is C22 (C21new has a
-  wiring fault), C21new and C18 are xy-only sites, C13/C16/C19 carry Ben's
-  new masks, C01's masks are dropped.
+  wiring fault), C18 is scored on xy only (its ey is a channel fault),
+  C21new ships both modes (an out-of-quadrant yx: a shear zone or the
+  instrument, for the student to decide), C13/C16/C18/C19 carry the 25-26
+  Sep masks, C01's masks are dropped, and the band scheme starts at
+  harmonic 10 (survey.yaml processing.min_bin).
 
 sites: [C01, C02, C03, C04, C05, C06, C07, C08, C09, C10, C11, C12, C13, C14, C15,
         C16, C17, C18, C19, C20, C21new, C22, C23]
@@ -43,7 +46,6 @@ remotes:
   C19: C22          # the campaign's pick C21new has an ey wiring fault; C22 gives the same curve
 modes:
   C18: [xy]         # ey is a channel fault outside its bursts (317x ex, coherence <= 0.03)
-  C21new: [xy]      # the recorded E pair is nearly rank 1; only the x row is recoverable
   C05: [xy]         # the best remote is chosen on xy; yx comes from the window run below, merged in
 windows:
   C05:
