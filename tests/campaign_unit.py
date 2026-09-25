@@ -4,9 +4,10 @@ Unit test for scripts/campaign.py
 
 Checks the plan parser, the overlap rule, the stacks, resume, the dry-run
 counts, the runner, the filter check, product parsing, the masks
-signature and a MANTLE stage 3 config (its memory class, the ledger's
-engine and the score of its shorter product). Everything runs on a
-synthetic survey in a temporary workspace,
+signature, a MANTLE stage 3 config (its memory class, the ledger's
+engine and the score of its shorter product) and the plan's per-site
+remotes, modes and windows. Everything runs on a synthetic survey in a
+temporary workspace,
 without an archive or aurora: five sites on a line with designed record
 spans, A 0-48 h, B 2-50 h, C 4-46 h (group G1) and D 40-90 h, E 44-94 h
 (group G2), so A/B/C overlap each other by 42-46 h and D/E by 46 h while no
@@ -124,7 +125,28 @@ Usage:
      over 0.005-1000 s, its `period_max` 1000 s and its `n_periods` the
      periods up to 1000 s, while the default's score over 0.005-5000 s,
      with a scattered tail above 1000 s, is lower; summary.md does not list
-     the mantle config as "(to 1000 s)"; or a second pass starts a child.
+     the mantle config as "(to 1000 s)"; or a second pass starts a child;
+
+(13) the per-site keys are wrong: a plan with `remotes: {A: A}`, `remotes:
+     {A: Z}` (not a site), `modes: {B: [zz]}`, a window whose end precedes
+     its start, or `merge: true` over two mode windows loads; with
+     `remotes: {A: C}` while stage 1 picks B (C's products carry a longer
+     scattered tail), stage 3 of A does not run on C, its rows do not carry
+     the note "remote override (the campaign's pick: B)", or
+     best_remote.json does not keep B; a fresh dry run (no stage 1 product)
+     does not list A's stage 3 on C with one window run and one merge;
+     `modes: {B: [xy]}` does not make every B score equal its xy score
+     (its yx row is scattered, so the overall differs by > 0.1) or mark B
+     "xy-only" in summary.md; `windows: {A: {yx: [10 h, 14 h], merge:
+     true}}` does not add a default run with the window's start and end as
+     process_rr.py's positional arguments (tag syn-default-yxwin), then a
+     merge (kind merge, tag syn-default-merged) whose sidecar names the
+     stage 1 A rr C product as the xy source and the window product as the
+     yx source; the merged EDI's xy row is not the full-record product's or
+     its yx row not the window product's at a period both hold; the merged
+     product does not outscore the full-record default, or summary.md does
+     not show its score as A's with "the default is the merged product";
+     or a second pass starts a child or rebuilds the merge.
 """
 
 from __future__ import annotations
@@ -269,7 +291,8 @@ def product_edi(path: Path, periods, tail_from: float | None = None, bad_yx: boo
     """Write a synthetic product EDI on `periods`: 100 ohm m, xy at 45 deg and yx at -135 deg.
 
     Both modes carry a dead band at 1-3 s (rho alternating 0.3 dex either
-    side), so a score over any window holding it is below 1.
+    side), so a score over any window holding it is below 1. The diagonal
+    terms are 5 % of the off-diagonal ones, as a real product's are nonzero.
 
     Args:
         path (Path): EDI to write.
@@ -291,6 +314,8 @@ def product_edi(path: Path, periods, tail_from: float | None = None, bad_yx: boo
     z = np.zeros((p.size, 2, 2), dtype=complex)
     z[:, 0, 1] = amp * np.exp(1j * np.radians(45.0))
     z[:, 1, 0] = amp * np.exp(1j * np.radians(-135.0))
+    z[:, 0, 0] = 0.05 * amp * np.exp(1j * np.radians(30.0))
+    z[:, 1, 1] = 0.05 * amp * np.exp(1j * np.radians(-150.0))
     if bad_yx:
         z[:, 1, 0] = amp * 10.0 ** (0.6 * sign) * np.exp(1j * np.radians(-135.0 + 150.0 * sign))
     tf = TF()
@@ -811,13 +836,118 @@ def test_mantle_runner_and_scores() -> None:
           f"(to {d['period_max']:.0f} s); summary: {line.split('|')[-2].strip()}")
 
 
+def _plan_with(root: Path, **keys) -> Path:
+    """Write the synthetic plan (configs [--taper hamming]) with extra top-level keys."""
+    path = make_plan(root, configs={"hamming": ["--taper", "hamming"]})
+    raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+    raw.update(keys)
+    path.write_text(yaml.safe_dump(raw, sort_keys=False), encoding="utf-8")
+    return path
+
+
+def test_site_overrides() -> None:
+    root = ROOT / "sites"
+    survey_yaml = make_survey(root)
+    window = [iso(10), iso(14)]
+    bad = {
+        "a site as its own remote": ({"remotes": {"A": "A"}}, "remotes A: A: another plan site or a stack"),
+        "a remote outside the plan": ({"remotes": {"A": "Z"}}, "remotes A: Z: another plan site or a stack"),
+        "an unknown mode": ({"modes": {"B": ["zz"]}}, "modes B: ['zz']: one or both of xy, yx"),
+        "a window ending first": ({"windows": {"A": {"yx": window[::-1]}}}, "windows A yx:"),
+        "merge over two windows": ({"windows": {"A": {"xy": window, "yx": window, "merge": True}}},
+                                   "windows A: merge takes one mode's window, 2 given"),
+    }
+    for label, (keys, message) in bad.items():
+        try:
+            cp.load_plan(_plan_with(root / "bad", **keys))
+        except ValueError as exc:
+            assert message in str(exc), (label, str(exc))
+        else:
+            raise AssertionError(f"a plan with {label} loaded")
+    print(f"  refused: {', '.join(bad)}")
+
+    keys = {"remotes": {"A": "C"}, "modes": {"B": ["xy"]}, "windows": {"A": {"yx": window, "merge": True}}}
+    plan = cp.load_plan(_plan_with(root, **keys))
+    start, end = (cp.utc_text(t) for t in window)
+    assert plan.windows["A"] == {"modes": {"yx": (start, end)}, "merge": True}, plan.windows
+
+    fresh = cp.Campaign(survey_yaml, plan, parallel=2, create=False)
+    out, text = quiet(fresh.dry_run, [3], ["A"])
+    assert out["counts"][3]["rr"] == 2 and out["counts"][3]["merge"] == 1, (out["counts"], text)
+    assert "s3_A_rr-C_default-yxwin" in text and "s3_A_rr-C_default-merged" in text, text
+    print(f"  dry run with no stage 1 product: A's stage 3 on C, {out['counts'][3]}")
+
+    fake = fake_scripts(root, bad_yx=True)
+    product_edi(fake / "edis" / "C_full.edi", P_FULL, tail_from=100.0, bad_yx=True)
+    original = cp.SCRIPTS
+    cp.SCRIPTS = fake
+    try:
+        c = cp.Campaign(survey_yaml, plan, parallel=2)
+        c.api = {"func": "processing_archive", "variant": True, "rr": True, "stack": True, "why": ""}
+        quiet(c.run_block, "stage 1 A B", c.stage1_jobs(["A", "B"]))
+        jobs3 = c.stage3_jobs(["A", "B"])
+        quiet(c.run_block, "stage 3 A B", jobs3)
+        again = cp.Campaign(survey_yaml, plan, parallel=2)
+        again.api = dict(c.api)
+        quiet(again.run_block, "stage 3 again", again.stage3_jobs(["A", "B"]))
+    finally:
+        cp.SCRIPTS = original
+    rows = c.ledger.rows
+    stored = json.loads((c.dir / "best_remote.json").read_text(encoding="utf-8"))
+    assert stored["A"]["remote"] == "B", stored["A"]
+    a3 = {j.config: j for j in jobs3 if j.local == "A"}
+    assert sorted(a3) == ["default-merged", "default-yxwin", "hamming"], sorted(a3)
+    assert all(j.remote == "C" for j in a3.values()), [(j.config, j.remote) for j in a3.values()]
+    for j in a3.values():
+        assert rows[j.run_id]["status"] == "done", rows[j.run_id]
+        assert "remote override (the campaign's pick: B)" in rows[j.run_id]["note"], rows[j.run_id]["note"]
+    win = a3["default-yxwin"]
+    assert win.cmd[5:7] == [start, end] and win.tag == "syn-default-yxwin", (win.cmd, win.tag)
+    merged = rows[a3["default-merged"].run_id]
+    assert merged["kind"] == "merge" and merged["tag"] == "syn-default-merged" and merged["engine"] == "aurora", merged
+    side = json.loads(Path(merged["sidecar"]).read_text(encoding="utf-8"))
+    assert side["sources"]["xy"]["edi"] == rows["s1_A_rr-C"]["edi"], side["sources"]["xy"]
+    assert side["sources"]["yx"]["edi"] == rows[win.run_id]["edi"], side["sources"]["yx"]
+    p_m, rho_m, phi_m = cp.curves(merged["edi"])[:3]
+    p_f, rho_f, phi_f = cp.curves(rows["s1_A_rr-C"]["edi"])[:3]
+    p_w, rho_w, phi_w = cp.curves(rows[win.run_id]["edi"])[:3]
+    # at 158 s the full record's rows are scattered (its tail starts at 100 s) and the window's are not
+    k_m, k_f, k_w = (int(np.argmin(np.abs(np.log(p / 10.0**2.2)))) for p in (p_m, p_f, p_w))
+    assert abs(rho_f[k_f, 0, 1] / rho_w[k_w, 0, 1] - 1) > 0.5, "the two sources agree at the check period"
+    assert abs(rho_m[k_m, 0, 1] / rho_f[k_f, 0, 1] - 1) < 1e-4 and abs(phi_m[k_m, 0, 1] - phi_f[k_f, 0, 1]) < 0.01
+    assert abs(rho_m[k_m, 1, 0] / rho_w[k_w, 1, 0] - 1) < 1e-4 and abs(phi_m[k_m, 1, 0] - phi_w[k_w, 1, 0]) < 0.01
+    assert again.n_started == 0 and again.ledger.rows[merged["run_id"]]["finished"] == merged["finished"], \
+        (again.n_started, again.ledger.rows[merged["run_id"]]["finished"], merged["finished"])
+
+    df = c.scores()
+    b_rows = df[df["local"] == "B"]
+    assert len(b_rows) and (b_rows["modes"] == "xy").all(), b_rows[["run_id", "modes"]]
+    assert np.allclose(b_rows["score"], b_rows["xy_score"]), b_rows[["score", "xy_score"]]
+    assert ((b_rows["overall_score"] - b_rows["score"]).abs() > 0.1).all(), b_rows[["score", "overall_score"]]
+    m = df[df["run_id"] == merged["run_id"]].iloc[0]
+    full = df[df["run_id"] == "s1_A_rr-C"].iloc[0]
+    assert m["score"] > full["score"] + 0.1, (m["score"], full["score"])
+    c.report(["A", "B"])
+    summary = (c.dir / "summary.md").read_text(encoding="utf-8")
+    line_a = next(ln for ln in summary.splitlines() if ln.startswith("| A | G1 |"))
+    line_b = next(ln for ln in summary.splitlines() if ln.startswith("| B (xy-only) | G1 |"))
+    assert f"| C | {m['score']:.3f} |" in line_a and "the default is the merged product" in line_a, line_a
+    assert "remote override (the campaign's pick: B" in line_a, line_a
+    print(f"  A: stage 3 on C ({rows[a3['hamming'].run_id]['note']}); window run {win.cmd[5:7]}; merge "
+          f"{Path(merged['edi']).name}: xy from {Path(side['sources']['xy']['edi']).name}, yx from "
+          f"{Path(side['sources']['yx']['edi']).name}; score {m['score']:.3f} vs the full record {full['score']:.3f}")
+    print(f"  B xy-only: scores {list(np.round(b_rows['score'], 3))} = xy, overall "
+          f"{list(np.round(b_rows['overall_score'], 3))}; second pass: 0 started, the merge kept")
+    print(f"  summary: {line_a[:160]}...")
+
+
 def main() -> int:
     """Run every test; return 1 when any failed."""
     print(__doc__.split("**This test fails if**")[1].strip())
     print()
     tests = [test_plan_parser, test_overlap_rule, test_stacks, test_dry_run_counts, test_runner_and_resume,
              test_filter_check, test_parse_products, test_inputs_masks_both_sites, test_mantle_config,
-             test_mantle_runner_figures, test_mantle_runner_and_scores]
+             test_mantle_runner_figures, test_mantle_runner_and_scores, test_site_overrides]
     failed = 0
     for t in tests:
         print(t.__name__)
