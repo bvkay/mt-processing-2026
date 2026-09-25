@@ -36,9 +36,14 @@ process_rr.py calls it before every run. Stages:
   top, the one agreeing best with the others, lowest median |dlog10 rho|),
   one process_rr.py run per plan config. The choice is kept in
   best_remote.json so a resume keeps it. A config may name the MANTLE
-  engine (`mantle: [--engine, mantle]`): its run gets `--no-masks` whatever
-  `runner.masks` says, its inputs carry no masks hash, and its report JSON
-  and fine-grid EDI move into <campaign>/tf/ with the EDI.
+  engine (`mantle: [--engine, mantle, --mantle-max-hours, "72"]`): its run
+  gets `--no-masks` whatever `runner.masks` says, its inputs carry no masks
+  hash, and its report JSON and fine-grid EDI move into <campaign>/tf/ with
+  the EDI. A MANTLE product stops where its cascade does (about 1000 s on a
+  day's window); crust.quality scores it over its own periods inside the
+  scoring window, so the long-period tail it lacks neither counts for nor
+  against it, and scores.csv's `period_max` shows how far each product
+  reaches.
 
 Readiness: before each stage the runner checks, in a fresh child process,
 that crust.ingest has processing_archive or build_variant (stage 0), that
@@ -60,18 +65,25 @@ PNG and the .json sidecar are moved into <campaign>/tf/ (plan
 Runner: up to --parallel jobs at once within a stage (variant and stack
 builds too). A job starts when psutil's available memory, less what the
 running jobs are still expected to grow by (the `peak_percentile` of the
-`peak_recent` most recently finished peaks of their kind, else the plan's
+`peak_recent` most recently finished peaks of their class, else the plan's
 `expected_peak_gb`), is at least `min_available_gb` and `peak_factor` x that
-percentile over every kind; waiting slots log every 5 min. Children run at
-below-normal priority, each with its own log in <campaign>/logs/<run_id>.log;
-RSS (with children) is polled every 2 s.
+percentile over every class; waiting slots log every 5 min. A job's class
+is its kind (variant, stack, rr), or its stage 3 config when
+`runner.expected_peak_gb` names that config (`mantle: 65`): such a class is
+held back by its own figure, its jobs start only with `peak_factor` x that
+figure available, and its peaks stay out of the other classes' percentile.
+`runner.minutes_per_job` may name a config likewise for the dry run's
+hours. Children run at below-normal priority, each with its own log in
+<campaign>/logs/<run_id>.log; RSS (with children) is polled every 2 s.
 
 Outputs in <workspace>/campaign/<name>/: ledger.csv (one row per run id:
-stage, kind, local, remote, config, tag, status, exit code, start, seconds,
-peak RSS MB, EDI/sidecar/figure paths, the variant or stack archive and its
-size, the inputs' signature, error text; rewritten atomically at every start
-and finish), runs.log, scores.csv (crust.quality of every product, after
-every block), figures/<site>_remotes.png, <site>_stacks.png,
+stage, kind, local, remote, config, tag, engine (the sidecar's `engine`,
+aurora when the sidecar names none), status, exit code, start, seconds, peak RSS MB,
+EDI/sidecar/figure paths, the variant or stack archive and its size, the
+inputs' signature, error text; rewritten atomically at every start and
+finish), runs.log, scores.csv (crust.quality of every product with its
+engine and period range, after every block), figures/<site>_remotes.png,
+<site>_stacks.png,
 <site>_options.png, <name>_best_pseudosection.png, <name>_scores.png, and
 summary.md. A run is skipped when the ledger has it done with the same
 inputs: per site the hash of its filters.yaml entry and its raw archive's
@@ -125,7 +137,7 @@ try:  # optional: without the variant API the campaign runs and waits for it
     from crust.ingest import variant_path as _api_variant_path  # noqa: E402
 except ImportError:
     _api_filters_hash = _api_variant_path = None
-from crust.quality import MODES, agreement, curves, flat_quality, pairwise_spread, tf_quality  # noqa: E402
+from crust.quality import MODES, PERIOD_RTOL, agreement, curves, flat_quality, pairwise_spread, tf_quality  # noqa: E402
 from crust.survey import Survey, distance_km  # noqa: E402
 
 PY = sys.executable
@@ -137,7 +149,7 @@ API_POLL_S = 300.0
 STAGES = {0: "variants", 1: "remotes", 2: "stacks", 3: "options"}
 KINDS = ("variant", "stack", "rr")
 LEDGER_COLUMNS = [
-    "run_id", "stage", "kind", "group", "local", "remote", "config", "tag", "status", "exit_code",
+    "run_id", "stage", "kind", "group", "local", "remote", "config", "tag", "engine", "status", "exit_code",
     "started", "finished", "seconds", "peak_rss_mb", "edi", "sidecar", "figure", "archive", "size_mb",
     "check", "inputs", "provisional", "error", "log", "runner_pid", "child_pid", "cmd",
 ]
@@ -285,6 +297,10 @@ def load_plan(path) -> Plan:
             errors.append(f"config {cname}: {args}: process_rr.py flags, without --tag/--dry-run")
         configs[cname] = args
     runner = raw.get("runner") or {}
+    for key in ("minutes_per_job", "expected_peak_gb"):
+        for k in (runner.get(key) or {}):
+            if str(k) not in KINDS and str(k) not in configs:
+                errors.append(f"runner {key} {k}: neither a job kind ({', '.join(KINDS)}) nor a stage 3 config")
     scoring = raw.get("scoring") or {}
     if errors:
         raise ValueError(f"{path}:\n  " + "\n  ".join(errors))
@@ -300,8 +316,8 @@ def load_plan(path) -> Plan:
         min_available_gb=float(runner.get("min_available_gb", 40.0)),
         peak_factor=float(runner.get("peak_factor", 1.2)),
     )
-    plan.minutes.update({k: float(v) for k, v in (runner.get("minutes_per_job") or {}).items()})
-    plan.expected_peak_gb.update({k: float(v) for k, v in (runner.get("expected_peak_gb") or {}).items()})
+    plan.minutes.update({str(k): float(v) for k, v in (runner.get("minutes_per_job") or {}).items()})
+    plan.expected_peak_gb.update({str(k): float(v) for k, v in (runner.get("expected_peak_gb") or {}).items()})
     plan.peak_percentile = float(runner.get("peak_percentile", 90.0))
     plan.peak_recent = int(runner.get("peak_recent", 30))
     return plan
@@ -622,7 +638,8 @@ class Ledger:
                  f"written at the next change")
         return False
 
-    def peak_mb(self, kind: str | None = None, percentile: float = 90.0, recent: int = 0) -> float:
+    def peak_mb(self, kind: str | None = None, percentile: float = 90.0, recent: int = 0,
+                config: str | None = None, exclude_configs=()) -> float:
         """Return a percentile of the peak RSS of finished jobs, in MB.
 
         The gate keys on a percentile (`runner.peak_percentile` in the plan,
@@ -636,12 +653,18 @@ class Ledger:
             kind (str | None): Job kind, or None for all kinds.
             percentile (float): Percentile of the peaks.
             recent (int): Number of most recent jobs to use; 0 for all.
+            config (str | None): Only the jobs of this config.
+            exclude_configs (iterable of str): Configs whose rr jobs are
+                left out.
 
         Returns:
             float: The peak in MB, 0 when no job has finished.
         """
+        skip = set(exclude_configs)
         rows = [r for r in self.rows.values()
-                if r["peak_rss_mb"] and (kind is None or r["kind"] == kind)]
+                if r["peak_rss_mb"] and (kind is None or r["kind"] == kind)
+                and (config is None or r["config"] == config)
+                and not (r["kind"] == "rr" and r["config"] in skip)]
         if recent > 0:
             rows = sorted(rows, key=lambda r: r["finished"] or r["started"])[-recent:]
         vals = sorted(float(r["peak_rss_mb"]) for r in rows)
@@ -730,6 +753,17 @@ def parse_products(text: str) -> dict:
             if line.startswith(label) and not out[key]:
                 out[key] = line[len(label):].strip()
     return out
+
+
+def read_sidecar(path) -> dict:
+    """Read a product's .json sidecar; {} when the path is empty, missing or unreadable."""
+    if not path or not Path(path).exists():
+        return {}
+    try:
+        out = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return out if isinstance(out, dict) else {}
 
 
 def last_error(text: str) -> str:
@@ -1080,20 +1114,66 @@ class Campaign:
 
     # ------------------------------------------------------------------ memory
 
-    def expected_peak_mb(self, kind: str) -> float:
-        """Return the expected peak RSS of a job kind in MB, from the ledger or the plan."""
-        return (self.ledger.peak_mb(kind, self.plan.peak_percentile, self.plan.peak_recent)
-                or self.plan.expected_peak_gb.get(kind, 35.0) * 1024.0)
+    def job_class(self, kind: str, config: str, table: dict) -> str:
+        """Return the key of a job in a runner table: its rr config when `table` names it, else its kind.
 
-    def gate(self) -> tuple[bool, str]:
+        Args:
+            kind (str): Job kind.
+            config (str): Job config.
+            table (dict): `plan.expected_peak_gb` or `plan.minutes`.
+
+        Returns:
+            str: The config or the kind.
+        """
+        if kind == "rr" and config in table and config in self.plan.configs and config not in KINDS:
+            return config
+        return kind
+
+    def own_peak_configs(self) -> list[str]:
+        """Return the stage 3 configs with an `expected_peak_gb` figure of their own."""
+        return [k for k in self.plan.expected_peak_gb if k in self.plan.configs and k not in KINDS]
+
+    def finished_peak_mb(self, cls: str | None = None) -> float:
+        """Return the percentile of the finished peaks of a memory class, in MB.
+
+        Args:
+            cls (str | None): A kind, a config of `own_peak_configs`, or None
+                for every job outside those configs.
+
+        Returns:
+            float: The peak in MB, 0 when no job of the class has finished.
+        """
+        own = self.own_peak_configs()
+        pct, recent = self.plan.peak_percentile, self.plan.peak_recent
+        if cls in own:
+            return self.ledger.peak_mb("rr", pct, recent, config=cls)
+        return self.ledger.peak_mb(cls, pct, recent, exclude_configs=own)
+
+    def expected_peak_mb(self, cls: str) -> float:
+        """Return the expected peak RSS of a memory class in MB, from the ledger or the plan."""
+        return (self.finished_peak_mb(cls)
+                or self.plan.expected_peak_gb.get(cls, self.plan.expected_peak_gb.get("rr", 35.0)) * 1024.0)
+
+    def gate(self, job: Job | None = None) -> tuple[bool, str]:
         """Check the memory gate for starting another job.
+
+        Args:
+            job (Job | None): The job to start; a job of a config with its
+                own `expected_peak_gb` also needs `peak_factor` x that
+                config's expected peak.
 
         Returns:
             tuple[bool, str]: (enough memory, explanation).
         """
         avail = psutil.virtual_memory().available / MB
-        reserve = sum(max(0.0, self.expected_peak_mb(r.job.kind) - r.rss_mb) for r in self._running.values())
-        need = max(self.plan.min_available_gb * 1024.0, self.plan.peak_factor * self.ledger.peak_mb(None, self.plan.peak_percentile, self.plan.peak_recent))
+        table = self.plan.expected_peak_gb
+        reserve = sum(max(0.0, self.expected_peak_mb(self.job_class(r.job.kind, r.job.config, table)) - r.rss_mb)
+                      for r in self._running.values())
+        need = max(self.plan.min_available_gb * 1024.0, self.plan.peak_factor * self.finished_peak_mb(None))
+        if job is not None:
+            cls = self.job_class(job.kind, job.config, table)
+            if cls != job.kind:
+                need = max(need, self.plan.peak_factor * self.expected_peak_mb(cls))
         ok = avail - reserve >= need
         return ok, (f"available {avail / 1024:.1f} GB, {reserve / 1024:.1f} GB held back for "
                     f"{len(self._running)} running job(s), need {need / 1024:.1f} GB")
@@ -1190,7 +1270,7 @@ class Campaign:
         self.n_started += 1
         self.ledger.upsert(self._row(
             job, status="running", exit_code="", started=started.isoformat(timespec="seconds"), finished="",
-            seconds="", peak_rss_mb="", edi="", sidecar="", figure="", archive="", size_mb="", check="", error="",
+            engine="", seconds="", peak_rss_mb="", edi="", sidecar="", figure="", archive="", size_mb="", check="", error="",
             log=str(log_path), inputs=inputs, provisional=provisional, runner_pid=os.getpid(),
             child_pid=popen.pid, cmd=subprocess.list2cmdline(job.cmd)))
         what = {"rr": f"{job.local} rr {job.remote} [{job.config}]",
@@ -1234,6 +1314,9 @@ class Campaign:
             if ok and self.plan.move_products:
                 prod = self.move_products(job, prod)
             row.update(prod)
+            if ok:  # the sidecar's engine, aurora when it names none; "" without a readable sidecar
+                side = read_sidecar(prod.get("sidecar"))
+                row["engine"] = str(side.get("engine") or "aurora") if side else ""
         elif job.kind == "variant":
             m = re.findall(r"^variant: (.+?)\s*$", text, flags=re.M)
             path = Path(m[-1]) if m else None
@@ -1290,14 +1373,10 @@ class Campaign:
         dest_dir = self.dir / "tf"
         out = dict(prod)
         extras: dict[str, str] = {}
-        if prod.get("sidecar") and Path(prod["sidecar"]).exists():
-            try:
-                sidecar = json.loads(Path(prod["sidecar"]).read_text(encoding="utf-8"))
-                for key in ("mantle_report", "mantle_fine_edi"):
-                    if sidecar.get(key):
-                        extras[key] = str(Path(prod["sidecar"]).with_name(str(sidecar[key])))
-            except (OSError, ValueError):
-                pass
+        sidecar = read_sidecar(prod.get("sidecar"))
+        for key in ("mantle_report", "mantle_fine_edi"):
+            if sidecar.get(key):
+                extras[key] = str(Path(prod["sidecar"]).with_name(str(sidecar[key])))
         for key, value in extras.items():
             prod = {**prod, key: value}
         for key in ("edi", "sidecar", "figure", *extras):
@@ -1346,7 +1425,7 @@ class Campaign:
             if pending and len(self._running) < self.parallel:
                 job = self._next(pending, done, failed)
                 if job is not None:
-                    ok, msg = self.gate()
+                    ok, msg = self.gate(job)
                     if ok:
                         pending.remove(job)
                         if self.start(job) == "skipped":
@@ -1445,6 +1524,12 @@ class Campaign:
     def scores(self, write: bool = True) -> pd.DataFrame:
         """Build the scores.csv frame, rescoring products whose EDI changed, and write it atomically.
 
+        Each row carries the product's engine (the ledger's, else the
+        config's) and `period_min`/`period_max`, the range of its periods
+        inside the scoring window. crust.quality scores a product over the
+        periods it holds, so a product that stops short of `pmax` (MANTLE's
+        at about 1000 s) is scored over its own range.
+
         Args:
             write (bool): Whether to write scores.csv.
 
@@ -1467,13 +1552,15 @@ class Campaign:
             key = (str(edi), int(edi.stat().st_mtime))
             base = {"run_id": row["run_id"], "stage": int(row["stage"]), "group": row["group"],
                     "local": row["local"], "remote": row["remote"], "config": row["config"],
+                    "engine": row.get("engine") or self.config_engine(row["config"]),
                     "remote_kind": "stack" if row["remote"].startswith("STK_") else "site",
                     "provisional": row["provisional"], "edi": str(edi), "edi_mtime": key[1]}
-            if key in cache:
+            if key in cache and "period_max" in cache[key]:
                 rows.append({**cache[key], **base})
                 continue
             try:
-                q = flat_quality(tf_quality(edi, self.pmin, self.pmax))
+                qw = tf_quality(edi, self.pmin, self.pmax)
+                q = {**flat_quality(qw), "period_min": qw["period_min"], "period_max": qw["period_max"]}
                 full = tf_quality(edi)["overall"]["score"]
             except Exception as exc:
                 self.log(f"scores: {edi.name} unreadable: {exc}")
@@ -1540,7 +1627,7 @@ class Campaign:
                 c = counts.setdefault(st, {k: 0 for k in KINDS})
                 if not done:
                     c[j.kind] += 1
-                    todo_min += self.plan.minutes.get(j.kind, 8.0)
+                    todo_min += self.plan.minutes.get(self.job_class(j.kind, j.config, self.plan.minutes), 8.0)
         print("\ntotals (still to run):")
         total = {k: 0 for k in KINDS}
         for st in sorted(counts):
@@ -1549,7 +1636,8 @@ class Campaign:
             for k in KINDS:
                 total[k] += c[k]
         hours = todo_min / self.parallel / 60.0
-        mins = ", ".join(f"{self.plan.minutes.get(k, 8.0):g} min per {k}" for k in KINDS)
+        per = [*KINDS, *(k for k in self.plan.minutes if k in self.plan.configs and k not in KINDS)]
+        mins = ", ".join(f"{self.plan.minutes.get(k, 8.0):g} min per {k}" for k in per)
         print(f"  all: {total['rr']} rr run(s), {total['variant']} variant build(s), {total['stack']} stack "
               f"build(s); at {mins} over {self.parallel} slot(s): {hours:.1f} h (more when the memory gate "
               f"holds a slot or the variant API is not there yet)")
@@ -1962,6 +2050,14 @@ def _fmt(v, spec=".3f") -> str:
         return str(v)
 
 
+def _period_max(r) -> float:
+    """Return a scores row's longest period in the scoring window, NaN without one."""
+    try:
+        return float(r.get("period_max"))
+    except (TypeError, ValueError):
+        return float("nan")
+
+
 def write_summary(c: "Campaign", df: pd.DataFrame, bests: dict, out: Path) -> None:
     """Write summary.md: the exclusions, stage 0's variants, the best remote/stack/options per site, and line-wide options.
 
@@ -2018,6 +2114,7 @@ def write_summary(c: "Campaign", df: pd.DataFrame, bests: dict, out: Path) -> No
             continue
         base = sdf[(sdf["stage"] == 1) & (sdf["remote"] == b["remote"])]
         bscore = float(base["score"].iloc[0]) if len(base) else float("nan")
+        breach = _period_max(base.iloc[0]) if len(base) else float("nan")
         st2 = sdf[sdf["stage"] == 2].sort_values("score", ascending=False)
         stack, sscore = (st2["remote"].iloc[0], float(st2["score"].iloc[0])) if len(st2) else ("-", float("nan"))
         moved = []
@@ -2026,7 +2123,9 @@ def write_summary(c: "Campaign", df: pd.DataFrame, bests: dict, out: Path) -> No
             if r["config"] in opt_delta and np.isfinite(d):
                 opt_delta[r["config"]].append(d)
             if np.isfinite(d) and abs(d) > 0.05:
-                moved.append(f"{r['config']} {d:+.2f}")
+                reach = _period_max(r)
+                short = np.isfinite(reach) and np.isfinite(breach) and reach < breach * (1.0 - PERIOD_RTOL)
+                moved.append(f"{r['config']} {d:+.2f}" + (f" (to {reach:.4g} s)" if short else ""))
         L.append(f"| {s} | {plan.group_of(s)} | {b['remote']} | {_fmt(bscore)} | {b.get('why', '')} | {stack} | "
                  f"{_fmt(sscore)} | {_fmt(sscore - bscore, '+.3f')} | {', '.join(moved) or 'none'} |")
     L.append("")
@@ -2041,7 +2140,9 @@ def write_summary(c: "Campaign", df: pd.DataFrame, bests: dict, out: Path) -> No
                  f"{int((np.abs(ds) <= 0.05).sum())} | {_fmt(np.median(ds) if ds.size else np.nan, '+.3f')} | {ds.size} |")
     L += ["", "The per-decade configs change the band layout, so their score is over other periods; a "
           "max-period config is scored over the same window as the rest (its longer periods show in the "
-          "figure only).", ""]
+          "figure only). A product that stops short of the window (a MANTLE product at about 1000 s) is "
+          "scored over its own periods, marked \"(to <period> s)\" above: the long-period tail of the "
+          "default is in the default's score and not in its own (`period_max` in scores.csv).", ""]
 
     L += ["## Stacks", "", "| site | members | group | common span (h) |", "|---|---|---|---|"]
     for s in plan.ordered(plan.sites):
