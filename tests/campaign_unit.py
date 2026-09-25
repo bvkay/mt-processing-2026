@@ -3,15 +3,18 @@
 Unit test for scripts/campaign.py
 
 Checks the plan parser, the overlap rule, the stacks, resume, the dry-run
-counts, the runner, the filter check, product parsing and the masks
-signature. Everything runs on a synthetic survey in a temporary workspace,
+counts, the runner, the filter check, product parsing, the masks
+signature and a MANTLE stage 3 config (its memory class, the ledger's
+engine and the score of its shorter product). Everything runs on a
+synthetic survey in a temporary workspace,
 without an archive or aurora: five sites on a line with designed record
 spans, A 0-48 h, B 2-50 h, C 4-46 h (group G1) and D 40-90 h, E 44-94 h
 (group G2), so A/B/C overlap each other by 42-46 h and D/E by 46 h while no
 G1-G2 pair reaches 12 h or half of either record. The "raw archives" are
-empty files, of which the campaign reads the mtimes. The runner test starts
-real child processes (python one-liners that copy a synthetic EDI and print
-`wrote <path>`).
+empty files, of which the campaign reads the mtimes. The runner tests start
+real child processes: python one-liners that copy a synthetic EDI and print
+`wrote <path>`, and a stand-in scripts/process_rr.py (`FAKE_PROCESS_RR`)
+that the campaign's own command lines run.
 
 Usage:
     python tests/campaign_unit.py
@@ -97,7 +100,31 @@ Usage:
      fine-grid EDI (synthetic files in <workspace>/tf named for the job)
      does not move those two into <campaign>/tf/ beside the EDI, sidecar and
      figure, returning their new paths under `mantle_report` and
-     `mantle_fine_edi`.
+     `mantle_fine_edi`;
+
+(11) a MANTLE config's runner figures are wrong: a plan whose
+     `expected_peak_gb` names neither a kind nor a config (`mantel`) loads;
+     with `mantle: 65` in `expected_peak_gb`, 40 GB available (psutil
+     stubbed) and an empty ledger, the gate does not let an aurora stage 3
+     job start and hold a mantle job back needing 65.0 GB; a running mantle
+     job at 5 GB does not hold back 60.0 GB; with finished peaks in the
+     ledger (rr 20 GB, mantle 60 GB), the mantle class does not expect
+     60 GB or the rr job's need includes the mantle peak; the dry run of
+     stage 3 with `minutes_per_job: {rr: 8, mantle: 12}` over 5 sites and 2
+     slots does not come to (5 x 12 + 5 x 8) / 2 / 60 h;
+
+(12) the runner, on stage 1 and stage 3 of site A through a stand-in
+     process_rr.py (copies a prepared EDI into <workspace>/tf, writes a
+     sidecar naming `engine` for --engine mantle, prints `wrote` lines),
+     does not record engine "mantle" for the mantle row and "aurora" for the
+     others, or the mantle child does not receive `--mantle-max-hours 72`
+     and `--no-masks`; the mantle product (the default's curve up to
+     1000 s, which is where it stops) is not scored over its own periods:
+     its score must equal crust.quality's score of the default's product
+     over 0.005-1000 s, its `period_max` 1000 s and its `n_periods` the
+     periods up to 1000 s, while the default's score over 0.005-5000 s,
+     with a scattered tail above 1000 s, is lower; summary.md does not list
+     the mantle config as "(to 1000 s)"; or a second pass starts a child.
 """
 
 from __future__ import annotations
@@ -196,6 +223,107 @@ def synthetic_edi(path: Path) -> Path:
     tf.impedance_error = np.abs(z) * 0.05
     tf.write(fn=path, file_type="edi")
     return path
+
+
+P_FULL = 10.0 ** (np.arange(-20, 37) / 10.0)  # 0.01 to 3981 s, ten per decade, 1000 s on the grid
+P_MANTLE = P_FULL[P_FULL <= 1000.0 * (1.0 + 1e-9)]  # where a day's MANTLE cascade stops
+
+FAKE_PROCESS_RR = '''\
+"""A stand-in for scripts/process_rr.py: copies a prepared EDI into <workspace>/tf and writes a sidecar.
+
+The EDI is edis/<remote>_<kind>.edi beside this file, else edis/<kind>.edi,
+with kind "mantle" for --engine mantle, "window" when a start is given, else
+"full".
+"""
+import argparse, datetime as dt, json, shutil, sys
+from pathlib import Path
+import yaml
+
+p = argparse.ArgumentParser()
+for name in ("survey_yaml", "local", "remote"):
+    p.add_argument(name)
+p.add_argument("start", nargs="?")
+p.add_argument("end", nargs="?")
+p.add_argument("--tag")
+p.add_argument("--engine", default="aurora")
+p.add_argument("--mantle-max-hours", type=float, default=24.0)
+args, _ = p.parse_known_args()
+work = Path(yaml.safe_load(Path(args.survey_yaml).read_text(encoding="utf-8"))["workspace"])
+kind = "mantle" if args.engine == "mantle" else "window" if args.start else "full"
+edis = Path(__file__).with_name("edis")
+src = next(q for q in (edis / f"{args.remote}_{kind}.edi", edis / f"{kind}.edi") if q.exists())
+stem = f"{args.local}_rr-{args.remote}_{dt.datetime.now().strftime('%Y%m%d-%H%M')}_{args.tag}"
+edi = work / "tf" / f"{stem}.edi"
+shutil.copy(src, edi)
+side = {"local": args.local, "remote": args.remote, "tag": args.tag, "argv": sys.argv, "edi": edi.name,
+        "window": {"start": args.start, "end": args.end}, "quadrant": {"verdict": "physical quadrants"}}
+if args.engine == "mantle":
+    side.update(engine="mantle", engine_config={"options": {"max_hours": args.mantle_max_hours}})
+edi.with_suffix(".json").write_text(json.dumps(side), encoding="utf-8")
+print(f"wrote {edi}", flush=True)
+print(f"wrote {edi.with_suffix('.json')}", flush=True)
+'''
+
+
+def product_edi(path: Path, periods, tail_from: float | None = None, bad_yx: bool = False) -> Path:
+    """Write a synthetic product EDI on `periods`: 100 ohm m, xy at 45 deg and yx at -135 deg.
+
+    Both modes carry a dead band at 1-3 s (rho alternating 0.3 dex either
+    side), so a score over any window holding it is below 1.
+
+    Args:
+        path (Path): EDI to write.
+        periods (array): Periods in s.
+        tail_from (float | None): Periods above this alternate 0.5 dex either
+            side of the curve in both modes, a scattered long-period tail.
+        bad_yx (bool): The yx row's phase and rho scattered, as with a
+            faulty ey.
+
+    Returns:
+        Path: `path`.
+    """
+    p = np.asarray(periods, dtype=float)
+    sign = (-1.0) ** np.arange(p.size)
+    dex = np.where((p >= 1.0) & (p <= 3.0), 0.3, 0.0)
+    if tail_from is not None:
+        dex = np.where(p > tail_from * (1.0 + 1e-9), 0.5, dex)
+    amp = np.sqrt(100.0 / (0.2 * p)) * 10.0 ** (0.5 * dex * sign)
+    z = np.zeros((p.size, 2, 2), dtype=complex)
+    z[:, 0, 1] = amp * np.exp(1j * np.radians(45.0))
+    z[:, 1, 0] = amp * np.exp(1j * np.radians(-135.0))
+    if bad_yx:
+        z[:, 1, 0] = amp * 10.0 ** (0.6 * sign) * np.exp(1j * np.radians(-135.0 + 150.0 * sign))
+    tf = TF()
+    tf.station = "SYN"
+    tf.period = p
+    tf.impedance = z
+    tf.impedance_error = np.abs(z) * 0.05
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tf.write(fn=path, file_type="edi")
+    return path
+
+
+def fake_scripts(root: Path, bad_yx: bool = False) -> Path:
+    """Write the stand-in process_rr.py and its prepared EDIs under `root`.
+
+    full.edi is the whole record with a scattered tail above 1000 s,
+    mantle.edi the same curve up to 1000 s, and window.edi a product of a
+    few hours (0.01-200 s) whose yx row is sound.
+
+    Args:
+        root (Path): Folder of the test.
+        bad_yx (bool): Scatter the yx row of full.edi and mantle.edi.
+
+    Returns:
+        Path: The folder to point `campaign.SCRIPTS` at.
+    """
+    folder = root / "fake_scripts"
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "process_rr.py").write_text(FAKE_PROCESS_RR, encoding="utf-8")
+    product_edi(folder / "edis" / "full.edi", P_FULL, tail_from=1000.0, bad_yx=bad_yx)
+    product_edi(folder / "edis" / "mantle.edi", P_MANTLE, bad_yx=bad_yx)
+    product_edi(folder / "edis" / "window.edi", P_FULL[P_FULL <= 200.0])
+    return folder
 
 
 def quiet(fn, *a, **k):
@@ -582,12 +710,114 @@ def test_mantle_config() -> None:
     print(f"  move_products: {sorted(moved)} moved into {c.dir / 'tf'}")
 
 
+MANTLE_CONFIGS = {"mantle": ["--engine", "mantle", "--mantle-max-hours", "72", "--no-masks"],
+                  "hamming": ["--taper", "hamming"]}
+
+
+def test_mantle_runner_figures() -> None:
+    from types import SimpleNamespace
+
+    root = ROOT / "mantle_gate"
+    survey_yaml = make_survey(root)
+    bad = {"minutes_per_job": {"rr": 8}, "expected_peak_gb": {"rr": 35, "mantel": 65}}
+    try:
+        cp.load_plan(make_plan(root / "bad", configs=MANTLE_CONFIGS, runner=bad))
+    except ValueError as exc:
+        assert "expected_peak_gb mantel" in str(exc), str(exc)
+    else:
+        raise AssertionError("a plan whose expected_peak_gb names 'mantel' loaded")
+    runner = {"minutes_per_job": {"rr": 8, "variant": 8, "stack": 1, "mantle": 12}, "min_available_gb": 0.2,
+              "peak_factor": 1.0, "expected_peak_gb": {"rr": 35, "variant": 20, "stack": 8, "mantle": 65}}
+    c = cp.Campaign(survey_yaml, cp.load_plan(make_plan(root, configs=MANTLE_CONFIGS, runner=runner)), parallel=2,
+                    create=False)
+    rr = c.rr_job(3, "A", "B", "hamming", "s3_A_rr-B_hamming")
+    mantle = c.rr_job(3, "A", "B", "mantle", "s3_A_rr-B_mantle")
+    original = cp.psutil.virtual_memory
+    cp.psutil.virtual_memory = lambda: SimpleNamespace(available=40.0 * 1024.0**3)
+    try:
+        ok_rr, msg_rr = c.gate(rr)
+        ok_m, msg_m = c.gate(mantle)
+        assert ok_rr and not ok_m and msg_m.endswith("need 65.0 GB"), (msg_rr, msg_m)
+        c._running["run"] = cp.Running(mantle, popen=None, ps=None, started=cp.now(), t0=0.0,
+                                       log_path=root / "x.log", log_offset=0, rss_mb=5.0 * 1024.0)
+        ok_held, msg_held = c.gate(rr)
+        assert not ok_held and "60.0 GB held back" in msg_held, msg_held
+        c._running.clear()
+        for rid, kind, config, gb in (("r1", "rr", "default", 20.0), ("m1", "rr", "mantle", 60.0)):
+            c.ledger.rows[rid] = {**{k: "" for k in cp.LEDGER_COLUMNS}, "run_id": rid, "kind": kind,
+                                  "config": config, "peak_rss_mb": str(gb * 1024.0), "finished": rid}
+        assert c.expected_peak_mb("mantle") == 60.0 * 1024.0, c.expected_peak_mb("mantle")
+        assert c.expected_peak_mb("rr") == 20.0 * 1024.0, c.expected_peak_mb("rr")
+        ok_rr2, msg_rr2 = c.gate(rr)
+        assert ok_rr2 and msg_rr2.endswith("need 20.0 GB"), msg_rr2
+    finally:
+        cp.psutil.virtual_memory = original
+    print(f"  40 GB available: aurora job starts ({msg_rr}); mantle waits ({msg_m}); a running mantle job at 5 GB: "
+          f"{msg_held}; with finished peaks rr 20 / mantle 60 GB the aurora job {msg_rr2}")
+
+    c.ledger.rows.clear()
+    c.best_remotes = lambda sites, persist=True, df=None: {s: {"remote": "B" if s != "B" else "A"} for s in sites}
+    out, _ = quiet(c.dry_run, [3], c.plan.sites)
+    want = (5 * 12 + 5 * 8) / 2 / 60
+    assert out["counts"][3]["rr"] == 10 and abs(out["hours"] - want) < 1e-9, (out["counts"], out["hours"], want)
+    print(f"  dry run stage 3: {out['counts'][3]['rr']} rr, {out['hours']:.3f} h (mantle at 12 min, the rest at 8)")
+
+
+def test_mantle_runner_and_scores() -> None:
+    root = ROOT / "mantle_run"
+    survey_yaml = make_survey(root)
+    runner = {"minutes_per_job": {"rr": 8, "variant": 8, "stack": 1, "mantle": 12}, "min_available_gb": 0.2,
+              "peak_factor": 1.0, "expected_peak_gb": {"rr": 0.05, "variant": 0.05, "stack": 0.05, "mantle": 0.05}}
+    plan = cp.load_plan(make_plan(root, configs=MANTLE_CONFIGS, runner=runner))
+    fake = fake_scripts(root)
+    original = cp.SCRIPTS
+    cp.SCRIPTS = fake
+    try:
+        c = cp.Campaign(survey_yaml, plan, parallel=2)
+        c.api = {"func": "processing_archive", "variant": True, "rr": True, "stack": True, "why": ""}
+        quiet(c.run_block, "stage 1 A", c.stage1_jobs(["A"]))
+        jobs3 = c.stage3_jobs(["A"])
+        quiet(c.run_block, "stage 3 A", jobs3)
+        again = cp.Campaign(survey_yaml, plan, parallel=2)
+        again.api = dict(c.api)
+        quiet(again.run_block, "stage 3 A again", again.stage3_jobs(["A"]))
+    finally:
+        cp.SCRIPTS = original
+    assert again.n_started == 0, f"{again.n_started} child(ren) started on the second pass"
+    rows = c.ledger.rows
+    s3 = {j.config: rows[j.run_id] for j in jobs3}
+    assert sorted(s3) == ["hamming", "mantle"] and all(r["status"] == "done" for r in s3.values()), s3
+    assert s3["mantle"]["engine"] == "mantle" and s3["hamming"]["engine"] == "aurora", \
+        {k: r["engine"] for k, r in s3.items()}
+    assert all(rows[f"s1_A_rr-{r}"]["engine"] == "aurora" for r in ("B", "C")), rows
+    argv = json.loads(Path(s3["mantle"]["sidecar"]).read_text(encoding="utf-8"))["argv"]
+    assert argv[argv.index("--mantle-max-hours") + 1] == "72" and "--no-masks" in argv, argv
+
+    df = c.scores()
+    m = df[df["config"] == "mantle"].iloc[0]
+    d = df[(df["stage"] == 1) & (df["remote"] == m["remote"])].iloc[0]
+    own = cp.tf_quality(d["edi"], c.pmin, 1000.0)["overall"]["score"]
+    assert abs(m["score"] - own) < 1e-12 and m["engine"] == "mantle", (m["score"], own, m["engine"])
+    assert abs(m["period_max"] - 1000.0) < 1.0 and m["n_periods"] == P_MANTLE.size, (m["period_max"], m["n_periods"])
+    assert d["score"] < m["score"] and abs(d["period_max"] - P_FULL[-1]) < 1.0, (d["score"], d["period_max"])
+    c.report(["A"])
+    summary = (c.dir / "summary.md").read_text(encoding="utf-8")
+    line = next(ln for ln in summary.splitlines() if ln.startswith("| A | G1 |"))
+    assert "(to 1000 s)" in line and "mantle +" in line, line
+    print(f"  ledger engines: mantle {s3['mantle']['engine']}, hamming {s3['hamming']['engine']}; mantle argv "
+          f"...{' '.join(argv[-8:])}")
+    print(f"  mantle product: score {m['score']:.3f} over {m['n_periods']} periods to {m['period_max']:.0f} s = the "
+          f"default's score over 0.005-1000 s ({own:.3f}); the default over 0.005-5000 s {d['score']:.3f} "
+          f"(to {d['period_max']:.0f} s); summary: {line.split('|')[-2].strip()}")
+
+
 def main() -> int:
     """Run every test; return 1 when any failed."""
     print(__doc__.split("**This test fails if**")[1].strip())
     print()
     tests = [test_plan_parser, test_overlap_rule, test_stacks, test_dry_run_counts, test_runner_and_resume,
-             test_filter_check, test_parse_products, test_inputs_masks_both_sites, test_mantle_config]
+             test_filter_check, test_parse_products, test_inputs_masks_both_sites, test_mantle_config,
+             test_mantle_runner_figures, test_mantle_runner_and_scores]
     failed = 0
     for t in tests:
         print(t.__name__)
