@@ -17,8 +17,9 @@ Usage:
 :license: MIT
 
 **This test fails if** with station D02 and remote E08 the switch does not
-read exactly "apply masks.yaml (D02: 3, E08: 2)" (each site's own count,
-duplicates in the file collapsed as `load_masks` does), ticked and enabled,
+read exactly "apply masks.yaml (D02: 3, E08: 2)" (the masks process_rr
+applies from each site: D02's own, duplicates in the file collapsed as
+`load_masks` does, and E08's two of scope both), ticked and enabled,
 with a tooltip naming the Cross-powers tab and the remote; `RunOptions.flags`
 holds --no-masks while it is ticked, or lacks it once unticked, or the
 process_rr argv the tab queues lacks it then; with the engine combo on
@@ -41,7 +42,8 @@ unreadable)" with the parser's message in the tooltip only, or the tooltip
 keeps it once the file is fixed; the stack STK_E08u as remote is not left
 out of the label ("(D02: 4)"); with data_root pointed at a folder that does
 not exist (the data drive unplugged) D02 against E08 does not still read
-"(D02: 3, E08: 2)"; or any Qt slot raised.
+"(D02: 3, E08: 2)"; E08 gaining a mask of scope local changes that label;
+or any Qt slot raised.
 """
 
 from __future__ import annotations
@@ -70,21 +72,24 @@ WORK = SURVEY_DIR / "work"
 SCRATCH = scratch_dir("process_tab_unit")
 
 
-def _mask(start: str, end: str, bands="all", reason="test") -> dict:
-    """Build one masks.yaml entry found by "time"."""
-    return {"start": start, "end": end, "bands": bands, "reason": reason, "found_by": "time"}
+def _mask(start: str, end: str, bands="all", reason="test", scope: str | None = None) -> dict:
+    """Build one masks.yaml entry found by "time"; `scope` is left out when None."""
+    out = {"start": start, "end": end, "bands": bands, "reason": reason, "found_by": "time"}
+    return out if scope is None else {**out, "scope": scope}
 
 
-# D02: three masks, one of them written twice (load_masks keeps it once); E08: two
+# D02: three masks, one of them written twice (load_masks keeps it once); E08: two of scope both, the
+# masks it gives a pair as the remote
 MASKS = {
     "D02": [_mask("2021-06-29T10:00:00Z", "2021-06-29T10:20:00Z"),
             _mask("2021-06-29T08:00:00Z", "2021-06-29T08:30:00Z", [0.01, 0.1]),
             _mask("2021-06-29T10:00:00Z", "2021-06-29T10:20:00Z"),
             _mask("2021-06-30T01:00:00Z", "2021-06-30T01:10:00Z")],
-    "E08": [_mask("2021-06-29T09:00:00Z", "2021-06-29T09:15:00Z"),
-            _mask("2021-06-29T12:00:00Z", "2021-06-29T12:05:00Z", [1.0, 10.0])],
+    "E08": [_mask("2021-06-29T09:00:00Z", "2021-06-29T09:15:00Z", scope="both"),
+            _mask("2021-06-29T12:00:00Z", "2021-06-29T12:05:00Z", [1.0, 10.0], scope="both")],
 }
-EXTRA_E08 = _mask("2021-06-30T03:00:00Z", "2021-06-30T03:30:00Z")
+EXTRA_E08 = _mask("2021-06-30T03:00:00Z", "2021-06-30T03:30:00Z", scope="both")
+LOCAL_E08 = _mask("2021-06-30T05:00:00Z", "2021-06-30T05:30:00Z", reason="E08 ey", scope="local")
 
 # run_now records the argv of a job the window would start at once (a basemap fetch) instead of starting it
 STARTED: list[list[str]] = []
@@ -273,6 +278,12 @@ def main() -> int:
     options.describe_masks("D02", "E08")
     assert box.text() == "apply masks.yaml (D02: 3, E08: 2)", box.text()
     print(f"  data_root unmounted, D02 rr E08: {box.text()!r}")
+
+    # a mask of scope local at E08 applies to E08 as the local alone
+    write_masks({**MASKS, "E08": MASKS["E08"] + [LOCAL_E08]})
+    options.describe_masks("D02", "E08")
+    assert box.text() == "apply masks.yaml (D02: 3, E08: 2)", box.text()
+    print(f"  E08 gains a mask of scope local, D02 rr E08: {box.text()!r}")
 
     assert not SLOT_ERRORS, f"{len(SLOT_ERRORS)} Qt slot error(s)"
     assert not (SURVEY_DIR / "masks.yaml").exists(), "a masks.yaml was written to the real survey folder"

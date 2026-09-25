@@ -18,7 +18,8 @@ Usage:
 1. masks.yaml does not round-trip: two sites' masks saved one after the other
    (C23 with an all-bands and a band-limited mask, C10 with one) must load
    back equal to what was saved (normalised: UTC 'Z' times, earliest first,
-   bands 'all' or [pmin, pmax] sorted), the file must keep its leading
+   bands 'all' or [pmin, pmax] sorted, scope 'local' where none was
+   given), the file must keep its leading
    comment, and re-saving C23 with a different list must leave C10's block
    (and the header) unchanged in the file's text; saving C23 empty must
    remove its key and leave C10's bytes again; a hand-made C10 block with a
@@ -110,9 +111,9 @@ def test_round_trip() -> None:
         got = load_masks(survey_yaml, "C23")
         want = [
             {"start": "2023-09-22T01:00:00Z", "end": "2023-09-22T01:30:00Z", "bands": [0.02, 0.1],
-             "reason": "polar outlier", "found_by": "polar"},
+             "reason": "polar outlier", "found_by": "polar", "scope": "local"},
             {"start": "2023-09-22T12:05:49Z", "end": "2023-09-22T12:25:49Z", "bands": "all",
-             "reason": "mains switching", "found_by": "time"},
+             "reason": "mains switching", "found_by": "time", "scope": "local"},
         ]
         assert got == want, got
         assert load_masks(survey_yaml, "C10")[0]["start"] == "2023-09-22T03:00:00Z"
