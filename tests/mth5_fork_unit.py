@@ -3,13 +3,13 @@
 Unit test for the mtproc forks of mth5 and mt-metadata
 
 Tests the forks (branch `mtproc-fixes`) against stock mth5 0.6.9 and
-mt_metadata 1.0.10. The forks are the clones at MTPROC_FORKS/mth5 (import
-name `mth5`) and MTPROC_FORKS/mt-metadata (import name `mt_metadata`);
-MTPROC_FORKS defaults to `_scratch.DEFAULT_FORKS`. Every check runs in a
+mt_metadata 1.0.10. The forks are the clones at CRUST_FORKS/mth5 (import
+name `mth5`) and CRUST_FORKS/mt-metadata (import name `mt_metadata`);
+CRUST_FORKS defaults to `_scratch.DEFAULT_FORKS`. Every check runs in a
 fresh subprocess (`--worker`). The fork's run has PYTHONPATH=<mth5
 clone>;<mt-metadata clone>[;<mt-io clone>/src], then this process's own
 PYTHONPATH and src, ahead of site-packages. The mt-io clone is included
-when there is one because check 2 ingests through `mtproc.ingest`, whose
+when there is one because check 2 ingests through `crust.ingest`, whose
 LEMI-423 coil chain comes from the mt-io fork. The installed packages' run
 (what this interpreter imports: site-packages, or a PYTHONPATH set before
 the test) gets this process's own PYTHONPATH and src alone.
@@ -37,14 +37,14 @@ Usage:
    100 Hz) raise under the fork, give other stations than L and R, or change
    either file's modification time (ns) (stock opens read-write, which the
    held read-only open refuses);
-2. run ids (issue 9): `mtproc.ingest.ingest_site` over three synthetic
+2. run ids (issue 9): `crust.ingest.ingest_site` over three synthetic
    LEMI-423 files (`tests/new_survey_unit.py`'s S01, survey.yaml written by
    scripts/new_survey.py) logs any WARNING from `mth5.groups.run` under the
    fork, or a channel's run id in the archive is not its group's (stock logs
    a "Channel run.id" warning per channel);
 3. non-integer rate and phantom channel (issues 10 and 17, which live in
    mt_timeseries), run twice: with the mt-timeseries clone at
-   MTPROC_FORKS/mt-timeseries (its src/ also on PYTHONPATH) and with the
+   CRUST_FORKS/mt-timeseries (its src/ also on PYTHONPATH) and with the
    installed mt_timeseries: hx and hy at 10.00064 Hz written with
    `RunGroup.from_runts` and read back with `to_runts` and `time_slice` step
    their index by neither 100,000,000 ns (the known rounding: reported as not
@@ -177,7 +177,7 @@ def w_hold(tmp: str) -> None:
 
 
 def w_read_only(tmp: str) -> dict:
-    """Build RunSummary and KernelDataset over L and R directly with mth5, without mtproc.process."""
+    """Build RunSummary and KernelDataset over L and R directly with mth5, without crust.process."""
     from mth5.processing.kernel_dataset import KernelDataset
     from mth5.processing.run_summary import RunSummary
 
@@ -198,7 +198,7 @@ def w_read_only(tmp: str) -> dict:
 
 
 def w_run_ids(tmp: str) -> dict:
-    """Ingest three synthetic LEMI-423 files with mtproc and collect the mth5.groups.run warnings logged."""
+    """Ingest three synthetic LEMI-423 files with CRUST and collect the mth5.groups.run warnings logged."""
     sys.path[:0] = [str(REPO / "src"), str(REPO / "tests")]
     import new_survey_unit as nsu
 
@@ -212,8 +212,8 @@ def w_run_ids(tmp: str) -> dict:
                            "--name", "fork_proof", "--out", str(yaml_path)], capture_output=True, text=True)
     assert done.returncode == 0, done.stdout + done.stderr
     from mth5.mth5 import MTH5
-    from mtproc.ingest import ingest_site
-    from mtproc.survey import Survey
+    from crust.ingest import ingest_site
+    from crust.survey import Survey
 
     logger = _quiet()
     warnings: list[str] = []
@@ -303,7 +303,7 @@ def w_band() -> dict:
 
 
 def w_make_synth(path: str) -> dict:
-    """Write 1 h at 1000 Hz of ex ey hx hy hz float64, laid out as mtproc lays a site (one run, sr1000_0001)."""
+    """Write 1 h at 1000 Hz of ex ey hx hy hz float64, laid out as CRUST lays a site (one run, sr1000_0001)."""
     import numpy as np
     from mt_metadata.timeseries import Electric, Magnetic, Run, Station
     from mt_timeseries import ChannelTS, RunTS
@@ -413,7 +413,7 @@ def check_run_ids(fork, tmp: Path) -> bool:
     line = f"ingest_site: {len(got['ids'])} channels in runs {runs}, no mth5.groups.run warning, run ids consistent"
     try:
         control = run_worker(None, "run_ids", str(tmp / "stock"))
-    except RuntimeError as exc:  # stock mt-io cannot read the LEMI-423 coil file mtproc passes it
+    except RuntimeError as exc:  # stock mt-io cannot read the LEMI-423 coil file CRUST passes it
         tail = [ln for ln in str(exc).splitlines() if ln.strip()]
         print(f"  2. {line}; installed: the ingest fails ({tail[-1][:110] if tail else exc})")
         return False

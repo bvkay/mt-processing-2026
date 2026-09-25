@@ -3,13 +3,13 @@
 Trial of candidate filter chains on one window of a site's raw archive
 
 Loads one window of a site's raw archive (`<workspace>/mth5/<site>.h5`, read
-by `mtproc_gui.segment.load_segment`: calibrated, offset-removed, the
+by `crust.gui.segment.load_segment`: calibrated, offset-removed, the
 magnetics in nT through the scalar gain), runs each candidate filter chain
-over it with `mtproc.noise.apply_filters_arrays` and measures what the chain
+over it with `crust.noise.apply_filters_arrays` and measures what the chain
 did, so a chain can be judged on a window before it is declared for the
 site. A chain is a YAML file holding a list of filters in the syntax of
 `<survey>/filters.yaml` (the kinds are described in the module docstring of
-`mtproc.noise`), or a mapping whose key is the site and whose value is that
+`crust.noise`), or a mapping whose key is the site and whose value is that
 list. `--declared` adds the site's current list as the chain "declared". The
 window as recorded, "raw", is the reference every chain is compared with.
 This is the command-line form of the preview on the GUI's Filter Data tab.
@@ -17,16 +17,16 @@ This is the command-line form of the preview on the GUI's Filter Data tab.
 `trial_metrics` measures raw and each filtered window alike: the Welch PSD
 at 0.05 Hz resolution (Hann, half overlap, constant detrend) over 5-500 Hz;
 the excess of every evaluated line over its local floor per channel
-(`mtproc.timefreq.line_excess`); the floor between the lines, the median PSD
+(`crust.timefreq.line_excess`); the floor between the lines, the median PSD
 in dB over 5-45, 55-95, 105-145, 155-195 and 205-245 Hz with +-1 Hz around
 every evaluated line set aside; the band-averaged squared coherence of ey-hx
-and ex-hy on the survey's processing bands (`mtproc.qc.band_coherence` on
-`mtproc.bands.build_band_scheme` with the survey's `processing:` keys) and
+and ex-hy on the survey's processing bands (`crust.qc.band_coherence` on
+`crust.bands.build_band_scheme` with the survey's `processing:` keys) and
 its means over 0.005-0.02, 0.02-0.2, 0.2-2 and 2-20 s; the burst fraction of
 each magnetic channel and the step fraction of each electric channel as
 `scripts/line_noise_profile.py` defines `burst_*` and `step_*`, the 60 s
 running median taken over the window with its ends padded by the end values;
-and the full-band `mtproc.timefreq.psd_ladder` for the figure. The evaluated
+and the full-band `crust.timefreq.psd_ladder` for the figure. The evaluated
 lines are 50 Hz and its harmonics below Nyquist, every `extra:` line of the
 chains' notches and, with `--lines`, every non-mains line of the site's line
 scan (`scripts/line_scan.py`) seen in at least 3 hours. The scan is read from
@@ -102,13 +102,13 @@ from scipy import ndimage, signal
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "src"))
 
-from mtproc.bands import build_band_scheme
-from mtproc.noise import apply_filters_arrays
-from mtproc.qc import band_coherence
-from mtproc.survey import Survey
-from mtproc.timefreq import line_excess, psd_ladder
-from mtproc_gui.channels import REMOTE_COMPS, kind, label as channel_label, order, resolve_pairs, roles, unit
-from mtproc_gui.segment import load_segment
+from crust.bands import build_band_scheme
+from crust.noise import apply_filters_arrays
+from crust.qc import band_coherence
+from crust.survey import Survey
+from crust.timefreq import line_excess, psd_ladder
+from crust.gui.channels import REMOTE_COMPS, kind, label as channel_label, order, resolve_pairs, roles, unit
+from crust.gui.segment import load_segment
 
 DPI = 150
 WORKERS = 4  # threads per filter, as in the Filter Data tab's preview
@@ -434,7 +434,7 @@ def trial_metrics(arrays: dict[str, np.ndarray], fs: float, scheme: dict, lines=
     Args:
         arrays (dict): Local channel name to samples.
         fs (float): Sample rate in Hz.
-        scheme (dict): Band scheme from `mtproc.bands.build_band_scheme`.
+        scheme (dict): Band scheme from `crust.bands.build_band_scheme`.
         lines (iterable of float): Lines evaluated besides the mains, Hz.
         remote (dict | None): The remote's coils on the same samples.
 
@@ -758,7 +758,7 @@ def versions() -> dict[str, str]:
         head = subprocess.run(["git", "-C", str(REPO), "rev-parse", "--short", "HEAD"], capture_output=True,
                               text=True, timeout=10)
         if head.returncode == 0:
-            out["mtproc_git_head"] = head.stdout.strip()
+            out["crust_git_head"] = head.stdout.strip()
     except (OSError, subprocess.SubprocessError):
         pass
     return out

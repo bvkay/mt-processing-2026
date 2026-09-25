@@ -18,7 +18,7 @@ and S03 of one synthetic B423 file each (4 s at 1000 Hz, written by
 folder, and a 50 Hz notch declared for S02 in filters.yaml, so S02 also has
 a variant. S01's raw archive is built first by a single-site call. Every
 check runs the script in a process of its own with the interpreter
-MTPROC_PYTHON names (this one by default), which needs the processing
+CRUST_PYTHON names (this one by default), which needs the processing
 environment (aurora, mth5, mt-io).
 
 The lines of (f) are those the single-site script printed on the same calls
@@ -37,7 +37,7 @@ script, so the first failing site ends the batch.
 
 Usage:
     python tests/ingest_site_cli_unit.py
-    MTPROC_PYTHON=<processing env python> python -m pytest tests/ingest_site_cli_unit.py -q
+    CRUST_PYTHON=<processing env python> python -m pytest tests/ingest_site_cli_unit.py -q
 
 @author: ben kay (ben@auscope.org.au)
 
@@ -63,7 +63,7 @@ from _scratch import scratch_dir  # noqa: E402
 from mtio_fork_unit import _write_b423  # noqa: E402
 
 SCRIPT = REPO / "scripts" / "ingest_site.py"
-PY = os.environ.get("MTPROC_PYTHON", sys.executable)
+PY = os.environ.get("CRUST_PYTHON", sys.executable)
 SCRATCH = scratch_dir("ingest_site_cli_unit")
 SITES = {"S01": 1624510579, "S02": 1624596979, "S03": 1624683379}  # site -> the epoch of its one B423 file
 UNREADABLE = ("S04", 1624769779)
@@ -123,7 +123,7 @@ def archive(survey_yaml: Path, site: str) -> Path:
 def run(*args, script: Path = SCRIPT) -> subprocess.CompletedProcess:
     """Run the script (or a copy of it) with `args`, output captured as text."""
     env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
-    if script != SCRIPT:  # a copy outside the repo finds mtproc and process_rr.py on PYTHONPATH
+    if script != SCRIPT:  # a copy outside the repo finds crust and process_rr.py on PYTHONPATH
         env["PYTHONPATH"] = os.pathsep.join(filter(None, (str(REPO / "src"), str(REPO / "scripts"),
                                                           env.get("PYTHONPATH"))))
     return subprocess.run([PY, str(script), *map(str, args)], capture_output=True, text=True, encoding="utf-8",
@@ -134,7 +134,7 @@ def run(*args, script: Path = SCRIPT) -> subprocess.CompletedProcess:
 def premise() -> None:
     """Check that the interpreter runs the script at all."""
     done = run("--help")
-    assert done.returncode == 0, (f"{PY} cannot run {SCRIPT.name}: set MTPROC_PYTHON to the processing "
+    assert done.returncode == 0, (f"{PY} cannot run {SCRIPT.name}: set CRUST_PYTHON to the processing "
                                   f"environment's python\n{done.stderr[-800:]}")
 
 

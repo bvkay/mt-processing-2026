@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Unit test for mtproc.masks
+Unit test for crust.masks
 
 Checks masks.yaml (round trip, byte-stable blocks of other sites, duplicate
 handling) and the cutting of time masks out of an mth5 `KernelDataset`
@@ -56,7 +56,7 @@ sys.path.insert(0, str(REPO / "src"))
 from loguru import logger  # noqa: E402
 from mth5.processing import KernelDataset  # noqa: E402
 
-from mtproc.masks import HEADER, apply_time_masks, load_masks, masks_path, save_masks  # noqa: E402
+from crust.masks import HEADER, apply_time_masks, load_masks, masks_path, save_masks  # noqa: E402
 
 logger.remove()  # after mth5's import, which adds its own sink
 logger.add(sys.stderr, level="WARNING")
@@ -219,7 +219,7 @@ def test_apply() -> None:
     kd = apply_time_masks(kernel(both), [mask(2, 2.5, bands=[0.02, 0.1])])
     for st in ("L", "R"):
         assert intervals(kd, st) == [(at(0), at(6))], (st, intervals(kd, st))
-    print("  a band-limited mask changes nothing here (it is applied by the band patch in mtproc.process)")
+    print("  a band-limited mask changes nothing here (it is applied by the band patch in crust.process)")
 
     try:
         apply_time_masks(kernel(both), [mask(-1, 7)])

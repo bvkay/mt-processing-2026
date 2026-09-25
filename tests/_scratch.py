@@ -9,9 +9,9 @@ the same way as `import instrument_samples`. The test scripts run directly
 setup.
 
 Environment variables:
-    MTPROC_TEST_SCRATCH: base of the scratch directories (default: the OS
+    CRUST_TEST_SCRATCH: base of the scratch directories (default: the OS
         temp directory).
-    MTPROC_FORKS: parent of the forked-dependency clones (default:
+    CRUST_FORKS: parent of the forked-dependency clones (default:
         DEFAULT_FORKS).
 
 @author: ben kay (ben@auscope.org.au)
@@ -26,7 +26,7 @@ import tempfile
 from pathlib import Path
 
 # The parent of the sibling git clones (mth5, mt-metadata, aurora, mt-io,
-# mt-timeseries) the *_fork_unit.py tests look for, when MTPROC_FORKS is unset.
+# mt-timeseries) the *_fork_unit.py tests look for, when CRUST_FORKS is unset.
 DEFAULT_FORKS = Path("D:/BEN")
 
 
@@ -37,10 +37,10 @@ def scratch_dir(name: str) -> Path:
         name (str): Name of the test's directory.
 
     Returns:
-        Path: <MTPROC_TEST_SCRATCH or the OS temp directory>/mtproc_tests/<name>.
+        Path: <CRUST_TEST_SCRATCH or the OS temp directory>/crust_tests/<name>.
     """
-    base = Path(os.environ.get("MTPROC_TEST_SCRATCH", tempfile.gettempdir()))
-    path = base / "mtproc_tests" / name
+    base = Path(os.environ.get("CRUST_TEST_SCRATCH", tempfile.gettempdir()))
+    path = base / "crust_tests" / name
     path.mkdir(parents=True, exist_ok=True)
     return path
 
@@ -56,9 +56,9 @@ def forks_dir(name: str) -> Path:
         name (str): Directory name of the fork, e.g. "mth5".
 
     Returns:
-        Path: <MTPROC_FORKS or DEFAULT_FORKS>/<name>.
+        Path: <CRUST_FORKS or DEFAULT_FORKS>/<name>.
     """
-    base = Path(os.environ.get("MTPROC_FORKS", str(DEFAULT_FORKS)))
+    base = Path(os.environ.get("CRUST_FORKS", str(DEFAULT_FORKS)))
     return base / name
 
 

@@ -36,7 +36,7 @@ was decimated from; any source channel's metadata other than sample rate
 and time period (dipole length, azimuth, units, the applied-filter list)
 differs in S01L, or its filter chain does (each stage's type, name, gain,
 units, and the coil table's frequencies, amplitudes and phases), or
-`mtproc.timefreq.load_station` reads other scalar gains off S01L than off
+`crust.timefreq.load_station` reads other scalar gains off S01L than off
 the source; `processing_archive` does not return S01L.h5 itself for S01L;
 a second run without --force does not keep the archive (mtime unchanged,
 "kept" printed) or a run with --force does not rebuild it (mtime moved, the
@@ -74,8 +74,8 @@ sys.path.insert(0, str(REPO / "tests"))
 
 import new_survey_unit as nsu  # noqa: E402  (the B423 record layout and header)
 from _scratch import scratch_dir  # noqa: E402
-from mtproc.ingest import default_archive_path, ingest_site, processing_archive  # noqa: E402
-from mtproc.survey import Survey  # noqa: E402
+from crust.ingest import default_archive_path, ingest_site, processing_archive  # noqa: E402
+from crust.survey import Survey  # noqa: E402
 
 SCRIPT = REPO / "scripts" / "decimate_site.py"
 PROCESS_RR = REPO / "scripts" / "process_rr.py"
@@ -199,7 +199,7 @@ def fit(t: np.ndarray, y: np.ndarray) -> dict:
 def read_runs(path: Path, station: str) -> dict:
     """Read every run of an archive: {run: {"start", "rate", "n", "comment", "channels": {comp: samples}}}."""
     from mth5.mth5 import MTH5
-    from mtproc.timefreq import _real_runs
+    from crust.timefreq import _real_runs
 
     m = MTH5()
     m.open_mth5(path, mode="r")
@@ -267,7 +267,7 @@ def chain(ch) -> list[tuple]:
 def metadata_of(path: Path, station: str) -> dict:
     """Return {run index: {comp: (metadata dict less rate and time period, chain, scalar gain)}}."""
     from mth5.mth5 import MTH5
-    from mtproc.timefreq import _real_runs, _scalar_gain
+    from crust.timefreq import _real_runs, _scalar_gain
 
     skip = ("sample_rate", "time_period.start", "time_period.end", "hdf5_reference")
     m = MTH5()
@@ -287,7 +287,7 @@ def metadata_of(path: Path, station: str) -> dict:
 
 
 def main() -> None:
-    from mtproc.timefreq import load_station
+    from crust.timefreq import load_station
 
     yaml_path, survey = build()
     raw_text = yaml_path.read_text(encoding="utf-8")

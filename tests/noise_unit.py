@@ -1,13 +1,13 @@
 # -*- coding: utf-8 -*-
 """
-Unit test for mtproc.noise
+Unit test for crust.noise
 
 Tests the declared filters on plain arrays and on a run. The main synthetic
 is 20 min at 1000 Hz: every channel carries a 50 Hz line (amplitude 2), a
 0.01 Hz drift (amplitude 100) and white noise (1 rms); ey also carries a
 200 Hz tone (amplitude 3) and ex a 12 s square wave (amplitude 5). Each
 measure below is taken with numpy alone (a lock-in projection, block means,
-a projection on the square wave) or with `mtproc.timefreq.line_excess` on a
+a projection on the square wave) or with `crust.timefreq.line_excess` on a
 plain `scipy.signal.welch`, independently of the filter under test.
 
 Usage:
@@ -105,10 +105,10 @@ from scipy.signal import welch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from mtproc.noise import (  # noqa: E402
+from crust.noise import (  # noqa: E402
     apply_filters, apply_filters_arrays, cp_stack_subtract, mains_notch, mains_subtract,
 )
-from mtproc.timefreq import line_excess  # noqa: E402
+from crust.timefreq import line_excess  # noqa: E402
 
 FS = 1000.0
 N = int(20 * 60 * FS)

@@ -63,7 +63,7 @@ import xyzservices.providers as xyz  # noqa: E402
 from PIL import Image  # noqa: E402
 from xyzservices import TileProvider  # noqa: E402
 
-from mtproc.survey import Survey  # noqa: E402
+from crust.survey import Survey  # noqa: E402
 
 EARTH_RADIUS_M = 6378137.0  # the Web Mercator (EPSG:3857) sphere
 TILE_PX = 256  # a slippy-map tile's side: at zoom z the world is TILE_PX * 2**z pixels round

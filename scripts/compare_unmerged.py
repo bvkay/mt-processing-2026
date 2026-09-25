@@ -43,7 +43,7 @@ from loguru import logger
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "src"))
 
-from mtproc.compare import rho_phi  # noqa: E402
+from crust.compare import rho_phi  # noqa: E402
 
 # a dark-neutral look, defined here so the headless script depends on matplotlib alone
 plt.rcParams.update({
@@ -280,7 +280,7 @@ def plot(aurora_path: Path, by_rate: dict[int, list[dict]], all_remotes: bool, t
     ax_phi_xy.set_ylabel("phase (deg)")
     ax_phi_xy.set_xlabel("period (s)")
     ax_phi_yx.set_xlabel("period (s)")
-    # the physical quadrants (mtproc.compare.phase_quadrants): xy in (0, 90), yx in (-180, -90)
+    # the physical quadrants (crust.compare.phase_quadrants): xy in (0, 90), yx in (-180, -90)
     ax_phi_xy.set_ylim(0, 90)
     ax_phi_yx.set_ylim(-180, -90)
     ax_rho_xy.set_title("Zxy")

@@ -38,7 +38,7 @@ order, the eight band spans "L<n> band <T> s <ch>" in aurora's loop order
 and set_tf and lying inside its level's regression, each detrend inside its
 level's STFT; or the PROFMARK lines of the same run do not partition into
 those phases; or, with viztracer installed, the spans do not reach the
-trace on the "mtproc phases + counters" track with the stub's `stft` call
+trace on the "CRUST phases + counters" track with the stub's `stft` call
 (MainThread) inside the "L0 STFT" span; or the tracemalloc diff table, on
 two snapshots around a retained 16 MiB bytearray, a retained 1 MiB one and
 a freed 32 MiB one, does not put the 16 MiB one first (+16 MiB to 1 kiB in
@@ -63,7 +63,7 @@ EXCERPT = "\n".join([
     '=== 2026-09-24T06:45:08+08:00 python.exe process_rr.py survey.yaml C18 C19 --taper boxcar --tag lineC-boxcar',
     'started: 2026-09-24T06:45:11.156306+08:00',
     '\x1b[1m2026-09-24T06:45:12.056381+0800 | INFO | __main__ | main | line: 475 | C18: Ex 55.0 m @ 0.0 deg, Ey 45.0 m @ 90.0 deg, timing None\x1b[0m',
-    '\x1b[1m2026-09-24T06:45:13.928145+0800 | INFO | mtproc.process | process_station | line: 253 | aurora: C18 RR C19\x1b[0m',
+    '\x1b[1m2026-09-24T06:45:13.928145+0800 | INFO | crust.process | process_station | line: 253 | aurora: C18 RR C19\x1b[0m',
     '\x1b[1m2026-09-24T06:45:14.112994+0800 | INFO | aurora.pipelines.transfer_function_kernel | valid_decimations | line: 413 | After validation there are 10 valid decimation levels\x1b[0m',
     '\x1b[1m2026-09-24T06:46:00.814290+0800 | INFO | mth5.processing.kernel_dataset | initialize_dataframe_for_processing | line: 1310 | Dataset dataframe initialized successfully, updated metadata.\x1b[0m',
     '\x1b[1m2026-09-24T06:46:00.974900+0800 | INFO | aurora.pipelines.transfer_function_kernel | update_dataset_df | line: 156 | Dataset Dataframe Updated for decimation level 0 Successfully\x1b[0m',
@@ -85,7 +85,7 @@ EXCERPT = "\n".join([
     '\x1b[1m2026-09-24T06:53:58.192049+0800 | INFO | aurora.pipelines.transfer_function_kernel | update_dataset_df | line: 137 | DECIMATION LEVEL 2\x1b[0m',
     '\x1b[1m2026-09-24T06:54:03.372738+0800 | INFO | aurora.pipelines.transfer_function_kernel | update_dataset_df | line: 156 | Dataset Dataframe Updated for decimation level 2 Successfully\x1b[0m',
     "\x1b[1m2026-09-24T06:54:49.548037+0800 | INFO | aurora.pipelines.process_mth5 | process_mth5_legacy | line: 230 | type(tf_cls): <class 'mt_metadata.transfer_functions.core.TF'>\x1b[0m",
-    '\x1b[1m2026-09-24T06:54:49.821920+0800 | INFO | mtproc.process | process_station | line: 265 | wrote tf\\C18_rr-C19_20260924-0645_lineC-boxcar.edi\x1b[0m',
+    '\x1b[1m2026-09-24T06:54:49.821920+0800 | INFO | crust.process | process_station | line: 265 | wrote tf\\C18_rr-C19_20260924-0645_lineC-boxcar.edi\x1b[0m',
     '\x1b[1m2026-09-24T06:54:50.279523+0800 | INFO | __main__ | main | line: 538 | wrote tf\\C18_rr-C19_20260924-0645_lineC-boxcar_vs_lemimt.png\x1b[0m',
     '\x1b[1m2026-09-24T06:54:50.347061+0800 | INFO | __main__ | main | line: 546 | wrote tf\\C18_rr-C19_20260924-0645_lineC-boxcar.json\x1b[0m',
 ])

@@ -10,7 +10,7 @@ offset by cross-correlation, (c) GPS lock status per file.
 The check fails (exit 1) if any cross-correlation peak sits more than 50 ms
 from zero lag, a real clock error that later steps cannot repair. A file-start
 spacing other than 5400 s after the first file is reported as a warning:
-`mtproc.ingest` starts a new run at every spacing anomaly and keeps the
+`crust.ingest` starts a new run at every spacing anomaly and keeps the
 per-sample timestamps, so a one-second file-boundary slip (with the samples
 inside each file correctly timed) has no effect on the data. The figure goes
 to <workspace>/qc/<local>_vs_<remote>_timing.png unless --out is given.
@@ -44,8 +44,8 @@ from scipy.signal import decimate
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "src"))
 
-from mtproc.ingest import select_files
-from mtproc.survey import Survey
+from crust.ingest import select_files
+from crust.survey import Survey
 
 # 30-byte little-endian record after the 1024-byte ASCII header; identical to
 # mt_io.lemi.lemi423.Read_Lemi_Data.binary_format.

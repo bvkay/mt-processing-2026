@@ -15,7 +15,7 @@ Each archive is read directly with h5py, read-only, one window at a time
 (the layout and run attributes as in `scripts/line_scan.py`). For every
 hour a window of `--minutes` is read with a margin of `PAD_S` on each side
 where the run allows, the site's declared filters are applied in memory
-(`mtproc.noise.apply_filters_arrays`) and, on the window itself, in raw
+(`crust.noise.apply_filters_arrays`) and, on the window itself, in raw
 counts: `step_ex`, `step_ey` are the fractions of the 10 Hz samples (every
 tenth of a second, taken without an anti-alias filter) farther than 6 MAD
 (scaled by 1.4826, from the median absolute residual) from a 60 s running
@@ -99,8 +99,8 @@ from scipy import ndimage, signal
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "src"))
 
-from mtproc.noise import apply_filters_arrays
-from mtproc.survey import Survey
+from crust.noise import apply_filters_arrays
+from crust.survey import Survey
 
 DPI = 150
 WORKERS = 4  # threads per filter

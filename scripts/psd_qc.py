@@ -4,7 +4,7 @@ Whole-record power spectral density per channel, in physical units, full band
 
 The fifth per-site QC figure, after the four of `scripts/site_qc.py`. The
 spectrogram of `site_qc.py` walks the factor-4 decimation ladder of
-`mtproc.timefreq.cascade` and bins into log period and time, a time-resolved
+`crust.timefreq.cascade` and bins into log period and time, a time-resolved
 view. This figure is a single whole-record spectrum at a frequency
 resolution fine enough to show a 50 Hz line next to its neighbours;
 log-period binning dilutes a narrow line to invisibility, as `check_lines()`
@@ -28,7 +28,7 @@ without a reference spectrum, since no lemimt EDI covers these frequencies.
 Gaps: `load_station` returns NaN outside the runs it found, with each
 channel's DC offset already removed (`Record.arrays`), so zero is the
 channel mean. Gap samples are zeroed in place rather than dropped, as
-`mtproc.timefreq.cascade` does before its own decimation. One contiguous
+`crust.timefreq.cascade` does before its own decimation. One contiguous
 array per channel keeps the FIR decimation simple, and a zeroed window
 lowers that window's average power slightly, where a NaN or a straight
 interpolation would add spurious spectral content.
@@ -41,16 +41,16 @@ convention of `scripts/site_qc.py`.
 
 `--before` overlays each local channel's PSD before any declared ingest
 filter, in grey dashed, labelled "before filters (raw file)". The raw trace
-is read from the site's B423 files: `mtproc.ingest.select_files` over the
-archive's own time span, `mtproc.ingest.read_lemi423` with the read kwargs
+is read from the site's B423 files: `crust.ingest.select_files` over the
+archive's own time span, `crust.ingest.read_lemi423` with the read kwargs
 of `ingest_site` (dipole lengths and `calibration_fn` from
-`survey.site(site)`), then `mtproc.ingest._keep_channels`. It is calibrated
+`survey.site(site)`), then `crust.ingest._keep_channels`. It is calibrated
 to the physical units of the archived trace by the scalar-gain rule of
 `load_station` (`_raw_scalar_gain` below: the rule of `_scalar_gain` on a raw
 channel's filter chain of LEMI linear coefficient, dipole length and
-`lemi423_b_scale`, after `mtproc.ingest._apply_h_scale`, since the archived
+`lemi423_b_scale`, after `crust.ingest._apply_h_scale`, since the archived
 channels carry it). The declared filters of `filters.yaml`
-(`mtproc.noise.apply_filters`) are not applied. A site with no declared
+(`crust.noise.apply_filters`) are not applied. A site with no declared
 filters is the correctness test: the two traces are the same samples
 through the same gain and coincide, and the CHECK lines quantify how well.
 
@@ -58,7 +58,7 @@ A 45 h record is about 160M samples per channel, so `load_before` reads
 every file in the archive's span in one `read_lemi423` call (matching
 `load_station`, which concatenates every run) up to MAX_BEFORE_SAMPLES.
 Beyond that it falls back to the longest contiguous group of B423 files
-(`mtproc.ingest._group_contiguous`, the grouping ingest splits runs by) and
+(`crust.ingest._group_contiguous`, the grouping ingest splits runs by) and
 logs the drop. The fallback is a last resort: two disjoint spans of the same
 natural field disagree by several dB from Welch sampling scatter alone, so
 dropping even a short run this way can put the before/archived agreement
@@ -111,15 +111,15 @@ from loguru import logger
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "src"))
 
-from mtproc.ingest import _apply_h_scale, _group_contiguous, _keep_channels, read_lemi423, select_files
-from mtproc.survey import Survey
-from mtproc.timefreq import CHANNELS, COLOUR, UNIT, load_station, line_excess, merge, psd_ladder
+from crust.ingest import _apply_h_scale, _group_contiguous, _keep_channels, read_lemi423, select_files
+from crust.survey import Survey
+from crust.timefreq import CHANNELS, COLOUR, UNIT, load_station, line_excess, merge, psd_ladder
 
 DPI = 150
 NPERSEG = 2**16
 STAGE_FACTOR = 10
 N_STAGES = 4
-# the ladder itself is `mtproc.timefreq.psd_ladder`, which stops a stage short of
+# the ladder itself is `crust.timefreq.psd_ladder`, which stops a stage short of
 # `min_segments` whole Welch segments. 1 here, where the library default is 4:
 # every stage runs on a whole record, and under the default any record
 # shorter than 72.8 h (4 x 65536 samples at 1 Hz) would lose stage 3
@@ -151,7 +151,7 @@ YLIM_PCTL = (1.0, 99.0)
 YLIM_PAD_DECADES = 1.0
 # three bands whose archived/before-filter power ratio is printed with
 # --before: mains, then the two a cathodic-protection stack acts on (see
-# mtproc.noise's module docstring)
+# crust.noise's module docstring)
 RATIO_BANDS_HZ = (
     (45.0, 55.0, "45-55 Hz (mains)"),
     (0.07, 0.2, "0.07-0.2 Hz"),
@@ -249,9 +249,9 @@ def check_boundary_continuity(stages, channels, bands_hz=BANDS_HZ, tol_db=BOUNDA
 
 
 def _raw_scalar_gain(filters_list, label: str) -> tuple[float, bool]:
-    """Apply the rule of `mtproc.timefreq._scalar_gain` to a raw channel's filter chain.
+    """Apply the rule of `crust.timefreq._scalar_gain` to a raw channel's filter chain.
 
-    `read_lemi423` + `mtproc.ingest._apply_h_scale` builds the chain a
+    `read_lemi423` + `crust.ingest._apply_h_scale` builds the chain a
     channel gets at ingest ([dipole coefficient, linear coefficient] for an
     electric, [linear coefficient, coil response, `lemi423_b_scale`] for a
     magnetic) before it is written to an MTH5 channel group, so it has no
@@ -457,7 +457,7 @@ def psd_figure(
 ):
     """Draw the PSD figure: one log-log panel per local channel (2x2: hx, hy, ex, ey), 0.002-500 Hz.
 
-    The local channel is drawn in its `mtproc.timefreq.COLOUR`, the remote's
+    The local channel is drawn in its `crust.timefreq.COLOUR`, the remote's
     matching coil (r_hx under hx, r_hy under hy) in grey and, with
     `stages_before`, the channel's PSD before any ingest filter in grey
     dashed under the archived line. Faint dotted lines mark 50 Hz and its

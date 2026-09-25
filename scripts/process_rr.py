@@ -19,7 +19,7 @@ only, so two band layouts can be compared without editing the YAML.
 `--notch` is a comma-separated list of Hz (`--notch ""` clears the
 survey's). Each site's raw archive (`<site>.h5`, unfiltered) is ingested if
 it is missing. The archive processed from is chosen by
-`mtproc.ingest.processing_archive`: the filtered variant
+`crust.ingest.processing_archive`: the filtered variant
 (`<site>_f<hash>.h5`, built from the raw archive when it is missing or its
 recorded hash does not match the current `filters.yaml`), or the raw archive
 with `--no-filters`, which shows whether a filter was worth declaring.
@@ -30,10 +30,10 @@ opening a file or building a variant.
 
 Time masks (`<survey>/masks.yaml`, declared per site on the GUI's
 Cross-powers tab) are applied from both sites of the pair: the local and
-remote entries are joined (`mtproc.masks.union_masks`). A remote-referenced
+remote entries are joined (`crust.masks.union_masks`). A remote-referenced
 estimate uses both stations' samples, so an interval that is bad at either
 one is left out. A stacked remote (`STK_...`) has no entry of its own; the
-remote is looked up by its name (`mtproc.masks.remote_masks`), so its masks
+remote is looked up by its name (`crust.masks.remote_masks`), so its masks
 apply whether or not data_root is mounted. `--no-masks` ignores the file for
 both sites.
 
@@ -50,12 +50,12 @@ is compared with its parent's. The sidecar records the rates
 
 The estimator flags (--taper ... --tolerance) are advanced options: each
 changes aurora's STFT or robust regression on every decimation level for
-this run only (`mtproc.process.process_station(tweaks=...)`, whose docstring
+this run only (`crust.process.process_station(tweaks=...)`, whose docstring
 gives the default in use for each). The flags given become tweaks; with none
 the run uses the defaults, and the resolution prints "tweaks: none".
 
 `--engine mantle` estimates with MANTLE instead of aurora
-(`mtproc.engine_mantle`): the same processing archives and window, read
+(`crust.engine_mantle`): the same processing archives and window, read
 through MANTLE's own MTH5 reader, its robust remote-reference cascade with
 block-jackknife error bars, and the EDI pooled onto the same band scheme, so
 the figure, the sidecar, the GUI's EDI list and the campaign's scores read
@@ -111,16 +111,16 @@ import pandas as pd
 import yaml
 from loguru import logger
 
-from mtproc.bands import build_band_scheme
-from mtproc.compare import phase_quadrants, plot_comparison
-from mtproc.ingest import default_archive_path, filters_hash, ingest_site, processing_archive, variant_path, variant_ready
-from mtproc.masks import load_masks, remote_masks, union_masks
-from mtproc.process import ESTIMATOR_DEFAULTS, TAPERS, process_station
-from mtproc.survey import Survey
+from crust.bands import build_band_scheme
+from crust.compare import phase_quadrants, plot_comparison
+from crust.ingest import default_archive_path, filters_hash, ingest_site, processing_archive, variant_path, variant_ready
+from crust.masks import load_masks, remote_masks, union_masks
+from crust.process import ESTIMATOR_DEFAULTS, TAPERS, process_station
+from crust.survey import Survey
 
 MAX_RUN_FILES = 34  # 34 x 90 min = 51 h per run
 ENGINES = ("aurora", "mantle")
-MANTLE_WHITEN = ("none", "diff")  # mtproc.engine_mantle.WHITEN, spelt here so the parser builds without MANTLE
+MANTLE_WHITEN = ("none", "diff")  # crust.engine_mantle.WHITEN, spelt here so the parser builds without MANTLE
 # the band-scheme keys this CLI can override; anything else in the survey's
 # `processing:` block (window, factor, notch_fraction) is passed through
 BAND_KEYS = ("min_period", "max_period", "periods_per_decade", "notch_frequencies")
@@ -315,7 +315,7 @@ def resolve(args, started) -> dict:
     `local_status`/`remote_status` (`archive_status`) say whether a filtered
     variant is ready, needs building, or is not used. After the `--dry-run`
     return, `main` resolves the archive processed from
-    (`mtproc.ingest.processing_archive`, which builds a missing variant) and
+    (`crust.ingest.processing_archive`, which builds a missing variant) and
     overwrites these two entries before the sidecar is written.
 
     `masks_local`/`masks_remote` are each site's `masks.yaml` entries
@@ -491,7 +491,7 @@ def _package_version(name: str) -> str:
         return "not installed"
 
 
-def mtproc_version() -> str:
+def crust_version() -> str:
     """Return this checkout's `git describe`.
 
     Returns:
@@ -514,9 +514,9 @@ def mtproc_version() -> str:
 
 
 def versions() -> dict:
-    """Return the versions of mtproc and of aurora, mth5, mt_metadata and mt_io."""
+    """Return the versions of CRUST and of aurora, mth5, mt_metadata and mt_io."""
     return {
-        "mtproc": mtproc_version(),
+        "crust": crust_version(),
         "aurora": _package_version("aurora"),
         "mth5": _package_version("mth5"),
         "mt_metadata": _package_version("mt_metadata"),
@@ -574,7 +574,7 @@ def build_sidecar(res: dict, args, started, finished, edi_path: Path, png_path: 
         finished (datetime.datetime): End of the run.
         edi_path (Path): EDI written.
         png_path (Path): Comparison figure written.
-        quadrant (dict): Return of `mtproc.compare.phase_quadrants`.
+        quadrant (dict): Return of `crust.compare.phase_quadrants`.
         flipped (list[str]): Modes judged out of quadrant.
 
     Returns:
@@ -647,17 +647,17 @@ def edi_info_lines(sidecar: dict) -> list[str]:
         list[str]: The INFO lines.
     """
     lines = [
-        f"mtproc.version={sidecar['versions']['mtproc']}",
-        f"mtproc.started={sidecar['started']}",
-        f"mtproc.tag={sidecar['tag'] or ''}",
+        f"crust.version={sidecar['versions']['crust']}",
+        f"crust.started={sidecar['started']}",
+        f"crust.tag={sidecar['tag'] or ''}",
     ]
     if sidecar.get("engine", "aurora") == "aurora":
-        lines.append(f"mtproc.taper={sidecar['tweaks']['taper']}")
+        lines.append(f"crust.taper={sidecar['tweaks']['taper']}")
     else:
-        lines += [f"mtproc.engine={sidecar['engine']}", f"mtproc.engine_version={sidecar['engine_version']}"]
+        lines += [f"crust.engine={sidecar['engine']}", f"crust.engine_version={sidecar['engine_version']}"]
     lines += [
-        f"mtproc.quadrant_verdict={sidecar['quadrant']['verdict']}",
-        f"mtproc.sidecar={sidecar['edi'].rsplit('.', 1)[0]}.json",
+        f"crust.quadrant_verdict={sidecar['quadrant']['verdict']}",
+        f"crust.sidecar={sidecar['edi'].rsplit('.', 1)[0]}.json",
     ]
     return lines
 
@@ -784,7 +784,7 @@ def main(args) -> None:
     if res["engine"] == "mantle":
         # the second engine: the same archives and window, MANTLE's cascade, the EDI on the same
         # band grid; imported here so an aurora run needs no MANTLE install
-        from mtproc import engine_mantle
+        from crust import engine_mantle
 
         site_cfg = survey.site(local)
         tf, extras = engine_mantle.process_pair(

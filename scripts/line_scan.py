@@ -8,7 +8,7 @@ fixed offset of a few to about 15 Hz, other lines between the harmonics, or a
 comb that switches on at dusk. They are stable in frequency (+-0.05 Hz) but
 intermittent in time and appear at different sites at different hours, so they
 are hard to find by inspecting PSDs site by site. The script scans every
-site's archive an hour at a time (`mtproc.timefreq.narrow_lines`, with a
+site's archive an hour at a time (`crust.timefreq.narrow_lines`, with a
 resolution fine enough to separate lines a few Hz apart) and writes a table
 and a figure that show which lines to declare as a notch's `extra:`
 frequencies and which hours to mask.
@@ -23,7 +23,7 @@ its `time_period.start` attribute and its rate its `sample_rate` attribute,
 both written by `mth5` at ingest. Excess-over-floor dB is invariant to a
 frequency-independent gain (the line and its local floor scale by the same
 factor), so the scan reads raw counts straight from the archive without
-calibration, `mtproc.ingest` or `mtproc.timefreq.load_station`, one
+calibration, `crust.ingest` or `crust.timefreq.load_station`, one
 hyperslab at a time.
 
 SITE defaults to every site with an archive under `<workspace>/mth5`. A site
@@ -78,8 +78,8 @@ from loguru import logger
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "src"))
 
-from mtproc.survey import Survey
-from mtproc.timefreq import narrow_lines
+from crust.survey import Survey
+from crust.timefreq import narrow_lines
 
 DPI = 150
 DEFAULT_CHANNELS = ("hx", "hy", "ex", "ey")

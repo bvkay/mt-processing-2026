@@ -52,7 +52,7 @@ sys.path.insert(0, str(REPO / "src"))
 sys.path.insert(0, str(REPO / "scripts"))
 
 import filter_trial as ft  # noqa: E402
-from mtproc.noise import apply_filters_arrays  # noqa: E402
+from crust.noise import apply_filters_arrays  # noqa: E402
 
 FS = 1000.0
 MINUTES = 10.0

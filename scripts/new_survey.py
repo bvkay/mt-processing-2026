@@ -6,18 +6,18 @@ For a new survey that has its raw data and paper field sheets: one subfolder
 per site with LEMI-423 ``*.B423``, LEMI-424 ``YYYYMMDDhhmm.txt`` or Earth
 Data PR6-24 ``{station}YYMMDDhhmmss.{BX,..,EY}`` files anywhere under it.
 
-Sites are found by the rule of `mtproc.survey.Survey.site_dirs` (a subfolder
+Sites are found by the rule of `crust.survey.Survey.site_dirs` (a subfolder
 of data_root with any of those files anywhere under it; site name = folder
 name), and each site's instrument is detected from its files
-(`mtproc.instruments.detect_instrument`). The survey's `instrument:` is the
+(`crust.instruments.detect_instrument`). The survey's `instrument:` is the
 most common one, or the one named by `--instrument`. A site recorded on
 another instrument gets its own `instrument:` and that instrument's default
 `channels:` preset, since its reader uses other channel names. The facts of
-LEMI-424 and EDL sites come from `mtproc.instruments.header_facts`: a
+LEMI-424 and EDL sites come from `crust.instruments.header_facts`: a
 LEMI-424's `.inf` (serial, firmware) and its first data line through mt-io
 (GPS position, elevation; 1 Hz), and an EDL's recorder.ini (the rate, or the
 file spacing) without a position. Their span runs from the file names to the
-end of the last file (`mtproc.instruments.span`). For each LEMI-423 site the
+end of the last file (`crust.instruments.span`). For each LEMI-423 site the
 first B423 file (by its file-name epoch) is read through mt-io
 (`mt_io.lemi.lemi423`): `Read_Lemi_Header` gives the logger's serial number
 and firmware and its GPS latitude, longitude and elevation at deployment,
@@ -36,7 +36,7 @@ serial, firmware, start and end (UTC), and a note that the dipole lengths and
 azimuths are the defaults. Dipole lengths and azimuths are left out of the
 site entries, so the defaults apply until they are set from the field sheet,
 on the GUI's Metadata tab or with --site-table. The site table is a CSV or
-XLSX with a `site` column plus any of `mtproc.survey.SITE_TABLE_COLUMNS`;
+XLSX with a `site` column plus any of `crust.survey.SITE_TABLE_COLUMNS`;
 its values are merged over the header's for
 the sites it names. The header's GPS fix takes precedence for latitude,
 longitude and elevation (the table fills them only where the header has
@@ -47,7 +47,7 @@ LEMI-120 one) is copied into the survey folder's sensors/.
 
 --channels declares which of the recorder's columns had a sensor attached,
 which is survey logistics that the files cannot tell. It is a preset label
-from `mtproc.survey.CHANNEL_PRESETS` for the instrument ("Ex Ey Bx By", the
+from `crust.survey.CHANNEL_PRESETS` for the instrument ("Ex Ey Bx By", the
 LEMI-423 default, with the Bz column an open input; "Ex Ey Bx By Bz"; "Bx By
 (magnetics only)" for a dedicated remote; "Bx By Bz") or a comma list of the
 reader's names ("hx,hy"). It is written as `defaults: channels:`, which
@@ -63,10 +63,10 @@ already models (the x10 terminal box). It is hardwired at the field terminal
 junction box and declared from the field notes when the PR6-24's own configs
 were not kept (e.g. 10). It is written as `defaults:
 electric_gain:`, which ingest folds into a filter of that gain on every EDL
-site's ex and ey (`mtproc.instruments.read_run`). Without the option no key
+site's ex and ey (`crust.instruments.read_run`). Without the option no key
 is written (1.0, no filter). A site's `config/recorder.ini` may carry its
 own `channel_n_high_gain` flags (read by
-`mtproc.instruments.recorder_ini_high_gain`, since mt-io's
+`crust.instruments.recorder_ini_high_gain`, since mt-io's
 `read_recorder_ini` keeps one boolean for all six); the summary prints them
 against the declared gain for information only. The option is an error when
 no site is an EDL.
@@ -109,9 +109,9 @@ import pandas as pd
 import yaml
 from mt_io.lemi.lemi423 import Read_Lemi_Data, Read_Lemi_Header
 
-from mtproc.ingest import select_files
-from mtproc.instruments import INSTRUMENTS, header_facts, record_files, span
-from mtproc.survey import (
+from crust.ingest import select_files
+from crust.instruments import INSTRUMENTS, header_facts, record_files, span
+from crust.survey import (
     CHANNEL_PRESETS, Survey, channels_from_label, default_preset, preset_label, read_site_table,
 )
 
@@ -131,7 +131,7 @@ DIPOLE_KEYS = ("dipole_length_ex", "dipole_length_ey", "azimuth_ex", "azimuth_ey
 # for a site whose recorder is not the survey's)
 KEY_ORDER = ("instrument", "channels", "sensor_type", "electric_gain", *DIPOLE_KEYS, "latitude", "longitude",
              "elevation", "remote", "timing", "serial", "firmware", "start", "end", "notes")
-# an EDL site's magnetic sensors from its rate (`sensor_type`, mtproc.instruments.EDL_SENSORS): the
+# an EDL site's magnetic sensors from its rate (`sensor_type`, crust.instruments.EDL_SENSORS): the
 # UoA practice is induction coils at 500 or 1000 Hz and Bartington fluxgates at 10 Hz (the field
 # notes "Usual settings when we deploy Induction coils using the Earth Data Recorder")
 EDL_COIL_MIN_RATE = 100.0
@@ -176,11 +176,11 @@ defaults:
   # polarity, so nothing is flipped. Check the impedance
   # phase quadrants after the first run: a wrong choice puts one mode 180 deg out.
   flip_reversed_dipoles: true
-  # the columns that had a sensor attached (--channels, mtproc.survey.CHANNEL_PRESETS),
+  # the columns that had a sensor attached (--channels, crust.survey.CHANNEL_PRESETS),
   # in the survey instrument's names; ingest drops the rest, e.g. the B423 Bz column,
   # an open input with no hz coil. A site on another instrument has its own channels:
   channels: {channels}
-{edl_sensor}{edl_gain}# lemimt-style even log-period band layout (see mtproc.bands.build_band_scheme)
+{edl_sensor}{edl_gain}# lemimt-style even log-period band layout (see crust.bands.build_band_scheme)
 processing:
   min_period: 0.005
   max_period: 5000.0
@@ -269,7 +269,7 @@ def read_other_site(site_dir: Path, instrument: str) -> dict:
 
     Returns:
         dict: files, start, end, sample_rate, problem and columns, updated
-        with `mtproc.instruments.header_facts`. An unreadable first file is
+        with `crust.instruments.header_facts`. An unreadable first file is
         recorded in "problem".
     """
     files = record_files(site_dir, instrument)
@@ -461,12 +461,12 @@ def main(argv=None) -> int:
         print(f"ERROR no site folder with {', '.join(spec['label'] for spec in INSTRUMENTS.values())} "
               f"files under {data_root}")
         return 1
-    # a folder of a recorder mtproc does not read (Orange Box HFM*.BIN files, say) is not
+    # a folder of a recorder CRUST does not read (Orange Box HFM*.BIN files, say) is not
     # a site of this survey; such folders are listed here
     skipped = sorted(d.name for d in data_root.iterdir() if d.is_dir() and d.name not in found)
     if skipped:
         print(f"skipped {len(skipped)} folder(s) with no {', '.join(spec['label'] for spec in INSTRUMENTS.values())} "
-              f"files (not a recorder mtproc reads, or no data): {', '.join(skipped)}")
+              f"files (not a recorder CRUST reads, or no data): {', '.join(skipped)}")
     recorder = {site: probe.instrument_of(site) for site in found}
     counts = Counter(recorder.values())  # the most common is the survey's; a tie goes to INSTRUMENTS order
     instrument = prefer if args.instrument != "auto" else max(INSTRUMENTS, key=lambda i: counts[i])
@@ -526,7 +526,7 @@ def main(argv=None) -> int:
         calibration_fn=scalar(f"sensors/{calibration.name}"),
         channels="[" + ", ".join(scalar(c) for c in channels) + "]",
         edl_sensor="" if instrument != "edl" else (
-            "  # EDL (PR6-24) magnetic sensors (mtproc.instruments.read_run): lemi120 = LEMI-120\n"
+            "  # EDL (PR6-24) magnetic sensors (crust.instruments.read_run): lemi120 = LEMI-120\n"
             "  # induction coils, the broadband setup, their response calibration_fn above;\n"
             "  # bartington = Mag-03 fluxgates, long period. Set from the survey's rate (UoA:\n"
             "  # coils at 500/1000 Hz, fluxgates at 10 Hz): check the field sheet\n"

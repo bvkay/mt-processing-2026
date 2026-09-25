@@ -4,12 +4,12 @@ Unit test for the mtproc mt-io fork against stock mt-io 0.0.5
 
 Tests the fork (branch `mtproc-fixes` of github.com/bvkay/mt-io). The checks
 run in a fresh process (`--worker`) that imports mt_io alone, without
-mtproc, since mtproc uses the fork's readers directly. Every check writes its
+CRUST, since CRUST uses the fork's readers directly. Every check writes its
 own synthetic files (B423, EDL ASCII, a .rsp table) into a temporary folder,
 so the test needs no data drive or survey.
 
-The mt-io tested is the clone of the fork at `MTPROC_FORKS/mt-io`
-(MTPROC_FORKS defaults to `_scratch.DEFAULT_FORKS`) when it holds
+The mt-io tested is the clone of the fork at `CRUST_FORKS/mt-io`
+(CRUST_FORKS defaults to `_scratch.DEFAULT_FORKS`) when it holds
 `src/mt_io`, run with PYTHONPATH=<clone>/src ahead of this process's own
 PYTHONPATH and src. Without a clone it is the installed mt_io, when that
 already parses the four-digit altitude of check 1 (the fork installed).

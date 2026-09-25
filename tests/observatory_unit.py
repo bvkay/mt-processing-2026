@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Offline unit test for mtproc.observatory and scripts/fetch_observatory.py
+Offline unit test for crust.observatory and scripts/fetch_observatory.py
 
 The GIN is mocked. The IAGA-2002 day files are written by the test in the
 format's fixed layout (70-character header lines ending in "|", a comment
@@ -10,7 +10,7 @@ seconds k = 0..599 and 1800..2399 after midnight UTC (the 20 minutes between
 are absent), with X = 27000 + k/100, Y = -500 + k/50, Z = 30000 - k/100 nT
 (exact to the format's two decimals), F = 88888.00 (not recorded)
 throughout, and X, Y, Z = 99999.00 (missing) for k = 300..329: a 30 s gap.
-The network call, `mtproc.observatory._http_get`, is replaced by a function
+The network call, `crust.observatory._http_get`, is replaced by a function
 that records every URL it is asked for and serves that day's text, or,
 offline, raises what urllib raises when a name does not resolve. Everything
 is written under a temporary directory, removed at the end.
@@ -85,7 +85,7 @@ from loguru import logger
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "src"))
 
-from mtproc import observatory  # noqa: E402
+from crust import observatory  # noqa: E402
 
 SCRIPT = REPO / "scripts" / "fetch_observatory.py"
 CODE = "SFS"
@@ -122,7 +122,7 @@ def iaga_day(day: str) -> bytes:
 
 
 class FakeGIN:
-    """Stand-in for `mtproc.observatory._http_get` that records URLs and serves synthetic days."""
+    """Stand-in for `crust.observatory._http_get` that records URLs and serves synthetic days."""
 
     def __init__(self):
         self.urls: list[str] = []

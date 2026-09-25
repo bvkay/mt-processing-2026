@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Unit test for mtproc.quality
+Unit test for crust.quality
 
 Checks `tf_quality`, `agreement` and `pairwise_spread` on synthetic TFs,
 without Qt or a survey. Every TF is written to an EDI through mt_metadata and
@@ -75,7 +75,7 @@ sys.path.insert(0, str(REPO / "src"))
 
 from mt_metadata.transfer_functions.core import TF  # noqa: E402
 
-from mtproc.quality import agreement, pairwise_spread, tf_quality  # noqa: E402
+from crust.quality import agreement, pairwise_spread, tf_quality  # noqa: E402
 
 OUT = Path(tempfile.mkdtemp(prefix="quality_unit_"))
 

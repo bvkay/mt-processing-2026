@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Unit test for mtproc.engine_mantle and the --engine flag of scripts/process_rr.py
+Unit test for crust.engine_mantle and the --engine flag of scripts/process_rr.py
 
 The argument mapping (`MantleOptions` into MANTLE's `ProcessingConfig`,
 `levels_for` on the window), the band pooling on a synthetic fine grid with
@@ -44,9 +44,9 @@ Usage:
     engine_version, an engine_config with the ProcessingConfig dict, the
     options, n_levels, the verdict word counts and snr_gate_ran, and the
     report and fine EDI names; or `process_rr.edi_info_lines` on a sidecar
-    with engine "mantle" does not give mtproc.engine and
-    mtproc.engine_version lines and no mtproc.taper line, while on a sidecar
-    without `engine` it gives the mtproc.taper line and no engine line;
+    with engine "mantle" does not give crust.engine and
+    crust.engine_version lines and no crust.taper line, while on a sidecar
+    without `engine` it gives the crust.taper line and no engine line;
 
 (6) `process_rr.py --engine mantle --dry-run` does not exit 0 and print
     `engine: mantle` and `mantle.whiten: none` with the same archives, stem
@@ -76,7 +76,7 @@ SCRIPT = REPO / "scripts" / "process_rr.py"
 SURVEY = REPO / "surveys" / "curnamona_cube" / "survey.yaml"
 
 try:
-    from mtproc import _mantle, engine_mantle
+    from crust import _mantle, engine_mantle
 except ImportError as exc:  # MANTLE (mt_proc) is installed separately from the workflow's environment
     print(f"SKIP  engine_mantle_unit: {exc}")
     sys.exit(0)
@@ -217,7 +217,7 @@ def test_band_pool_values_and_pooled_variance() -> None:
 
 
 def test_to_tf_round_trips_through_an_edi() -> None:
-    from mtproc.compare import rho_phi
+    from crust.compare import rho_phi
 
     periods = np.geomspace(0.01, 100.0, 9)
     z = (np.random.default_rng(5).normal(size=(9, 2, 2)) + 1j) * 3.0
@@ -261,14 +261,14 @@ def test_sidecar_extras_and_info_lines() -> None:
     json.dumps(extras)
 
     process_rr = _load_process_rr()
-    base = {"versions": {"mtproc": "v"}, "started": "s", "tag": None, "tweaks": {"taper": "hann"},
+    base = {"versions": {"crust": "v"}, "started": "s", "tag": None, "tweaks": {"taper": "hann"},
             "quadrant": {"verdict": "physical quadrants"}, "edi": "X.edi"}
     aurora_lines = process_rr.edi_info_lines(dict(base))
-    assert "mtproc.taper=hann" in aurora_lines and not any(line.startswith("mtproc.engine") for line in aurora_lines)
+    assert "crust.taper=hann" in aurora_lines and not any(line.startswith("crust.engine") for line in aurora_lines)
     mantle_lines = process_rr.edi_info_lines({**base, **extras})
-    assert "mtproc.engine=mantle" in mantle_lines, mantle_lines
-    assert any(line.startswith("mtproc.engine_version=") for line in mantle_lines), mantle_lines
-    assert not any(line.startswith("mtproc.taper") for line in mantle_lines), mantle_lines
+    assert "crust.engine=mantle" in mantle_lines, mantle_lines
+    assert any(line.startswith("crust.engine_version=") for line in mantle_lines), mantle_lines
+    assert not any(line.startswith("crust.taper") for line in mantle_lines), mantle_lines
     print(f"  sidecar extras: {sorted(extras)}; words {ec['verdict_words']}; INFO lines engine-aware")
 
 

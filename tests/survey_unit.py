@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Unit test for mtproc.survey
+Unit test for crust.survey
 
 Checks `distance_km`, `Survey.timezone`, the field-sheet survey CSV reader,
 the channel presets, instrument detection, the electric chain gain key and
@@ -81,7 +81,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "src"))
 
-from mtproc.survey import (  # noqa: E402
+from crust.survey import (  # noqa: E402
     ALL_CHANNELS, CHANNEL_PRESETS, INSTRUMENTS, Survey, channels_from_label, default_preset, distance_km,
     preset_label,
 )
@@ -149,7 +149,7 @@ def test_field_survey_csv_columns() -> None:
     its two note columns are not joined into `notes`.
     """
     import tempfile
-    from mtproc.survey import read_site_table
+    from crust.survey import read_site_table
     lines = [
         "﻿SiteName,Latitude,Longitude,Elevation,TimeZone,ExDipole,ExAzimuth,EyDipole,EyAzimuth,Resistance_NG,Deployment_Notes,Pickup_Notes",
         "A01,31.54,-9.686,125.2,Africa/Casablanca,55,0,54,90,4.18,Surrounded by houses,",

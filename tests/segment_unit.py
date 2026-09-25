@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Unit test for mtproc_gui.segment
+Unit test for crust.gui.segment
 
 Runs the segment QC engine on a synthetic hour, without Qt. The segment is
 1 h at 1000 Hz with four channels: hx a 50 Hz sine of 1 nT amplitude plus
@@ -48,9 +48,9 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from mtproc.timefreq import line_excess  # noqa: E402
-from mtproc_gui.archive import Grid, run_slices  # noqa: E402
-from mtproc_gui.segment import Segment, compute_segment_qc  # noqa: E402
+from crust.timefreq import line_excess  # noqa: E402
+from crust.gui.archive import Grid, run_slices  # noqa: E402
+from crust.gui.segment import Segment, compute_segment_qc  # noqa: E402
 
 FS = 1000.0
 N = int(3600 * FS)

@@ -1,4 +1,4 @@
-# mt-processing-2026
+# CRUST
 
 Magnetotelluric (MT) processing for Adelaide Uni surveys recorded on
 LEMI-423, LEMI-424 and Earth Data PR6-24 loggers (see "Instruments" below),
@@ -9,9 +9,9 @@ built on the IAGA-DVI stack
 
 Design rules, in order:
 
-1. **Thin.** `mtproc` wraps the community packages; it does not re-implement them.
+1. **Thin.** CRUST wraps the community packages; it does not re-implement them.
 2. **Headless first.** Everything runs from a script or the command line; the
-   desktop GUI (`src/mtproc_gui`, see "The GUI" below) calls the same scripts
+   desktop GUI (`src/crust/gui`, see "The GUI" below) calls the same scripts
    and computes no product of its own.
 3. **Decisions are data.** Noise masks, band choices and remote-reference pairs
    live in per-survey YAML/JSON files, never buried in code or notebooks.
@@ -24,36 +24,37 @@ conda activate bbmt-2026
 ```
 
 `environment.yml` creates `bbmt-2026` (Python 3.11) and installs this package
-editable; every dependency, the GUI's included, is listed once, in
-`pyproject.toml`.
+(`crust-mt`, import name `crust`) editable; every dependency, the GUI's
+included, is listed once, in `pyproject.toml`.
 
 ### The stack: the mtproc-fixes forks
 
-mtproc runs on the `mtproc-fixes` branches of five forks, `github.com/bvkay/`
+CRUST runs on the `mtproc-fixes` branches of five forks, `github.com/bvkay/`
 aurora, mth5, mt-io, mt-metadata and mt-timeseries, which carry the fixes
 logged in `docs/upstream_issues.md`. `pyproject.toml` names them by git URL
 (`mth5 @ git+https://github.com/bvkay/mth5@mtproc-fixes`, ...); all five branches are on
-GitHub, so a plain install resolves them. A local clone (a sibling of this
-repo) installs over the package from GitHub, leaving every other dependency
-as it is:
+GitHub, so a plain install resolves them. The forks keep the names they had
+before the rename to CRUST: branch `mtproc-fixes`, aurora version
+`0.6.2+mtproc`. A local clone (a sibling of this repo) installs over the
+package from GitHub, leaving every other dependency as it is:
 
 ```bash
 pip install --no-deps ../mt-metadata ../mt-timeseries ../mt-io ../mth5 ../aurora
 ```
 
 The `*_fork_unit.py` tests below check each fork (the clones, and whatever is
-installed, reported side by side). mtproc no longer patches the stock
+installed, reported side by side). CRUST no longer patches the stock
 packages at runtime; the shims it used to install are retired, the forks fix
 the same bugs at the source:
 
 - mt-io (issues 1, 2, 6): the LEMI-120 coil chain of a LEMI-423 read with a
   `calibration_fn` (valid unit names, coil stage ahead of the linear stage)
   and four-digit LEMI-423 altitudes (`%Alt1060.0,m`), both once patched in
-  `mtproc.ingest`;
+  `crust.ingest`;
 - mth5 (issue 5): run summaries and kernel datasets open archives read-only,
-  once forced in `mtproc.process`;
+  once forced in `crust.process`;
 - mt-timeseries (issue 17): a RunTS station lists its channels, with no
-  phantom `auxiliary_default`, once overridden in `mtproc.observatory`.
+  phantom `auxiliary_default`, once overridden in `crust.observatory`.
 
 On stock packages these are bugs again: a LEMI-423 site with a
 `calibration_fn` does not ingest (stock mt-io's coil response carries a unit
@@ -65,11 +66,11 @@ observatory archive's station lists `auxiliary_default`.
 ## Layout
 
 ```
-src/mtproc/        the package: survey.py, instruments.py, ingest.py, process.py,
+src/crust/         the package: survey.py, instruments.py, ingest.py, process.py,
                    compare.py, bands.py, qc.py, timefreq.py, virtual.py
-src/mtproc_gui/    the desktop GUI: a launcher and viewer over scripts/ and
+src/crust/gui/     the desktop GUI: a launcher and viewer over scripts/ and
                    survey.yaml, no processing code of its own (see below and
-                   src/mtproc_gui/README.md)
+                   src/crust/gui/README.md)
 surveys/<name>/    one folder per survey: survey.yaml (config), reference_edis.yaml,
                    qc_notes.md (what was learned about each site) + work/ (outputs, gitignored)
 scripts/           the student-facing command line, one job each (see below)
@@ -80,14 +81,14 @@ tests/             unit tests (no Qt) plus the GUI smoke test
 
 | step | script |
 |---|---|
-| new survey: a folder of site folders -> `survey.yaml` (each site's instrument detected from its files, the most common written as `instrument:` unless `--instrument` names one, a site on another recorder given its own `instrument:` and that recorder's default `channels:`; each LEMI-423 site's first B423 header via mt-io: position, serial, firmware, sample rate; a LEMI-424's `.inf` and first line, an EDL's `recorder.ini`; span from the file names; dipoles left to `defaults:`; `--site-table` merges a CSV/XLSX, template `docs/site_table_template.csv`; `workspace:` is `<data_root>/work` unless `--workspace` says otherwise; `--channels` names the columns that had a sensor, a preset from `mtproc.survey.CHANNEL_PRESETS`, "Ex Ey Bx By" by default, "Ex Ey Bx By Bz", "Bx By (magnetics only)", "Bx By Bz", or a list such as `hx,hy`, written as `defaults: channels:`, and the summary prints each site's file columns beside it; also the GUI's Metadata tab "New survey...", whose channels column sets a site that differs) | `scripts/new_survey.py <data_root> --name NAME [--instrument auto\|lemi423\|lemi424\|edl] [--channels SET] [--timezone TZ] [--site-table CSV] [--out PATH] [--workspace DIR]` |
+| new survey: a folder of site folders -> `survey.yaml` (each site's instrument detected from its files, the most common written as `instrument:` unless `--instrument` names one, a site on another recorder given its own `instrument:` and that recorder's default `channels:`; each LEMI-423 site's first B423 header via mt-io: position, serial, firmware, sample rate; a LEMI-424's `.inf` and first line, an EDL's `recorder.ini`; span from the file names; dipoles left to `defaults:`; `--site-table` merges a CSV/XLSX, template `docs/site_table_template.csv`; `workspace:` is `<data_root>/work` unless `--workspace` says otherwise; `--channels` names the columns that had a sensor, a preset from `crust.survey.CHANNEL_PRESETS`, "Ex Ey Bx By" by default, "Ex Ey Bx By Bz", "Bx By (magnetics only)", "Bx By Bz", or a list such as `hx,hy`, written as `defaults: channels:`, and the summary prints each site's file columns beside it; also the GUI's Metadata tab "New survey...", whose channels column sets a site that differs) | `scripts/new_survey.py <data_root> --name NAME [--instrument auto\|lemi423\|lemi424\|edl] [--channels SET] [--timezone TZ] [--site-table CSV] [--out PATH] [--workspace DIR]` |
 | field sheet -> `sites:` block | `scripts/site_table_to_yaml.py`, `scripts/burra_notes_to_yaml.py` |
 | UoA field-notes CSV (Stuart Shelf 2009 layout: header rows, then `Station`, `Latitude_dd`, `X_dip_length` = Ex, `Y_dip_length` = Ey, orientations, local deploy/recover times ...) -> the site table `new_survey.py --site-table` reads (position, dipoles, azimuths, `timezone`, and notes carrying serials, sensor, rate, gain, the times in local and UTC and the field remarks; a typed UTC that disagrees with the local time, and a blank dipole length, are named); `--data-root` lists stations with no folder and folders with no station | `scripts/site_table_from_notes.py <notes.csv> <site_table.csv> [--timezone TZ] [--data-root DIR]` |
 | legacy EDIs -> `reference_edis.yaml` | `scripts/match_reference_edis.py <edi_dir> <survey.yaml>` |
 | before ingest: file-boundary slips, clock offset vs remote, GPS status | `scripts/timing_qc.py <survey.yaml> <local> <remote>` |
 | quick look at raw noise (Welch PSD, mains zoom) | `scripts/noise_psd.py <survey.yaml> <site>` |
 | ingest a site's RAW archive into `<workspace>/mth5/<site>.h5` (its run length as `process_rr.py`'s), then build its filtered variant too if it declares any (`--raw` for the archive alone, `--variant` for the variant alone); refuses to rebuild an existing raw archive or an already-current variant without `--force`; several sites, or `--all` (every site of survey.yaml with a raw data folder, the others listed as skipped), make a batch that keeps existing archives and current variants, builds `--parallel N` sites at once, each in its own process logged to `<workspace>/logs/ingest_<site>.log` (default 1: one after another on the console), goes on past a failed site and ends with a table of each site's archive, variant, seconds and status (built, kept, failed with its error), exit 1 when a site failed; also the GUI's Time Series tab "Build MTH5" | `scripts/ingest_site.py <survey.yaml> <site> [<site> ...] [--raw \| --variant] [--max-run-files N] [--force] [--parallel N]`, `scripts/ingest_site.py <survey.yaml> --all [...]` |
-| ingest both sites, remote-reference TF, overlay on lemimt (advanced: `--taper`, `--overlap`, `--no-prewhiten`, `--r0` ... on every decimation level); writes `<local>_rr-<remote>_<YYYYMMDD-HHMM>[_<tag>].edi` (the stamp is when the run started, local time, so re-running the same pair and window never overwrites an earlier EDI) plus the matching `_vs_lemimt.png` and a `.json` sidecar of everything about the run (timing, archives, band scheme, tweaks, declared filters, argv, the phase-quadrant verdict, package versions); `--engine mantle` estimates with MANTLE (`mtproc.engine_mantle`: the same archives and window through MANTLE's MTH5 reader, its robust remote-reference cascade with jackknife error bars, the EDI pooled onto the same band scheme, plus MANTLE's fine-grid EDI and report JSON beside it; the sidecar gains `engine`, `engine_version`, `engine_config`, `mantle_report`, `mantle_fine_edi`; the aurora estimator flags and masks are refused with it) | `scripts/process_rr.py <survey.yaml> <local> <remote> [start] [end] [--engine aurora\|mantle]` |
+| ingest both sites, remote-reference TF, overlay on lemimt (advanced: `--taper`, `--overlap`, `--no-prewhiten`, `--r0` ... on every decimation level); writes `<local>_rr-<remote>_<YYYYMMDD-HHMM>[_<tag>].edi` (the stamp is when the run started, local time, so re-running the same pair and window never overwrites an earlier EDI) plus the matching `_vs_lemimt.png` and a `.json` sidecar of everything about the run (timing, archives, band scheme, tweaks, declared filters, argv, the phase-quadrant verdict, package versions); `--engine mantle` estimates with MANTLE (`crust.engine_mantle`: the same archives and window through MANTLE's MTH5 reader, its robust remote-reference cascade with jackknife error bars, the EDI pooled onto the same band scheme, plus MANTLE's fine-grid EDI and report JSON beside it; the sidecar gains `engine`, `engine_version`, `engine_config`, `mantle_report`, `mantle_fine_edi`; the aurora estimator flags and masks are refused with it) | `scripts/process_rr.py <survey.yaml> <local> <remote> [start] [end] [--engine aurora\|mantle]` |
 | aurora EDI vs every one of lemimt's unmerged per-rate/per-chunk EDIs for a site (e.g. Morocco Atlas Line D): rho/phase overlay by rate plus a per-rate median-difference table | `scripts/compare_unmerged.py <aurora.edi> <unmerged_dir> <site> [--remote NAME] [--out PNG] [--title TEXT]` |
 | per-site QC set: overview, band coherence vs time, coherogram, spectrogram | `scripts/site_qc.py <survey.yaml> <site> [--remote R]` |
 | whole-record PSD per channel from the archive, remote overlaid, lines marked, before/after filters | `scripts/psd_qc.py <survey.yaml> <site> [--remote R] [--before]` |
@@ -95,13 +96,13 @@ tests/             unit tests (no Qt) plus the GUI smoke test
 | try candidate filter chains on one window of a site's raw archive before declaring them (the command-line form of the Filter Data tab's preview): each chain from a YAML file in `filters.yaml` syntax, `--declared` adds the site's current list; writes per chain, under `<workspace>/qc/filter_trials/<site>/`, a 5-500 Hz PSD per channel with the evaluated lines marked plus the full-band ladder, the time series with a 20 s zoom on the largest change, the band coherence of ey-hx and ex-hy (and of the remote pairs with `--remote`), and a metrics JSON: line excess before/after, the floor between lines, coherence band means, burst and step fractions; `--lines` evaluates the site's line-scan lines too | `scripts/filter_trial.py <survey.yaml> <site> <start> <end> [--chain LABEL=FILE.yaml ...] [--declared] [--remote NAME] [--lines] [--out DIR]` |
 | stacked synthetic remote from concurrent sites (each member read via `processing_archive`, its filtered variant if it declares any, else its raw archive, exactly as `process_rr.py` would read it; streamed in 10-minute chunks) | `scripts/build_stack.py <survey.yaml> <name> <start> <end> <member>... [--weighting none|coherence] [--check]` |
 | band-averaged coherence on the processing bands | `scripts/coherence_qc.py <survey.yaml> <local> <remote> [--stack S]` |
-| processing campaign over a line (plan YAML, e.g. `surveys/MT_Morocco_Atlas_Mountains/campaign_lineC.yaml`): stage 0 filtered variants, 1 every site rr every concurrent remote, 2 leave-one-out stacks (plain and coherence-weighted), 3 estimator/band options on each site's best remote; resumable (`ledger.csv`), `--parallel` jobs behind a memory gate, products scored by `mtproc.quality` and plotted per site and line-wide into `<workspace>/campaign/<name>/`, `summary.md`; `--report` redraws from the ledger | `scripts/campaign.py <survey.yaml> <plan.yaml> [--stage 0,1,2,3] [--sites S ...] [--parallel N] [--max-runs N] [--dry-run] [--report]` |
+| processing campaign over a line (plan YAML, e.g. `surveys/MT_Morocco_Atlas_Mountains/campaign_lineC.yaml`): stage 0 filtered variants, 1 every site rr every concurrent remote, 2 leave-one-out stacks (plain and coherence-weighted), 3 estimator/band options on each site's best remote; resumable (`ledger.csv`), `--parallel` jobs behind a memory gate, products scored by `crust.quality` and plotted per site and line-wide into `<workspace>/campaign/<name>/`, `summary.md`; `--report` redraws from the ledger | `scripts/campaign.py <survey.yaml> <plan.yaml> [--stage 0,1,2,3] [--sites S ...] [--parallel N] [--max-runs N] [--dry-run] [--report]` |
 | map background for the GUI's site map, fetched once while online (Esri.WorldImagery by default: imagery, no place names; contextily's zoom + 3, longer side at most 8000 px; warped to lon/lat; `<workspace>/basemap.png` + `.json`); the GUI runs it itself when a survey is opened without `basemap.json` | `scripts/fetch_basemap.py <survey.yaml> [--provider NAME] [--margin F] [--zoom N\|auto]` |
-| INTERMAGNET observatory as a 1 Hz remote for long periods (`mtproc.observatory`, ported from the AusLAMP processing): one-second X Y Z from the BGS GIN, best available, one request per UTC day into a day cache (`<workspace>/observatory/<CODE>/<year>/<CODE>_<date>.sec.gz`, the served IAGA-2002 text; a re-run fetches nothing cached), then `<workspace>/mth5/<CODE>.h5` (hx = X north, hy = Y east, hz = Z down, nT, no filters; gaps up to `--max-gap` s filled, one run per longer gap) and a `<CODE>: {instrument: intermagnet, ...}` site entry in survey.yaml; start/end default to the survey's site span; exit 1 when offline. Aurora pairs it only with a 1 Hz local archive (no mixed sample rates) | `scripts/fetch_observatory.py <survey.yaml> <IAGA code> [start] [end] [--cache DIR] [--max-gap S] [--dry-run]` |
-| a broadband site at 1 Hz for an observatory remote: the site's processing archive (its filtered variant when it declares filters) decimated run by run, one channel at a time, through zero-phase FIR stages of at most 10 (scipy.signal.decimate, the filter of `mtproc.timefreq`; 11.1 s dropped at each run end, samples on whole UTC seconds) into `<workspace>/mth5/<site>L.h5`, station `<site>L` with the source's runs, channel metadata and calibration chains, and a derived-site entry `<site>L: {derived_from: <site>, sample_rate: 1.0, ...}` in survey.yaml; an existing archive is kept without `--force`. `process_rr.py <survey.yaml> <site>L <CODE>` then processes it at 1 Hz (bands from 4 s; a remote at another rate is refused) | `scripts/decimate_site.py <survey.yaml> <site> [--rate 1] [--force] [--min-free-gb G]` |
+| INTERMAGNET observatory as a 1 Hz remote for long periods (`crust.observatory`, ported from the AusLAMP processing): one-second X Y Z from the BGS GIN, best available, one request per UTC day into a day cache (`<workspace>/observatory/<CODE>/<year>/<CODE>_<date>.sec.gz`, the served IAGA-2002 text; a re-run fetches nothing cached), then `<workspace>/mth5/<CODE>.h5` (hx = X north, hy = Y east, hz = Z down, nT, no filters; gaps up to `--max-gap` s filled, one run per longer gap) and a `<CODE>: {instrument: intermagnet, ...}` site entry in survey.yaml; start/end default to the survey's site span; exit 1 when offline. Aurora pairs it only with a 1 Hz local archive (no mixed sample rates) | `scripts/fetch_observatory.py <survey.yaml> <IAGA code> [start] [end] [--cache DIR] [--max-gap S] [--dry-run]` |
+| a broadband site at 1 Hz for an observatory remote: the site's processing archive (its filtered variant when it declares filters) decimated run by run, one channel at a time, through zero-phase FIR stages of at most 10 (scipy.signal.decimate, the filter of `crust.timefreq`; 11.1 s dropped at each run end, samples on whole UTC seconds) into `<workspace>/mth5/<site>L.h5`, station `<site>L` with the source's runs, channel metadata and calibration chains, and a derived-site entry `<site>L: {derived_from: <site>, sample_rate: 1.0, ...}` in survey.yaml; an existing archive is kept without `--force`. `process_rr.py <survey.yaml> <site>L <CODE>` then processes it at 1 Hz (bands from 4 s; a remote at another rate is refused) | `scripts/decimate_site.py <survey.yaml> <site> [--rate 1] [--force] [--min-free-gb G]` |
 
 Every product is remote-referenced: an adjacent site, a dedicated remote, or a
-stacked synthetic remote (`mtproc.virtual`). There is no single-station product.
+stacked synthetic remote (`crust.virtual`). There is no single-station product.
 
 `start`/`end` on the processing scripts are a *processing window* (UTC): the
 MTH5 archive always holds the whole deployment, the window only trims what
@@ -126,13 +127,13 @@ Per-site noise decisions live in `<survey>/filters.yaml` (see
 `survey.yaml`. Every archive `ingest_site` writes, `<site>.h5`, is the RAW
 recording — filters are never baked into it. A site with a declared list is
 processed from a filtered **variant** instead, `<site>_f<hash>.h5`
-(`mtproc.ingest.processing_archive`/`build_variant`), built on demand from
+(`crust.ingest.processing_archive`/`build_variant`), built on demand from
 the raw archive and rebuilt whenever the hash of the declared list changes (a
 `filters.yaml` edit); one variant is kept per site at a time. `process_rr.py`
-and `build_stack.py` (through `mtproc.virtual`) always read
+and `build_stack.py` (through `crust.virtual`) always read
 `processing_archive`'s result; `--no-filters` reads the raw archive outright.
 Try the list on a loaded window on the GUI's Filter Data tab first. The
-kinds, documented in `src/mtproc/noise.py`'s module docstring: `notch` (50 Hz
+kinds, documented in `src/crust/noise.py`'s module docstring: `notch` (50 Hz
 + harmonics), `hp` / `lp` (zero-phase Butterworth high- / low-pass,
 `cutoff_hz` required, order 4; a high-pass goes first and removes every
 period longer than 1 / cutoff_hz, a low-pass goes last), `cp` (cathodic
@@ -148,9 +149,9 @@ unless a site needs overrides (dipole lengths/azimuths come from the field
 spreadsheet via `scripts/site_table_to_yaml.py`).
 
 ```python
-from mtproc.survey import Survey
-from mtproc.ingest import ingest_site
-from mtproc.process import process_station
+from crust.survey import Survey
+from crust.ingest import ingest_site
+from crust.process import process_station
 
 survey = Survey.from_yaml("surveys/curnamona_cube/survey.yaml")
 local  = ingest_site(survey, "D02", start="2021-06-29 12:00", end="2021-06-29 18:00")
@@ -161,7 +162,7 @@ tf = process_station(local, "D02", remote, "E08", out_dir=survey.workspace / "tf
 
 ## Instruments
 
-`mtproc.instruments` knows three recorders, each read by its own mt-io reader
+`crust.instruments` knows three recorders, each read by its own mt-io reader
 and archived under that reader's channel names:
 
 | `instrument:` | recorder | files a site folder holds | reader, archive channels |
@@ -186,12 +187,12 @@ survey's. `channels:` and `filters.yaml` lists use the reader's names
 **Ingest.** `ingest_site` reads LEMI-423 exactly as before (archives
 byte-identical; `calibration_fn`, `h_scale`, the reversed-dipole flip and
 `replace` are LEMI-423 keys) and the others through
-`mtproc.instruments.read_run` (EDL: the site's dipole lengths and, with
+`crust.instruments.read_run` (EDL: the site's dipole lengths and, with
 `flip_reversed_dipoles`, its azimuths go to the reader, whose dipole filter
 carries the sign). `max_run_files` caps LEMI-423 runs only. One hour ingests
 in about 1.4 s (LEMI-424) and 1.1 s (EDL). **Processing** a LEMI-424 site
 needs aurora's electric-channel nomenclature (LEMI12/LEMI34) in
-`mtproc.process`, not added yet; `timing_qc.py`, `psd_qc.py --before` and
+`crust.process`, not added yet; `timing_qc.py`, `psd_qc.py --before` and
 `noise_psd.py` still read B423 files only. `build_stack.py` reads each
 member's MTH5 archive (its `hx`/`hy`, so LEMI-423 and EDL archives, not a
 LEMI-424's `bx`/`by`); a member without an archive has to be built first.
@@ -201,7 +202,7 @@ LEMI-424's `bx`/`by`); a member without an archive has to be built first.
 A desktop launcher and viewer over the scripts above and each survey's YAML,
 with a site/window tree on the Time Series tab (2 h windows at 1000 Hz,
 4 h at 500 Hz), live Spectra,
-Spectrogram and Coherence views that compute only through `mtproc.timefreq` on
+Spectrogram and Coherence views that compute only through `crust.timefreq` on
 the loaded window, a Filter Data tab that previews the site's filter list on
 a loaded window (raw behind filtered, time series and PSD) and drives
 `<survey>/filters.yaml`, a
@@ -218,13 +219,15 @@ by its sidecar's engine ("[aurora]", "[mantle]", "[mantle fine grid]") and,
 for a MANTLE product, draws its verdict strip under the resistivity panels
 from `<stem>.mantle_report.json` (one row per verdict word over the periods
 it covers), shows the sidecar's verdict word counts and opens the report's
-notes as plain text (`src/mtproc_gui/mantle_products.py`). **No product** (archive, transfer
+notes as plain text (`src/crust/gui/mantle_products.py`). **No product** (archive, transfer
 function, EDI, report figure) is computed in the GUI, and no PNG is ever
-displayed in it. Full detail: `src/mtproc_gui/README.md`.
+displayed in it. Full detail: `src/crust/gui/README.md`.
 
 ```bash
-python -m mtproc_gui surveys/<survey>/survey.yaml
+python -m crust surveys/<survey>/survey.yaml
 ```
+
+The installed console script `crust surveys/<survey>/survey.yaml` does the same.
 
 Tests, each run on its own (no pytest runner wired up yet); the smoke test
 needs an offscreen Qt platform and writes its screenshots to
@@ -280,7 +283,7 @@ fetch), `geopandas`, `rasterio`, `pyproj`, `simpeg`, `bokeh` and `panel`.
       (`surveys/burra/qc_notes.md`)
 - [x] Timing QC before ingest (`scripts/timing_qc.py`): no clock errors found
       at the Burra "Behind" sites; the one 1 s event is a remote file-boundary slip
-- [x] Noise toolbox, first steps (`mtproc.noise`, `mtproc.ingest`; declared per
+- [x] Noise toolbox, first steps (`crust.noise`, `crust.ingest`; declared per
       site in `<survey>/filters.yaml`, applied at ingest in the listed order,
       provenance written into the archive): `replace` (borrow a magnetic
       channel from another site, with that site's coil calibration — the field
@@ -290,7 +293,7 @@ fetch), `geopandas`, `rasterio`, `pyproj`, `simpeg`, `bokeh` and `panel`.
       every channel — no detection, no cutting). Never auto-detected —
       declared after looking at the QC figures.
 - [x] Noise toolbox: `hp` and `lp` (zero-phase Butterworth), a
-      `channels` list on `notch`, `mtproc.noise.apply_filters_arrays` (the one
+      `channels` list on `notch`, `crust.noise.apply_filters_arrays` (the one
       implementation; ingest delegates to it) and the Filter Data tab's
       live preview of the list on a loaded window.
 - [ ] Noise toolbox, next: per-channel time masks, band schemes
@@ -310,7 +313,7 @@ fetch), `geopandas`, `rasterio`, `pyproj`, `simpeg`, `bokeh` and `panel`.
       headers -> `survey.yaml` via mt-io, `--site-table` merge, also reachable
       from the GUI's Metadata tab ("New survey...")
 - [x] Channels recorded, per survey and per site: the presets in
-      `mtproc.survey.CHANNEL_PRESETS` (LEMI-423: Ex Ey Bx By, + Bz,
+      `crust.survey.CHANNEL_PRESETS` (LEMI-423: Ex Ey Bx By, + Bz,
       magnetics only, Bx By Bz; LEMI-424: E1-E4 Bx By Bz, E1 E2 Bx By Bz,
       Bx By Bz), `new_survey.py --channels` for the survey default, the
       Metadata tab's channels column for a site that differs
@@ -326,13 +329,13 @@ fetch), `geopandas`, `rasterio`, `pyproj`, `simpeg`, `bokeh` and `panel`.
       10.0), `new_survey.py --electric-gain` for the survey default, the
       Metadata tab's `electric_gain` column for a site that differs
 - [ ] An `electric_pair` setting saying which two of a LEMI-424's e1-e4 are
-      Ex and Ey (aurora's LEMI12/LEMI34 nomenclature in `mtproc.process`); the
+      Ex and Ey (aurora's LEMI12/LEMI34 nomenclature in `crust.process`); the
       GUI meanwhile pairs the first two electrics, E1 and E2
-- [x] Desktop GUI (`src/mtproc_gui`): PySide6 + pyqtgraph
+- [x] Desktop GUI (`src/crust/gui`): PySide6 + pyqtgraph
       launcher-and-viewer over the scripts and per-survey YAML, with QC,
       filter, processing and EDI tabs — see "The GUI" above
 - [ ] Cross-power editor: the GUI's Cross-powers tab. Every STFT window's
-      cross-powers are computed once (`mtproc.crosspower.compute_windows`), then per base
+      cross-powers are computed once (`crust.crosspower.compute_windows`), then per base
       chunk (10, 5, 2 or 1 min) and per decimation level on groups of base
       chunks long enough for 4 windows and 32 degrees of freedom, regrouped
       instantly without reading the archives, a window inside a larger store

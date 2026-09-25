@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Unit test for mtproc.timefreq.narrow_lines and the archive scan of scripts/line_scan.py
+Unit test for crust.timefreq.narrow_lines and the archive scan of scripts/line_scan.py
 
 The synthetic record is 1000 Hz and 20 minutes long: pink-ish noise plus a
 stable 50 Hz line (+40 dB, calibrated as described under CALIBRATION
@@ -64,7 +64,7 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
-from mtproc.timefreq import narrow_lines  # noqa: E402
+from crust.timefreq import narrow_lines  # noqa: E402
 
 FS = 1000.0
 RECORD_MINUTES = 20.0

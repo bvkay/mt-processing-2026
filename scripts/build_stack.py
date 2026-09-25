@@ -23,7 +23,7 @@ nothing. Leave out a coil that sits near zero.
 
 --weighting coherence weights each member, per 10-minute chunk and coil, by
 that coherence over 0.1-10 s, normalised per chunk, and drops a member under
-0.05 in a chunk. The rule is described in the mtproc.virtual module
+0.05 in a chunk. The rule is described in the crust.virtual module
 docstring; the archive's run and channel comments record it and the weights.
 The script prints the per-member table of mean weights per coil.
 
@@ -47,8 +47,8 @@ import numpy as np
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "src"))
 
-from mtproc.survey import Survey
-from mtproc.virtual import CHECK_BANDS_S, WEIGHTINGS, build_synthetic_remote, check_members
+from crust.survey import Survey
+from crust.virtual import CHECK_BANDS_S, WEIGHTINGS, build_synthetic_remote, check_members
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -83,7 +83,7 @@ def print_check(result: dict) -> None:
     squared coherence with the mean of the other members, per check band.
 
     Args:
-        result (dict): Output of `mtproc.virtual.check_members`, keyed by
+        result (dict): Output of `crust.virtual.check_members`, keyed by
             coil.
     """
     for comp, info in result.items():
@@ -107,7 +107,7 @@ def print_weights(weights: dict) -> None:
 
     Args:
         weights (dict): Weights filled in by
-            `mtproc.virtual.build_synthetic_remote`, keyed by coil.
+            `crust.virtual.build_synthetic_remote`, keyed by coil.
     """
     comps = list(weights)
     members = sorted({m for info in weights.values() for m in info["members"]})

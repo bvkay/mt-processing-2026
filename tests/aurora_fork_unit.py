@@ -3,7 +3,7 @@
 Unit test for the mtproc aurora fork against stock aurora 0.6.2
 
 Tests the fork (branch `mtproc-fixes`, version `0.6.2+mtproc`). The
-estimate is `mtproc.process.process_station` on the synthetic pair of
+estimate is `crust.process.process_station` on the synthetic pair of
 `tests/crosspower_unit.py` stretched to 2 h: its field, generator and
 archive writer (100 Hz, known Z) with the field running for `SPAN_S` = 7300
 s, L (ex ey hx hy) in two runs [T0, T0 + 3500 s) and [T0 + 3600 s, T0 +
@@ -38,7 +38,7 @@ under stock aurora 0.6.2):
 
 The aurora tested is the installed one (what this interpreter imports) when
 its `aurora.__version__` carries `+mtproc`; otherwise the clone of the fork
-at `MTPROC_FORKS/aurora` (MTPROC_FORKS defaults to `_scratch.DEFAULT_FORKS`)
+at `CRUST_FORKS/aurora` (CRUST_FORKS defaults to `_scratch.DEFAULT_FORKS`)
 when its `aurora/__init__.py` carries `+mtproc`, run with
 PYTHONPATH=<clone> ahead of site-packages. With neither, check 0 alone runs
 and the fork checks are reported as skipped. When the installed aurora is
@@ -71,7 +71,7 @@ Usage:
    band of band_masks_unit; check 0 fails unless it is one of the bands the
    Huber reset changes) does not change that band's Z, changes any other band's Z or Z error by a single
    bit against the fork's unmasked run, or differs by a single bit in any
-   band from mtproc's runtime patch (`process_station(time_masks=[the same
+   band from CRUST's runtime patch (`process_station(time_masks=[the same
    mask])`) run on the fork;
 3. cost: the fork's best peak increment over `REPS` runs (peak working set
    minus RSS just before `process_station`) is not below the stock best
@@ -168,13 +168,13 @@ def worker(out: Path, local: Path, remote: Path, mode: str, edi_dir: Path | None
     from loguru import logger
 
     import aurora
-    import mtproc.process as mp
+    import crust.process as mp
     from aurora.pipelines.process_mth5 import process_mth5
     from aurora.transfer_function.regression.m_estimator import MEstimator
-    from mtproc.bands import build_band_scheme
+    from crust.bands import build_band_scheme
 
     logger.remove()  # after aurora's and mth5's imports, which add their own sinks
-    logger.add(sys.stderr, level="WARNING", filter=lambda r: r["name"].startswith("mtproc"))
+    logger.add(sys.stderr, level="WARNING", filter=lambda r: r["name"].startswith("crust"))
     scheme = build_band_scheme(cu.FS, max_period=10.0)
     pmin, pmax = _mask_edges(scheme)
     start, end = (cu.T0 + pd.Timedelta(seconds=s) for s in BURST_S)
@@ -437,10 +437,10 @@ def check_fork(fx: dict, info: dict, aurora_path: Path | None, clone_too: Path |
                                           and np.array_equal(config_mask["z_err"][k], fork["z_err"][k]))]
     assert moved == [k_mask], f"2. the band mask on {fx['periods'][k_mask]:.4f} s moved bands {moved}"
     assert np.array_equal(config_mask["z"], runtime_mask["z"]) and np.array_equal(config_mask["z_err"], runtime_mask["z_err"]), \
-        "2. the config's window_masks and mtproc's runtime patch differ"
+        "2. the config's window_masks and CRUST's runtime patch differ"
     shift = float(worst_rel(config_mask["z"][k_mask:k_mask + 1], fork["z"][k_mask:k_mask + 1])[0])
     print(f"  2. window_masks over the burst in the {fx['periods'][k_mask]:.4f} s band: that band moves "
-          f"({shift:.2%} of |Z|), the other 23 identical; identical to mtproc's runtime patch in all 24")
+          f"({shift:.2%} of |Z|), the other 23 identical; identical to CRUST's runtime patch in all 24")
 
     # 3. cost: memory against the stock numbers recorded with the fixtures; time against stock
     #    run alternately now when stock aurora is installed (the clone case), else against the record
@@ -469,7 +469,7 @@ def check_fork(fx: dict, info: dict, aurora_path: Path | None, clone_too: Path |
 def _scheme_edges() -> tuple[float, float]:
     """Return the (low, high) frequency edges of the masked band of the 100 Hz scheme."""
     sys.path.insert(0, str(REPO / "src"))
-    from mtproc.bands import build_band_scheme
+    from crust.bands import build_band_scheme
 
     lo, hi = np.asarray(build_band_scheme(100.0, max_period=10.0)["band_edges"][MASK_LEVEL])[MASK_INDEX]
     return float(lo), float(hi)

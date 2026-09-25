@@ -131,7 +131,7 @@ import yaml
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "src"))
 
-from mtproc.survey import Survey  # noqa: E402
+from crust.survey import Survey  # noqa: E402
 
 from _scratch import scratch_dir
 

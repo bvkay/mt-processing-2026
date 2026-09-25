@@ -3,7 +3,7 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "mt-processing"
+name = "crust-mt"
 version = "0.1.0"
 description = "Broadband magnetotelluric processing for Adelaide Uni surveys (LEMI-423, Earth Data loggers) using the mth5/aurora stack"
 readme = "README.md"
@@ -11,7 +11,7 @@ requires-python = ">=3.10"
 license = { text = "MIT" }
 dependencies = [
     # The stack comes from the mtproc-fixes branches of the forks: they carry the
-    # fixes logged in docs/upstream_issues.md (README, "Install"), and mtproc patches
+    # fixes logged in docs/upstream_issues.md (README, "Install"), and CRUST patches
     # none of these packages at runtime. A local clone of a fork installs with
     # `pip install --no-deps <clone>`.
     "aurora @ git+https://github.com/bvkay/aurora@mtproc-fixes",
@@ -22,12 +22,15 @@ dependencies = [
     "matplotlib",
     "pyyaml",
     "openpyxl",
-    # desktop GUI (src/mtproc_gui): PySide6 widgets, pyqtgraph time series
+    # desktop GUI (src/crust/gui): PySide6 widgets, pyqtgraph time series
     "PySide6",
     "pyqtgraph",
     # transfer-function plots in the View EDIs tab (rho/phase, phase tensor, later induction arrows)
     "mtpy-v2",
 ]
+
+[project.scripts]
+crust = "crust.gui.__main__:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

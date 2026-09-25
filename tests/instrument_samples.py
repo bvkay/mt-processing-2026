@@ -119,7 +119,7 @@ def ensure_archives(sites=("MBJ21", "EGFLP02")) -> dict[str, Path]:
     """Return the mixed survey's archives of `sites`, ingesting missing ones.
 
     Builds the mixed survey first if MIXED_YAML does not exist. Missing
-    archives are written with `mtproc.ingest.ingest_site`.
+    archives are written with `crust.ingest.ingest_site`.
 
     Args:
         sites (tuple[str, ...]): Site names.
@@ -128,8 +128,8 @@ def ensure_archives(sites=("MBJ21", "EGFLP02")) -> dict[str, Path]:
         dict[str, Path]: Archive path by site name.
     """
     sys.path.insert(0, str(REPO / "src"))
-    from mtproc.ingest import default_archive_path, ingest_site
-    from mtproc.survey import Survey
+    from crust.ingest import default_archive_path, ingest_site
+    from crust.survey import Survey
 
     if not MIXED_YAML.exists():
         done = mixed_survey()

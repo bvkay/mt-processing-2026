@@ -62,8 +62,8 @@ sys.path.insert(0, str(REPO / "src"))
 sys.path.insert(0, str(REPO / "tests"))
 
 from _scratch import scratch_dir  # noqa: E402
-from mtproc_gui.app import MainWindow  # noqa: E402
-from mtproc_gui.jobs import JobRunner  # noqa: E402
+from crust.gui.app import MainWindow  # noqa: E402
+from crust.gui.jobs import JobRunner  # noqa: E402
 
 SURVEY_DIR = REPO / "surveys" / "curnamona_cube"
 WORK = SURVEY_DIR / "work"

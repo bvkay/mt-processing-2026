@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Unit test for mtproc.virtual
+Unit test for crust.virtual
 
 Tests the stacked remote, unweighted and coherence-weighted, on synthetic
 members: 1000 Hz, four 10-minute chunks plus a 1234-sample tail, int32
@@ -18,7 +18,7 @@ live coils is the bad one (each is the other's reference and coherence is
 symmetric); the test needs at least three live coils besides the noisy one.
 
 Each member is written as a real MTH5 archive, laid out as
-`mtproc.ingest.ingest_site` writes one (survey, station, run sr1000_0001
+`crust.ingest.ingest_site` writes one (survey, station, run sr1000_0001
 through RunTS / `from_runts`, int32 hx/hy), at `<workspace>/mth5/<member>.h5`
 in a temporary workspace, so the archive reader and the chunk streaming are
 under test. `build_synthetic_remote` runs end to end on them with a
@@ -98,7 +98,7 @@ from mth5.timeseries import ChannelTS, RunTS
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-import mtproc.virtual as virtual  # noqa: E402
+import crust.virtual as virtual  # noqa: E402
 
 FS = 1000.0
 CHUNK = int(virtual.WEIGHT_CHUNK_S * FS)

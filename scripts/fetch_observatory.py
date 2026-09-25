@@ -4,7 +4,7 @@ Fetch INTERMAGNET observatory data and archive it as a survey site
 
 An observatory gives a remote reference that reaches the long periods, or a
 window longer than any site's. The script fetches an INTERMAGNET
-observatory's one-second X, Y, Z from the BGS GIN (`mtproc.observatory`,
+observatory's one-second X, Y, Z from the BGS GIN (`crust.observatory`,
 ported from the AusLAMP processing), one request per UTC day, at the best
 available publication state.
 
@@ -17,7 +17,7 @@ steps, in order:
      <workspace>/observatory), each fetch logged with its size and seconds.
      Cached days are reused, so a re-run fetches only the missing days.
   2. The cached days are written to <workspace>/mth5/<CODE>.h5
-     (`mtproc.ingest.default_archive_path`): station <CODE> at the IAGA-2002
+     (`crust.ingest.default_archive_path`): station <CODE> at the IAGA-2002
      header's position, channels hx = X (north), hy = Y (east), hz = Z (down)
      in nT at 1 Hz with no filters, gaps up to --max-gap seconds (default 600)
      filled by a straight line and one run per stretch between longer gaps.
@@ -26,7 +26,7 @@ steps, in order:
      <CODE>: {instrument: intermagnet, channels: [hx, hy, hz], latitude,
      longitude, elevation, start, end, notes: "INTERMAGNET observatory, 1 s,
      fetched <UTC>"}, through the rewrite used by the GUI Metadata tab
-     (`mtproc_gui.metadata_edit.rewrite_sites_block`). The `sites:` block
+     (`crust.gui.metadata_edit.rewrite_sites_block`). The `sites:` block
      alone is rewritten; every other site's text and everything outside the
      block stay as they were, and any other key of an existing
      <CODE> entry (a remote:, say) is kept. An existing site of that name
@@ -37,7 +37,7 @@ the archive and the entry it would write, without writing anything. With
 the GIN out of reach the script exits 1 with one line saying so; the cache
 keeps whole days only.
 
-`mtproc.survey.Survey.instrument_of` gives "intermagnet" for the entry and
+`crust.survey.Survey.instrument_of` gives "intermagnet" for the entry and
 `Survey.sample_rate_of` 1 Hz; the entry has no raw folder.
 
 Usage:
@@ -59,9 +59,9 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "src"))
 
-from mtproc import observatory  # noqa: E402
-from mtproc.ingest import default_archive_path  # noqa: E402
-from mtproc.survey import Survey  # noqa: E402
+from crust import observatory  # noqa: E402
+from crust.ingest import default_archive_path  # noqa: E402
+from crust.survey import Survey  # noqa: E402
 
 
 def survey_span(sites: dict, code: str) -> tuple[str, str] | None:
@@ -190,7 +190,7 @@ def main(argv=None) -> int:
     for run in summary["runs"]:
         print(f"  run {run['id']}: {run['start']} .. {run['end']} ({run['n']} s)")
 
-    from mtproc_gui.metadata_edit import rewrite_sites_block  # the sites-block rewrite of the Metadata tab
+    from crust.gui.metadata_edit import rewrite_sites_block  # the sites-block rewrite of the Metadata tab
 
     entry = observatory.survey_entry(meta, summary["runs"])
     rewrite_sites_block(yaml_path, {code: entry})

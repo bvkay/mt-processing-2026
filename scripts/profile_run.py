@@ -5,7 +5,7 @@ Profile one processing step: time, memory, CPU and disk, split into phases
 Each stage runs the production code as a child process: `rr` is
 scripts/process_rr.py <local> <remote>, `ingest` is scripts/ingest_site.py
 <site> --raw (the raw archive from the B423 files; --force when one exists),
-`variant` is `mtproc.ingest.build_variant(<site>)` (as the campaign runs it),
+`variant` is `crust.ingest.build_variant(<site>)` (as the campaign runs it),
 `stack` is scripts/build_stack.py over --members, and `read` is the MTH5 read
 benchmarks below. Meanwhile this process samples the child every --interval
 s with psutil: its working set (RSS, as the campaign ledger records it) and
@@ -16,7 +16,7 @@ contention.
 
 Phases come from the child's log. The child is started through this script
 (`--child`), which wraps a fixed list of library functions (`TARGETS`:
-mtproc's, mth5's, mt-io's, aurora's) so each call writes
+CRUST's, mth5's, mt-io's, aurora's) so each call writes
 `PROFMARK <epoch> B|E P|D <name>` lines to stderr. P marks are the timeline's
 phases (sequential; a gap is "(untracked)"); D marks are details summed per
 name into `<stem>_details.csv` (count, total and self seconds).
@@ -49,7 +49,7 @@ against time, phases shaded and labelled).
 - `all` runs ingest, variant, stack, read, rr and cprofile in that order.
 
 --read-archives DIR --read-sites S ... points
-`mtproc.ingest.default_archive_path` and `variant_path` of those sites at
+`crust.ingest.default_archive_path` and `variant_path` of those sites at
 DIR inside the child. Both archives are read there, read-only; everything
 written (EDIs, a rebuilt variant, a stack) goes to the survey's own
 workspace. This lets a scratch copy of a survey.yaml process the real
@@ -62,7 +62,7 @@ other running process_rr.py children younger than 4 min may still grow by
 at least that much.
 
 `trace` (needs the dev tools viztracer and py-spy) runs one windowed
-estimate: `mtproc.process.process_station` on the sites' filtered variants
+estimate: `crust.process.process_station` on the sites' filtered variants
 in --read-archives (opened read-only and not built), the survey's lemimt
 bands, ex ey out, no tweaks, no masks. It runs as four sampled children per
 aurora (the installed fork, and stock 0.6.2 from a worktree of the fork's
@@ -77,7 +77,7 @@ alone:
 - `viztracer`: every call of at least --viz-min-us us, C calls and GC
   included, in `<stem>_viztracer.json` + `.json.gz` for ui.perfetto.dev or
   `vizviewer`, with the phase / detail / per-band spans on the
-  "mtproc phases + counters" track and RSS, disk read, CPU and thread
+  "CRUST phases + counters" track and RSS, disk read, CPU and thread
   counters every 0.25 s.
 - `tracemalloc`: a snapshot at every phase boundary diffed with the one
   before (`_tm_sites.csv`), per-span traced peaks (`_tm_spans.csv`),
@@ -147,7 +147,7 @@ RESULT = "PROFRESULT"
 # (consumer module, qualname, label, P|D). A name imported with `from x import f`
 # is patched where it is looked up (its consumer's namespace), a method on its
 # class. "{L}" in a label is the current aurora decimation level.
-COMMON = [("mtproc.survey", "Survey.from_yaml", "survey load", "P"),
+COMMON = [("crust.survey", "Survey.from_yaml", "survey load", "P"),
           ("mth5.mth5", "MTH5.open_mth5", "mth5 open_mth5", "D"),
           ("mth5.mth5", "MTH5.close_mth5", "mth5 close_mth5", "D")]
 # how a run gets from the archive into memory (mth5 -> mt_timeseries), where it is read
@@ -157,14 +157,14 @@ READ_DETAILS = [("mth5.groups.channel_dataset", "ChannelDataset.time_slice", "mt
                 ("mt_timeseries", "RunTS.__init__", "mt_timeseries: RunTS()", "D")]
 TARGETS = {
     "rr": [
-        ("mtproc.ingest", "ingest_site", "raw archive check (ingest_site)", "P"),
-        ("mtproc.ingest", "processing_archive", "variant check (processing_archive)", "P"),
-        ("mtproc.masks", "load_masks", "masks.yaml", "P"),
-        ("mtproc.process", "kernel_dataset", "run summary + kernel dataset", "P"),
+        ("crust.ingest", "ingest_site", "raw archive check (ingest_site)", "P"),
+        ("crust.ingest", "processing_archive", "variant check (processing_archive)", "P"),
+        ("crust.masks", "load_masks", "masks.yaml", "P"),
+        ("crust.process", "kernel_dataset", "run summary + kernel dataset", "P"),
         ("mth5.processing", "RunSummary.from_mth5s", "RunSummary.from_mth5s", "D"),
         ("mth5.processing", "KernelDataset.from_run_summary", "KernelDataset.from_run_summary", "D"),
-        ("mtproc.process", "build_config", "aurora config", "P"),
-        ("mtproc.process", "process_mth5", "aurora (other)", "P"),
+        ("crust.process", "build_config", "aurora config", "P"),
+        ("crust.process", "process_mth5", "aurora (other)", "P"),
         ("aurora.pipelines.transfer_function_kernel", "TransferFunctionKernel.update_processing_summary",
          "aurora setup", "P"),
         ("aurora.pipelines.transfer_function_kernel", "TransferFunctionKernel.validate", "aurora setup", "P"),
@@ -203,13 +203,13 @@ TARGETS = {
         ("aurora.pipelines.transfer_function_kernel", "TransferFunctionKernel.export_tf_collection",
          "aurora TF export", "P"),
         ("mt_metadata.transfer_functions.core", "TF.write", "EDI write", "P"),
-        ("mtproc.compare", "phase_quadrants", "phase quadrants", "P"),
-        ("mtproc.compare", "plot_comparison", "comparison figure", "P"),
+        ("crust.compare", "phase_quadrants", "phase quadrants", "P"),
+        ("crust.compare", "plot_comparison", "comparison figure", "P"),
     ],
     "ingest": [
-        ("mtproc.ingest", "select_files", "select B423 files", "P"),
-        ("mtproc.ingest", "_group_contiguous", "group contiguous files (ours)", "P"),
-        ("mtproc.ingest", "read_lemi423", "mt-io B423 read -> RunTS", "P"),
+        ("crust.ingest", "select_files", "select B423 files", "P"),
+        ("crust.ingest", "_group_contiguous", "group contiguous files (ours)", "P"),
+        ("crust.ingest", "read_lemi423", "mt-io B423 read -> RunTS", "P"),
         ("mt_io.lemi.lemi423", "LEMI423Reader._read_one", "mt-io: one file (header + read_dataframe)", "D"),
         ("mt_io.lemi.lemi423", "Read_Lemi_Data.read_dataframe",
          "mt-io: read_dataframe (fromfile, DataFrame, time index, sort)", "D"),
@@ -219,24 +219,24 @@ TARGETS = {
         ("mt_io.lemi.lemi423", "read_lemi_coil_response", "mt-io: metadata", "D"),
         ("mt_timeseries", "ChannelTS.__init__", "mt_timeseries: ChannelTS()", "D"),
         ("mt_timeseries", "RunTS.__init__", "mt_timeseries: RunTS()", "D"),
-        ("mtproc.ingest", "_keep_channels", "channels / E sign / h_scale (ours)", "P"),
-        ("mtproc.ingest", "_standardise_e_orientation", "channels / E sign / h_scale (ours)", "P"),
-        ("mtproc.ingest", "_apply_h_scale", "channels / E sign / h_scale (ours)", "P"),
+        ("crust.ingest", "_keep_channels", "channels / E sign / h_scale (ours)", "P"),
+        ("crust.ingest", "_standardise_e_orientation", "channels / E sign / h_scale (ours)", "P"),
+        ("crust.ingest", "_apply_h_scale", "channels / E sign / h_scale (ours)", "P"),
         ("mth5.groups", "RunGroup.from_runts", "mth5 write run (from_runts)", "P"),
         ("mth5.groups", "RunGroup.add_channel", "mth5: add_channel", "D"),
     ],
     "variant": [
-        ("mtproc.ingest", "archive_filter_kinds", "raw archive check", "P"),
+        ("crust.ingest", "archive_filter_kinds", "raw archive check", "P"),
         ("mth5.groups", "RunGroup.to_runts", "mth5 read run (to_runts)", "P"),
-        ("mtproc.ingest", "apply_filters_arrays", "filters (apply_filters_arrays, ours)", "P"),
+        ("crust.ingest", "apply_filters_arrays", "filters (apply_filters_arrays, ours)", "P"),
         ("mth5.groups", "RunGroup.from_runts", "mth5 write run (from_runts)", "P"),
         ("mth5.groups", "RunGroup.add_channel", "mth5: add_channel", "D"),
     ],
     "stack": [
-        ("mtproc.virtual", "_open_members", "open members (processing_archive)", "P"),
-        ("mtproc.virtual", "processing_archive", "processing_archive", "D"),
-        ("mtproc.virtual", "_mean_stack", "stack: mean (h5py chunk reads)", "P"),
-        ("mtproc.virtual", "_coherence_stack", "stack: coherence-weighted", "P"),
+        ("crust.virtual", "_open_members", "open members (processing_archive)", "P"),
+        ("crust.virtual", "processing_archive", "processing_archive", "D"),
+        ("crust.virtual", "_mean_stack", "stack: mean (h5py chunk reads)", "P"),
+        ("crust.virtual", "_coherence_stack", "stack: coherence-weighted", "P"),
         ("mth5.groups", "RunGroup.add_channel", "mth5 write coil", "P"),
     ],
     "read": [],
@@ -396,7 +396,7 @@ def redirect_archives(directory: str, sites) -> None:
 
     The archives are read there; outputs still go to the survey's workspace.
     """
-    import mtproc.ingest as ing
+    import crust.ingest as ing
 
     directory, sites = Path(directory), set(sites)
     raw_path, var_path = ing.default_archive_path, ing.variant_path
@@ -482,8 +482,8 @@ def child_main(stage: str, spec_path: str) -> int:
         runpy.run_path(str(SCRIPTS / script), run_name="__main__")
         return 0
     if stage == "variant":
-        from mtproc.ingest import build_variant
-        from mtproc.survey import Survey
+        from crust.ingest import build_variant
+        from crust.survey import Survey
 
         out = build_variant(Survey.from_yaml(spec["survey"]), spec["site"])
         print(f"variant: {out}", flush=True)
@@ -511,9 +511,9 @@ def _rr_call(spec: dict):
     """
     import process_rr as pr
 
-    from mtproc.bands import build_band_scheme
-    from mtproc.ingest import processing_archive
-    from mtproc.masks import load_masks
+    from crust.bands import build_band_scheme
+    from crust.ingest import processing_archive
+    from crust.masks import load_masks
 
     args = pr.build_parser().parse_args(spec["argv"])
     started = dt.datetime.now().astimezone()
@@ -589,7 +589,7 @@ def format_snapshot(snap, rss: float, traced: float, traced_peak: float, top: in
     for i, st in enumerate(stats[:top], 1):
         # the allocating line, then the first frames in the MT packages (who asked for it)
         chain = [f"{_short(fr.filename)}:{fr.lineno}" for fr in reversed(st.traceback)]
-        ours = [f for f in chain[1:] if f.startswith(("aurora", "mth5", "mt_timeseries", "mt_metadata", "mtproc"))]
+        ours = [f for f in chain[1:] if f.startswith(("aurora", "mth5", "mt_timeseries", "mt_metadata", "crust"))]
         frames = chain[:1] + (ours[:4] or chain[1:5])
         lines.append(f"{i:3d}. {st.size / GIB:7.3f} GiB in {st.count:7d} block(s)  " + "  <-  ".join(frames))
     by_line = snap.statistics("lineno")
@@ -607,7 +607,7 @@ def inprocess_rr(spec: dict, mode: str) -> None:
         spec (dict): The child's spec.
         mode (str): "cprofile" or "tracemalloc".
     """
-    from mtproc.process import process_station
+    from crust.process import process_station
 
     call_args, kwargs = _rr_call(spec)
     stem = Path(spec["out_stem"])
@@ -627,7 +627,7 @@ def inprocess_rr(spec: dict, mode: str) -> None:
         wall = time.perf_counter() - t_wall
         prof.dump_stats(str(stem) + "_cprofile.prof")
         buf = io.StringIO()
-        buf.write(f"cProfile of mtproc.process.process_station{call_args} -- {wall:.1f} s wall "
+        buf.write(f"cProfile of crust.process.process_station{call_args} -- {wall:.1f} s wall "
                   f"({dt.datetime.now():%Y-%m-%d %H:%M})\n")
         for key in ("cumulative", "tottime"):
             buf.write(f"\n===== top 40 by {key} =====\n")
@@ -698,9 +698,9 @@ def bench_read(spec: dict) -> None:
     import h5py
     from mth5.mth5 import MTH5
 
-    from mtproc.ingest import _group_contiguous, processing_archive, select_files
-    from mtproc.survey import Survey
-    from mtproc.timefreq import _real_runs
+    from crust.ingest import _group_contiguous, processing_archive, select_files
+    from crust.survey import Survey
+    from crust.timefreq import _real_runs
 
     survey = Survey.from_yaml(spec["survey"])
     local, remote = spec["local"], spec["remote"]
@@ -735,7 +735,7 @@ def bench_read(spec: dict) -> None:
     group = ds.name.rsplit("/", 1)[0]
     m.close_mth5()
 
-    # (a) h5py alone, as mtproc.virtual and the GUI's segment loader read
+    # (a) h5py alone, as crust.virtual and the GUI's segment loader read
     with phase("h5py open + slice hx 2 h") as p:
         with h5py.File(path, "r") as f:
             a = f[group]["hx"][i0:i0 + n_win]
@@ -790,8 +790,8 @@ def bench_read(spec: dict) -> None:
     finally:
         m.close_mth5()
 
-    # (d) RunSummary + KernelDataset for the pair, exactly as mtproc.process builds them
-    from mtproc.process import kernel_dataset
+    # (d) RunSummary + KernelDataset for the pair, exactly as crust.process builds them
+    from crust.process import kernel_dataset
 
     remote_h5 = processing_archive(survey, remote)
     opens = []
@@ -1006,6 +1006,8 @@ LOGURU = re.compile(r"^(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:[+-]\
 MARK_RE = re.compile(rf"^{MARK} (\d+\.\d+) ([BE]) ([PD]) (.+)$")
 HEADER = re.compile(r"^=== (\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}) ")
 STARTED = re.compile(r"^started: (\d{4}-\d{2}-\d{2}T\S+)$")
+# the logger of crust.process; logs written before the rename to CRUST name it mtproc.process
+PROCESS_LOGGERS = ("crust.process", "mtproc.process")
 
 
 def _epoch(text: str) -> float:
@@ -1132,7 +1134,7 @@ def phases_from_rr_log(events: list[dict], t_start: float | None, t_end: float |
         msg, mod, fn = e["msg"], e["module"], e["function"]
         if mod == "__main__" and "Ex " in msg and "@" in msg and cps[-1][1].startswith(("python", "survey")):
             add(e["t"], "archives + run summary + kernel dataset + config")
-        elif mod == "mtproc.process" and msg.startswith("aurora: "):
+        elif mod in PROCESS_LOGGERS and msg.startswith("aurora: "):
             add(e["t"], "aurora setup")
         elif fn == "valid_decimations":
             add(e["t"], "L0 read TS")
@@ -1153,7 +1155,7 @@ def phases_from_rr_log(events: list[dict], t_start: float | None, t_end: float |
             add(e["t"], f"L{level} regression")
         elif "type(tf_cls)" in msg:
             add(e["t"], "close archives + EDI write")
-        elif mod == "mtproc.process" and msg.startswith("wrote "):
+        elif mod in PROCESS_LOGGERS and msg.startswith("wrote "):
             add(e["t"], "quadrants + comparison figure")
         elif mod == "__main__" and msg.startswith("wrote ") and msg.endswith(".png"):
             add(e["t"], "sidecar")
@@ -1555,8 +1557,9 @@ def ledger_stats(campaign: Path, out: Path) -> None:
 # fork's clone at its base commit, first on PYTHONPATH).
 
 TRACE_PASSES = ("pyspy-idle", "pyspy-gil", "viztracer", "tracemalloc")
-SPAN_TRACK = "mtproc phases + counters"
-MT_PACKAGES = ("aurora", "mth5", "mt_timeseries", "mt_metadata", "mtproc", "mt_io")
+SPAN_TRACK = "CRUST phases + counters"
+# "mtproc": the package name in traces recorded before the rename to CRUST (--reanalyse)
+MT_PACKAGES = ("aurora", "mth5", "mt_timeseries", "mt_metadata", "crust", "mtproc", "mt_io")
 MIB = 2.0 ** 20
 STOCK_AURORA_BASE = "3395804c"
 
@@ -1572,11 +1575,11 @@ _WTS = "aurora.time_series.windowed_time_series"
 _TFH = "aurora.pipelines.transfer_function_helpers"
 _PM = "aurora.pipelines.process_mth5"
 TARGETS["trace"] = [
-    ("mtproc.process", "kernel_dataset", "kernel dataset", "P"),
+    ("crust.process", "kernel_dataset", "kernel dataset", "P"),
     ("mth5.processing", "RunSummary.from_mth5s", "kd: RunSummary.from_mth5s", "D"),
     ("mth5.processing", "KernelDataset.from_run_summary", "kd: KernelDataset.from_run_summary", "D"),
-    ("mtproc.process", "build_config", "aurora config", "P"),
-    ("mtproc.process", "process_mth5", "aurora (other)", "P"),
+    ("crust.process", "build_config", "aurora config", "P"),
+    ("crust.process", "process_mth5", "aurora (other)", "P"),
     (_TFK, "TransferFunctionKernel.update_processing_summary", "aurora setup", "P"),
     (_TFK, "TransferFunctionKernel.validate", "aurora setup", "P"),
     (_TFK, "TransferFunctionKernel.initialize_mth5s", "aurora setup", "P"),
@@ -2369,9 +2372,9 @@ def trace_child(spec: dict) -> None:
     import mt_metadata.transfer_functions.core  # noqa: F401
     import pyproj  # noqa: F401
 
-    from mtproc.bands import build_band_scheme
-    from mtproc.process import process_station
-    from mtproc.survey import Survey
+    from crust.bands import build_band_scheme
+    from crust.process import process_station
+    from crust.survey import Survey
 
     sys.__stderr__.write(f"PROFINFO aurora {aurora.__version__} from {Path(aurora.__file__).parent}\n")
     _force_read_only()
@@ -2927,14 +2930,14 @@ def ensure_stock_aurora(path: Path) -> Path:
     """Return a worktree of the aurora fork's clone at stock 0.6.2's commit, creating it once.
 
     The clone's own checkout is left as it is; the clone is found under
-    MTPROC_FORKS.
+    CRUST_FORKS.
 
     Raises:
         SystemExit: When the folder does not hold stock aurora 0.6.2.
     """
     init = path / "aurora" / "__init__.py"
     if not init.exists():
-        clone = Path(os.environ.get("MTPROC_FORKS", r"D:\BEN")) / "aurora"
+        clone = Path(os.environ.get("CRUST_FORKS", r"D:\BEN")) / "aurora"
         subprocess.run(["git", "-C", str(clone), "worktree", "add", "--detach", str(path), STOCK_AURORA_BASE],
                        check=True, capture_output=True, text=True)
     text = init.read_text(encoding="utf-8")
@@ -3187,7 +3190,7 @@ def run_trace(args, survey, survey_yaml: str, out: Path) -> int:
     if args.reanalyse:  # tables and figures alone: no archive resolved, no aurora imported
         trace_report(out, args.reanalyse, args.variants)
         return 0
-    from mtproc.ingest import variant_path
+    from crust.ingest import variant_path
 
     if not args.read_archives:
         raise SystemExit("--stage trace reads the archives named by --read-archives DIR (the sites' filtered variants)")
@@ -3288,7 +3291,7 @@ def main(argv=None) -> int:
         return 0
     if not (args.survey_yaml and args.local and args.remote):
         build_parser().error("survey_yaml, local and remote are required")
-    from mtproc.survey import Survey
+    from crust.survey import Survey
 
     survey_yaml = str(Path(args.survey_yaml).resolve())
     survey = Survey.from_yaml(survey_yaml)
@@ -3311,7 +3314,7 @@ def main(argv=None) -> int:
                     "snap_step_gib": args.snap_step_gb}
             who = f"{args.local}_rr-{args.remote}"
         elif stage == "ingest":
-            from mtproc.ingest import default_archive_path
+            from crust.ingest import default_archive_path
 
             force = ["--force"] if default_archive_path(survey, site).exists() else []
             if force and default_archive_path(survey, site).stat().st_nlink > 1:
@@ -3338,7 +3341,7 @@ def main(argv=None) -> int:
         res = run_stage(stage, spec, out, who, args.interval, not args.no_markers, need, args.other_peak_gb)
         results[stage] = res
         if stage in ("ingest", "variant") and res["rc"] == 0:
-            from mtproc.ingest import default_archive_path, select_files, variant_path
+            from crust.ingest import default_archive_path, select_files, variant_path
 
             path = default_archive_path(survey, site) if stage == "ingest" else variant_path(survey, site)
             raw_bytes = sum(f.stat().st_size for f in select_files(survey.site_dirs()[site])) \

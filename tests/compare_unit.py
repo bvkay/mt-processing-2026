@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Unit test for mtproc.compare.phase_quadrants
+Unit test for crust.compare.phase_quadrants
 
 Checks the phase-quadrant check on a synthetic TF and, when the workspace is
 mounted, on the real Morocco D05_rr-D13.edi. Runs without Qt.
@@ -65,7 +65,7 @@ sys.path.insert(0, str(REPO / "src"))
 
 from mt_metadata.transfer_functions.core import TF  # noqa: E402
 
-from mtproc.compare import phase_quadrants, rho_phi  # noqa: E402
+from crust.compare import phase_quadrants, rho_phi  # noqa: E402
 
 D05_EDI = Path(r"D:/MT_DATA/MT_Morocco_Atlas_Mountains_Workspace/tf/D05_rr-D13.edi")
 PERIOD = np.logspace(np.log10(0.005), 2.0, 44)

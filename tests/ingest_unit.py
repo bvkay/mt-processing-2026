@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Unit test for mtproc.ingest
+Unit test for crust.ingest
 
 Checks the raw/variant split, the LEMI-423 path, one real hour of LEMI-424
 and EDL, and the EDL and LEMI-423 calibration chains. `ingest_site` is
@@ -33,7 +33,7 @@ same entries are given in a different *order*, or when one entry's parameter
 (a notch's q) changes; or [] and None do not hash the same.
 
 **`build_variant`**, on a small real one-run raw archive, does not write
-hx/hy bit-for-bit equal to `mtproc.noise.apply_filters_arrays` run directly on
+hx/hy bit-for-bit equal to `crust.noise.apply_filters_arrays` run directly on
 the same raw arrays for the same notch; does not record `filters hash <hash>`
 then the same provenance line `apply_filters_arrays` returned, in the run's
 comment; or `variant_ready` does not read False before the build and True
@@ -133,9 +133,9 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "src"))
 
-import mtproc.ingest as ingest  # noqa: E402
-from mtproc.ingest import default_archive_path, ingest_site  # noqa: E402
-from mtproc.survey import Survey  # noqa: E402
+import crust.ingest as ingest  # noqa: E402
+from crust.ingest import default_archive_path, ingest_site  # noqa: E402
+from crust.survey import Survey  # noqa: E402
 
 sys.path.insert(0, str(REPO / "tests"))
 import instrument_samples  # noqa: E402
@@ -144,7 +144,7 @@ from _scratch import scratch_dir  # noqa: E402
 SCRATCH = scratch_dir("ingest_unit")
 SITE = "D02"
 # a `replace` and a `notch`, declared to show that `ingest_site` leaves both alone;
-# they are applied by `mtproc.noise.apply_filters_arrays` through `build_variant`
+# they are applied by `crust.noise.apply_filters_arrays` through `build_variant`
 FILTERS = [{"replace": {"hx": "A06"}},
            {"notch": {"f0": 50.0, "harmonics": 9, "q": 30.0, "passes": 2}}]
 
@@ -250,8 +250,8 @@ def run_ingest(filters, ignore_filters: bool):
     `_keep_channels`, `_standardise_e_orientation` and `_apply_h_scale`
     (call counts); `read_run` fails the test if reached.
     None concerns the declared filters: `ingest_site` applies none of them
-    (`mtproc.ingest.build_variant` applies them all through
-    `mtproc.noise.apply_filters_arrays`, `replace` by `_replace_from_donors`),
+    (`crust.ingest.build_variant` applies them all through
+    `crust.noise.apply_filters_arrays`, `replace` by `_replace_from_donors`),
     whatever `filters` declares.
 
     Returns:
@@ -431,7 +431,7 @@ def test_filters_hash() -> None:
     a = [{"notch": {"f0": 50.0, "q": 30.0}}, {"hp": {"cutoff_hz": 0.01}}]
     b = [{"hp": {"cutoff_hz": 0.01}}, {"notch": {"f0": 50.0, "q": 30.0}}]  # reordered
     c = [{"notch": {"f0": 50.0, "q": 25.0}}, {"hp": {"cutoff_hz": 0.01}}]  # differing notch q
-    from mtproc.ingest import filters_hash
+    from crust.ingest import filters_hash
     assert filters_hash(a) == filters_hash(list(a)), "the same list must hash the same"
     assert filters_hash(a) != filters_hash(b), "reordering the same entries must change the hash"
     assert filters_hash(a) != filters_hash(c), "a differing notch q must change the hash"
@@ -449,8 +449,8 @@ def test_build_variant_bit_for_bit_and_lifecycle() -> None:
     """
     import numpy as np
     from mth5.mth5 import MTH5
-    from mtproc.ingest import archive_filter_kinds, build_variant, default_archive_path, variant_path, variant_ready
-    from mtproc.noise import apply_filters_arrays
+    from crust.ingest import archive_filter_kinds, build_variant, default_archive_path, variant_path, variant_ready
+    from crust.noise import apply_filters_arrays
 
     site = "VD02"
     rng = np.random.default_rng(7)
@@ -502,7 +502,7 @@ def test_old_layout_refused() -> None:
     `processing_archive` raise, naming "old layout".
     """
     import numpy as np
-    from mtproc.ingest import build_variant, default_archive_path, processing_archive
+    from crust.ingest import build_variant, default_archive_path, processing_archive
 
     site = "OLDSITE"
     survey = _variant_survey(site, NOTCH_A)
@@ -532,7 +532,7 @@ def test_variant_ready_rejects_a_partial_file() -> None:
     import numpy as np
     import pandas as pd
     from mth5.mth5 import MTH5
-    from mtproc.ingest import _all_real_run_comments, default_archive_path, filters_hash, variant_path, variant_ready
+    from crust.ingest import _all_real_run_comments, default_archive_path, filters_hash, variant_path, variant_ready
 
     site = "VPART"
     survey = _variant_survey(site, NOTCH_A)
@@ -835,7 +835,7 @@ def test_edl_files_of_another_station_left_out() -> None:
     import shutil
     import h5py
     import numpy as np
-    from mtproc.instruments import record_files, span
+    from crust.instruments import record_files, span
     root = SCRATCH / "edl_foreign"
     shutil.rmtree(root, ignore_errors=True)
     site = root / "raw" / "EDLZ"
@@ -889,8 +889,8 @@ def test_edl_stamp_missing_a_channel_splits_the_run() -> None:
     import h5py
     import numpy as np
     import pandas as pd
-    from mtproc.ingest import _group_contiguous
-    from mtproc.instruments import record_files
+    from crust.ingest import _group_contiguous
+    from crust.instruments import record_files
     root = SCRATCH / "edl_missing"
     shutil.rmtree(root, ignore_errors=True)
     site = root / "raw" / "EDLX"
@@ -954,8 +954,8 @@ def test_apple_double_twins_are_skipped() -> None:
     file.
     """
     import tempfile
-    from mtproc.ingest import b423_files, select_files
-    from mtproc.survey import Survey
+    from crust.ingest import b423_files, select_files
+    from crust.survey import Survey
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         site = root / "S01"; site.mkdir()
@@ -983,7 +983,7 @@ def test_lemi423_coil_chain() -> None:
     gain 1/K from the header), then `lemi423_b_scale` (gain -1000, digital
     counts -> digital counts); or if each stage's units_in is not the
     previous stage's units_out; or if ex carries a coil or b_scale stage.
-    This is the mt-io fork's chain with mtproc's one stage appended; stock
+    This is the mt-io fork's chain with CRUST's one stage appended; stock
     mt-io raises before writing anything, since its coil table's "millivolts"
     is not a unit mt_metadata knows.
     """
@@ -1061,7 +1061,7 @@ def test_glued_altitude_header_line() -> None:
 def test_readable_b423() -> None:
     from mtio_fork_unit import _write_b423
 
-    from mtproc.ingest import readable_b423
+    from crust.ingest import readable_b423
 
     with tempfile.TemporaryDirectory() as tmp:
         folder = Path(tmp)

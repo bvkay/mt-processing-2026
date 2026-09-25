@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Unit test for mtproc.timefreq.psd_ladder
+Unit test for crust.timefreq.psd_ladder
 
 Checks the whole-spectrum PSD ladder on random 1000 Hz arrays with gaps:
 stage 0 against a direct `scipy.signal.welch` call, the early-stop rule, and
@@ -38,7 +38,7 @@ from scipy.signal import welch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from mtproc.timefreq import PSD_NPERSEG, psd_ladder  # noqa: E402
+from crust.timefreq import PSD_NPERSEG, psd_ladder  # noqa: E402
 
 FS = 1000.0
 CHANNELS = ["hx", "hy", "ex"]

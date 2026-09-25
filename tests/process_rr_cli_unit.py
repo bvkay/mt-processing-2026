@@ -45,7 +45,7 @@ hamming`, `tweak.overlap_pct: 50.0`, `tweak.prewhiten: False` and `tweak.r0:
 2.0` -- no other tweak, no "tweaks: none" -- with every other line as in the
 plain run (`started`/`stem` excepted); or, building aurora's real config for
 D02 against E08 with the survey's lemimt band scheme (in-process, through
-`mtproc.process.kernel_dataset` with nothing patched, while this process
+`crust.process.kernel_dataset` with nothing patched, while this process
 holds both archives open read-only with h5py, as the GUI holds one: HDF5
 refuses a read-write open of a file already open read-only, so the build
 fails unless mth5 itself opens them read-only), without tweaks any decimation level is not
@@ -55,7 +55,7 @@ level whose window lasts over 600 s, of which there must be at least one, so
 the boost is really exercised -- prewhitening_type "first difference" with
 recoloring True, min_num_stft_windows 0, and regression max_iterations 10,
 max_redescending_iterations 2, r0 1.5, u0 2.8, tolerance 0.005 (and
-`mtproc.process.ESTIMATOR_DEFAULTS`, which the GUI compares against, does not
+`crust.process.ESTIMATOR_DEFAULTS`, which the GUI compares against, does not
 say the same); with the tweaks `resolve()` makes of those four flags, any
 level is not window.type hamming with overlap round(num_samples * 0.5) --
 the long-window boost replaced -- prewhitening_type "" (which mth5's
@@ -74,7 +74,7 @@ value; `build_sidecar`, fed a fake TF's own `phase_quadrants` result, does
 not carry `local`/`remote`, `started`/`finished` as the exact ISO strings
 passed in, `seconds` matching their difference, the band scheme and the full
 effective tweaks (taper "hann" included even though no `--taper` was given),
-the argv, the tag, the edi/figure names and a `versions` dict naming mtproc,
+the argv, the tag, the edi/figure names and a `versions` dict naming crust,
 aurora, mth5, mt_metadata and mt_io -- or is not JSON-serialisable as it
 stands; a phase-quadrant verdict built from a mode 180 deg out of quadrant is
 not "flipped: ..." and one built from too few usable periods is not "not
@@ -282,7 +282,7 @@ def test_tweaks_print_only_what_was_given() -> None:
 
 
 # the in-use estimator values, stated here from aurora 0.6.2's ConfigCreator
-# output (not taken from mtproc.process), and what the four flags must make
+# output (not taken from crust.process), and what the four flags must make
 IN_USE = {"type": "hann", "prewhitening_type": "first difference", "recoloring": True,
           "min_num_stft_windows": 0, "max_iterations": 10, "max_redescending_iterations": 2,
           "r0": 1.5, "u0": 2.8, "tolerance": 0.005}
@@ -307,8 +307,8 @@ def test_tweaks_reach_every_decimation_level() -> None:
     from mth5.processing.spectre.prewhitening import apply_prewhitening
 
     sys.path.insert(0, str(REPO / "src"))
-    from mtproc.bands import build_band_scheme
-    from mtproc.process import ESTIMATOR_DEFAULTS, apply_tweaks, build_config, kernel_dataset
+    from crust.bands import build_band_scheme
+    from crust.process import ESTIMATOR_DEFAULTS, apply_tweaks, build_config, kernel_dataset
 
     process_rr = _load_process_rr()
     started = dt.datetime.now().astimezone()
@@ -554,7 +554,7 @@ def test_build_sidecar_with_a_fake_tf() -> None:
     assert sidecar["tag"] == "sidecar-test", sidecar["tag"]
     assert sidecar["edi"] == edi_path.name and sidecar["figure"] == png_path.name, sidecar
     assert sidecar["quadrant"]["verdict"] == "physical quadrants", sidecar["quadrant"]
-    for lib in ("mtproc", "aurora", "mth5", "mt_metadata", "mt_io"):
+    for lib in ("crust", "aurora", "mth5", "mt_metadata", "mt_io"):
         assert sidecar["versions"].get(lib), sidecar["versions"]
     json.loads(json.dumps(sidecar, default=str))  # must round-trip as JSON
     print(f"  build_sidecar (physical): seconds {sidecar['seconds']}, tweaks.taper "
@@ -575,8 +575,8 @@ def test_build_sidecar_with_a_fake_tf() -> None:
           f"{flipped_sidecar['quadrant']['verdict']!r}, sparse {sparse_sidecar['quadrant']['verdict']!r}")
 
     lines = process_rr.edi_info_lines(sidecar)
-    assert any(line == "mtproc.taper=hann" for line in lines), lines
-    assert any(line.startswith("mtproc.sidecar=") and line.endswith(".json") for line in lines), lines
+    assert any(line == "crust.taper=hann" for line in lines), lines
+    assert any(line.startswith("crust.sidecar=") and line.endswith(".json") for line in lines), lines
     print(f"  edi_info_lines: {lines}")
 
 

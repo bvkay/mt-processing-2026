@@ -2,11 +2,11 @@
 """
 Unit test for band-limited masks inside aurora
 
-Tests `mtproc.process._band_masks_applied` on stock aurora and
-`mtproc.process._set_window_masks` (aurora's own
+Tests `crust.process._band_masks_applied` on stock aurora and
+`crust.process._set_window_masks` (aurora's own
 `DecimationLevel.window_masks`) on aurora 0.6.2+mtproc
-(`mtproc.process.AURORA_WINDOW_MASKS`). The test branches on
-`mtproc.process.AURORA_WINDOW_MASKS`, so the same criteria are checked
+(`crust.process.AURORA_WINDOW_MASKS`). The test branches on
+`crust.process.AURORA_WINDOW_MASKS`, so the same criteria are checked
 whichever aurora is installed; running it once under each aurora exercises
 both paths.
 
@@ -90,20 +90,20 @@ Usage:
    saying the test band lost N of 780 windows, N being the level-1 windows
    (128 points at 25 Hz, 96-sample hop from each run's start: 5.12 s long,
    3.84 s apart) that overlap [600, 1200) s, counted here from that grid
-   (158); or any other level gets a line. **Under the fork**: mtproc's own
+   (158); or any other level gets a line. **Under the fork**: CRUST's own
    "window masks, decimation level 1: 1 mask(s) passed to aurora" line is
    missing, or aurora's own "window masks: band ...s drops N of M STFT
-   windows" line (its logger, not mtproc's) does not carry that same (158,
+   windows" line (its logger, not CRUST's) does not carry that same (158,
    780);
 4. the all-band mask over chunk 1 does not change every band;
 5. a band mask over the whole record is not skipped in the test band (it
    would leave 0 windows), a mask covering no band's centre is not warned
-   about (by mtproc: aurora does not check that itself, fork or stock), or
+   about (by CRUST: aurora does not check that itself, fork or stock), or
    that run is not identical to the unmasked one in every band.
-   **Under stock**: the skip is not a log line from mtproc naming the mask.
+   **Under stock**: the skip is not a log line from CRUST naming the mask.
    **Under the fork**: the skip is not a warning from aurora's own logger
    naming the band and the floor;
-6. `mtproc.process._band_masks_applied` (the patch, always importable and
+6. `crust.process._band_masks_applied` (the patch, always importable and
    directly tested here regardless of which aurora is installed) does not
    restore aurora's `get_band_for_tf_estimate` (the same object) after a
    run through it and after an exception inside the block.
@@ -113,8 +113,8 @@ The guard: **this test also fails if**, under stock aurora,
 parameters are not (band, dec_level_config, local_stft_obj, remote_stft_obj);
 either regression loop (process_transfer_functions,
 process_transfer_functions_with_weights) stops calling that module-level
-name; or `mtproc.process._check_band_patch` accepts a function with other
-parameter names; under the fork, `mtproc.process.AURORA_WINDOW_MASKS` is not
+name; or `crust.process._check_band_patch` accepts a function with other
+parameter names; under the fork, `crust.process.AURORA_WINDOW_MASKS` is not
 True, `DecimationLevel` does not round-trip a `window_masks` assignment, or
 `transfer_function_helpers` lost `window_mask_for_band`. Either aurora: the
 STFT a band is cut from, recorded here during the unmasked run, does not
@@ -144,9 +144,9 @@ from loguru import logger  # noqa: E402
 
 import aurora  # noqa: E402
 import aurora.pipelines.transfer_function_helpers as tfh  # noqa: E402
-import mtproc.process as mp  # noqa: E402
+import crust.process as mp  # noqa: E402
 from aurora.transfer_function.regression.m_estimator import MEstimator  # noqa: E402
-from mtproc.bands import build_band_scheme  # noqa: E402
+from crust.bands import build_band_scheme  # noqa: E402
 
 logger.remove()  # after aurora's and mth5's imports, which add their own sinks
 logger.add(sys.stderr, level="WARNING", filter=lambda r: not r["name"].startswith(("aurora", "mth5", "mt_")))
@@ -262,8 +262,8 @@ class Recorder:
         return next(level for level, p, _s in self.huber if round(p, 6) == round(period, 6))
 
 
-LOG_NAMES = (("mtproc.process", "aurora.pipelines.transfer_function_helpers")
-            if mp.AURORA_WINDOW_MASKS else ("mtproc.process",))
+LOG_NAMES = (("crust.process", "aurora.pipelines.transfer_function_helpers")
+            if mp.AURORA_WINDOW_MASKS else ("crust.process",))
 
 
 def run(local, remote, masks, leak_free=False, falsify=False):
@@ -277,7 +277,7 @@ def run(local, remote, masks, leak_free=False, falsify=False):
         falsify (bool): Disable the window drop.
 
     Returns:
-        tuple: (tf, the log lines of mtproc.process, plus aurora's own
+        tuple: (tf, the log lines of crust.process, plus aurora's own
         transfer_function_helpers logger under the fork, the Recorder).
     """
     lines: list[str] = []
@@ -491,11 +491,11 @@ def main() -> int:
     # 3. the log: level 1 (and only level 1) reports the lost windows, counted from the grid
     hit, total = level1_windows_in(*BIASED)
     if fork:
-        # mtproc's own line: how many masks were passed to aurora, per level
+        # CRUST's own line: how many masks were passed to aurora, per level
         own_lines = [line for line in band_lines if line.startswith("window masks, decimation level")]
         level_line = [line for line in own_lines if line.startswith(f"window masks, decimation level {TEST_LEVEL}:")]
         assert len(level_line) == 1 and level_line[0].endswith("1 mask(s) passed to aurora"), own_lines
-        # aurora's own line (its logger, not mtproc's): the actual windows dropped for the test band
+        # aurora's own line (its logger, not CRUST's): the actual windows dropped for the test band
         drop_lines = [line for line in band_lines if line.startswith("window masks: band ") and "drops" in line]
         assert drop_lines, band_lines
         m = re.search(r"window masks: band ([\d.]+)s drops (\d+) of (\d+) STFT windows", drop_lines[0])
@@ -521,19 +521,19 @@ def main() -> int:
     # 5. a mask emptying the band is skipped, a mask covering no band is warned about
     assert np.array_equal(empty.impedance.data, z0) and np.array_equal(empty.impedance_error.data, Z["none"][1]), \
         "5. the skipped masks changed the estimate"
-    # mtproc warns about the mask covering no band's centre on either aurora, fork or stock,
+    # CRUST warns about the mask covering no band's centre on either aurora, fork or stock,
     # since aurora leaves that check to the caller (see the comment above
-    # mtproc.process.AURORA_WINDOW_MASKS)
+    # crust.process.AURORA_WINDOW_MASKS)
     assert any("covers no band's centre period" in line and "[0.29, 0.2905]" in line for line in empty_lines), \
         empty_lines
     if fork:
         # aurora's own floor (max(1, min_num_stft_windows)) leaves the whole-record mask's band
-        # unmasked, and aurora logs that itself (not mtproc)
+        # unmasked, and aurora logs that itself (not CRUST)
         aurora_skip = [line for line in empty_lines
                        if "STFT windows (minimum" in line and "band left unmasked" in line]
         assert aurora_skip, empty_lines
         print(f"  5. fork: a mask over the whole record left unmasked by aurora itself ({aurora_skip[0]!r}); "
-              f"mtproc warned about the mask between band centres; every band identical to the unmasked run")
+              f"CRUST warned about the mask between band centres; every band identical to the unmasked run")
     else:
         skip_line = [line for line in empty_lines if f"skipped at {period:.4g} s" in line]
         assert skip_line and "2023-09-21T23:00:00Z" in skip_line[0], empty_lines

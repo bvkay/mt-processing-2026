@@ -17,6 +17,6 @@ docs/*
 
 # working notes for this machine, not part of the package
 HANDOVER.md
-src/mtproc_gui/README.md
+src/crust/gui/README.md
 !docs/upstream_issues.md
 examples/

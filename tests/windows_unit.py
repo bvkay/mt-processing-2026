@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Unit test for mtproc_gui.windows
+Unit test for crust.gui.windows
 
 Checks the window list the GUI tree offers for a record: window lengths per
 sample rate, window placement over runs and gaps, and window labels. Runs on
@@ -35,8 +35,8 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from mtproc_gui.archive import Grid  # noqa: E402
-from mtproc_gui.windows import window_hours, window_label, window_list  # noqa: E402
+from crust.gui.archive import Grid  # noqa: E402
+from crust.gui.windows import window_hours, window_label, window_list  # noqa: E402
 
 T0 = pd.Timestamp("2021-06-29 06:55:49+00:00")
 D02_SAMPLES = 148_564_754  # 41.268 h at 1000 Hz
