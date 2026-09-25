@@ -60,6 +60,20 @@ this run only (`crust.process.process_station(tweaks=...)`, whose docstring
 gives the default in use for each). The flags given become tweaks; with none
 the run uses the defaults, and the resolution prints "tweaks: none".
 
+The band-layout flags are advanced options that keep every band's period
+and change the FFT harmonics it spans (`crust.bands.build_band_scheme`).
+`--window-samples N` sets the FFT window of every decimation level (128
+samples unless the survey's `processing:` block gives `window:`), so each
+band spans N/128 times as many harmonics. `--min-bin N` sets the lowest
+band edge of every decimated level to the first edge of the layout at or
+above harmonic N (the layout's own is 6.4 at 1000 Hz: 10.16 for 10, 12.8
+for 12); raised, it moves the bands at the foot of each level to the top
+of the next.
+In the survey layout the two lowest bands of each level span two harmonics
+each. The resolution prints `window`, `min_bin` and the resolved
+`lowest_harmonic`; the sidecar records the first two in `band_scheme` and
+the third as `lowest_harmonic`.
+
 `--engine mantle` estimates with MANTLE instead of aurora
 (`crust.engine_mantle`): the same processing archives and window, read
 through MANTLE's own MTH5 reader, its robust remote-reference cascade with
@@ -96,6 +110,7 @@ Usage:
         [--min-period S] [--max-period S] [--per-decade N] [--notch "50,150"]
         [--no-filters] [--no-masks | --masks] [--mask-origins LIST] [--mask-scope {role,union}]
         [--tag SUFFIX] [--dry-run]
+        [--window-samples N] [--min-bin N]
         [--taper {boxcar,hamming,hann,dpss}] [--overlap PCT] [--no-prewhiten]
         [--min-windows N] [--max-iterations N] [--redescending-iterations N]
         [--r0 X] [--u0 X] [--tolerance X]
@@ -123,7 +138,7 @@ import pandas as pd
 import yaml
 from loguru import logger
 
-from crust.bands import build_band_scheme
+from crust.bands import build_band_scheme, lowest_harmonic
 from crust.compare import phase_quadrants, plot_comparison
 from crust.ingest import default_archive_path, filters_hash, ingest_site, processing_archive, variant_path, variant_ready
 from crust.masks import FOUND_BY, SCOPE_RULES, load_masks, masks_for_role, remote_masks, union_masks
@@ -135,8 +150,8 @@ ENGINES = ("aurora", "mantle")
 MANTLE_WHITEN = ("none", "diff")  # crust.engine_mantle.WHITEN, spelt here so the parser builds without MANTLE
 MANTLE_MAX_HOURS = 24.0  # crust.engine_mantle.MAX_HOURS, likewise
 # the band-scheme keys this CLI can override; anything else in the survey's
-# `processing:` block (window, factor, notch_fraction) is passed through
-BAND_KEYS = ("min_period", "max_period", "periods_per_decade", "notch_frequencies")
+# `processing:` block (factor, notch_fraction) is passed through
+BAND_KEYS = ("min_period", "max_period", "periods_per_decade", "notch_frequencies", "window", "min_bin")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -170,6 +185,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--tag", default=None, help="suffix appended to the output stem")
     p.add_argument("--dry-run", action="store_true",
                    help="print what this run resolved to and exit, opening nothing")
+    lay = p.add_argument_group("advanced: the band layout (every band keeps its period)")
+    lay.add_argument("--window-samples", type=int, default=None, metavar="N",
+                     help="FFT window in samples on every decimation level (in use: 128, or the survey's window:); "
+                          "each band spans N/128 times the harmonics")
+    lay.add_argument("--min-bin", type=float, default=None, metavar="N",
+                     help="lowest band edge of every decimated level, in FFT harmonics: the first edge of the layout "
+                          "at or above N (in use: the layout's own, 6.4 at 1000 Hz)")
     adv = p.add_argument_group("advanced: the aurora estimator, on every decimation level")
     adv.add_argument("--taper", choices=TAPERS, default=None, help="STFT window (in use: hann; aurora's own is boxcar)")
     adv.add_argument("--overlap", type=float, default=None, metavar="PCT",
@@ -376,7 +398,9 @@ def resolve(args, started) -> dict:
     `sample_rate` and `remote_sample_rate` are `Survey.sample_rate_of` of
     the two sites; the band scheme and the quadrant window use
     `sample_rate`. A local at its own rate (a derived site) starts at
-    `rate_min_period` unless --min-period is given.
+    `rate_min_period` unless --min-period is given. `lowest_harmonic` is
+    the lowest band edge of the decimated levels in FFT harmonics
+    (`crust.bands.lowest_harmonic` of the band kwargs at `sample_rate`).
 
     Args:
         args (argparse.Namespace): Parsed arguments.
@@ -395,6 +419,8 @@ def resolve(args, started) -> dict:
         ("max_period", args.max_period),
         ("periods_per_decade", args.per_decade),
         ("notch_frequencies", None if args.notch is None else parse_notch(args.notch)),
+        ("window", getattr(args, "window_samples", None)),
+        ("min_bin", getattr(args, "min_bin", None)),
     ):
         if value is not None:
             scheme_kwargs[key] = value
@@ -479,6 +505,7 @@ def resolve(args, started) -> dict:
         "tag": args.tag,
         "stem": run_stem(args.local, args.remote, started, args.tag),
         "scheme_kwargs": scheme_kwargs,
+        "lowest_harmonic": lowest_harmonic(local_rate, **scheme_kwargs),
         # aurora estimates a TF row for every output channel it is asked for;
         # hz on a broadband site (no sensor, an open input) gives a meaningless
         # tipper, so the channels the survey declares are requested. A site
@@ -663,6 +690,8 @@ def build_sidecar(res: dict, args, started, finished, edi_path: Path, png_path: 
                          "remote": res.get("remote_sample_rate", survey.sample_rate)},
         "derived_from": {local: res.get("local_parent"), remote: res.get("remote_parent")},
         "band_scheme": dict(res["scheme_kwargs"]),
+        # the lowest band edge of the decimated levels, in FFT harmonics of the level
+        "lowest_harmonic": res.get("lowest_harmonic"),
         # the full effective set, defaults filled in, so the sidecar says
         # "taper: hann" on a run without --taper too
         "tweaks": {**ESTIMATOR_DEFAULTS, **res["tweaks"]},
@@ -762,7 +791,10 @@ def print_resolution(res: dict) -> None:
         value = res["scheme_kwargs"][key]
         if key == "notch_frequencies":
             value = ", ".join(f"{f:g}" for f in value)
+        elif key == "min_bin" and value is None:
+            value = "none (the layout's own)"
         print(f"{key}: {value}")
+    print(f"lowest_harmonic: {res['lowest_harmonic']:.4g}")
     extra = {k: v for k, v in res["scheme_kwargs"].items() if k not in BAND_KEYS}
     for key, value in extra.items():
         print(f"{key}: {value}")
