@@ -82,7 +82,22 @@ Usage:
     command does not put --masks after the runner's --no-masks, or whose
     inputs name no masks hash; with runner.masks on, a config [--no-masks]
     whose inputs name one; a stage 3 [--masks] job built for A rr B while
-    masks.yaml names neither, or not built once it names B.
+    masks.yaml names neither, or not built once it names B;
+
+(10) a MANTLE config is handled wrongly: with runner.masks on, a config
+     `mantle: [--engine, mantle]` does not give `rr_masks_on` False,
+     `config_engine` "mantle" ("aurora" for the default and a [--taper]
+     config), a command carrying exactly one --no-masks before --engine
+     mantle, and inputs without any ":m" hash; with runner.masks off its
+     command does not carry exactly one --no-masks; stage 3 on A (best
+     remote B, masks.yaml empty) does not build the mantle job beside the
+     other configs; the dry run over the synthetic plan with that config does
+     not list its stage 3 jobs as "[--engine mantle]" and count them; or
+     `move_products` on a run whose sidecar names a report JSON and a
+     fine-grid EDI (synthetic files in <workspace>/tf named for the job)
+     does not move those two into <campaign>/tf/ beside the EDI, sidecar and
+     figure, returning their new paths under `mantle_report` and
+     `mantle_fine_edi`.
 """
 
 from __future__ import annotations
@@ -516,12 +531,63 @@ def test_inputs_masks_both_sites() -> None:
     print(f"  stage 3 with no masks.yaml entry for A or B: {none}; with one for B: {some}")
 
 
+def test_mantle_config() -> None:
+    root = ROOT / "mantle"
+    survey_yaml = make_survey(root)
+    configs = {"mantle": ["--engine", "mantle"], "hamming": ["--taper", "hamming"]}
+    runner_on = {"minutes_per_job": {"rr": 8, "variant": 8, "stack": 1}, "min_available_gb": 0.2, "masks": True}
+    on = cp.Campaign(survey_yaml, cp.load_plan(make_plan(root, configs=configs, runner=runner_on)), parallel=2,
+                     create=False)
+    assert on.config_engine("mantle") == "mantle" and on.config_engine("hamming") == "aurora", on.plan.configs
+    assert on.config_engine("default") == "aurora"
+    assert not on.rr_masks_on("mantle") and on.rr_masks_on("hamming") and on.rr_masks_on("default")
+    job = on.rr_job(3, "A", "B", "mantle", "s3_A_rr-B_mantle")
+    assert job.cmd.count("--no-masks") == 1 and job.cmd.index("--no-masks") < job.cmd.index("--engine"), job.cmd
+    assert job.cmd[job.cmd.index("--engine") + 1] == "mantle", job.cmd
+    assert ":m" not in on.inputs(job), on.inputs(job)
+    aurora_job = on.rr_job(3, "A", "B", "hamming", "s3_A_rr-B_hamming")
+    assert "--no-masks" not in aurora_job.cmd and ":m" in on.inputs(aurora_job), (aurora_job.cmd, on.inputs(aurora_job))
+    off = cp.Campaign(survey_yaml, cp.load_plan(make_plan(root / "off", configs=configs)), parallel=2, create=False)
+    off_job = off.rr_job(3, "A", "B", "mantle", "s3_A_rr-B_mantle")
+    assert off_job.cmd.count("--no-masks") == 1, off_job.cmd
+    off.best_remotes = lambda sites, persist=True, df=None: {s: {"remote": "B"} for s in sites}
+    (root / "off" / "masks.yaml").write_text("", encoding="utf-8")
+    built = [j.config for j in off.stage3_jobs(["A"])]
+    assert built == ["mantle", "hamming"], built
+    print(f"  runner.masks on: {job.cmd[-6:]}, inputs {on.inputs(job)!r}; off: {off_job.cmd[-6:]}; stage 3 {built}")
+
+    out, text = quiet(off.dry_run, [3], off.plan.sites)
+    listed = [line for line in text.splitlines() if "[--engine mantle]" in line]
+    assert len(listed) == 5 and out["counts"][3]["rr"] == 10, (len(listed), out["counts"], text)
+    print(f"  dry run: {len(listed)} stage 3 rows '[--engine mantle]', stage 3 counts {out['counts'][3]}")
+
+    # move_products takes the report and the fine EDI the sidecar names along with the EDI
+    c = cp.Campaign(survey_yaml, cp.load_plan(make_plan(root / "move", configs=configs)), parallel=2, create=True)
+    tf_dir = c.survey.workspace / "tf"
+    tf_dir.mkdir(parents=True, exist_ok=True)
+    stem = "A_rr-B_20260925-0900_syn-mantle"
+    files = {key: tf_dir / name for key, name in (
+        ("edi", f"{stem}.edi"), ("sidecar", f"{stem}.json"), ("figure", f"{stem}_vs_lemimt.png"),
+        ("mantle_report", f"{stem}.mantle_report.json"), ("mantle_fine_edi", f"{stem}_fine.edi"))}
+    for path in files.values():
+        path.write_text("{}" if path.suffix == ".json" else "x", encoding="utf-8")
+    files["sidecar"].write_text(json.dumps({"engine": "mantle", "mantle_report": files["mantle_report"].name,
+                                            "mantle_fine_edi": files["mantle_fine_edi"].name}), encoding="utf-8")
+    move_job = c.rr_job(3, "A", "B", "mantle", "s3_A_rr-B_mantle")
+    moved = c.move_products(move_job, {k: str(files[k]) for k in ("edi", "sidecar", "figure")})
+    for key, path in files.items():
+        dest = c.dir / "tf" / path.name
+        assert dest.exists() and not path.exists(), (key, path, dest)
+        assert Path(moved[key]) == dest, (key, moved.get(key), dest)
+    print(f"  move_products: {sorted(moved)} moved into {c.dir / 'tf'}")
+
+
 def main() -> int:
     """Run every test; return 1 when any failed."""
     print(__doc__.split("**This test fails if**")[1].strip())
     print()
     tests = [test_plan_parser, test_overlap_rule, test_stacks, test_dry_run_counts, test_runner_and_resume,
-             test_filter_check, test_parse_products, test_inputs_masks_both_sites]
+             test_filter_check, test_parse_products, test_inputs_masks_both_sites, test_mantle_config]
     failed = 0
     for t in tests:
         print(t.__name__)

@@ -205,10 +205,18 @@ a loaded window (raw behind filtered, time series and PSD) and drives
 `<survey>/filters.yaml`, a
 Process tab (rows of station and remote, window bar, queue buttons, options
 and queue) that queues the scripts
-above as subprocesses (Add to queue, then Run queue as a separate step),
+above as subprocesses (Add to queue, then Run queue as a separate step;
+its Engine combo, aurora or mantle, becomes `--engine mantle`, the queue
+label carries "[mantle]" and, when the pair declares masks, `--no-masks`
+goes with it and the status line says so),
 a Build MTH5 button on the Time Series tab for a site with no archive yet,
 a satellite basemap under the Process tab's site map, fetched when a survey
-is opened, and a View EDIs tab drawn with mtpy-v2. **No product** (archive, transfer
+is opened, and a View EDIs tab drawn with mtpy-v2, which labels each product
+by its sidecar's engine ("[aurora]", "[mantle]", "[mantle fine grid]") and,
+for a MANTLE product, draws its verdict strip under the resistivity panels
+from `<stem>.mantle_report.json` (one row per verdict word over the periods
+it covers), shows the sidecar's verdict word counts and opens the report's
+notes as plain text (`src/mtproc_gui/mantle_products.py`). **No product** (archive, transfer
 function, EDI, report figure) is computed in the GUI, and no PNG is ever
 displayed in it. Full detail: `src/mtproc_gui/README.md`.
 
@@ -223,6 +231,8 @@ running it):
 
 ```bash
 QT_QPA_PLATFORM=offscreen python tests/gui_smoke.py
+QT_QPA_PLATFORM=offscreen python tests/process_tab_unit.py  # the Process tab's masks switch and the engine combo (mantle: --no-masks with --engine mantle, the status line)
+python tests/campaign_unit.py        # campaign.py: plan, overlap rule, stacks, resume, dry-run counts, runner, filter check, masks signature, a MANTLE stage 3 config
 python tests/windows_unit.py
 python tests/segment_unit.py
 python tests/psd_ladder_unit.py

@@ -45,6 +45,13 @@ post-processing step in `_apply_phase_range`. The default keeps mtpy's fold;
 the unfolded choice shifts every yx curve back by -180, so a physical yx
 sits near -135 and a mode 180 deg out of quadrant shows as such.
 
+A MANTLE product carries typed verdicts (`mtproc_gui.mantle_products`).
+`draw(..., verdicts=(label, ranges))` shortens each resistivity axes from
+the bottom and puts a strip there, one row per verdict word coloured by
+`mantle_products.colour_of`, spanning the periods the word's verdicts cover
+on the same period axis, with the words as its row labels and a legend. The
+strip axes carry the label `VERDICT_STRIP`.
+
 @author: ben kay (ben@auscope.org.au)
 
 :license: MIT
@@ -57,11 +64,16 @@ from contextlib import contextmanager
 from pathlib import Path
 
 import matplotlib.pyplot as plt
+from matplotlib.patches import Patch
 from matplotlib.ticker import MultipleLocator
 from mtpy import MT
 from mtpy.imaging import PlotMTResponse, PlotMultipleResponses
 
-from mtproc_gui import theme
+from mtproc_gui import mantle_products, theme
+
+VERDICT_STRIP = "mantle verdicts"  # the label of every verdict-strip axes on the figure
+STRIP_ROW = 0.028  # figure fraction per verdict word
+STRIP_GAP = 0.012  # figure fraction between the strip and the resistivity axes above it
 
 # the three "Plot" radio buttons, in order
 CHOICES = ("rho", "pt", "tipper")
@@ -226,9 +238,58 @@ def _apply_rho_limits(plotter, rho_limits: tuple[float | None, float | None]) ->
     return None
 
 
+def _draw_verdict_strip(plotter, figure, label: str, ranges: dict) -> list:
+    """Put a verdict strip under each resistivity axes `plotter` has drawn.
+
+    Each resistivity axes (`axr`, and `axr2` on the compare overlay) gives up
+    the strip's height at its bottom; the strip shares its period axis. One
+    row per word, top to bottom in `ranges`' order, holds a bar per period
+    range in the word's colour; the words are the row labels and a legend
+    names them again, titled with `label` on the first strip.
+
+    Args:
+        plotter: The mtpy plotter after `.plot()`.
+        figure: The figure drawn on.
+        label (str): The product the verdicts belong to.
+        ranges (dict): `mantle_products.word_ranges` of its report.
+
+    Returns:
+        list: The strip axes made, in the order of the resistivity axes.
+    """
+    words = list(ranges)
+    if not words:
+        return []
+    height = STRIP_ROW * len(words)
+    strips = []
+    for k, axes in enumerate((getattr(plotter, "axr", None), getattr(plotter, "axr2", None))):
+        if axes is None:
+            continue
+        box = axes.get_position()
+        axes.set_position([box.x0, box.y0 + height + STRIP_GAP, box.width, box.height - height - STRIP_GAP])
+        strip = figure.add_axes([box.x0, box.y0, box.width, height], sharex=axes, label=VERDICT_STRIP)
+        for row, word in enumerate(words):
+            y0 = 1.0 - (row + 1) / len(words)
+            spans = [(lo, hi - lo) for lo, hi in ranges[word]]
+            strip.broken_barh(spans, (y0 + 0.08 / len(words), 0.84 / len(words)),
+                              color=mantle_products.colour_of(word), alpha=0.9, linewidth=0)
+        strip.set_ylim(0.0, 1.0)
+        strip.set_yticks([1.0 - (row + 0.5) / len(words) for row in range(len(words))])
+        strip.set_yticklabels(words, fontsize=6)
+        strip.tick_params(axis="x", labelbottom=False, length=2)
+        strip.tick_params(axis="y", length=0)
+        strip.grid(True, axis="x", alpha=0.3)
+        handles = [Patch(color=mantle_products.colour_of(w), label=w) for w in words]
+        strip.legend(handles=handles, loc="upper right", ncol=len(words), fontsize=6, frameon=False,
+                     handlelength=1.0, borderaxespad=0.1, title=f"MANTLE verdicts: {label}" if k == 0 else None,
+                     title_fontsize=6)
+        strips.append(strip)
+    return strips
+
+
 def draw(figure, items, choice: str = "rho", title: str = "", hint: str = "",
          phase_range: str = PHASE_FOLDED,
-         rho_limits: tuple[float | None, float | None] = (None, None)):
+         rho_limits: tuple[float | None, float | None] = (None, None),
+         verdicts: tuple[str, dict] | None = None):
     """Draw transfer functions on `figure`.
 
     With nothing drawable the figure is left empty with `hint` written
@@ -248,6 +309,10 @@ def draw(figure, items, choice: str = "rho", title: str = "", hint: str = "",
         rho_limits (tuple[float | None, float | None]): (min, max) in Ohm m;
             None on a side keeps mtpy's automatic value (`_apply_rho_limits`).
             An invalid pair is not applied and is reported in `problems`.
+        verdicts (tuple[str, dict], optional): ``(label, ranges)`` of a
+            MANTLE product among `items` (`mantle_products.word_ranges`),
+            drawn as a strip under each resistivity axes
+            (`_draw_verdict_strip`).
 
     Returns:
         tuple[list[str], list[str]]: The labels drawn and the problems met.
@@ -305,6 +370,8 @@ def draw(figure, items, choice: str = "rho", title: str = "", hint: str = "",
                 rho_problem = _apply_rho_limits(plotter, rho_limits)
                 if rho_problem:
                     problems.append(rho_problem)
+                if verdicts is not None and verdicts[1]:
+                    _draw_verdict_strip(plotter, figure, verdicts[0], verdicts[1])
             drawn = [label for label, _mt in loaded]
         except Exception as exc:  # mtpy refused the combination
             figure.clear()

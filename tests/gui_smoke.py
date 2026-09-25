@@ -145,7 +145,7 @@ Usage:
      queue", "Reset queue", "Build stack" left to right on one row, and no
      "Timing check", "Site QC figures" or "Fetch basemap" button anywhere on
      the tab (nor the attributes or queue methods behind them); below them
-     the Aurora options, their "Advanced (aurora estimator)" block
+     the run options, their "Advanced (aurora estimator)" block
      collapsed; below those the queue table; the site map right of the
      table and below the bar, the stack builder under the map and the
      Products list under that; in the bar, the status line centred (3 px)
@@ -294,7 +294,8 @@ Usage:
      (tree and window), gui_timeseries_3s.png (a 3 s zoom), gui_spectra.png,
      gui_spectrogram.png, gui_coherence.png, gui_metadata.png,
      gui_process.png, gui_filters.png (the preview of (26), notch + cp on
-     D02's fifth window), gui_edis.png, nine in all; or any exception is
+     D02's fifth window), gui_edis.png, gui_process_mantle.png (35) and
+     gui_edis_mantle.png (36), eleven in all; or any exception is
      raised inside a Qt slot on the way (PySide6 prints those and carries
      on; `sys.excepthook` collects them here); or the real
      `surveys/curnamona_cube/survey.yaml` is not identical at the end;
@@ -674,6 +675,42 @@ Usage:
      window), none counted in (17); the level-5 band and the two 1 min bands
      to the scratch copy's folder (gui_crosspower_level5.png,
      gui_crosspower_60s_level2.png and gui_crosspower_60s_level3.png).
+(35) the Process tab's engine combo does not offer exactly "aurora" and
+     "mantle" with aurora chosen and the aurora estimator block enabled; or
+     "mantle" chosen does not disable that block and put "engine mantle: the
+     aurora estimator options above do not reach it" on the status line
+     (D02 and E08 declare no masks, so no "--no-masks is passed" phrase);
+     or Add to queue with mantle chosen and r0 moved to 2.0 meanwhile does
+     not queue (never run: the job must stay "queued" with the runner idle)
+     an argv ending exactly "--engine mantle", without any estimator flag or
+     --no-masks, labelled from "process_rr D02 rr-E08 [mantle]" with Options
+     "--engine mantle" in the queue table; or "aurora" chosen back does not
+     re-enable the block, take the note off the status line and, with r0 put
+     back, pass no flag again; the tab shot to work/qc/gui_process_mantle.png
+     with mantle chosen and its row queued;
+(36) the View EDIs list does not label the phase 1 head-to-head products
+     by their sidecar's engine: the h2h-mantle EDI "... [mantle]", the
+     h2h-aurora EDI "... [aurora]" (a sidecar without `engine`), the MANTLE
+     fine-grid EDI "... h2h-mantle [mantle fine grid]" (the product stem's
+     label, its own stem ending _fine) and D02_rr-E08.edi (no sidecar) by
+     its file name alone; or quick view on the mantle row, with the D02 pair
+     of (12) still ticked, does not draw exactly one verdict strip axes
+     (label `tf_plot.VERDICT_STRIP`) under each of the two resistivity axes
+     -- sharing its log period axis, its top `STRIP_GAP` below that axes'
+     bottom and its bottom above the phase axes -- with the row labels
+     ["ok", "snr_limited"] top to bottom, one bar collection per row whose
+     period extent equals the shortest and longest period of that word's
+     `freq_hz` scopes pooled over the report's verdicts (read here from
+     <stem>.mantle_report.json with json alone) within 1e-6 relative and
+     whose face colour is #66bb6a for ok and #ffa726 for snr_limited, and a
+     legend naming the two words, the first strip's legend titled "MANTLE
+     verdicts: ..."; or the label under the tree does not read the
+     sidecar's engine_config.verdict_words ("ok 1, snr_limited 8") and
+     "snr gate ran: True"; or "MANTLE notes..." is not enabled and does not
+     open a visible dialog whose text carries "site D02" and the report's
+     first note verbatim; or quick view moved to the aurora row does not
+     leave the figure without a strip, the label empty and the button
+     disabled; the tab shot to work/qc/gui_edis_mantle.png on the mantle row.
 """
 
 from __future__ import annotations
@@ -711,7 +748,7 @@ sys.path.insert(0, str(REPO / "src"))
 
 from mtproc.survey import Survey  # noqa: E402
 from mtproc.timefreq import BANDS_S, line_excess  # noqa: E402
-from mtproc_gui import channels_column, metadata_edit, theme  # noqa: E402
+from mtproc_gui import channels_column, metadata_edit, tf_plot, theme  # noqa: E402
 from mtproc_gui.app import MainWindow  # noqa: E402
 from mtproc_gui.jobs import JobRunner  # noqa: E402
 
@@ -794,6 +831,13 @@ IMPORT_KEYS = {("A03", "dipole_length_ey"): 48.0, ("A03", "notes"): "moved 20 m 
 NEW_SURVEY_DIR = SCRATCH.parent / "gui_new_survey"  # (22): the synthetic raw data and its survey
 SYNTHETIC = {"S01": ("36", "2.1"), "S02": ("112", "2.3")}  # serial, firmware in the headers
 NEW_SURVEY_CHANNELS = "Ex Ey Bx By Bz"  # (22): the dialog's channels combo, moved off its default
+# (35), (36): the engine combo's items and the phase 1 MANTLE head-to-head products in work/tf
+ENGINES = ["aurora", "mantle"]
+MANTLE_EDI = WORK / "tf" / "D02_rr-E08_20260925-0820_h2h-mantle.edi"
+AURORA_EDI = WORK / "tf" / "D02_rr-E08_20260925-0819_h2h-aurora.edi"
+STRIP_WORDS = ["ok", "snr_limited"]  # the words the h2h-mantle report carries, in the strip's order
+STRIP_COLOURS = {"ok": "#66bb6a", "snr_limited": "#ffa726"}  # theme.OK_COLOUR, theme.WARN_COLOUR
+MANTLE_NOTE = "engine mantle: the aurora estimator options above do not reach it"
 
 
 SLOT_ERRORS: list[str] = []
@@ -2526,6 +2570,43 @@ def main() -> int:
               f"...{' '.join(tweaked[7:])}, Options {table_row(table, table.rowCount() - 2)[4]!r}; "
               f"put back: none")
 
+        # ------------------------------------ (35) the engine combo: MANTLE
+        engine = process.options.engine_combo
+        assert [engine.itemText(i) for i in range(engine.count())] == ENGINES, [engine.itemText(i) for i in range(engine.count())]
+        assert engine.currentText() == ENGINES[0] and advanced.isEnabled(), (engine.currentText(), advanced.isEnabled())
+        advanced.toggle.click()
+        pump(app)
+        advanced.r0_spin.setValue(2.0)  # moved off its default: it must not reach a MANTLE run
+        engine.setCurrentText("mantle")
+        pump(app)
+        assert not advanced.isEnabled(), "the aurora estimator block stayed enabled with mantle chosen"
+        status = process.status_label.text()
+        assert MANTLE_NOTE in status and "--no-masks" not in status, status
+        process.add_button.click()
+        pump(app)
+        mantle_argv = recorded[-1]
+        assert mantle_argv[7:] == ["--engine", "mantle"], mantle_argv[7:]
+        assert not ESTIMATOR_FLAGS & set(mantle_argv) and "--no-masks" not in mantle_argv, mantle_argv
+        mantle_job = runner.jobs[-1]
+        assert mantle_job.label.startswith(f"process_rr {SITE} rr-{REMOTE} [mantle]"), mantle_job.label
+        assert mantle_job.options == "--engine mantle", mantle_job.options
+        assert mantle_job.status == "queued" and not runner.running, "the MANTLE job must only be queued"
+        added_row("--engine mantle")
+        shoot(app, window, "process_mantle", process)
+        engine.setCurrentText("aurora")
+        pump(app)
+        assert advanced.isEnabled() and MANTLE_NOTE not in process.status_label.text(), process.status_label.text()
+        advanced.r0_spin.setValue(1.5)
+        advanced.toggle.click()
+        pump(app)
+        process.add_button.click()
+        pump(app)
+        assert not [a for a in recorded[-1] if a.startswith("--")], recorded[-1]
+        added_row("defaults")
+        print(f"(35) engine combo {ENGINES}: mantle -> ...{' '.join(mantle_argv[7:])} (r0 2.0 meanwhile passed "
+              f"nothing), label {mantle_job.label!r}, Options {mantle_job.options!r}, status line {status!r}; "
+              f"back to aurora: block enabled, no note, no flag")
+
         for name in STACK_MEMBERS:
             items = process.stack_builder.list.findItems(name, Qt.MatchExactly)
             assert items, f"{name} is not a stack candidate"
@@ -3071,6 +3152,85 @@ def main() -> int:
     # ------------------------------------------------------ (17) screenshots
     shoot(app, window, "edis", edis)
 
+    # ------------------------------------- (36) the MANTLE product on View EDIs
+    print("(36) View EDIs with the MANTLE product:")
+    import json
+    from matplotlib.colors import to_hex
+
+    assert MANTLE_EDI.exists() and AURORA_EDI.exists(), (MANTLE_EDI, AURORA_EDI)
+    edis.rho_radio.setChecked(True)
+    pump(app, 0.6)
+    leaves = {item.text(0): item for item in edis._leaves()}
+    by_name = {Path(str(item.data(0, Qt.UserRole))).name: label for label, item in leaves.items()}
+    mantle_label = by_name.get(MANTLE_EDI.name)
+    aurora_label = by_name.get(AURORA_EDI.name)
+    fine_label = by_name.get(MANTLE_EDI.stem + "_fine.edi")
+    assert mantle_label and mantle_label.endswith(" [mantle]"), mantle_label
+    assert aurora_label and aurora_label.endswith(" [aurora]"), aurora_label
+    assert fine_label == mantle_label[: -len(" [mantle]")] + " [mantle fine grid]", (fine_label, mantle_label)
+    assert by_name.get(f"{SITE}_rr-{REMOTE}.edi") == f"{SITE}_rr-{REMOTE}.edi", by_name.get(f"{SITE}_rr-{REMOTE}.edi")
+    sidecar = json.loads(MANTLE_EDI.with_suffix(".json").read_text(encoding="utf-8"))
+    report = json.loads(MANTLE_EDI.with_name(sidecar["mantle_report"]).read_text(encoding="utf-8"))
+    scopes: dict[str, list[float]] = {}
+    for verdict in report["verdicts"]:
+        scopes.setdefault(verdict["word"], []).extend(1.0 / f for f in verdict["freq_hz"])
+    want = {word: (min(p), max(p)) for word, p in scopes.items()}
+    assert sorted(want) == sorted(STRIP_WORDS), sorted(want)
+    counts = sidecar["engine_config"]["verdict_words"]
+    print(f"  list: {mantle_label!r}, {aurora_label!r}, {fine_label!r}, {SITE}_rr-{REMOTE}.edi plain; "
+          f"report scopes {({w: (f'{a:.3g}', f'{b:.3g}') for w, (a, b) in want.items()})} s, counts {counts}")
+
+    edis.quick_check.setChecked(True)
+    pump(app, 0.6)
+    before = edis.draws
+    edis.tree.setCurrentItem(leaves[mantle_label])
+    wait_for_draw(app, edis, before)
+    pump(app, 0.5)
+    strips = [ax for ax in fig.axes if ax.get_label() == tf_plot.VERDICT_STRIP]
+    phase_top = max(ax.get_position().y1 for ax in fig.axes if "Phase" in ax.get_ylabel())
+    assert len(strips) == 2, f"{len(strips)} verdict strips for the two resistivity axes"
+    for strip in strips:
+        labels = [t.get_text() for t in strip.get_yticklabels()]
+        assert labels == STRIP_WORDS and strip.get_xscale() == "log", (labels, strip.get_xscale())
+        box = strip.get_position()
+        above = [ax for ax in fig.axes if ax is not strip and abs(ax.get_position().y0 - (box.y1 + tf_plot.STRIP_GAP)) < 1e-6
+                 and abs(ax.get_position().x0 - box.x0) < 1e-6]
+        assert len(above) == 1 and above[0] in strip.get_shared_x_axes().get_siblings(strip), above
+        assert box.y0 >= phase_top - 1e-9, (box.y0, phase_top)
+        assert len(strip.collections) == len(STRIP_WORDS), len(strip.collections)
+        for coll, word in zip(strip.collections, STRIP_WORDS):
+            xs = np.concatenate([path.vertices[:, 0] for path in coll.get_paths()])
+            got = (float(xs.min()), float(xs.max()))
+            assert np.allclose(got, want[word], rtol=1e-6), (word, got, want[word])
+            assert to_hex(coll.get_facecolor()[0]) == STRIP_COLOURS[word], (word, to_hex(coll.get_facecolor()[0]))
+        legend = strip.get_legend()
+        assert legend is not None and [t.get_text() for t in legend.get_texts()] == STRIP_WORDS, legend
+    assert strips[0].get_legend().get_title().get_text().startswith("MANTLE verdicts: "), \
+        strips[0].get_legend().get_title().get_text()
+    text = edis.mantle_label.text()
+    assert f"ok {counts['ok']}, snr_limited {counts['snr_limited']}" in text and "snr gate ran: True" in text, text
+    assert edis.notes_button.isEnabled(), "MANTLE notes... is disabled on a mantle product"
+    dialog = edis.show_notes()
+    pump(app, 0.3)
+    notes = edis._notes_view.toPlainText()
+    assert dialog is not None and dialog.isVisible(), "the notes dialog is not visible"
+    assert f"site {SITE}" in notes and report["notes"][0] in notes, notes[:300]
+    dialog.close()
+    pump(app, 0.2)
+    shoot(app, window, "edis_mantle", edis)
+    print(f"  quick view on {mantle_label!r}: 2 strips {STRIP_WORDS}, extents {want}, colours "
+          f"{STRIP_COLOURS}; label {text!r}; notes dialog {len(notes.splitlines())} lines")
+
+    before = edis.draws
+    edis.tree.setCurrentItem(leaves[aurora_label])
+    wait_for_draw(app, edis, before)
+    pump(app, 0.5)
+    assert not [ax for ax in fig.axes if ax.get_label() == tf_plot.VERDICT_STRIP], "a strip on an aurora row"
+    assert edis.mantle_label.text() == "" and not edis.notes_button.isEnabled(), edis.mantle_label.text()
+    print(f"  quick view on {aurora_label!r}: no strip, label empty, notes disabled")
+    edis.quick_check.setChecked(False)
+    pump(app, 0.6)
+
     # ------------------------------------------------- (22) New survey...
     print("(22) New survey... over a synthetic data root:")
     sys.path.insert(0, str(REPO / "tests"))
@@ -3610,7 +3770,7 @@ def main() -> int:
     mixed_instruments(app, window)
     crosspower_check(app, window)  # (34)
 
-    assert len(SHOTS) == 9, f"{len(SHOTS)} screenshots, expected 9: {SHOTS}"
+    assert len(SHOTS) == 11, f"{len(SHOTS)} screenshots, expected 11: {SHOTS}"
     assert SURVEY_YAML.read_bytes() == REAL_YAML, "the real surveys/curnamona_cube/survey.yaml changed"
     print("\nthe real survey.yaml is unchanged; screenshots:")
     for path in SHOTS:
