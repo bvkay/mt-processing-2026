@@ -32,7 +32,9 @@ its amplitude there; a derived run does not start on a whole second, 12 s
 (the 11.1 s reach of the 10 x 10 x 10 FIR stages, rounded up to the second)
 after its source run's first whole second, or ends within 11.1 s of the
 source run's end; the run comment does not name the filtered variant it
-was decimated from; any source channel's metadata other than sample rate
+was decimated from; a derived run group's `mth5_type` attribute is not
+exactly "Run", the source's (MANTLE's reader matches it case-sensitively),
+after the first build or after --force; any source channel's metadata other than sample rate
 and time period (dipole length, azimuth, units, the applied-filter list)
 differs in S01L, or its filter chain does (each stage's type, name, gain,
 units, and the coil table's frequencies, amplitudes and phases), or
@@ -53,7 +55,9 @@ rates.
 The mutation: with `decimate_array` replaced by plain subsampling, x[::1000]
 (no anti-alias filter), the 0.7 Hz criterion trips (it comes back near
 100 %) and the 100 s and 20 s criteria still pass; the test checks both,
-so the 0.7 Hz criterion is shown able to fail.
+so the 0.7 Hz criterion is shown able to fail. With the run metadata copied
+through `_metadata_copy` (the channels' copy, whose class default gives
+"run"), the run groups read "run" and the `mth5_type` criterion trips.
 """
 
 from __future__ import annotations
@@ -217,6 +221,23 @@ def read_runs(path: Path, station: str) -> dict:
         m.close_mth5()
 
 
+def run_types(path: Path, station: str) -> dict[str, str]:
+    """Return the `mth5_type` attribute of each run group (sr...) of a station, read with h5py."""
+    import h5py
+
+    with h5py.File(path, "r") as f:
+        for survey in f["Experiment/Surveys"]:
+            stations = f[f"Experiment/Surveys/{survey}/Stations"]
+            if station in stations:
+                out = {}
+                for name, group in stations[station].items():
+                    if name.startswith("sr"):
+                        value = group.attrs.get("mth5_type")
+                        out[name] = value.decode() if isinstance(value, bytes) else str(value)
+                return out
+    return {}
+
+
 def sine_failures(path: Path) -> dict[str, list[str]]:
     """Check the sines of a derived archive; return the failures per criterion ("100 s", "20 s", "0.7 Hz")."""
     failures = {"100 s": [], "20 s": [], "0.7 Hz": []}
@@ -310,6 +331,10 @@ def main() -> None:
         assert f"decimated from {source.name} {sid}" in run["comment"], run["comment"]
         print(f"  {rid} <- {sid}: source starts {srun['start']}, derived {run['start']} (+12 s from the "
               f"second), ends {run['end']} (source {srun['end']})")
+    types, source_types = run_types(out_path, DERIVED), run_types(source, SITE)
+    assert set(source_types.values()) == {"Run"}, source_types
+    assert types == {"sr1_0001": "Run", "sr1_0002": "Run"}, types
+    print(f"  run groups' mth5_type: derived {types}, source {source_types}")
 
     failures = sine_failures(out_path)
     assert not any(failures.values()), failures
@@ -356,7 +381,8 @@ def main() -> None:
     for rid, run in read_runs(out_path, DERIVED).items():
         for comp, y in run["channels"].items():
             assert np.array_equal(y, derived[rid]["channels"][comp]), (rid, comp)
-    print("  kept without --force (mtime unchanged); rebuilt with --force, the same samples")
+    assert run_types(out_path, DERIVED) == types, run_types(out_path, DERIVED)
+    print("  kept without --force (mtime unchanged); rebuilt with --force, the same samples and run types")
 
     # process_rr.py at the derived rate
     def dry(local, *extra):
@@ -386,6 +412,16 @@ def main() -> None:
     tripped = sine_failures(mutant)
     assert tripped["0.7 Hz"] and not tripped["100 s"] and not tripped["20 s"], tripped
     print(f"  mutation x[::1000]: the 0.7 Hz criterion trips ({tripped['0.7 Hz'][0]}), 100 s and 20 s still pass")
+
+    # the mutation of the run metadata: the channels' copy, whose class default types the run "run"
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    module._run_metadata = module._metadata_copy
+    typed = SCRATCH / "work" / "mutant_types" / f"{DERIVED}.h5"
+    module.write_derived(source, SITE, typed, 1.0)
+    mutant_types = run_types(typed, DERIVED)
+    assert mutant_types and set(mutant_types.values()) != {"Run"}, mutant_types
+    print(f"  mutation _run_metadata = _metadata_copy: the mth5_type criterion trips ({mutant_types})")
 
 
 if __name__ == "__main__":
