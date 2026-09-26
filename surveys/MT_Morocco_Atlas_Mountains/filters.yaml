@@ -162,6 +162,8 @@ D01:
     harmonics: 2
     q: 70.0
     passes: 1
+    extra:
+    - 82.0
 D03:
 - notch:
     f0: 50.0
@@ -497,6 +499,19 @@ C05:
     passes: 2
     extra:
     - 99.0
+- burst:
+    threshold: 12.0
+    min_len_s: 0.05
+    pad_s: 0.1
+    taper_s: 0.05
+    reference:
+    - ex
+    - ey
+    channels:
+    - ex
+    - ey
+    - hx
+    - hy
 C04:
 - mains:
     f0: 50.0
@@ -782,3 +797,22 @@ B27:
     harmonics: 9
     q: 30.0
     passes: 2
+D15:
+- notch:
+    f0: 50.0
+    harmonics: 9
+    q: 50.0
+    passes: 2
+- notch:
+    f0: 34.3
+    harmonics: 1
+    q: 250.0
+    passes: 1
+    extra:
+    - 37.4
+    - 40.5
+    - 45.3
+    - 59.4
+    - 62.5
+    - 65.7
+    - 82.0

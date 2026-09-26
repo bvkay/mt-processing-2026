@@ -16,8 +16,11 @@ description: >
   Line C round 2: every site rr every concurrent site with aurora (default),
   leave-one-out magnetic stacks for every group, then on each site's best
   remote the masked, MANTLE full-window and per-site-window products.
-  Decisions from the 25 Sep diagnoses: C05 yx from 27 Sep 05:10-09:16 UTC
-  only (ey channel fault before that), C19's remote is C22 (C21new has a
+  Decisions from the 25 Sep diagnoses: C05 yx from 27 Sep 07:00-09:15 UTC
+  only (ey channel fault before that; the whole yx curve ships, the student
+  masks its long-period end; C05's filters.yaml chain gained a burst stage
+  gating all four channels on 26 Sep, so every job with C05 re-ran), C19's
+  remote is C22 (C21new has a
   wiring fault), C18 is scored on xy only (its ey is a channel fault),
   C21new ships both modes (an out-of-quadrant yx: a shear zone or the
   instrument, for the student to decide), C13/C16/C18/C19 carry the 25-26
@@ -49,7 +52,7 @@ modes:
   C05: [xy]         # the best remote is chosen on xy; yx comes from the window run below, merged in
 windows:
   C05:
-    yx: ["2023-09-27T07:00:00Z", "2023-09-27T09:16:49Z"]   # ey still recovering until ~07:00 UTC (the 05:10-07:00 hours bias yx low below 0.1 s); the raw record ends 09:16:49
+    yx: ["2023-09-27T07:00:00Z", "2023-09-27T09:15:00Z"]   # ey still recovering until ~07:00 UTC (the 05:10-07:00 hours bias yx low below 0.1 s); C05's hx/hy carry a local disturbance from 09:15:27 (absent at C04), so the window ends at 09:15:00 (the raw record ends 09:16:49)
     merge: true     # one product: xy from the full-record run, yx from this window
 
 stages:
