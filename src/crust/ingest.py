@@ -4,7 +4,8 @@ Raw time series to one MTH5 archive per site, plus filtered variants
 
 `ingest_site` writes one archive per site, `<workspace>/mth5/<site>.h5`
 (`default_archive_path`), holding the raw recording with calibration only:
-the coil response, `h_scale` and the reversed-dipole flip. Entries of
+the coil response, `h_scale`, the reversed-dipole flip and, for a site
+declared `swap_h`, the exchange of hx and hy (`_swap_h`). Entries of
 `filters.yaml`, including `replace`, are applied in the variants described
 below. LEMI-424 and Earth Data PR6-24 sites are read by their mt-io readers
 (`crust.instruments.read_run`) with the reader's channel names and filter
@@ -631,6 +632,53 @@ def _apply_h_scale(run, site: SiteConfig) -> None:
         run.dataset[comp].attrs["filters"] = flist
 
 
+# channel attrs that belong to the logger input a channel was recorded on, and
+# so move with the samples when `_swap_h` exchanges hx and hy: the filter chain,
+# whose linear stage on a LEMI-423 holds the input's own ADC coefficient
+_INPUT_ATTRS = ("filters",)
+
+
+def _swap_h(run, site: SiteConfig) -> str | None:
+    """Exchange the hx and hy channels of a site declared `swap_h`.
+
+    A site whose two horizontal coils were plugged into each other's inputs
+    records the field along hy on the hx input and the field along hx on the
+    hy input. The samples of the two channels are exchanged, each with the
+    filter chain of the input it was recorded on (`_INPUT_ATTRS`), so the
+    archive's hx holds the samples of the hy input with that input's chain
+    and hy the samples of the hx input with its own. The component, azimuth,
+    channel number and every other attr stay with the channel name, and the
+    polarity is unchanged. Each channel's metadata comment names the input
+    it holds.
+
+    Args:
+        run (RunTS): Run, modified in place.
+        site (SiteConfig): Site settings.
+
+    Returns:
+        str or None: The line for the run comment, or None when the site
+        does not declare `swap_h`.
+
+    Raises:
+        ValueError: If the run does not hold both hx and hy.
+    """
+    if not site.swap_h:
+        return None
+    if not all(comp in run.dataset for comp in ("hx", "hy")):
+        raise ValueError(f"{site.name}: swap_h exchanges hx and hy, and the run holds "
+                         f"{list(run.dataset.data_vars)}")
+    # run.<comp> accessors return copies, so run.dataset is modified directly
+    hx, hy = run.dataset["hx"].data, run.dataset["hy"].data
+    run.dataset["hx"].data, run.dataset["hy"].data = hy, hx
+    for key in _INPUT_ATTRS:
+        hx_attr, hy_attr = run.dataset["hx"].attrs.get(key), run.dataset["hy"].attrs.get(key)
+        run.dataset["hx"].attrs[key], run.dataset["hy"].attrs[key] = hy_attr, hx_attr
+    for comp, source in (("hx", "hy"), ("hy", "hx")):
+        run.dataset[comp].attrs["comments"] = f"swap_h: the samples and filter chain of the {source} input"
+    logger.info(f"{site.name}: swap_h -> hx and hy exchanged (hx holds the hy input, hy the hx input)")
+    return "swap_h: hx and hy exchanged, each with the filter chain of the input it was recorded on"
+
+
 def _electric_gain(survey: Survey, site: SiteConfig, instrument: str, site_dir: Path) -> float:
     """Return the electric gain `read_run` folds into the ex and ey chains.
 
@@ -996,18 +1044,22 @@ def ingest_site(
     channel names, with the declared `channels:` applied in the same way.
     `h_scale` and the reversed-dipole flip apply to LEMI-423 sites, as does
     `calibration_fn`, which is also used by an EDL site whose `sensor_type`
-    is lemi120. `max_run_files` caps LEMI-423 runs only: 90 days of EDL at
-    10 Hz (78 M samples per channel) is less than one 51 h LEMI-423 run. An
-    EDL site's declared `electric_gain` becomes a filter on the ex and ey
-    chains (`read_run`; the samples stay the stored words), and the run
-    comment gets a line such as "electric gain 10 on ['ex', 'ey'] (declared
-    from the field notes)". The key is checked before an existing archive is
-    deleted (`_electric_gain`).
+    is lemi120. A site declared `swap_h` has its hx and hy exchanged after
+    the channel keep, each with the filter chain of its input (`_swap_h`),
+    and each run comment gets the line "swap_h: hx and hy exchanged, each
+    with the filter chain of the input it was recorded on". `max_run_files`
+    caps LEMI-423 runs only: 90 days of EDL at 10 Hz (78 M samples per
+    channel) is less than one 51 h LEMI-423 run. An EDL site's declared
+    `electric_gain` becomes a filter on the ex and ey chains (`read_run`;
+    the samples stay the stored words), and the run comment gets a line
+    such as "electric gain 10 on ['ex', 'ey'] (declared from the field
+    notes)". The key is checked before an existing archive is deleted
+    (`_electric_gain`).
 
     The archive holds calibration only: the coil response, `h_scale`, the
-    reversed-dipole flip and the declared electric gain. The declared list
-    of `<survey>/filters.yaml`, `replace` included, is applied on demand by
-    `build_variant`.
+    reversed-dipole flip, the `swap_h` exchange and the declared electric
+    gain. The declared list of `<survey>/filters.yaml`, `replace` included,
+    is applied on demand by `build_variant`.
 
     Each run's electric and magnetic channels are measured as the run is
     written (`_run_levels`: the median, MAD and rail share of the stored
@@ -1040,7 +1092,8 @@ def ingest_site(
         FileNotFoundError: If the coil calibration file is missing or the
             site has no data files.
         ValueError: If a setting does not fit the instrument (see
-            `_electric_gain`, `_keep_channels`, `_standardise_e_orientation`),
+            `_electric_gain`, `_keep_channels`, `_swap_h`,
+            `_standardise_e_orientation`),
             no file overlaps the window, or the site is a derived site
             (`Survey.parent_of`), whose archive scripts/decimate_site.py
             writes.
@@ -1124,6 +1177,7 @@ def ingest_site(
             else:
                 run = read_run(instrument, group, site, site_dir, calibration=coil)
             _keep_channels(run, site)
+            swapped = _swap_h(run, site)
             if skipped and i == 1:
                 prior = run.run_metadata.comments.value
                 note = "skipped unreadable file(s): " + "; ".join(skipped)
@@ -1133,6 +1187,9 @@ def ingest_site(
                 note = f"electric gain {electric_gain:g} on {carried} (declared from the field notes)"
                 prior = run.run_metadata.comments.value
                 run.run_metadata.comments.value = f"{prior}; {note}" if prior else note
+            if swapped:
+                prior = run.run_metadata.comments.value
+                run.run_metadata.comments.value = f"{prior}; {swapped}" if prior else swapped
             if instrument == "lemi423":
                 _standardise_e_orientation(run, site)
                 _apply_h_scale(run, site)

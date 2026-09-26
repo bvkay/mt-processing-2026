@@ -294,6 +294,12 @@ class SiteConfig:
             from the impedance phase quadrants
             (crust.compare.phase_quadrants); a wrong choice puts one mode
             180 deg out.
+        swap_h (bool): True for a site whose two horizontal coils were
+            plugged into each other's inputs, so that the recorded hx is the
+            field along hy and the recorded hy the field along hx, both with
+            normal polarity. Ingest then exchanges the hx and hy channels
+            (crust.ingest._swap_h), each channel's samples moving with the
+            filter chain of the input they were recorded on. Default False.
         channels (list of str or None): Channels kept at ingest; None keeps
             every column the reader returns. Broadband deployments carried
             no hz sensor (the B423 Bz column is an open input, constant
@@ -343,6 +349,7 @@ class SiteConfig:
     electric_gain: float = 1.0
     h_scale: float = 1.0
     flip_reversed_dipoles: bool = True
+    swap_h: bool = False
     channels: list[str] | None = None
     filters: list[dict] | None = None
     timing: str | None = None
