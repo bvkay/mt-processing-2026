@@ -49,7 +49,7 @@ modes:
   C05: [xy]         # the best remote is chosen on xy; yx comes from the window run below, merged in
 windows:
   C05:
-    yx: ["2023-09-27T05:10:00Z", "2023-09-27T09:16:49Z"]   # ey recovered at ~05:00 UTC; the raw record ends 09:16:49
+    yx: ["2023-09-27T07:00:00Z", "2023-09-27T09:16:49Z"]   # ey still recovering until ~07:00 UTC (the 05:10-07:00 hours bias yx low below 0.1 s); the raw record ends 09:16:49
     merge: true     # one product: xy from the full-record run, yx from this window
 
 stages:
