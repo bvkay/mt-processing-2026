@@ -70,7 +70,7 @@ scoring:
 
 runner:
   minutes_per_job: {rr: 8, variant: 2, stack: 1, mantle: 12}
-  min_available_gb: 40
+  min_available_gb: 25      # line C rr jobs peak 20-31 GB on 2-3 day records (line B's July sites needed 40 with 53 GB peaks)
   peak_factor: 1.0
   expected_peak_gb: {rr: 35, variant: 24, stack: 8, mantle: 70}   # MANTLE 1.35 GB per hour of window: 31.8 GB at 23.5 h, ~69 GB for the 51 h C10-C11 overlap
   peak_recent: 30
