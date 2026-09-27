@@ -5,8 +5,9 @@ Unit test for scripts/campaign.py
 Checks the plan parser, the overlap rule, the stacks, resume, the dry-run
 counts, the runner, the filter check, product parsing, the masks
 signature, a MANTLE stage 3 config (its memory class, the ledger's
-engine and the score of its shorter product) and the plan's per-site
-remotes, modes and windows. Everything runs on a synthetic survey in a
+engine and the score of its shorter product, its window clip and its
+expected peak by hours), the plan's per-site remotes, modes and windows,
+and the deferred configs with --configs. Everything runs on a synthetic survey in a
 temporary workspace,
 without an archive or aurora: five sites on a line with designed record
 spans, A 0-48 h, B 2-50 h, C 4-46 h (group G1) and D 40-90 h, E 44-94 h
@@ -165,7 +166,49 @@ Usage:
      unchanged or changes B rr A's; a remote-scoped entry of A changes A rr
      B's inputs; a stage 3 [--masks] job for A rr B is built while A holds
      only a remote-scoped entry and B only a both-scoped `channels: [ey]`
-     entry, or not built once B holds a remote-scoped entry.
+     entry, or not built once B holds a remote-scoped entry;
+
+(15) a MANTLE row's window and memory are wrong: a config [--engine mantle,
+     --mantle-max-hours 24] does not end its command with exactly one
+     `--mantle-window clip` before --tag; a config naming `--mantle-window
+     refuse` does not keep its own and gain none; an aurora config gains
+     one; A rr B (46 h overlap) under the 24 h cap does not carry the
+     expected clip note "expected window clip (cap): 46.0 h overlap over the
+     24 h cap"; with runner rr 35 GB and mantle_gb_per_hour 1.25 and no
+     finished row, the 24 h row does not expect the flat 35.0 GB (24 x 1.25
+     = 30 is smaller) and a [--mantle-max-hours 100] row not 57.5 GB (46 h x
+     1.25); with finished peaks aurora 20 GB and that config 70 GB, the
+     config's row does not expect 70 GB, or the aurora percentile
+     (`finished_peak_mb(None)`) takes in the MANTLE peak (it must stay
+     20 GB); with a 64 GB machine and min_available_gb 10 (psutil stubbed),
+     the 57.5 GB row is not refused by `over_machine` naming both figures,
+     the 24 h row (35 GB) is, run_block starts a child for the 57.5 GB
+     row, or its ledger row is not "skipped" with a note naming "expected
+     peak 57.5 GB" and "the machine has 64.0 GB"; the dry run of stage 3
+     does not print "MANTLE 24.0 h (the 24 h cap of 46.0 h), expected peak
+     35.0 GB" for A's 24 h row, "MANTLE 46.0 h, expected peak 57.5 GB" and
+     "would be SKIPPED" for its 100 h row;
+
+(16) the resume of MANTLE rows is wrong, through the stand-in process_rr.py:
+     the mantle child does not receive `--mantle-window clip`, its ledger
+     note after the run is not "window clipped (cap): 46.0 h requested,
+     24.0 h used" (from the sidecar), a done MANTLE row whose `cmd` has no
+     `--mantle-window` (as rows done before the flag was added) is re-run
+     on a resume, or a failed one is not (exactly one child starts);
+
+(17) the deferred configs are wrong: a plan whose `runner.deferred_configs`
+     names a config it does not have loads, a config named `mantle_full`
+     does not load or one named `full_` (whose tag process_rr.py would
+     strip) does; with `deferred_configs:
+     [mantle_full]`, stage 3 of A builds the mantle_full job without
+     --configs, or leaves out the other config or the `windows:` run;
+     `configs=["mantle_full"]` does not build exactly the mantle_full job
+     (no window run, no merge); `configs=["hamming"]` builds another;
+     `campaign.py --configs nope` does not exit 2; and on the campaign of
+     (16), finished, `campaign.py <survey> <plan> --stage 3 --sites A
+     --configs mantle_full` does not run exactly the one mantle_full child,
+     leaving every earlier row (stage 1 and stage 3) as it was, with the
+     stage 3 remote from best_remote.json.
 """
 
 from __future__ import annotations
@@ -288,8 +331,10 @@ p.add_argument("end", nargs="?")
 p.add_argument("--tag")
 p.add_argument("--engine", default="aurora")
 p.add_argument("--mantle-max-hours", type=float, default=24.0)
+p.add_argument("--mantle-window", default=None)
 args, _ = p.parse_known_args()
-work = Path(yaml.safe_load(Path(args.survey_yaml).read_text(encoding="utf-8"))["workspace"])
+cfg = yaml.safe_load(Path(args.survey_yaml).read_text(encoding="utf-8"))
+work = Path(cfg["workspace"])
 kind = "mantle" if args.engine == "mantle" else "window" if args.start else "full"
 edis = Path(__file__).with_name("edis")
 src = next(q for q in (edis / f"{args.remote}_{kind}.edi", edis / f"{kind}.edi") if q.exists())
@@ -300,6 +345,12 @@ side = {"local": args.local, "remote": args.remote, "tag": args.tag, "argv": sys
         "window": {"start": args.start, "end": args.end}, "quadrant": {"verdict": "physical quadrants"}}
 if args.engine == "mantle":
     side.update(engine="mantle", engine_config={"options": {"max_hours": args.mantle_max_hours}})
+if args.engine == "mantle" and args.mantle_window == "clip":
+    ts = [dt.datetime.fromisoformat(str(cfg["sites"][s][k]).replace("Z", "+00:00"))
+          for s in (args.local, args.remote) for k in ("start", "end")]
+    hours = (min(ts[1], ts[3]) - max(ts[0], ts[2])).total_seconds() / 3600.0
+    side["window_clipped"] = None if hours <= args.mantle_max_hours else {
+        "requested_hours": hours, "used_hours": args.mantle_max_hours, "reason": "cap"}
 edi.with_suffix(".json").write_text(json.dumps(side), encoding="utf-8")
 print(f"wrote {edi}", flush=True)
 print(f"wrote {edi.with_suffix('.json')}", flush=True)
@@ -890,8 +941,10 @@ def test_mantle_runner_figures() -> None:
 def test_mantle_runner_and_scores() -> None:
     root = ROOT / "mantle_run"
     survey_yaml = make_survey(root)
+    # mantle_gb_per_hour tiny: the stand-in's peak is a few MB, and the gate must not wait for 46 h x 1.25 GB
     runner = {"minutes_per_job": {"rr": 8, "variant": 8, "stack": 1, "mantle": 12}, "min_available_gb": 0.2,
-              "peak_factor": 1.0, "expected_peak_gb": {"rr": 0.05, "variant": 0.05, "stack": 0.05, "mantle": 0.05}}
+              "peak_factor": 1.0, "expected_peak_gb": {"rr": 0.05, "variant": 0.05, "stack": 0.05, "mantle": 0.05},
+              "mantle_gb_per_hour": 0.0001}
     plan = cp.load_plan(make_plan(root, configs=MANTLE_CONFIGS, runner=runner))
     fake = fake_scripts(root)
     original = cp.SCRIPTS
@@ -933,6 +986,174 @@ def test_mantle_runner_and_scores() -> None:
     print(f"  mantle product: score {m['score']:.3f} over {m['n_periods']} periods to {m['period_max']:.0f} s = the "
           f"default's score over 0.005-1000 s ({own:.3f}); the default over 0.005-5000 s {d['score']:.3f} "
           f"(to {d['period_max']:.0f} s); summary: {line.split('|')[-2].strip()}")
+
+
+CLIP_CONFIGS = {"mantle": ["--engine", "mantle", "--mantle-max-hours", "24"],
+                "big": ["--engine", "mantle", "--mantle-max-hours", "100"],
+                "own": ["--engine", "mantle", "--mantle-window", "refuse"],
+                "hamming": ["--taper", "hamming"]}
+
+
+def test_mantle_window_and_memory() -> None:
+    from types import SimpleNamespace
+
+    root = ROOT / "mantle_clip"
+    survey_yaml = make_survey(root)
+    runner = {"minutes_per_job": {"rr": 8, "variant": 8, "stack": 1}, "min_available_gb": 10.0, "peak_factor": 1.0,
+              "expected_peak_gb": {"rr": 35, "variant": 20, "stack": 8}, "mantle_gb_per_hour": 1.25}
+    c = cp.Campaign(survey_yaml, cp.load_plan(make_plan(root, configs=CLIP_CONFIGS, runner=runner)), parallel=1,
+                    create=True)
+    jobs = {k: c.rr_job(3, "A", "B", k, f"s3_A_rr-B_{k}") for k in CLIP_CONFIGS}
+    cmd = jobs["mantle"].cmd
+    assert cmd.count("--mantle-window") == 1 and cmd[-4:-2] == ["--mantle-window", "clip"], cmd
+    own = jobs["own"].cmd
+    assert own.count("--mantle-window") == 1 and own[own.index("--mantle-window") + 1] == "refuse", own
+    assert "--mantle-window" not in jobs["hamming"].cmd, jobs["hamming"].cmd
+    assert jobs["mantle"].clip_note.startswith("expected window clip (cap): 46.0 h overlap over the 24 h cap"), \
+        jobs["mantle"].clip_note
+    assert jobs["big"].clip_note == "" and jobs["own"].clip_note == "", (jobs["big"].clip_note, jobs["own"].clip_note)
+
+    gb = lambda job: c.job_peak_mb(job) / 1024.0  # noqa: E731
+    assert abs(gb(jobs["mantle"]) - 35.0) < 1e-9 and abs(gb(jobs["big"]) - 57.5) < 1e-9, \
+        (gb(jobs["mantle"]), gb(jobs["big"]))
+    assert abs(gb(jobs["hamming"]) - 35.0) < 1e-9, gb(jobs["hamming"])
+    for rid, config, peak in (("r1", "default", 20.0), ("b1", "big", 70.0)):
+        c.ledger.rows[rid] = {**{k: "" for k in cp.LEDGER_COLUMNS}, "run_id": rid, "kind": "rr", "config": config,
+                              "peak_rss_mb": str(peak * 1024.0), "finished": rid}
+    assert abs(gb(jobs["big"]) - 70.0) < 1e-9, gb(jobs["big"])
+    assert abs(c.finished_peak_mb(None) / 1024.0 - 20.0) < 1e-9, c.finished_peak_mb(None) / 1024.0
+    finished = (gb(jobs["big"]), c.finished_peak_mb(None) / 1024.0)
+    c.ledger.rows.clear()
+
+    original = cp.psutil.virtual_memory
+    cp.psutil.virtual_memory = lambda: SimpleNamespace(available=60.0 * 1024.0**3, total=64.0 * 1024.0**3)
+    try:
+        over = c.over_machine(jobs["big"])
+        assert "expected peak 57.5 GB" in over and "the machine has 64.0 GB" in over, over
+        assert c.over_machine(jobs["mantle"]) == "" and c.over_machine(jobs["hamming"]) == ""
+        quiet(c.run_block, "too big", [jobs["big"]])
+        row = c.ledger.rows[jobs["big"].run_id]
+        assert c.n_started == 0 and row["status"] == "skipped", (c.n_started, row)
+        assert "expected peak 57.5 GB" in row["note"] and "the machine has 64.0 GB" in row["note"], row["note"]
+        c.ledger.rows.clear()
+        c.best_remotes = lambda sites, persist=True, df=None: {s: {"remote": "B" if s != "B" else "A"} for s in sites}
+        _, text = quiet(c.dry_run, [3], ["A"])
+    finally:
+        cp.psutil.virtual_memory = original
+    lines = {ln.split()[0]: ln for ln in text.splitlines() if ln.strip().startswith("s3_A_rr-B_")}
+    assert "MANTLE 24.0 h (the 24 h cap of 46.0 h), expected peak 35.0 GB" in lines["s3_A_rr-B_mantle"], lines
+    assert "MANTLE 46.0 h, expected peak 57.5 GB" in lines["s3_A_rr-B_big"], lines
+    assert "would be SKIPPED" in lines["s3_A_rr-B_big"] and "SKIPPED" not in lines["s3_A_rr-B_mantle"], lines
+    assert "MANTLE" not in lines["s3_A_rr-B_hamming"], lines["s3_A_rr-B_hamming"]
+    print(f"  commands: mantle ...{' '.join(cmd[-4:])}; own ...{' '.join(own[-4:])}; note {jobs['mantle'].clip_note!r}")
+    print(f"  expected peaks: 24 h row 35.0 GB (flat), 46 h row 57.5 GB (by hours); with finished peaks the 46 h row "
+          f"{finished[0]:.1f} GB and the aurora percentile {finished[1]:.1f} GB")
+    print(f"  64 GB machine: {over}; row skipped, note {row['note'][:60]!r}...")
+    print(f"  dry run: {lines['s3_A_rr-B_big'].split(';', 1)[1].strip()[:140]}")
+
+
+def test_mantle_resume() -> None:
+    root = ROOT / "mantle_resume"
+    survey_yaml = make_survey(root)
+    runner = {"minutes_per_job": {"rr": 8, "variant": 8, "stack": 1}, "min_available_gb": 0.2, "peak_factor": 1.0,
+              "expected_peak_gb": {"rr": 0.05, "variant": 0.05, "stack": 0.05}, "mantle_gb_per_hour": 0.0001}
+    configs = {"mantle": CLIP_CONFIGS["mantle"], "hamming": ["--taper", "hamming"]}
+    plan = cp.load_plan(make_plan(root, configs=configs, runner=runner))
+    fake = fake_scripts(root)
+    product_edi(fake / "edis" / "C_full.edi", P_FULL, tail_from=100.0)  # C scores lower: B is A's best remote
+    original = cp.SCRIPTS
+    cp.SCRIPTS = fake
+    try:
+        c = cp.Campaign(survey_yaml, plan, parallel=2)
+        c.api = {"func": "processing_archive", "variant": True, "rr": True, "stack": True, "why": ""}
+        quiet(c.run_block, "stage 1 A", c.stage1_jobs(["A"]))
+        quiet(c.run_block, "stage 3 A", c.stage3_jobs(["A"]))
+        rid = "s3_A_rr-B_mantle"
+        row = c.ledger.rows[rid]
+        argv = json.loads(Path(row["sidecar"]).read_text(encoding="utf-8"))["argv"]
+        mode = argv[argv.index("--mantle-window") + 1] if "--mantle-window" in argv else None
+        assert row["status"] == "done" and mode == "clip", (row["status"], argv)
+        assert row["note"] == "window clipped (cap): 46.0 h requested, 24.0 h used", row["note"]
+        # a row done before the flag existed: its cmd lacks it
+        c.ledger.upsert({"run_id": rid, "cmd": row["cmd"].replace(" --mantle-window clip", "")})
+        assert "--mantle-window" not in c.ledger.rows[rid]["cmd"]
+        again = cp.Campaign(survey_yaml, plan, parallel=2)
+        again.api = dict(c.api)
+        quiet(again.run_block, "resume", again.stage3_jobs(["A"]))
+        assert again.n_started == 0, f"{again.n_started} started on resume"
+        again.ledger.upsert({"run_id": rid, "status": "failed", "exit_code": "1"})
+        third = cp.Campaign(survey_yaml, plan, parallel=2)
+        third.api = dict(c.api)
+        quiet(third.run_block, "resume after a failure", third.stage3_jobs(["A"]))
+        assert third.n_started == 1 and third.ledger.rows[rid]["status"] == "done", \
+            (third.n_started, third.ledger.rows[rid]["status"])
+    finally:
+        cp.SCRIPTS = original
+    print(f"  mantle child argv ...{' '.join(argv[-4:])}; ledger note {row['note']!r}; a done row without the flag "
+          f"in its cmd: 0 started; the same row failed: {third.n_started} started")
+
+
+def test_deferred_configs() -> None:
+    root = ROOT / "mantle_resume"  # the campaign of test_mantle_resume, finished
+    survey_yaml = root / "survey.yaml"
+    configs = {"mantle": CLIP_CONFIGS["mantle"], "hamming": ["--taper", "hamming"],
+               "mantle_full": ["--engine", "mantle", "--mantle-max-hours", "100"]}
+    runner = {"minutes_per_job": {"rr": 8, "variant": 8, "stack": 1}, "min_available_gb": 0.2, "peak_factor": 1.0,
+              "expected_peak_gb": {"rr": 0.05, "variant": 0.05, "stack": 0.05}, "mantle_gb_per_hour": 0.0001,
+              "deferred_configs": ["mantle_full"]}
+    bad = dict(runner, deferred_configs=["mantelfull"])
+    try:
+        cp.load_plan(make_plan(root / "bad", configs=configs, runner=bad))
+    except ValueError as exc:
+        assert "deferred_configs mantelfull" in str(exc), str(exc)
+    else:
+        raise AssertionError("a plan deferring a config it lacks loaded")
+    try:
+        cp.load_plan(make_plan(root / "bad", configs={"full_": ["--engine", "mantle"]}))
+    except ValueError as exc:
+        assert "config 'full_'" in str(exc), str(exc)
+    else:
+        raise AssertionError("a config named with a trailing underscore loaded")
+    plan_path = make_plan(root / "full", configs=configs, runner=runner)
+    raw = yaml.safe_load(plan_path.read_text(encoding="utf-8"))
+    raw["windows"] = {"A": {"yx": [iso(10), iso(14)]}}
+    plan_path.write_text(yaml.safe_dump(raw, sort_keys=False), encoding="utf-8")
+    plan = cp.load_plan(plan_path)
+    assert plan.deferred_configs == ["mantle_full"], plan.deferred_configs
+    pick = lambda sites, persist=True, df=None: {s: {"remote": "B"} for s in sites}  # noqa: E731
+    built = {}
+    for label, only in (("none", None), ("mantle_full", ["mantle_full"]), ("hamming", ["hamming"])):
+        c = cp.Campaign(survey_yaml, plan, parallel=1, create=False, configs=only)
+        c.best_remotes = pick
+        built[label] = [j.config for j in c.stage3_jobs(["A"])]
+    assert built["none"] == ["mantle", "hamming", "default-yxwin"], built["none"]
+    assert built["mantle_full"] == ["mantle_full"] and built["hamming"] == ["hamming"], built
+    nope = quiet(cp.main, [str(survey_yaml), str(plan_path), "--stage", "3", "--configs", "nope", "--dry-run"])[0]
+    assert nope == 2, nope
+
+    before = {rid: dict(row) for rid, row in cp.Ledger(ROOT / "mantle_resume" / "work" / "campaign" / "syn" /
+                                                         "ledger.csv").rows.items()}
+    fake = ROOT / "mantle_resume" / "fake_scripts"
+    original, probe = cp.SCRIPTS, cp.api_state
+    cp.SCRIPTS = fake
+    cp.api_state = lambda: {"func": "processing_archive", "variant": True, "rr": True, "stack": True, "why": ""}
+    try:
+        code, text = quiet(cp.main, [str(survey_yaml), str(plan_path), "--stage", "3", "--sites", "A", "--configs",
+                                     "mantle_full", "--parallel", "1"])
+    finally:
+        cp.SCRIPTS, cp.api_state = original, probe
+    after = cp.Ledger(ROOT / "mantle_resume" / "work" / "campaign" / "syn" / "ledger.csv").rows
+    new = sorted(set(after) - set(before))
+    assert code == 0 and new == ["s3_A_rr-B_mantle_full"], (code, new, text[-600:])
+    assert after["s3_A_rr-B_mantle_full"]["status"] == "done", after["s3_A_rr-B_mantle_full"]
+    changed = [rid for rid in before if after[rid] != before[rid]]
+    assert not changed, changed
+    starts = [ln for ln in text.splitlines() if " START " in ln]
+    assert len(starts) == 1 and "s3_A_rr-B_mantle_full" in starts[0], starts
+    print(f"  stage 3 of A: no --configs {built['none']}; --configs mantle_full {built['mantle_full']}; "
+          f"--configs hamming {built['hamming']}; --configs nope exit {nope}")
+    print(f"  finished campaign, --stage 3 --configs mantle_full: 1 child ({starts[0].split('START ')[1][:60]}), "
+          f"{len(before)} earlier rows unchanged")
 
 
 def _plan_with(root: Path, **keys) -> Path:
@@ -1047,7 +1268,8 @@ def main() -> int:
     tests = [test_plan_parser, test_overlap_rule, test_stacks, test_dry_run_counts, test_runner_and_resume,
              test_filter_check, test_parse_products, test_inputs_masks_both_sites,
              test_inputs_masks_channels_and_remote_scope, test_mantle_config,
-             test_mantle_runner_figures, test_mantle_runner_and_scores, test_site_overrides]
+             test_mantle_runner_figures, test_mantle_runner_and_scores, test_site_overrides,
+             test_mantle_window_and_memory, test_mantle_resume, test_deferred_configs]
     failed = 0
     for t in tests:
         print(t.__name__)

@@ -37,9 +37,18 @@ process_rr.py calls it before every run. Stages:
   one process_rr.py run per plan config. The choice is kept in
   best_remote.json so a resume keeps it. A config may name the MANTLE
   engine (`mantle: [--engine, mantle, --mantle-max-hours, "72"]`): its run
-  gets `--no-masks` whatever `runner.masks` says, its inputs carry no masks
-  hash, and its report JSON and fine-grid EDI move into <campaign>/tf/ with
-  the EDI. A MANTLE product stops where its cascade does (about 1000 s on a
+  gets `--no-masks` whatever `runner.masks` says and `--mantle-window clip`
+  unless its flags name `--mantle-window` (process_rr.py then runs on the
+  longest span both archives cover inside the pair's overlap, its first
+  --mantle-max-hours hours when longer, where it refused before), its
+  inputs carry no masks hash, and its report JSON and fine-grid EDI move
+  into <campaign>/tf/ with the EDI. The row's note gives the clip expected
+  from the survey spans, then the one the sidecar records (`window_clipped`).
+  A done MANTLE row stays done on a resume: neither the flag nor the note is
+  part of the inputs. A config named in `runner.deferred_configs` is left
+  out of stage 3 unless --configs names it; --configs NAME[,NAME] runs only
+  the configs named (the `windows:` runs and merges are then left out). A
+  MANTLE product stops where its cascade does (about 1000 s on a
   day's window); crust.quality scores it over its own periods inside the
   scoring window, so the long-period tail it lacks neither counts for nor
   against it, and scores.csv's `period_max` shows how far each product
@@ -93,9 +102,16 @@ running jobs are still expected to grow by (the `peak_percentile` of the
 `expected_peak_gb`), is at least `min_available_gb` and `peak_factor` x that
 percentile over every class; waiting slots log every 5 min. A job's class
 is its kind (variant, stack, rr), or its stage 3 config when
-`runner.expected_peak_gb` names that config (`mantle: 65`): such a class is
-held back by its own figure, its jobs start only with `peak_factor` x that
-figure available, and its peaks stay out of the other classes' percentile.
+`runner.expected_peak_gb` names that config (`mantle: 65`) or the config
+names the MANTLE engine: such a class is held back by its own figure, its
+jobs start only with `peak_factor` x that figure available, and its peaks
+stay out of the other classes' percentile. A MANTLE job's expected peak is
+the larger of its class figure (the finished peaks' percentile, else the
+plan's) and hours x `runner.mantle_gb_per_hour` (1.25 GB by default), the
+hours the smaller of its window (the pair's overlap from survey.yaml) and
+its config's --mantle-max-hours; a MANTLE job expected above the machine's
+total memory less `min_available_gb` is not started but marked skipped,
+with a note of what it needs and what the machine has.
 `runner.minutes_per_job` may name a config likewise for the dry run's
 hours. Children run at below-normal priority, each with its own log in
 <campaign>/logs/<run_id>.log; RSS (with children) is polled every 2 s.
@@ -105,8 +121,8 @@ stage, kind, local, remote, config, tag, engine (the sidecar's `engine`,
 aurora when the sidecar names none), status, exit code, start, seconds, peak RSS MB,
 EDI/sidecar/figure paths, the variant or stack archive and its size, the
 inputs' signature, error text; rewritten atomically at every start and
-finish), runs.log, scores.csv (crust.quality of every product with its
-engine and period range, after every block), figures/<site>_remotes.png,
+finish), runs.log (not written by a dry run), scores.csv (crust.quality of
+every product with its engine and period range, after every block), figures/<site>_remotes.png,
 <site>_stacks.png,
 <site>_options.png, <name>_best_pseudosection.png, <name>_scores.png, and
 summary.md. A run is skipped when the ledger has it done with the same
@@ -120,7 +136,7 @@ the whole matrix with counts and hours.
 
 Usage:
     python scripts/campaign.py <survey.yaml> <plan.yaml> [--stage 0,1,2,3] [--sites S ...]
-        [--parallel N] [--max-runs N] [--allow-raw] [--dry-run] [--report]
+        [--configs NAME[,NAME]] [--parallel N] [--max-runs N] [--allow-raw] [--dry-run] [--report]
 
 @author: ben kay (ben@auscope.org.au)
 
@@ -165,12 +181,16 @@ try:  # optional: without the variant API the campaign runs and waits for it
     from crust.ingest import variant_path as _api_variant_path  # noqa: E402
 except ImportError:
     _api_filters_hash = _api_variant_path = None
+from crust.mantle_window import clip_text  # noqa: E402
 from crust.quality import MODES, PERIOD_RTOL, agreement, curves, flat_quality, pairwise_spread, tf_quality  # noqa: E402
 from crust.survey import Survey, distance_km  # noqa: E402
 
 PY = sys.executable
 SCRIPTS = REPO / "scripts"
 MB = 1024.0**2
+GB = 1024.0**3
+MANTLE_MAX_HOURS = 24.0  # process_rr.py's --mantle-max-hours when a config gives none
+MANTLE_GB_PER_HOUR = 1.25  # runner.mantle_gb_per_hour when the plan gives none
 POLL_S = 2.0
 WAIT_LOG_S = 300.0
 API_POLL_S = 300.0
@@ -270,6 +290,8 @@ class Plan:
     remotes: dict[str, str] = field(default_factory=dict)       # site -> its stage 3 remote
     modes: dict[str, list[str]] = field(default_factory=dict)   # site -> the modes its score uses
     windows: dict[str, dict] = field(default_factory=dict)      # site -> {"modes": {mode: (start, end)}, "merge"}
+    mantle_gb_per_hour: float = MANTLE_GB_PER_HOUR  # a MANTLE job's expected peak per hour of window
+    deferred_configs: list[str] = field(default_factory=list)  # stage 3 configs run only when --configs names them
 
     def group_of(self, site: str) -> str:
         """Return the name of the group that holds `site`."""
@@ -423,8 +445,10 @@ def load_plan(path) -> Plan:
     for cname, args in (options.get("configs") or {}).items():
         cname = str(cname)
         args = [str(a) for a in (args or [])]
-        if not re.match(r"^[A-Za-z0-9]+$", cname) or cname == "default":
-            errors.append(f"config {cname!r}: letters and digits only, not 'default'")
+        # inner underscores are allowed (mantle_full); a leading or trailing one would be
+        # stripped from the tag by process_rr.py's clean_tag, and the product no longer found
+        if not re.match(r"^[A-Za-z0-9]+(_[A-Za-z0-9]+)*$", cname) or cname == "default":
+            errors.append(f"config {cname!r}: letters, digits and inner underscores only, not 'default'")
         if not args or not args[0].startswith("--") or any(a in ("--tag", "--dry-run") for a in args):
             errors.append(f"config {cname}: {args}: process_rr.py flags, without --tag/--dry-run")
         configs[cname] = args
@@ -434,6 +458,17 @@ def load_plan(path) -> Plan:
         for k in (runner.get(key) or {}):
             if str(k) not in KINDS and str(k) not in configs:
                 errors.append(f"runner {key} {k}: neither a job kind ({', '.join(KINDS)}) nor a stage 3 config")
+    deferred = [str(k) for k in (runner.get("deferred_configs") or [])]
+    for k in deferred:
+        if k not in configs:
+            errors.append(f"runner deferred_configs {k}: not a stage 3 config")
+    try:
+        gb_per_hour = float(runner.get("mantle_gb_per_hour", MANTLE_GB_PER_HOUR))
+        if not gb_per_hour > 0.0:
+            raise ValueError
+    except (TypeError, ValueError):
+        errors.append(f"runner mantle_gb_per_hour {runner.get('mantle_gb_per_hour')!r}: a positive number of GB")
+        gb_per_hour = MANTLE_GB_PER_HOUR
     scoring = raw.get("scoring") or {}
     if errors:
         raise ValueError(f"{path}:\n  " + "\n  ".join(errors))
@@ -448,6 +483,7 @@ def load_plan(path) -> Plan:
         masks=bool(runner.get("masks", False)), remotes=remotes, modes=modes, windows=windows,
         min_available_gb=float(runner.get("min_available_gb", 40.0)),
         peak_factor=float(runner.get("peak_factor", 1.2)),
+        mantle_gb_per_hour=gb_per_hour, deferred_configs=deferred,
     )
     plan.minutes.update({str(k): float(v) for k, v in (runner.get("minutes_per_job") or {}).items()})
     plan.expected_peak_gb.update({str(k): float(v) for k, v in (runner.get("expected_peak_gb") or {}).items()})
@@ -832,6 +868,7 @@ class Job:
     output: Path | None = None
     note: str = ""
     window: tuple[str, str] | None = None  # (start, end) UTC of a windowed run
+    clip_note: str = ""  # a clipped MANTLE run's expected clip, replaced by the sidecar's after the run
 
 
 @dataclass
@@ -968,17 +1005,23 @@ class Campaign:
         max_runs (int | None): Start at most this many jobs.
         allow_raw (bool): Run without the variant API, marking rows
             provisional.
-        create (bool): Create the campaign folders; False for a dry run.
+        create (bool): Create the campaign folders; False for a dry run,
+            which writes nothing (runs.log included).
+        configs (list[str] | None): The stage 3 configs to run (--configs),
+            deferred ones included; None for every config the plan does not
+            defer.
     """
 
     def __init__(self, survey_yaml, plan: Plan, parallel: int = 2, max_runs: int | None = None,
-                 allow_raw: bool = False, create: bool = True):
+                 allow_raw: bool = False, create: bool = True, configs: list[str] | None = None):
         self.survey_yaml = str(Path(survey_yaml).resolve())
         self.survey = Survey.from_yaml(self.survey_yaml)
         self.plan = plan
         self.parallel = max(1, int(parallel))
         self.max_runs = max_runs
         self.allow_raw = allow_raw
+        self.only_configs = None if configs is None else [str(k) for k in configs]
+        self.writes = create
         self.dir = self.survey.workspace / "campaign" / plan.name
         for sub in ("", "logs", "tf", "figures") if create else ():  # a dry run writes nothing
             (self.dir / sub).mkdir(parents=True, exist_ok=True)
@@ -994,9 +1037,11 @@ class Campaign:
     # ---------------------------------------------------------------- helpers
 
     def log(self, msg: str) -> None:
-        """Print a time-stamped line and append it to runs.log."""
+        """Print a time-stamped line and append it to runs.log (printed only, in a dry run)."""
         line = f"{now().strftime('%Y-%m-%d %H:%M:%S')} {msg}"
         print(line, flush=True)
+        if not self.writes:
+            return
         try:
             with open(self.dir / "runs.log", "a", encoding="utf-8") as fh:
                 fh.write(line + "\n")
@@ -1058,6 +1103,25 @@ class Campaign:
                 return flags[i + 1] if i + 1 < len(flags) else "aurora"
         return "aurora"
 
+    def config_flag(self, config: str, flag: str) -> str | None:
+        """Return the value a config's flags give `flag` (`--flag value` or `--flag=value`), the last one given.
+
+        Returns:
+            str | None: The value, None when the config does not name the flag.
+        """
+        flags = self.plan.configs.get(config, []) if config != "default" else []
+        value = None
+        for i, item in enumerate(flags):
+            if item == flag and i + 1 < len(flags):
+                value = flags[i + 1]
+            elif item.startswith(flag + "="):
+                value = item.split("=", 1)[1]
+        return value
+
+    def config_max_hours(self, config: str) -> float:
+        """Return a config's --mantle-max-hours, process_rr.py's 24 h without the flag."""
+        return float(self.config_flag(config, "--mantle-max-hours") or MANTLE_MAX_HOURS)
+
     def config_mask_scope(self, config: str) -> str:
         """Return the mask scope rule a config's flags name (`--mask-scope <rule>`), "role" without the flag.
 
@@ -1096,20 +1160,65 @@ class Campaign:
         A window's start and end follow the pair as process_rr.py's
         positional arguments. The runner's `--no-masks` goes before the
         config's flags so that a config declaring `--masks` wins; a MANTLE
-        config gets `--no-masks` whatever the plan's `runner.masks` says.
+        config gets `--no-masks` whatever the plan's `runner.masks` says,
+        and `--mantle-window clip` after its flags unless they name
+        `--mantle-window`.
         """
         extra = self.plan.configs.get(config, []) if config != "default" else []
-        masks = [] if self.plan.masks and self.config_engine(config) != "mantle" else ["--no-masks"]
+        mantle = self.config_engine(config) == "mantle"
+        masks = [] if self.plan.masks and not mantle else ["--no-masks"]
+        clip = ["--mantle-window", "clip"] if mantle and self.config_flag(config, "--mantle-window") is None else []
         return [PY, str(SCRIPTS / "process_rr.py"), self.survey_yaml, local, remote, *(window or ()), *masks,
-                *extra, "--tag", self.plan.tag(config)]
+                *extra, *clip, "--tag", self.plan.tag(config)]
 
     def rr_job(self, stage: int, local: str, remote: str, config: str, run_id: str, deps=(),
                window: tuple[str, str] | None = None) -> Job:
-        """Build one rr job, over `window` (start, end UTC) when given."""
-        return Job(run_id=run_id, stage=stage, kind="rr", group=self.plan.group_of(local), local=local,
-                   remote=remote, config=config, tag=self.plan.tag(config),
-                   cmd=self.rr_cmd(local, remote, config, window), deps=list(deps), input_sites=[local, remote],
-                   window=window)
+        """Build one rr job, over `window` (start, end UTC) when given; a clipped MANTLE job notes its expected clip."""
+        job = Job(run_id=run_id, stage=stage, kind="rr", group=self.plan.group_of(local), local=local,
+                  remote=remote, config=config, tag=self.plan.tag(config),
+                  cmd=self.rr_cmd(local, remote, config, window), deps=list(deps), input_sites=[local, remote],
+                  window=window)
+        job.clip_note = self.expected_clip(job)
+        return job
+
+    def mantle_hours(self, job: Job) -> tuple[float, float, float] | None:
+        """Return the window hours of a MANTLE rr job before it runs.
+
+        The window is the job's own (a `windows:` run) or the pair's overlap
+        from survey.yaml; against a remote outside the survey spans (a stack,
+        or the dry run's unknown best remote) the local's record, which it
+        cannot exceed.
+
+        Returns:
+            tuple | None: ``(window, cap, hours)``: the window's hours, the
+            config's --mantle-max-hours and the smaller of the two; None for
+            a job that is not a MANTLE rr run.
+        """
+        if job.kind != "rr" or self.config_engine(job.config) != "mantle":
+            return None
+        cap = self.config_max_hours(job.config)
+        if job.window:
+            window = (pd.Timestamp(job.window[1]) - pd.Timestamp(job.window[0])).total_seconds() / 3600.0
+        elif job.local in self.spans and job.remote in self.spans:
+            window = overlap_hours(self.spans[job.local], self.spans[job.remote])
+        elif job.local in self.spans:
+            window = (self.spans[job.local][1] - self.spans[job.local][0]).total_seconds() / 3600.0
+        else:
+            window = cap
+        return window, cap, min(window, cap)
+
+    def expected_clip(self, job: Job) -> str:
+        """Return the note of the clip a `--mantle-window clip` job is expected to take, "" for none.
+
+        The survey spans show where the cap cuts; a gap in a record shows in
+        the sidecar after the run.
+        """
+        hours = self.mantle_hours(job)
+        if hours is None or self.config_flag(job.config, "--mantle-window") not in (None, "clip") \
+                or hours[0] <= hours[1]:
+            return ""
+        return (f"expected window clip (cap): {hours[0]:.1f} h overlap over the {hours[1]:g} h cap, the first "
+                f"{hours[1]:g} h of the longest span both records cover")
 
     # ------------------------------------------------------------ job builders
 
@@ -1166,6 +1275,7 @@ class Campaign:
         """
         jobs = []
         chosen = self.best_remotes(sites, persist=not dry)
+        configs = self.stage3_configs()
         for s in sites:
             best = chosen.get(s, {})
             remote = best.get("remote")
@@ -1176,7 +1286,7 @@ class Campaign:
                     self.log(f"stage 3: {s}: no stage 1 product to choose a remote from: skipped")
                     continue
             note = f"remote override (the campaign's pick: {best.get('pick') or 'none'})" if best.get("override") else ""
-            for config in self.plan.configs:
+            for config in configs:
                 rule = self.config_mask_scope(config)
                 if (self.rr_masks_on(config) and not self.plan.masks and remote != "<best-of-stage-1>"
                         and not self.has_masks(s, remote, rule)):
@@ -1188,8 +1298,20 @@ class Campaign:
                 job = self.rr_job(3, s, remote, config, f"s3_{s}_rr-{remote}_{config}")
                 job.note = note
                 jobs.append(job)
-            jobs += self.window_jobs(s, remote, note)
+            if self.only_configs is None:  # --configs runs the configs it names alone
+                jobs += self.window_jobs(s, remote, note)
         return jobs
+
+    def stage3_configs(self) -> list[str]:
+        """Return the stage 3 configs to run, in plan order.
+
+        With --configs the configs it names, deferred ones included;
+        without, every config the plan's `runner.deferred_configs` does not
+        name.
+        """
+        if self.only_configs is not None:
+            return [k for k in self.plan.configs if k in self.only_configs]
+        return [k for k in self.plan.configs if k not in self.plan.deferred_configs]
 
     def window_jobs(self, site: str, remote: str, note: str = "") -> list[Job]:
         """Build a site's `windows:` jobs on its stage 3 remote.
@@ -1455,8 +1577,51 @@ class Campaign:
         return kind
 
     def own_peak_configs(self) -> list[str]:
-        """Return the stage 3 configs with an `expected_peak_gb` figure of their own."""
-        return [k for k in self.plan.expected_peak_gb if k in self.plan.configs and k not in KINDS]
+        """Return the stage 3 configs that are memory classes of their own.
+
+        A config with an `expected_peak_gb` figure is one, and so is every
+        MANTLE config: its peaks grow with its window, and pooled with the
+        aurora runs' they would hold every later aurora job back.
+        """
+        own = [k for k in self.plan.expected_peak_gb if k in self.plan.configs and k not in KINDS]
+        return own + [k for k in self.plan.configs
+                      if k not in own and k not in KINDS and self.config_engine(k) == "mantle"]
+
+    def peak_class(self, job: Job) -> str:
+        """Return the memory class of a job: its rr config when that is a class of its own, else its kind."""
+        return job.config if job.kind == "rr" and job.config in self.own_peak_configs() else job.kind
+
+    def job_peak_mb(self, job: Job) -> float:
+        """Return the expected peak RSS of a job in MB.
+
+        Its class's (`expected_peak_mb`); for a MANTLE job the larger of that
+        and hours x `runner.mantle_gb_per_hour`, the hours of `mantle_hours`,
+        so a window longer than the class's finished runs is held back by
+        what it needs.
+        """
+        base = self.expected_peak_mb(self.peak_class(job))
+        hours = self.mantle_hours(job)
+        if hours is None:
+            return base
+        return max(base, hours[2] * self.plan.mantle_gb_per_hour * 1024.0)
+
+    def over_machine(self, job: Job) -> str:
+        """Return why a MANTLE job cannot start on this machine at all, "" when it can.
+
+        A job expected to peak above the machine's total memory less
+        `runner.min_available_gb` is never started.
+        """
+        hours = self.mantle_hours(job)
+        total = getattr(psutil.virtual_memory(), "total", None)
+        if hours is None or not total:
+            return ""
+        need = self.job_peak_mb(job) / 1024.0
+        limit = total / GB - self.plan.min_available_gb
+        if need <= limit:
+            return ""
+        return (f"over the machine's memory: expected peak {need:.1f} GB ({hours[2]:.1f} h of window x "
+                f"{self.plan.mantle_gb_per_hour:g} GB/h, or its class figure when larger); the machine has "
+                f"{total / GB:.1f} GB, {limit:.1f} GB after runner.min_available_gb {self.plan.min_available_gb:g}")
 
     def finished_peak_mb(self, cls: str | None = None) -> float:
         """Return the percentile of the finished peaks of a memory class, in MB.
@@ -1483,22 +1648,18 @@ class Campaign:
         """Check the memory gate for starting another job.
 
         Args:
-            job (Job | None): The job to start; a job of a config with its
-                own `expected_peak_gb` also needs `peak_factor` x that
-                config's expected peak.
+            job (Job | None): The job to start; a job of a config that is a
+                memory class of its own (`own_peak_configs`) also needs
+                `peak_factor` x its expected peak (`job_peak_mb`).
 
         Returns:
             tuple[bool, str]: (enough memory, explanation).
         """
         avail = psutil.virtual_memory().available / MB
-        table = self.plan.expected_peak_gb
-        reserve = sum(max(0.0, self.expected_peak_mb(self.job_class(r.job.kind, r.job.config, table)) - r.rss_mb)
-                      for r in self._running.values())
+        reserve = sum(max(0.0, self.job_peak_mb(r.job) - r.rss_mb) for r in self._running.values())
         need = max(self.plan.min_available_gb * 1024.0, self.plan.peak_factor * self.finished_peak_mb(None))
-        if job is not None:
-            cls = self.job_class(job.kind, job.config, table)
-            if cls != job.kind:
-                need = max(need, self.plan.peak_factor * self.expected_peak_mb(cls))
+        if job is not None and self.peak_class(job) != job.kind:
+            need = max(need, self.plan.peak_factor * self.job_peak_mb(job))
         ok = avail - reserve >= need
         return ok, (f"available {avail / 1024:.1f} GB, {reserve / 1024:.1f} GB held back for "
                     f"{len(self._running)} running job(s), need {need / 1024:.1f} GB")
@@ -1526,14 +1687,18 @@ class Campaign:
     def _row(self, job: Job, **kw) -> dict:
         """Build a ledger row for a job with extra fields."""
         row = {"run_id": job.run_id, "stage": job.stage, "kind": job.kind, "group": job.group, "local": job.local,
-               "remote": job.remote, "config": job.config, "tag": job.tag, "note": job.note}
+               "remote": job.remote, "config": job.config, "tag": job.tag,
+               "note": "; ".join(x for x in (job.note, job.clip_note) if x)}
         row.update(kw)
         return row
 
-    def _skip(self, job: Job, why: str) -> None:
-        """Log and record a skipped job."""
+    def _skip(self, job: Job, why: str, noted: bool = False) -> None:
+        """Log and record a skipped job; with `noted` the reason goes into its note too."""
         self.log(f"SKIP {job.run_id}: {why}")
-        self.ledger.upsert(self._row(job, status="skipped", error=why, exit_code="", runner_pid=os.getpid()))
+        row = self._row(job, status="skipped", error=why, exit_code="", runner_pid=os.getpid())
+        if noted:
+            row["note"] = "; ".join(x for x in (row["note"], why) if x)
+        self.ledger.upsert(row)
 
     def provisional_reason(self, job: Job) -> str:
         """Return why the job's product would be provisional, or ""."""
@@ -1647,6 +1812,10 @@ class Campaign:
             if ok:  # the sidecar's engine, aurora when it names none; "" without a readable sidecar
                 side = read_sidecar(prod.get("sidecar"))
                 row["engine"] = str(side.get("engine") or "aurora") if side else ""
+                if "window_clipped" in side:  # a --mantle-window clip run: the clip it took replaces the expected one
+                    clipped = side["window_clipped"]
+                    row["note"] = "; ".join(x for x in (job.note, f"window {clip_text(clipped)}" if clipped else "")
+                                            if x)
         elif job.kind == "variant":
             m = re.findall(r"^variant: (.+?)\s*$", text, flags=re.M)
             path = Path(m[-1]) if m else None
@@ -1762,6 +1931,12 @@ class Campaign:
                     (done if self.run_merge(job) else failed).add(job.run_id)
                     continue
                 if job is not None:
+                    over = self.over_machine(job)
+                    if over:  # it would wait at the gate for ever
+                        pending.remove(job)
+                        failed.add(job.run_id)
+                        self._skip(job, over, noted=True)
+                        continue
                     ok, msg = self.gate(job)
                     if ok:
                         pending.remove(job)
@@ -1945,6 +2120,11 @@ class Campaign:
         api = self.check_api()
         print(f"variant API: {api['func'] or 'not in crust.ingest yet'}; process_rr.py uses it: {api['rr']}; "
               f"stack builder uses it: {api['stack']}" + (f"  ({api['why']})" if api["why"] else ""))
+        if 3 in stages:
+            left = [k for k in self.plan.configs if k not in self.stage3_configs()]
+            print(f"stage 3 configs: {', '.join(self.stage3_configs()) or 'none'}"
+                  + (f"; left out: {', '.join(left)}" if left else "")
+                  + ("" if self.only_configs is None else " (--configs; the windows: runs left out)"))
         counts: dict[int, dict[str, int]] = {}
         todo_min = 0.0
         for label, st, g, gs, jobs in self.blocks(stages, sites, dry=True):
@@ -1965,6 +2145,15 @@ class Campaign:
                     info = f"{j.local} rr {j.remote} [{extra}]" + (f" ({ov:.1f} h overlap, {km:.1f} km)" if ov else "")
                     if j.note and not j.window:
                         info += f"; {j.note}"
+                    hours = self.mantle_hours(j)
+                    if hours is not None:
+                        window, cap, used = hours
+                        info += (f"; MANTLE {used:.1f} h" + (f" (the {cap:g} h cap of {window:.1f} h)" if window > cap
+                                                              else "")
+                                 + f", expected peak {self.job_peak_mb(j) / 1024.0:.1f} GB")
+                        over = "" if done else self.over_machine(j)
+                        if over:
+                            info += f"; would be SKIPPED, {over}"
                 elif j.kind == "stack":
                     info = f"{j.remote}: {j.note}"
                 elif j.kind == "merge":
@@ -2587,6 +2776,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("plan_yaml")
     p.add_argument("--stage", type=parse_stages, default=[0, 1, 2, 3], help="e.g. 0,1,2,3 (default all)")
     p.add_argument("--sites", nargs="+", default=None, help="local sites to run (default: the plan's)")
+    p.add_argument("--configs", default=None, metavar="NAME[,NAME]",
+                   help="stage 3 runs only these configs, deferred ones included (default: every config the plan's "
+                        "runner.deferred_configs does not name)")
     p.add_argument("--parallel", type=int, default=2, help="jobs at once (default 2)")
     p.add_argument("--max-runs", type=int, default=None, help="start at most N jobs (smoke checks)")
     p.add_argument("--allow-raw", action="store_true",
@@ -2654,8 +2846,16 @@ def main(argv=None) -> int:
             print(f"ERROR sites not in the plan: {unknown}" + (f" ({why})" if why else ""), file=sys.stderr)
             return 2
     sites = args.sites or plan.sites
+    configs = None
+    if args.configs is not None:
+        configs = [k.strip() for k in args.configs.split(",") if k.strip()]
+        unknown = [k for k in configs if k not in plan.configs]
+        if unknown or not configs:
+            print(f"ERROR --configs {args.configs!r}: stage 3 configs of the plan are {', '.join(plan.configs)}",
+                  file=sys.stderr)
+            return 2
     c = Campaign(args.survey_yaml, plan, parallel=args.parallel, max_runs=args.max_runs, allow_raw=args.allow_raw,
-                 create=not args.dry_run)
+                 create=not args.dry_run, configs=configs)
     if args.report:
         c.report(sites if args.sites else None)
         print(f"report: {c.dir / 'summary.md'}")
@@ -2689,6 +2889,7 @@ def main(argv=None) -> int:
             signal.signal(getattr(signal, name), _raise)
     c.log(f"campaign {plan.name}: pid {os.getpid()}, stages {args.stage}, sites {', '.join(plan.ordered(sites))}, "
           f"parallel {c.parallel}" + (f", max-runs {args.max_runs}" if args.max_runs else "")
+          + (f", stage 3 configs {', '.join(configs)}" if configs else "")
           + (", --allow-raw (PROVISIONAL products)" if args.allow_raw else ""))
     rc = 0
     try:
