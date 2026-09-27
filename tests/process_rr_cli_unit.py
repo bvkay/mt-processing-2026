@@ -109,7 +109,9 @@ itself is tests/mask_scope_unit.py's), `resolve` for D02 rr E08 does not give `m
 three in start order, `masks_remote` E08's three, and `masks` the union in
 start order -- exactly the starts listed in MASK_UNION_STARTS, the shared
 interval once (D02's entry), E08's own entries carrying E08's reasons; the
-sidecar `build_sidecar` makes does not carry the same three lists with
+sidecar `build_sidecar` makes does not carry the same three lists in the
+form masks.yaml holds them (`crust.masks.stored`: `channels` left out of an
+entry on every channel) with
 `masks_ignored` False; the dry run does not print "masks: D02 3, E08 3 (5
 applied)"; with `--no-masks` all three lists are not empty with
 `masks_ignored` True in `resolve` and the sidecar and "masks: ignored
@@ -510,6 +512,7 @@ MASK_UNION_REASONS = ["D02 band", "E08 fence", "D02 spike", "E08 band", "D02 nig
 
 
 def test_masks_from_both_sites() -> None:
+    from crust.masks import stored
     import numpy as np
 
     process_rr = _load_process_rr()
@@ -537,7 +540,8 @@ def test_masks_from_both_sites() -> None:
         assert [m["reason"] for m in res["masks"]] == MASK_UNION_REASONS, [m["reason"] for m in res["masks"]]
         assert res["masks_ignored"] is False, res["masks_ignored"]
         for key in ("masks_local", "masks_remote", "masks"):
-            assert sidecar[key] == res[key], (key, sidecar[key])
+            assert sidecar[key] == [stored(m) for m in res[key]], (key, sidecar[key])
+            assert all("channels" not in m for m in sidecar[key]), (key, sidecar[key])
         assert sidecar["masks_ignored"] is False, sidecar["masks_ignored"]
         json.loads(json.dumps(sidecar, default=str))
 
@@ -590,7 +594,7 @@ def test_masks_from_both_sites() -> None:
         assert [m["reason"] for m in res["masks_remote"]] == [
             "E08 fence", "E08 band", "E08 same as D02 night"], res["masks_remote"]
         assert [m["start"] for m in res["masks"]] == MASK_UNION_STARTS, [m["start"] for m in res["masks"]]
-        assert sidecar["masks_remote"] == res["masks_remote"], sidecar["masks_remote"]
+        assert sidecar["masks_remote"] == [stored(m) for m in res["masks_remote"]], sidecar["masks_remote"]
         print(f"  data_root unmounted (E08 looks virtual): masks_remote {len(res['masks_remote'])}, "
               f"{len(res['masks'])} applied")
 
