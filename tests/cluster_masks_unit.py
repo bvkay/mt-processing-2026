@@ -267,7 +267,9 @@ def test_e_write() -> None:
         assert (kept2, removed2, written2) == (2, 2, 0) and load_masks(survey_yaml, "X") == keep_before
         out = cm.write_mask_file(Path(tmp) / "out" / "x.yaml", "X", new)
         assert out.read_text(encoding="utf-8").startswith(HEADER), out
-        assert cm.yaml.safe_load(out.read_text(encoding="utf-8")) == {"X": new}
+        loaded = cm.yaml.safe_load(out.read_text(encoding="utf-8"))
+        assert list(loaded) == ["X"] and [normalise(m) for m in loaded["X"]] == new, loaded
+        assert "\n  channels:" not in out.read_text(encoding="utf-8"), "an entry on every channel was written with the key"
     print("  (e) --write: the time and polar masks kept equal, the earlier cluster mask replaced by the two new "
           "ones, Y's block and the header unchanged; an empty write leaves the time and polar masks; --out's "
           "file holds the site's block")

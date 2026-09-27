@@ -10,12 +10,15 @@ A mask is an interval that processing leaves out. The file is written by the
       end: '2023-09-22T12:25:49Z'
       bands: all                      # or [pmin_s, pmax_s]
       reason: mains switching         # free text
-      found_by: time                  # time | polar: the panel it was picked on
-      scope: local                    # local | both: the roles of a pair it applies in
+      found_by: time                  # time | polar | cluster | night | gate: how it was found
+      scope: local                    # local | both | remote: the roles of a pair it applies in
+      channels: [ex]                  # optional: the channels the noise is on; every channel without it
 
 `load_masks(survey, site)` and `save_masks(survey, site, masks)` read and
 write one site's block. Saving rewrites that site's block of the file's text
-and carries the other blocks and the leading comment over unchanged.
+and carries the other blocks and the leading comment over unchanged; the
+text goes to a temporary file in the same folder and `os.replace` moves it
+into place, so a reader never sees a part-written file.
 `apply_time_masks(kd, masks)` cuts the masked intervals out of an aurora
 KernelDataset. `applies(mask, period_s)` decides which bands a mask covers;
 the Cross-powers tab, `crust.crosspower.masked_chunks` and
@@ -24,18 +27,31 @@ the Cross-powers tab, `crust.crosspower.masked_chunks` and
 A mask's `scope` says in which role of a remote-referenced pair it applies.
 `local`, the default for an entry without the key, applies when its site is
 the local of the pair; `both` applies when its site is the local and when it
-is the remote. A mask leaves out whole STFT windows of every channel, so a
-mask declared for noise on a site's electric channels is `local`: the pairs
-that use the site as a remote take only its magnetics and keep those
-windows. `masks_for_role(masks, role)` gives the masks of one site that
-apply in a role, and `remote_masks` those of a pair's remote.
+is the remote; `remote` applies only when its site is the remote, for noise
+that matters to the pairs using the site as their reference and not to the
+site's own estimate. `masks_for_role(masks, role)` gives the masks of one
+site that apply in a role, and `remote_masks` those of a pair's remote.
 
-Masks in processing: scripts/process_rr.py takes every mask of the local
-site and the masks of scope `both` of the remote site (`remote_masks`; a
-stacked remote named `STK_...` has none), joins them with `union_masks`,
-and passes the union to `crust.process.process_station(time_masks=...)`.
-Its `--mask-scope union` takes every mask of both sites, whatever its
-scope. `process_station` calls `apply_time_masks` with the masks whose `bands`
+A mask's `channels` names the channels the noise is on, drawn from
+`CHANNELS`; without the key it is on every channel (`"all"` after
+`normalise`, and the key is written only as a list). An entry naming hx or
+hy, or every channel, leaves out whole STFT windows (`cuts_whole_window`):
+in the local role for every output row, in the remote role as a remote's
+reference windows. An entry naming only output channels (ex, ey, hz)
+applies in the local role to those rows of the transfer function alone
+(`masks_for_row`), and not at all in the remote role, where the remote
+contributes its hx and hy only (`remote_channel_split`).
+
+Masks in processing: scripts/process_rr.py takes the masks of the local
+site of scope local or both, and the masks of the remote site of scope both
+or remote that name hx, hy or every channel (`remote_masks`; a stacked
+remote named `STK_...` has none), joins them with `union_masks`, groups
+them by output row (row r takes the whole-window entries and the entries
+naming r), and passes each distinct group to
+`crust.process.process_station(time_masks=...)` in a run of its own, then
+merges the rows into one transfer function. Its `--mask-scope union` takes
+every mask of both sites, whatever its scope. `process_station` calls
+`apply_time_masks` with the masks whose `bands`
 is `all`, which splits each run interval around them so aurora receives none
 of those samples. A band-limited mask (`bands: [pmin_s, pmax_s]`, recorded by
 a selection on the polar panel of the Cross-powers tab) reaches aurora
@@ -58,7 +74,16 @@ no input for this (docs/upstream_issues.md 22):
   `apply_masks_and_weights` is an empty stub.
 
 `crust.crosspower.stack_impedance`, the classical stacked remote-reference
-estimate from the cross-powers of the kept chunks, also applies band masks.
+estimate from the cross-powers of the kept chunks, also applies band masks,
+and the masks naming only ex or ey to their own row.
+
+Entries taken out of use are kept in `masks_history.yaml` beside masks.yaml
+(`history_path`), in the same per-site block format, each with the keys it
+had and ``retired: {on: 'YYYY-MM-DD', why: text}``. `retire_masks` moves the
+entries a selection picks from a site's masks.yaml block to the end of its
+history block, `restore_masks` moves them back without the `retired` key,
+and `load_history` reads a site's history block; scripts/retire_masks.py is
+the command line for the two.
 
 @author: ben kay (ben@auscope.org.au)
 
@@ -67,6 +92,9 @@ estimate from the cross-powers of the kept chunks, also applies band masks.
 
 from __future__ import annotations
 
+import datetime as dt
+import os
+import time
 from pathlib import Path
 
 import numpy as np
@@ -75,31 +103,44 @@ import yaml
 from loguru import logger
 
 MASKS_FILE = "masks.yaml"
+HISTORY_FILE = "masks_history.yaml"
 MIN_PIECE_S = 600.0  # a run piece a mask leaves shorter than this is dropped
 FOUND_BY = ("time", "polar", "cluster", "night", "gate")
-SCOPES = ("local", "both")        # a mask applies to its site as the local, or as the local and the remote
+# a mask applies to its site as the local; as the local and the remote; or as the remote alone
+SCOPES = ("local", "both", "remote")
 ROLES = ("local", "remote")       # the roles of a site in a remote-referenced pair
 SCOPE_RULES = ("role", "union")   # role: by each mask's scope; union: every mask in both roles
+SCOPES_OF_ROLE = {"local": ("local", "both"), "remote": ("both", "remote")}
+CHANNELS = ("ex", "ey", "hx", "hy", "hz")  # the names a mask's `channels` may hold
+WHOLE_WINDOW = ("hx", "hy")       # the TF inputs and the remote's reference channels
+OUTPUTS = ("ex", "ey", "hz")      # the TF output rows, aurora's default order
 HEADER = (
     "# Time masks declared on the GUI's Cross-powers tab (crust.masks): per site, the\n"
     "# intervals processing leaves out. bands: all (cut in time), or [pmin_s, pmax_s] (left\n"
     "# out of the bands whose centre period lies inside; see crust.masks). Times are UTC.\n"
     "# scope: local (the default) applies when the site is the local of a pair, both also\n"
-    "# when it is the remote.\n"
+    "# when it is the remote, remote only when it is the remote. channels (optional, every\n"
+    "# channel without it): an entry naming only ex, ey or hz leaves out those TF rows alone.\n"
 )
+HISTORY_HEADER = (
+    "# Masks taken out of use (crust.masks.retire_masks, scripts/retire_masks.py): per site,\n"
+    "# the masks.yaml entries as they were, each with retired: {on: date, why: text}.\n"
+    "# scripts/retire_masks.py --restore moves an entry back into masks.yaml.\n"
+)
+REPLACE_TRIES = 20  # os.replace attempts while a reader holds the file open (Windows)
 
 
 class _Dumper(yaml.SafeDumper):
-    """YAML dumper in block style that writes a list of plain numbers on one line.
+    """YAML dumper in block style that writes a list of plain numbers or names on one line.
 
-    A mask's bands are written as ``[0.02, 0.1]``.
+    A mask's bands are written as ``[0.02, 0.1]`` and its channels as ``[ex]``.
     """
 
 
 _Dumper.add_representer(
     list, lambda dumper, data: dumper.represent_sequence(
         "tag:yaml.org,2002:seq", data,
-        flow_style=all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in data) and bool(data)))
+        flow_style=all(isinstance(v, (int, float, str)) and not isinstance(v, bool) for v in data) and bool(data)))
 
 
 def masks_path(survey) -> Path:
@@ -134,22 +175,42 @@ def iso(value) -> str:
     return utc(value).isoformat().replace("+00:00", "Z")
 
 
+def _channels(value):
+    """Return a mask's channels as "all" or a sorted list of names from `CHANNELS`.
+
+    Raises:
+        ValueError: If the value is not "all", None or a non-empty list of
+            names from `CHANNELS`.
+    """
+    if value is None or value == "all":
+        return "all"
+    if isinstance(value, (str, bytes)) or not hasattr(value, "__iter__"):
+        raise ValueError(f"mask channels must be a list drawn from {CHANNELS}, not {value!r}")
+    names = sorted({str(c).strip().lower() for c in value})
+    if not names or any(n not in CHANNELS for n in names):
+        raise ValueError(f"mask channels must be a non-empty list drawn from {CHANNELS}, not {value!r}")
+    return names
+
+
 def normalise(mask: dict) -> dict:
     """Check one mask and return it with its keys in the file's order.
 
     Args:
         mask (dict): Mask with ``start`` and ``end`` and optional ``bands``,
-            ``reason``, ``found_by`` and ``scope``.
+            ``reason``, ``found_by``, ``scope`` and ``channels``.
 
     Returns:
-        dict: ``{"start", "end", "bands", "reason", "found_by", "scope"}``,
-        times as ISO UTC text, ``bands`` as ``"all"`` or a sorted
-        ``[pmin_s, pmax_s]``, ``scope`` ``"local"`` when the mask has none.
+        dict: ``{"start", "end", "bands", "reason", "found_by", "scope",
+        "channels"}``, times as ISO UTC text, ``bands`` as ``"all"`` or a
+        sorted ``[pmin_s, pmax_s]``, ``scope`` ``"local"`` when the mask has
+        none, ``channels`` ``"all"`` when it has none, else a sorted list.
+        Other keys (``retired`` of a history entry) are left out.
 
     Raises:
         ValueError: If start or end is missing or unparseable, end is not
             after start, bands is malformed, found_by is not one of
-            `FOUND_BY`, or scope is not one of `SCOPES`.
+            `FOUND_BY`, scope is not one of `SCOPES`, or channels is not a
+            list drawn from `CHANNELS`.
     """
     try:
         start, end = utc(mask["start"]), utc(mask["end"])
@@ -171,18 +232,34 @@ def normalise(mask: dict) -> dict:
     if scope not in SCOPES:
         raise ValueError(f"mask scope must be one of {SCOPES}, not {scope!r}")
     return {"start": iso(start), "end": iso(end), "bands": bands,
-            "reason": str(mask.get("reason") or ""), "found_by": found_by, "scope": scope}
+            "reason": str(mask.get("reason") or ""), "found_by": found_by, "scope": scope,
+            "channels": _channels(mask.get("channels", "all"))}
+
+
+def stored(mask: dict) -> dict:
+    """Return a mask as masks.yaml holds it: normalised, ``channels`` written only as a list.
+
+    An entry on every channel is written with the six keys it had before
+    `channels` existed, so its block dumps byte for byte as it did. A
+    ``retired`` record (a history entry) is kept, last.
+    """
+    out = normalise(mask)
+    if out["channels"] == "all":
+        del out["channels"]
+    if mask.get("retired") is not None:
+        out["retired"] = _retired(mask["retired"])
+    return out
 
 
 def _ordered(masks) -> list[dict]:
     """Normalise masks, sort them earliest first and collapse duplicates.
 
-    A mask with the same interval and bands as an earlier one, for example
-    from a repeated click on the Cross-powers tab, is kept once.
+    A mask with the same interval, bands and channels as an earlier one, for
+    example from a repeated click on the Cross-powers tab, is kept once.
     """
     out, seen = [], set()
     for m in sorted((normalise(m) for m in masks), key=lambda m: m["start"]):
-        key = (m["start"], m["end"], str(m["bands"]))
+        key = (m["start"], m["end"], str(m["bands"]), str(m["channels"]))
         if key not in seen:
             seen.add(key)
             out.append(m)
@@ -229,29 +306,52 @@ def _blocks(text: str) -> tuple[str, list[tuple[str, str]]]:
     return header, blocks
 
 
-def save_masks(survey, site: str, masks) -> Path:
-    """Write the masks of one site to masks.yaml.
+def replace_text(path, text: str) -> Path:
+    """Write text to a file atomically: to a temporary file in its folder, then `os.replace`.
 
-    The masks are normalised, sorted earliest first and collapsed as in
-    `load_masks`. The site's block is replaced; the other sites' blocks and
-    the leading comment are carried over as text, unchanged. A new file
-    starts with `HEADER`.
+    A reader of `path` (a campaign runner reads masks.yaml at every job
+    start) sees the old file or the new one, never a part-written one. The
+    text is written as `Path.write_text` writes it. On Windows `os.replace`
+    fails while another process holds the target open, so it is tried
+    `REPLACE_TRIES` times, 0.1 s apart; the temporary file is removed when
+    it cannot be moved.
 
     Args:
-        survey (Survey or str or Path): Survey, survey.yaml path or folder.
-        site (str): Site id.
-        masks (iterable of dict): The site's masks. An empty list removes
-            the site's block.
+        path (str or Path): The file to write.
+        text (str): Its new content.
 
     Returns:
-        Path: The masks.yaml path.
+        Path: `path`.
     """
-    path = masks_path(survey)
-    entries = _ordered(masks)
-    text = path.read_text(encoding="utf-8") if path.exists() else HEADER
-    header, blocks = _blocks(text)
+    path = Path(path)
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    try:
+        tmp.write_text(text, encoding="utf-8")
+        for attempt in range(REPLACE_TRIES):
+            try:
+                os.replace(tmp, path)
+                break
+            except PermissionError:
+                if attempt == REPLACE_TRIES - 1:
+                    raise
+                time.sleep(0.1)
+    finally:
+        if tmp.exists():
+            tmp.unlink()
+    return path
+
+
+def _write_block(path: Path, header: str, site: str, entries: list[dict], keep_empty: bool = False) -> None:
+    """Replace one site's block of a masks file with `entries` (already `stored`), atomically.
+
+    The other sites' blocks and the leading comment are carried over as
+    text, unchanged; a new file starts with `header`. An empty list removes
+    the site's block, or writes ``<site>: []`` with `keep_empty`.
+    """
+    text = path.read_text(encoding="utf-8") if path.exists() else header
+    head, blocks = _blocks(text)
     new = (yaml.dump({site: entries}, Dumper=_Dumper, sort_keys=False, allow_unicode=True,
-                     default_flow_style=False, width=100) if entries else "")
+                     default_flow_style=False, width=100) if entries or keep_empty else "")
     out, placed = [], False
     for key, chunk in blocks:
         if key == site:
@@ -261,18 +361,176 @@ def save_masks(survey, site: str, masks) -> Path:
             out.append(chunk if chunk.endswith("\n") else chunk + "\n")
     if not placed and new:
         out.append(new)
-    if header and not header.endswith("\n"):
-        header += "\n"
-    path.write_text(header + "".join(out), encoding="utf-8")
+    if head and not head.endswith("\n"):
+        head += "\n"
+    replace_text(path, head + "".join(out))
+
+
+def save_masks(survey, site: str, masks, keep_empty: bool = False) -> Path:
+    """Write the masks of one site to masks.yaml.
+
+    The masks are normalised, sorted earliest first and collapsed as in
+    `load_masks`, and written as `stored` gives them (``channels`` only as
+    a list). The site's block is replaced; the other sites' blocks and the
+    leading comment are carried over as text, unchanged. A new file starts
+    with `HEADER`. The file is replaced atomically (`replace_text`).
+
+    Args:
+        survey (Survey or str or Path): Survey, survey.yaml path or folder.
+        site (str): Site id.
+        masks (iterable of dict): The site's masks. An empty list removes
+            the site's block, or leaves ``<site>: []`` with `keep_empty`.
+        keep_empty (bool): Keep an emptied site's key, as `retire_masks` does.
+
+    Returns:
+        Path: The masks.yaml path.
+    """
+    path = masks_path(survey)
+    entries = [stored(m) for m in _ordered(masks)]
+    _write_block(path, HEADER, site, entries, keep_empty)
     logger.info(f"{site}: {len(entries)} mask(s) written to {path}")
     return path
+
+
+def history_path(survey) -> Path:
+    """Return the masks_history.yaml path of a survey, beside its masks.yaml.
+
+    Args:
+        survey (Survey or str or Path): A `Survey`, a survey.yaml path or the
+            survey folder.
+
+    Returns:
+        Path: ``<survey folder>/masks_history.yaml``.
+    """
+    return masks_path(survey).with_name(HISTORY_FILE)
+
+
+def _retired(value) -> dict:
+    """Check a history entry's ``retired`` record and return ``{"on": 'YYYY-MM-DD', "why": text}``.
+
+    Raises:
+        ValueError: If it is not a mapping with a date ``on`` and a
+            non-empty ``why``.
+    """
+    if not isinstance(value, dict):
+        raise ValueError(f"a history entry's retired must be {{on: date, why: text}}, not {value!r}")
+    # YAML 1.1 reads an unquoted key `on` as True; the dumper quotes it, a hand edit may not
+    day = value.get("on", value.get(True))
+    try:
+        on = pd.Timestamp(str(day)).strftime("%Y-%m-%d")
+    except (ValueError, TypeError):
+        raise ValueError(f"a history entry's retired.on must be a date, not {day!r}") from None
+    why = str(value.get("why") or "").strip()
+    if not why:
+        raise ValueError("a history entry's retired.why must say why it was taken out of use")
+    return {"on": on, "why": why}
+
+
+def load_history(survey, site: str) -> list[dict]:
+    """Load the history entries of one site from masks_history.yaml.
+
+    Args:
+        survey (Survey or str or Path): Survey, survey.yaml path or folder.
+        site (str): Site id.
+
+    Returns:
+        list of dict: The entries in the file's order (the order they were
+        retired), each normalised with its ``retired`` record; empty when
+        there is no file or no block for the site.
+
+    Raises:
+        ValueError: If an entry does not normalise or has no valid
+            ``retired`` record.
+    """
+    path = history_path(survey)
+    if not path.exists():
+        return []
+    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    out = []
+    for m in data.get(site) or []:
+        if "retired" not in m:
+            raise ValueError(f"{path.name}: {site} entry {m.get('start')} has no retired record")
+        out.append({**normalise(m), "retired": _retired(m["retired"])})
+    return out
+
+
+def retire_masks(survey, site: str, select, why: str, on=None) -> list[dict]:
+    """Move a site's masks that `select` picks from masks.yaml to masks_history.yaml.
+
+    Each picked entry keeps its keys and gains ``retired: {on, why}``; the
+    entries are appended to the end of the site's history block. The
+    history is written first, then masks.yaml, both atomically
+    (`replace_text`), so an interruption between the two leaves an entry
+    in both files rather than in neither. A site block of masks.yaml left
+    with no entry stays as ``<site>: []``.
+
+    Args:
+        survey (Survey or str or Path): Survey, survey.yaml path or folder.
+        site (str): Site id.
+        select (callable): Takes a normalised mask, returns True to retire it.
+        why (str): Why the entries are taken out of use.
+        on (date-like, optional): The date recorded; today (local) when None.
+
+    Returns:
+        list of dict: The retired entries as written to the history, with
+        their ``retired`` record; empty when `select` picks none, in which
+        case neither file is written.
+
+    Raises:
+        ValueError: If `why` is empty.
+    """
+    record = _retired({"on": on if on is not None else dt.date.today().isoformat(), "why": why})
+    current = load_masks(survey, site)
+    chosen = [bool(select(m)) for m in current]
+    picked = [m for m, c in zip(current, chosen) if c]
+    if not picked:
+        return []
+    kept = [m for m, c in zip(current, chosen) if not c]
+    retired = [{**m, "retired": dict(record)} for m in picked]
+    history = load_history(survey, site) + retired
+    _write_block(history_path(survey), HISTORY_HEADER, site, [stored(m) for m in history], keep_empty=True)
+    save_masks(survey, site, kept, keep_empty=True)
+    logger.info(f"{site}: {len(picked)} mask(s) retired to {history_path(survey).name} ({record['why']})")
+    return retired
+
+
+def restore_masks(survey, site: str, select) -> list[dict]:
+    """Move a site's history entries that `select` picks back into masks.yaml.
+
+    The entries lose their ``retired`` record and join the site's masks,
+    sorted and collapsed as `save_masks` does. masks.yaml is written first,
+    then the history, both atomically; a history block left with no entry
+    stays as ``<site>: []``.
+
+    Args:
+        survey (Survey or str or Path): Survey, survey.yaml path or folder.
+        site (str): Site id.
+        select (callable): Takes a history entry (normalised, with its
+            ``retired`` record), returns True to restore it.
+
+    Returns:
+        list of dict: The restored entries, normalised, without ``retired``;
+        empty when `select` picks none, in which case neither file is written.
+    """
+    history = load_history(survey, site)
+    chosen = [bool(select(m)) for m in history]
+    picked = [m for m, c in zip(history, chosen) if c]
+    if not picked:
+        return []
+    left = [m for m, c in zip(history, chosen) if not c]
+    restored = [normalise(m) for m in picked]
+    save_masks(survey, site, load_masks(survey, site) + restored, keep_empty=True)
+    _write_block(history_path(survey), HISTORY_HEADER, site, [stored(m) for m in left], keep_empty=True)
+    logger.info(f"{site}: {len(restored)} mask(s) restored from {history_path(survey).name}")
+    return restored
 
 
 def union_masks(*mask_lists) -> list[dict]:
     """Join the masks of several sites into one list.
 
     The result is normalised and sorted earliest first. A mask with the same
-    interval and bands at two sites is kept once, as the first site's entry.
+    interval, bands and channels at two sites is kept once, as the first
+    site's entry.
 
     Args:
         *mask_lists: Lists of masks; None is treated as empty.
@@ -299,9 +557,11 @@ def is_stack(site) -> bool:
 def masks_for_role(masks, role: str, rule: str = "role") -> list[dict]:
     """Return the masks of one site that apply when the site plays `role` in a pair.
 
-    Under the rule ``role`` every mask applies to the local, and a mask of
-    scope ``both`` applies to the remote as well. Under the rule ``union``
-    every mask applies in both roles.
+    Under the rule ``role`` the masks of scope ``local`` and ``both`` apply
+    to the local, and those of scope ``both`` and ``remote`` to the remote.
+    Under the rule ``union`` every mask applies in both roles. The scope
+    alone decides; a mask's ``channels`` are applied after it
+    (`remote_channel_split` for the remote, `masks_for_row` for the local).
 
     Args:
         masks (iterable of dict): The site's masks; None is treated as empty.
@@ -320,27 +580,85 @@ def masks_for_role(masks, role: str, rule: str = "role") -> list[dict]:
     if rule not in SCOPE_RULES:
         raise ValueError(f"mask scope rule must be one of {SCOPE_RULES}, not {rule!r}")
     masks = [normalise(m) for m in masks or []]
-    if role == "local" or rule == "union":
+    if rule == "union":
         return masks
-    return [m for m in masks if m["scope"] == "both"]
+    return [m for m in masks if m["scope"] in SCOPES_OF_ROLE[role]]
 
 
-def remote_masks(survey, remote, rule: str = "role") -> list[dict]:
+def cuts_whole_window(mask: dict) -> bool:
+    """Return True when a mask leaves out whole STFT windows: it names hx or hy, or every channel.
+
+    Such a mask applies to every output row in the local role and applies
+    in the remote role; one naming only output channels (ex, ey, hz) does
+    neither.
+    """
+    channels = normalise(mask)["channels"]
+    return channels == "all" or any(c in WHOLE_WINDOW for c in channels)
+
+
+def masks_for_row(masks, row: str) -> list[dict]:
+    """Return the masks that apply to one output row of a local site's transfer function.
+
+    A row takes the masks that leave out whole windows (`cuts_whole_window`)
+    and the masks naming it.
+
+    Args:
+        masks (iterable of dict): Masks applied in the local role; None is
+            treated as empty.
+        row (str): An output channel, one of `OUTPUTS`.
+
+    Returns:
+        list of dict: The masks that apply, normalised, in the order given.
+
+    Raises:
+        ValueError: If row is not one of `OUTPUTS`.
+    """
+    if row not in OUTPUTS:
+        raise ValueError(f"row must be one of {OUTPUTS}, not {row!r}")
+    out = []
+    for m in (normalise(m) for m in masks or []):
+        if cuts_whole_window(m) or row in m["channels"]:
+            out.append(m)
+    return out
+
+
+def remote_channel_split(masks) -> tuple[list[dict], list[dict]]:
+    """Split a remote's masks into those that apply and those its channels leave out.
+
+    The remote contributes its hx and hy alone, so a mask naming neither
+    (only ex, ey or hz) does not apply there; one naming hx, hy or every
+    channel applies as a whole-window cut.
+
+    Args:
+        masks (iterable of dict): The remote's masks its scope lets apply.
+
+    Returns:
+        tuple: ``(applied, left_out)``, each normalised, in the order given.
+    """
+    masks = [normalise(m) for m in masks or []]
+    return [m for m in masks if cuts_whole_window(m)], [m for m in masks if not cuts_whole_window(m)]
+
+
+def remote_masks(survey, remote, rule: str = "role", channels: bool = True) -> list[dict]:
     """Return the masks a run takes from its remote.
 
-    These are the remote's masks of scope ``both`` (`masks_for_role`), or
-    all of its masks under the rule ``union``. The choice depends on the
-    remote's name alone (`is_stack`), so a site's masks apply whether or not
-    its raw folder or archive is available. scripts/process_rr.py, the
-    campaign signature and the GUI Process tab all use this function. A
-    stack built under another name (a scripts/build_stack.py name without
-    the prefix) is read like a site, and whatever masks.yaml holds under
-    that name applies.
+    These are the remote's masks of scope ``both`` or ``remote``
+    (`masks_for_role`), or all of its masks under the rule ``union``, that
+    name hx, hy or every channel (`remote_channel_split`; `channels` False
+    skips this step and returns every mask the scope lets apply). The choice
+    depends on the remote's name alone (`is_stack`), so a site's masks apply
+    whether or not its raw folder or archive is available.
+    scripts/process_rr.py, the campaign signature and the GUI Process tab
+    all use this function. A stack built under another name (a
+    scripts/build_stack.py name without the prefix) is read like a site,
+    and whatever masks.yaml holds under that name applies.
 
     Args:
         survey (Survey or str or Path): Survey, survey.yaml path or folder.
         remote (str): Remote site id, or empty for a single-site run.
         rule (str): ``role`` (the default) or ``union`` (`SCOPE_RULES`).
+        channels (bool): Leave out the masks naming no magnetic input (the
+            default).
 
     Returns:
         list of dict: The remote's masks that apply as the remote, or an
@@ -353,7 +671,8 @@ def remote_masks(survey, remote, rule: str = "role") -> list[dict]:
         raise ValueError(f"mask scope rule must be one of {SCOPE_RULES}, not {rule!r}")
     if not remote or is_stack(remote):
         return []
-    return masks_for_role(load_masks(survey, remote), "remote", rule)
+    masks = masks_for_role(load_masks(survey, remote), "remote", rule)
+    return remote_channel_split(masks)[0] if channels else masks
 
 
 def applies(mask: dict, period_s: float) -> bool:

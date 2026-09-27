@@ -92,7 +92,7 @@ from crust.crosspower import (  # noqa: E402
     CHUNKS_S, band_view, bin_windows, compute_windows, masked_chunks, stack_impedance,
 )
 from crust.ingest import default_archive_path, variant_path, variant_ready  # noqa: E402
-from crust.masks import HEADER, _Dumper, load_masks, normalise, save_masks  # noqa: E402
+from crust.masks import HEADER, _Dumper, load_masks, normalise, save_masks, stored  # noqa: E402
 from crust.survey import Survey  # noqa: E402
 
 WORKERS = 4
@@ -386,7 +386,7 @@ def write_mask_file(path, site: str, masks) -> Path:
     """Write masks to a YAML file laid out as masks.yaml, one site's block."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    body = yaml.dump({site: [normalise(m) for m in masks]}, Dumper=_Dumper, sort_keys=False,
+    body = yaml.dump({site: [stored(m) for m in masks]}, Dumper=_Dumper, sort_keys=False,
                      allow_unicode=True, default_flow_style=False, width=100)
     path.write_text(HEADER + body, encoding="utf-8")
     return path
