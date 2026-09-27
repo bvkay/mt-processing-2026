@@ -275,7 +275,7 @@ sites:
     dipole_length_ex: 52.0
     dipole_length_ey: 42.0
     azimuth_ex: 0.0
-    azimuth_ey: 90.0
+    azimuth_ey: 270.0
     latitude: 30.67593
     longitude: -9.478464
     elevation: 1168.9
@@ -1882,3 +1882,60 @@ sites:
     end: '2023-09-27T10:51:41Z'
     notes: C01 decimated to 1 Hz from C01_f012bbb9e.h5 by scripts/decimate_site.py,
       2026-09-25T12:29:13Z
+  A19L:
+    derived_from: A19
+    sample_rate: 1.0
+    dipole_length_ex: 52.0
+    dipole_length_ey: 42.0
+    azimuth_ex: 0.0
+    azimuth_ey: 270.0
+    latitude: 30.67593
+    longitude: -9.478464
+    elevation: 1168.9
+    start: '2023-02-27T15:49:06Z'
+    end: '2023-03-02T09:51:05Z'
+    notes: A19 decimated to 1 Hz from A19.h5 by scripts/decimate_site.py (write_derived),
+      2026-09-26T23:52:00Z; rebuilt after the A19 re-ingest with azimuth_ey 270 (ey
+      sign-flipped)
+  A21L:
+    derived_from: A21
+    sample_rate: 1.0
+    dipole_length_ex: 46.5
+    dipole_length_ey: 52.5
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: 30.596115
+    longitude: -9.518619
+    elevation: 533.1
+    start: '2023-02-27T11:35:22Z'
+    end: '2023-03-02T08:33:20Z'
+    notes: A21 decimated to 1 Hz from A21.h5 by scripts/decimate_site.py, 2026-09-26T09:17:14Z
+      (lineA dive)
+  A23L:
+    derived_from: A23
+    sample_rate: 1.0
+    dipole_length_ex: 50.5
+    dipole_length_ey: 51.2
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: 30.514738
+    longitude: -9.595178
+    elevation: 282.4
+    start: '2023-02-24T15:37:46Z'
+    end: '2023-02-26T05:07:22Z'
+    notes: A23 decimated to 1 Hz from A23.h5 by scripts/decimate_site.py, 2026-09-26T10:25:11Z
+      (lineA dive)
+  A26L:
+    derived_from: A26
+    sample_rate: 1.0
+    dipole_length_ex: 54.0
+    dipole_length_ey: 54.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: 30.409971
+    longitude: -9.511137
+    elevation: 96.7
+    start: '2023-02-23T11:36:29Z'
+    end: '2023-02-26T10:12:01Z'
+    notes: A26 decimated to 1 Hz from A26.h5 by scripts/decimate_site.py, 2026-09-26T10:26:10Z
+      (lineA dive)
