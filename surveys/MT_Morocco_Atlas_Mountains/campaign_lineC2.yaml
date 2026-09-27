@@ -27,11 +27,11 @@ description: >
   Sep masks, C01's masks are dropped, and the band scheme starts at
   harmonic 10 (survey.yaml processing.min_bin).
   27 Sep: the filter-pass masks, C01's burst stage, C11's swap_h and the
-  remote overrides below were declared; C13, C16, C19, C20 and C22 ship as
+  remote overrides below were declared; C13, C16, C20 and C22 ship as
   per-mode merges (xy and yx from different configs) made by hand with
   scripts/merge_modes.py until the runner has a per-mode option merge
-  (C19's xy from the masked run, its yx from a run with --masks
-  --mask-origins time, which applies C22's three transient spans alone);
+  (C19 needs none: its night spans name ex only, channels: [ex], so its
+  masked run leaves them out of the xy row alone and gives both modes);
   C23: pick the masked stage 3 product explicitly, or take yx from it with
   merge_modes.
 
