@@ -1209,7 +1209,8 @@ def main(args) -> None:
             edi_path = survey.workspace / "tf" / f"{stem}.edi"
             edi_path.parent.mkdir(parents=True, exist_ok=True)
             tf.write(fn=edi_path, file_type="edi")
-            logger.info(f"wrote {edi_path} (rows merged from {len(runs)} runs)")
+            logger.info(f"wrote {edi_path}")
+            logger.info(f"{stem}: rows merged from {len(runs)} aurora runs (the masks' channels)")
 
     pmin, pmax = quadrant_window(res["sample_rate"])
     logger.info(

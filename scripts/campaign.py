@@ -902,7 +902,7 @@ def kill_tree(pid: int) -> None:
     psutil.wait_procs(procs, timeout=30)
 
 
-WROTE_RE = re.compile(r"\bwrote (.+?)\s*$")
+WROTE_RE = re.compile(r"\bwrote (.+?)(?:\s+\(.*\))?\s*$")  # a trailing "(note)" after the path is not part of it
 # loguru colours its lines even into a redirected log ("\x1b[1m ... wrote <path>\x1b[0m")
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 

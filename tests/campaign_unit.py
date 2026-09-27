@@ -693,6 +693,9 @@ def test_parse_products() -> None:
             "figure": "D:\\W\\tf\\C18_rr-C19_x_vs_lemimt.png"}
     assert got == want, got
     assert cp.parse_products("the EDI C18_rr-C19_x.edi was not written")["edi"] == ""
+    # a note after the path (process_rr's merged-rows line of 27 Sep) must not become part of it
+    noted = cp.parse_products("wrote D:\\W\\tf\\C19_rr-C22_m.edi (rows merged from 2 runs)")
+    assert noted["edi"] == "D:\\W\\tf\\C19_rr-C22_m.edi", noted
     print(f"  {got}")
 
 
