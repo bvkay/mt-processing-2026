@@ -111,7 +111,19 @@ MANTLE holds the whole window in memory and refuses one longer than
 `--mantle-max-hours` (24 h by default); a limit above 24 h logs the peak
 memory the window is expected to need, about 1.35 GB per hour of window at
 1000 Hz with six channels. The sidecar records the limit as
-`engine_config.options.max_hours`.
+`engine_config.options.max_hours`. `--mantle-window clip` chooses a window
+that fits in place of refusing (`crust.mantle_window.choose_window`): inside
+the window requested (the start and end given, else the pair's overlap) the
+longest span both archives' runs cover without a gap
+(`crust.engine_mantle.archive_spans`), its first `--mantle-max-hours` hours
+when it is longer. The resolution prints it as `mantle.window_used` (a dry
+run reads the runs of the archives it would process, metadata only, and
+runs nothing), and the sidecar records it as `window` with `window_clipped`:
+null, or {requested_hours, used_hours, reason} with reason "cap", "gap" or
+"cap and gap". A pair whose runs share no covered span of an hour inside the
+window is an error. `--mantle-window refuse`, the default, keeps the refusal
+and adds neither the line nor the key; aurora refuses the option, since it
+reads the window a piece at a time and needs no clip.
 
 Outputs: <workspace>/mth5/<site>.h5, <workspace>/tf/<stem>.edi,
 <workspace>/tf/<stem>_vs_lemimt.png and <workspace>/tf/<stem>.json, where
@@ -136,6 +148,7 @@ Usage:
         [--min-windows N] [--max-iterations N] [--redescending-iterations N]
         [--r0 X] [--u0 X] [--tolerance X]
         [--engine {aurora,mantle}] [--mantle-whiten {none,diff}] [--mantle-max-hours H]
+        [--mantle-window {refuse,clip}]
 
 @author: ben kay (ben@auscope.org.au)
 
@@ -174,6 +187,7 @@ MAX_RUN_FILES = 34  # 34 x 90 min = 51 h per run
 ENGINES = ("aurora", "mantle")
 MANTLE_WHITEN = ("none", "diff")  # crust.engine_mantle.WHITEN, spelt here so the parser builds without MANTLE
 MANTLE_MAX_HOURS = 24.0  # crust.engine_mantle.MAX_HOURS, likewise
+MANTLE_WINDOW = ("refuse", "clip")
 # the band-scheme keys this CLI can override; anything else in the survey's
 # `processing:` block (factor, notch_fraction) is passed through
 BAND_KEYS = ("min_period", "max_period", "periods_per_decade", "notch_frequencies", "window", "min_bin")
@@ -245,6 +259,10 @@ def build_parser() -> argparse.ArgumentParser:
                      help="mantle only: the longest window accepted, in hours (in use: 24); MANTLE holds the "
                           "window in memory, about 1.35 GB per hour at 1000 Hz, and a limit above 24 logs the "
                           "window's expected peak")
+    eng.add_argument("--mantle-window", choices=MANTLE_WINDOW, default=None, metavar="MODE",
+                     help="mantle only: refuse (in use) a window longer than --mantle-max-hours or not covered by "
+                          "both archives' runs; clip takes the longest span both cover inside the window, its "
+                          "first --mantle-max-hours hours when longer")
     return p
 
 
@@ -515,6 +533,10 @@ def resolve(args, started) -> dict:
     max_hours = float(getattr(args, "mantle_max_hours", MANTLE_MAX_HOURS))
     if not max_hours > 0.0:
         raise SystemExit(f"--mantle-max-hours takes a positive number of hours; given {max_hours:g}")
+    mantle_window = getattr(args, "mantle_window", None)
+    if mantle_window is not None and engine != "mantle":
+        raise SystemExit(f"--mantle-window {mantle_window} is a MANTLE option (--engine mantle): aurora reads the "
+                         "window a piece at a time and needs no clip")
 
     return {
         "survey": survey,
@@ -563,7 +585,76 @@ def resolve(args, started) -> dict:
         "engine": engine,
         "mantle_whiten": getattr(args, "mantle_whiten", "none"),
         "mantle_max_hours": max_hours,
+        # refuse or clip with MANTLE, None with aurora; `window_choice` is set by
+        # `choose_mantle_window` once the archives are known
+        "mantle_window": (mantle_window or "refuse") if engine == "mantle" else None,
+        "window_choice": None,
     }
+
+
+def dry_run_archives(res: dict) -> tuple[Path, Path]:
+    """Return the archives a run would process from, as far as a dry run can tell without building one.
+
+    The filtered variant when `archive_status` says it is ready, else the
+    raw archive (a variant to build has the raw archive's runs); a virtual
+    remote's archive as it is.
+    """
+    def pick(status, path):
+        if status and status.get("variant") and status.get("variant_state") == "ready":
+            return Path(status["variant"])
+        return Path(path)
+
+    remote = Path(res["remote_archive"]) if res["virtual_remote"] else pick(res["remote_status"], res["remote_archive"])
+    return pick(res["local_status"], res["local_archive"]), remote
+
+
+def choose_mantle_window(res: dict, local_h5, remote_h5, start, end):
+    """Choose the window of a `--mantle-window clip` run from the two archives' runs and keep it in `res`.
+
+    Sets `res["window_choice"]` and `res["window"]`, the window's text in
+    the figure's title.
+
+    Args:
+        res (dict): Output of `resolve`.
+        local_h5 (Path): The local's archive.
+        remote_h5 (Path): The remote's archive.
+        start: Start requested (UTC), or None.
+        end: End requested (UTC), or None.
+
+    Returns:
+        WindowChoice: The window chosen (`crust.mantle_window.choose_window`).
+
+    Raises:
+        SystemExit: When the runs share no covered span of an hour inside the window.
+    """
+    from crust import engine_mantle
+    from crust.mantle_window import choose_window
+
+    def epoch(t):
+        return None if t is None else pd.Timestamp(t, tz="UTC").timestamp()
+
+    try:
+        choice = choose_window(engine_mantle.archive_spans(local_h5), engine_mantle.archive_spans(remote_h5),
+                               res["mantle_max_hours"], start=epoch(start), end=epoch(end))
+    except ValueError as exc:
+        raise SystemExit(f"ERROR {res['local']} rr {res['remote']}: {exc}") from None
+    res["window_choice"] = choice
+    res["window"] = f"{_epoch_text(choice.start)} to {_epoch_text(choice.end)} UTC"
+    return choice
+
+
+def _epoch_text(t: float) -> str:
+    """Format epoch seconds as "YYYY-MM-DD HH:MM:SS" UTC."""
+    return pd.Timestamp(t, unit="s", tz="UTC").strftime("%Y-%m-%d %H:%M:%S")
+
+
+def mantle_window_line(res: dict) -> str:
+    """Return the `mantle.window_used` line of a clip run: the window, its hours and what was clipped."""
+    from crust.mantle_window import clip_text
+
+    choice = res["window_choice"]
+    return (f"mantle.window_used: {_epoch_text(choice.start)} to {_epoch_text(choice.end)} UTC "
+            f"({choice.hours:.2f} h; {clip_text(choice.clipped)})")
 
 
 def output_channels(survey, site: str) -> list[str] | None:
@@ -814,13 +905,22 @@ def build_sidecar(res: dict, args, started, finished, edi_path: Path, png_path: 
     survey = res["survey"]
     raw_sites = res["raw_sites"]
     local, remote = res["local"], res["remote"]
+    choice = res.get("window_choice")
+    if choice is None:
+        window = {"start": _utc_iso(args.start), "end": _utc_iso(args.end)}
+        clipped = {}
+    else:  # --mantle-window clip: the window used, and what was clipped from the one requested
+        window = {"start": pd.Timestamp(choice.start, unit="s", tz="UTC").isoformat(),
+                  "end": pd.Timestamp(choice.end, unit="s", tz="UTC").isoformat()}
+        clipped = {"window_clipped": choice.clipped}
     return {
         "local": local,
         "remote": remote,
         "started": started.isoformat(),
         "finished": finished.isoformat(),
         "seconds": (finished - started).total_seconds(),
-        "window": {"start": _utc_iso(args.start), "end": _utc_iso(args.end)},
+        "window": window,
+        **clipped,
         "local_archive": _archive_info(res["local_archive"]),
         "remote_archive": _archive_info(res["remote_archive"]),
         "survey_yaml": {"path": res["survey_yaml"], "name": Path(res["survey_yaml"]).name},
@@ -970,6 +1070,8 @@ def print_resolution(res: dict) -> None:
     if res["engine"] == "mantle":
         print(f"mantle.whiten: {res['mantle_whiten']}")
         print(f"mantle.max_hours: {res['mantle_max_hours']:g}")
+        if res.get("mantle_window") == "clip":
+            print("mantle.window: clip")
 
 
 def runs_text(runs) -> str:
@@ -993,6 +1095,14 @@ def main(args) -> None:
     survey = res["survey"]
     print_resolution(res)
     if args.dry_run:
+        if res["mantle_window"] == "clip":
+            local_h5, remote_h5 = dry_run_archives(res)
+            missing = [str(p) for p in (local_h5, remote_h5) if not p.exists()]
+            if missing:
+                print(f"mantle.window_used: unknown until the archives exist ({', '.join(missing)})")
+                return
+            choose_mantle_window(res, local_h5, remote_h5, args.start, args.end)
+            print(mantle_window_line(res) + f" (runs of {local_h5.name} and {remote_h5.name})")
         return
 
     raw_sites = res["raw_sites"]
@@ -1062,11 +1172,17 @@ def main(args) -> None:
         from crust import engine_mantle
 
         site_cfg = survey.site(local)
+        start, end = args.start, args.end
+        if res["mantle_window"] == "clip":
+            choice = choose_mantle_window(res, local_h5, remote_h5, args.start, args.end)
+            print(mantle_window_line(res))
+            logger.info(f"{local} rr {remote}: {mantle_window_line(res)}")
+            start, end = choice.start, choice.end  # epoch seconds, which MANTLE's reader takes as they are
         tf, extras = engine_mantle.process_pair(
             local_h5, local, remote_h5, remote,
             survey_name=survey.name, latitude=site_cfg.latitude, longitude=site_cfg.longitude,
             elevation=site_cfg.elevation if site_cfg.elevation is not None else 0.0,
-            out_dir=survey.workspace / "tf", stem=stem, scheme=scheme, start=args.start, end=args.end,
+            out_dir=survey.workspace / "tf", stem=stem, scheme=scheme, start=start, end=end,
             options=engine_mantle.MantleOptions(whiten=res["mantle_whiten"], max_hours=res["mantle_max_hours"]),
         )
         edi_path = survey.workspace / "tf" / f"{stem}.edi"

@@ -28,7 +28,9 @@ window longer than `MantleOptions.max_hours` (MAX_HOURS, 24 h, by default).
 Its peak is about GB_PER_HOUR (1.35) GB per hour of window at 1000 Hz with
 six channels, as measured on a 23.5 h window (31.8 GB); a limit above 24 h
 logs one warning line with the peak `expected_peak_gb` gives for the
-window.
+window. process_rr.py's `--mantle-window clip` chooses a window that fits
+instead (`crust.mantle_window.choose_window` on the spans `archive_spans`
+reads), and hands it to `process_pair` as its start and end.
 
 @author: ben kay (ben@auscope.org.au)
 
@@ -47,6 +49,7 @@ from loguru import logger
 from mt_metadata.transfer_functions.core import TF
 
 from . import _mantle
+from .mantle_window import covered_spans
 
 ENGINE = "mantle"
 WHITEN = ("none", "diff")
@@ -156,6 +159,24 @@ def check_window(hours: float, max_hours: float = MAX_HOURS) -> None:
         logger.warning(f"{ENGINE}: window limit {max_hours:g} h, above the default {MAX_HOURS:g} h: this "
                        f"{hours:.1f} h window needs about {expected_peak_gb(hours):.0f} GB at its peak "
                        f"({GB_PER_HOUR:g} GB per hour of window at 1000 Hz with six channels)")
+
+
+def archive_spans(path) -> list[tuple[float, float]]:
+    """Return the spans an archive's runs cover, read with MANTLE's own reader (metadata only).
+
+    The reader's `open_station` lists the runs `read_mth5_window` stitches,
+    so a span `crust.mantle_window.covered_spans` joins from them is one the
+    reader reads without a missing sample.
+
+    Args:
+        path (Path): A processing archive.
+
+    Returns:
+        list of tuple: ``(start, end)`` epoch seconds, half open, in time order.
+    """
+    reader = _mantle.module("io.mth5_reader")
+    station = reader.open_station(Path(path))
+    return covered_spans([(run.start, run.n_samples) for run in station.runs], float(station.fs))
 
 
 def band_list(scheme: dict) -> list[tuple[float, float]]:
