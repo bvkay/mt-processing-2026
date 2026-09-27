@@ -743,30 +743,6 @@ sites:
     start: '2023-03-12T11:08:44Z'
     end: '2023-03-14T09:38:48Z'
     notes: Moun
-  B30:
-    dipole_length_ex: 50.0
-    dipole_length_ey: 50.0
-    azimuth_ex: 0.0
-    azimuth_ey: 90.0
-    latitude: 30.791667
-    longitude: -7.917573
-    elevation: 1143.3
-    serial: '6'
-    firmware: '2.1'
-    start: '2023-03-12T12:30:24Z'
-    end: '2023-03-14T11:00:28Z'
-  B31:
-    dipole_length_ex: 50.0
-    dipole_length_ey: 50.0
-    azimuth_ex: 0.0
-    azimuth_ey: 90.0
-    latitude: 30.741431
-    longitude: -7.933101
-    elevation: 979.5
-    serial: '3'
-    firmware: '2.1'
-    start: '2023-03-12T11:08:44Z'
-    end: '2023-03-14T09:38:48Z'
   C01:
     dipole_length_ex: 54.0
     dipole_length_ey: 40.0
@@ -830,7 +806,7 @@ sites:
     serial: '4'
     firmware: '2.1'
     start: '2023-09-25T15:07:48Z'
-    end: '2023-09-27T10:37:52Z'
+    end: '2023-09-27T09:16:49Z'
     notes: The road in the N and NE( about 400m)+ powerline in the E about(300m) and
       house(about 60m) +Valley(about 200m)
   C06:
@@ -895,19 +871,20 @@ sites:
     serial: '14'
     firmware: '2.1'
     start: '2023-09-24T14:20:56Z'
-    end: '2023-09-27T07:33:00Z'
+    end: '2023-09-27T06:55:08Z'
   C11:
     dipole_length_ex: 42.0
     dipole_length_ey: 54.0
     azimuth_ex: 0.0
     azimuth_ey: 90.0
+    swap_h: true
     latitude: 32.124955
     longitude: -5.556704
     elevation: 2228.9
     serial: '11'
     firmware: '2.1'
     start: '2023-09-24T13:11:29Z'
-    end: '2023-09-26T17:41:33Z'
+    end: '2023-09-26T16:35:51Z'
     notes: ROAD IN THE EAST 200m, road in the northern 200m
   C12:
     dipole_length_ex: 54.0
@@ -1061,7 +1038,7 @@ sites:
     serial: '13'
     firmware: '2.1'
     start: '2023-09-22T18:02:39Z'
-    end: '2023-09-24T09:02:43Z'
+    end: '2023-09-24T08:01:29Z'
   C23:
     dipole_length_ex: 53.0
     dipole_length_ey: 54.0
@@ -1699,7 +1676,7 @@ sites:
     start: '2023-09-24T13:11:46Z'
     end: '2023-09-26T16:35:41Z'
     notes: C11 decimated to 1 Hz from C11_fa5afd228.h5 by scripts/decimate_site.py,
-      2026-09-25T12:15:40Z
+      2026-09-27T00:51:04Z
   C12L:
     derived_from: C12
     sample_rate: 1.0

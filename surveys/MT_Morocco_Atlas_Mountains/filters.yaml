@@ -58,6 +58,18 @@ C01:
     - 98.0
     - 91.0
     - 93.0
+- burst:
+    threshold: 6.0
+    min_len_s: 0.05
+    pad_s: 0.3
+    taper_s: 0.05
+    reference:
+    - ex
+    channels:
+    - ex
+    - ey
+    - hx
+    - hy
 R06:
 - notch:
     f0: 50.0
@@ -355,6 +367,11 @@ B26:
     passes: 2
     extra:
     - 82.0
+- notch:
+    f0: 60.0
+    harmonics: 1
+    q: 100.0
+    passes: 2
 B25:
 - notch:
     f0: 50.0

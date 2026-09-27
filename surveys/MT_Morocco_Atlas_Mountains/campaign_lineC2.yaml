@@ -26,6 +26,14 @@ description: >
   instrument, for the student to decide), C13/C16/C18/C19 carry the 25-26
   Sep masks, C01's masks are dropped, and the band scheme starts at
   harmonic 10 (survey.yaml processing.min_bin).
+  27 Sep: the filter-pass masks, C01's burst stage, C11's swap_h and the
+  remote overrides below were declared; C13, C16, C19, C20 and C22 ship as
+  per-mode merges (xy and yx from different configs) made by hand with
+  scripts/merge_modes.py until the runner has a per-mode option merge
+  (C19's xy from the masked run, its yx from a run with --masks
+  --mask-origins time, which applies C22's three transient spans alone);
+  C23: pick the masked stage 3 product explicitly, or take yx from it with
+  merge_modes.
 
 sites: [C01, C02, C03, C04, C05, C06, C07, C08, C09, C10, C11, C12, C13, C14, C15,
         C16, C17, C18, C19, C20, C21new, C22, C23]
@@ -46,6 +54,11 @@ overlap:
 
 # per-site decisions (features 1-3 above)
 remotes:
+  C01: C04          # the burst stage was measured on C04 (0.549); C04 led C09 by 0.013 on the old chain
+  C02: C04          # the remote the C02 gate masks were tested on (C09 is 1.01-1.08x better in 5-6 error ranges)
+  C13: C15          # the mx masks and the mode merge were tested on C15 (0.1-30 s: 0.835 against C11's 0.727)
+  C16: C15          # 43 h overlap against C11's 20 h; the masked run 0.841 against the C15 default's 0.831
+  C17: C15          # C15 beats the score pick C11 at 300-1000 s (5.5x in xy, 1.9x in yx)
   C19: C22          # the campaign's pick C21new has an ey wiring fault; C22 gives the same curve
 modes:
   C18: [xy]         # ey is a channel fault outside its bursts (317x ex, coherence <= 0.03)
