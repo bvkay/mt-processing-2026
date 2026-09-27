@@ -28,7 +28,7 @@ description: >
   records 0.534 x ex plus a weak E-W part: both modes ship as recorded
   with that note. D15 had no dive (campaign only). No stacks.
 
-sites: [D01, D02, D03, D05, D06, D11, D12, D13, D14, D15, D16, D07, D08, D09, D10]
+sites: [D01, D02, D03, D05, D06, D07, D08, D09, D10, D11, D12, D13, D14, D15, D16]
 
 groups:
   G1: [D01, D02, D03, D05, D06, D11, D12, D13, D14, D15, D16]   # 19-21 Sep 2023, all concurrent
