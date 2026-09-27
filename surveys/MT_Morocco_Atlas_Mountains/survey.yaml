@@ -1331,6 +1331,18 @@ sites:
     start: '2023-02-13T00:00:00Z'
     end: '2023-09-28T00:00:00Z'
     notes: INTERMAGNET observatory, 1 s, fetched 2026-09-25T11:56:55Z
+  SPT:
+    instrument: intermagnet
+    channels:
+    - hx
+    - hy
+    - hz
+    latitude: 39.55
+    longitude: -4.35
+    elevation: 922.0
+    start: '2023-02-13T00:00:00Z'
+    end: '2023-09-30T00:00:00Z'
+    notes: INTERMAGNET observatory San Pablo de los Montes, 1 s, fetched 2026-09-27 (four runs over the deployment windows)
   B01L:
     derived_from: B01
     sample_rate: 1.0
