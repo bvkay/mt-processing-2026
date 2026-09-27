@@ -19,7 +19,8 @@ inside the stored one is regrouped at once. `chunk_impedances` runs the two
 in one call, `band_view` reads one band of a result on its own level's
 grid, `masked_chunks` marks the groups a list of masks touches,
 `level_multiples` gives the display group size per level and
-`stack_impedance` stacks, per band, every kept window the masks leave. The
+`stack_impedance` stacks, per band, every kept window the masks leave (a
+mask naming only ex or ey leaves out that row's windows alone). The
 module is checked by `tests/crosspower_unit.py` and by criterion (34) of
 `tests/gui_smoke.py`.
 
@@ -78,7 +79,7 @@ import pandas as pd
 from loguru import logger
 from mth5.mth5 import MTH5
 
-from .masks import applies, normalise, windows_in_mask
+from .masks import applies, cuts_whole_window, masks_for_row, normalise, windows_in_mask
 from .timefreq import MIN_WINDOWS, _real_runs, decimation_levels, density_scale, segment_ffts
 
 CHUNK_S = 600.0  # the default chunk, and the read block
@@ -1076,8 +1077,13 @@ def band_view(result: dict, j: int) -> dict:
             "level": level, "multiple": grid["multiple"], "period": float(result["periods"][j])}
 
 
-def _item_masks(result: dict, masks, j: int):
-    """Return, for band j: (store level, item indices, their groups, kept, hit by a mask covering the band)."""
+def _item_masks(result: dict, masks, j: int, channel: str | None = None):
+    """Return, for band j: (store level, item indices, their groups, kept, hit by a mask covering the band).
+
+    With `channel` (an output row, ex or ey) only the masks applying to that
+    row count (`crust.masks.masks_for_row`); with None a mask of any
+    channels does.
+    """
     store = result["store"]
     level = int(result["band_level"][j])
     lv, it = store.levels[level], result["items"][level]
@@ -1085,7 +1091,8 @@ def _item_masks(result: dict, masks, j: int):
     kept = lv["n_used"][idx] > 0
     hit = np.zeros(idx.size, dtype=bool)
     period = float(result["periods"][j])
-    wanted = [m for m in (normalise(m) for m in masks or []) if applies(m, period)]
+    masks = masks_for_row(masks, channel) if channel is not None else [normalise(m) for m in masks or []]
+    wanted = [m for m in masks if applies(m, period)]
     if wanted and idx.size:
         times = store.clock.ns_array(lv["starts"][idx], store.lo_n).astype("datetime64[ns]")
         for m in wanted:  # an item a mask overlaps is out: a window's span, or a bin's
@@ -1093,7 +1100,7 @@ def _item_masks(result: dict, masks, j: int):
     return lv, idx, group, kept, hit
 
 
-def masked_chunks(result: dict, masks, j: int) -> np.ndarray:
+def masked_chunks(result: dict, masks, j: int, channel: str | None = None) -> np.ndarray:
     """Return, per group of band j on its level's grid, 0 clear, 1 partly masked or 2 fully masked.
 
     Judged per item: a window (stream levels) or a minute bin (binned
@@ -1106,16 +1113,68 @@ def masked_chunks(result: dict, masks, j: int) -> np.ndarray:
         result (dict): From `bin_windows`.
         masks: Mask dicts (`crust.masks`).
         j (int): The band.
+        channel (str | None): An output row (ex or ey): only the masks
+            applying to it count (`crust.masks.masks_for_row`). None (the
+            default): a mask of any channels counts.
 
     Returns:
         np.ndarray: The int8 code per group (`band_view`'s groups).
     """
     n_groups = len(result["grids"][int(result["band_level"][j])]["starts"])
-    _lv, _idx, group, kept, hit = _item_masks(result, masks, j)
+    _lv, _idx, group, kept, hit = _item_masks(result, masks, j, channel)
     kept = kept & (group >= 0)  # a level with no display group: nothing to mark
     n_kept = np.bincount(group[kept], minlength=n_groups)
     n_hit = np.bincount(group[kept & hit], minlength=n_groups)
     return np.where((n_kept > 0) & (n_hit == n_kept), 2, np.where(n_hit > 0, 1, 0)).astype(np.int8)
+
+
+def _stack_band(result: dict, lv: dict, idx, group, kept, hit, j: int) -> dict:
+    """Stack band j from the kept items no mask hits, with its jackknife error.
+
+    Returns:
+        dict: ``z`` and ``z_err`` [2, 2] (NaN without a kept item, ``z_err``
+        NaN without a jackknife), ``kept_n`` (display groups contributing),
+        ``masked_n`` (groups the masks took whole), ``windows`` (windows
+        stacked), ``windows_masked`` and ``note``.
+    """
+    b = int(np.flatnonzero(lv["bands"] == j)[0])
+    n_groups = len(result["grids"][lv["level"]]["starts"])
+    use = kept & ~hit  # the stack's items: every kept, unmasked one, with or without a display group
+    grouped = use & (group >= 0)  # the jackknife's: those in a display group
+    weight = lv["n_used"][idx]
+    in_group = np.bincount(group[grouped], weights=weight[grouped], minlength=n_groups)
+    had = np.bincount(group[kept & (group >= 0)], minlength=n_groups) > 0
+    out = {"z": np.full((2, 2), np.nan, dtype=complex), "z_err": np.full((2, 2), np.nan),
+           "kept_n": int((in_group > 0).sum()), "masked_n": int((had & (in_group == 0)).sum()),
+           "windows": int(weight[use].sum()), "windows_masked": int(weight[kept & hit].sum()), "note": ""}
+    if not use.any():
+        out["note"] = "no window kept"
+        return out
+    er_i, hr_i = lv["er"][idx[use], b], lv["hr"][idx[use], b]
+    s_er, s_hr = er_i.sum(axis=0), hr_i.sum(axis=0)
+    z = out["z"] = s_er @ _inv2(s_hr)[0]
+    n_g = out["kept_n"]
+    if n_groups == 0:
+        m = result["grids"][lv["level"]]["multiple"]
+        out["note"] = (f"no jackknife: level {lv['level']} has no display group (a group of {m} x "
+                       f"{result['chunk_s']:g} s is longer than the range)")
+        return out
+    if n_g < MIN_GROUPS:
+        out["note"] = f"no jackknife: {n_g} display group(s), {MIN_GROUPS} needed"
+        return out
+    g_er = np.zeros((n_groups, 2, 2), dtype=complex)
+    g_hr = np.zeros((n_groups, 2, 2), dtype=complex)
+    np.add.at(g_er, group[grouped], lv["er"][idx[grouped], b])
+    np.add.at(g_hr, group[grouped], lv["hr"][idx[grouped], b])
+    present = in_group > 0
+    leave = (s_er - g_er[present]) @ _inv2(s_hr - g_hr[present])[0]  # Z without group g
+    size = in_group[present]
+    total = size.sum()
+    h = total / size
+    theta = n_g * z - np.sum((1.0 - size / total)[:, None, None] * leave, axis=0)
+    pseudo = h[:, None, None] * z - (h - 1.0)[:, None, None] * leave
+    out["z_err"] = np.sqrt(np.sum(np.abs(pseudo - theta) ** 2 / (h - 1.0)[:, None, None], axis=0) / n_g)
+    return out
 
 
 def stack_impedance(result_or_store, masks=(), chunk_s: float | None = None) -> dict:
@@ -1128,6 +1187,12 @@ def stack_impedance(result_or_store, masks=(), chunk_s: float | None = None) -> 
     display groups, each weighted by its kept window count; it needs
     `MIN_GROUPS` groups, and a band with fewer gets NaN and a note.
 
+    A mask naming only output channels (``channels: [ex]``, say; see
+    `crust.masks`) applies to its own row: row ex (Zxx, Zxy) is stacked
+    from the windows the masks applying to ex leave, row ey (Zyx, Zyy) from
+    those the masks applying to ey leave (`crust.masks.masks_for_row`), each
+    with its own jackknife. With no such mask both rows come from one stack.
+
     Args:
         result_or_store: A `bin_windows` result or a `WindowStore`.
         masks: Mask dicts (`crust.masks`); normalised here.
@@ -1139,8 +1204,10 @@ def stack_impedance(result_or_store, masks=(), chunk_s: float | None = None) -> 
         ``band_hi_hz``, ``band_level``; ``z`` [band, 2, 2] in (mV/km)/nT and
         ``z_err``; ``zxy``, ``zyx``, ``zxy_err``, ``zyx_err``; ``n_chunks``
         (display groups contributing), ``n_masked`` (groups the masks took
-        whole), ``n_windows`` (windows stacked), ``n_windows_masked``,
-        ``notes``; and ``station``, ``remote``, ``chunk_s`` and ``masks``
+        whole), ``n_windows`` (windows stacked), ``n_windows_masked``, these
+        four counted with every mask applied whatever its channels;
+        ``n_windows_row`` [band, 2], the windows stacked for row ex and row
+        ey; ``notes``; and ``station``, ``remote``, ``chunk_s`` and ``masks``
         (the normalised list applied).
     """
     if isinstance(result_or_store, WindowStore):
@@ -1150,49 +1217,29 @@ def stack_impedance(result_or_store, masks=(), chunk_s: float | None = None) -> 
         if chunk_s is not None and float(chunk_s) != result["chunk_s"]:
             result = bin_windows(result["store"], chunk_s, result["start"], result["end"])
     masks = [normalise(m) for m in masks or []]
+    by_row = any(not cuts_whole_window(m) for m in masks)
     n_band = result["periods"].size
     z = np.full((n_band, 2, 2), np.nan, dtype=complex)
     z_err = np.full((n_band, 2, 2), np.nan)
     kept_n, masked_n, windows, windows_masked = (np.zeros(n_band, dtype=int) for _ in range(4))
+    windows_row = np.zeros((n_band, 2), dtype=int)
     notes = [""] * n_band
     for j in range(n_band):
         lv, idx, group, kept, hit = _item_masks(result, masks, j)
-        b = int(np.flatnonzero(lv["bands"] == j)[0])
-        n_groups = len(result["grids"][lv["level"]]["starts"])
-        use = kept & ~hit  # the stack's items: every kept, unmasked one, with or without a display group
-        grouped = use & (group >= 0)  # the jackknife's: those in a display group
-        weight = lv["n_used"][idx]
-        windows[j], windows_masked[j] = int(weight[use].sum()), int(weight[kept & hit].sum())
-        in_group = np.bincount(group[grouped], weights=weight[grouped], minlength=n_groups)
-        had = np.bincount(group[kept & (group >= 0)], minlength=n_groups) > 0
-        kept_n[j], masked_n[j] = int((in_group > 0).sum()), int((had & (in_group == 0)).sum())
-        if not use.any():
-            notes[j] = "no window kept"
+        s = _stack_band(result, lv, idx, group, kept, hit, j)
+        kept_n[j], masked_n[j], windows[j], windows_masked[j] = (s["kept_n"], s["masked_n"], s["windows"],
+                                                                s["windows_masked"])
+        if not by_row:
+            z[j], z_err[j], notes[j], windows_row[j] = s["z"], s["z_err"], s["note"], s["windows"]
             continue
-        er_i, hr_i = lv["er"][idx[use], b], lv["hr"][idx[use], b]
-        s_er, s_hr = er_i.sum(axis=0), hr_i.sum(axis=0)
-        z[j] = s_er @ _inv2(s_hr)[0]
-        n_g = kept_n[j]
-        if n_groups == 0:
-            m = result["grids"][lv["level"]]["multiple"]
-            notes[j] = (f"no jackknife: level {lv['level']} has no display group (a group of {m} x "
-                        f"{result['chunk_s']:g} s is longer than the range)")
-            continue
-        if n_g < MIN_GROUPS:
-            notes[j] = f"no jackknife: {n_g} display group(s), {MIN_GROUPS} needed"
-            continue
-        g_er = np.zeros((n_groups, 2, 2), dtype=complex)
-        g_hr = np.zeros((n_groups, 2, 2), dtype=complex)
-        np.add.at(g_er, group[grouped], lv["er"][idx[grouped], b])
-        np.add.at(g_hr, group[grouped], lv["hr"][idx[grouped], b])
-        present = in_group > 0
-        leave = (s_er - g_er[present]) @ _inv2(s_hr - g_hr[present])[0]  # Z without group g
-        size = in_group[present]
-        total = size.sum()
-        h = total / size
-        theta = n_g * z[j] - np.sum((1.0 - size / total)[:, None, None] * leave, axis=0)
-        pseudo = h[:, None, None] * z[j] - (h - 1.0)[:, None, None] * leave
-        z_err[j] = np.sqrt(np.sum(np.abs(pseudo - theta) ** 2 / (h - 1.0)[:, None, None], axis=0) / n_g)
+        row_notes = []
+        for r, row in enumerate(("ex", "ey")):
+            hit_r = _item_masks(result, masks, j, row)[4]
+            sr = _stack_band(result, lv, idx, group, kept, hit_r, j)
+            z[j, r], z_err[j, r], windows_row[j, r] = sr["z"][r], sr["z_err"][r], sr["windows"]
+            if sr["note"]:
+                row_notes.append(f"{row}: {sr['note']}")
+        notes[j] = "; ".join(row_notes)
     return {
         "station": result.get("station"), "remote": result.get("remote"), "masks": masks,
         "chunk_s": result["chunk_s"],
@@ -1201,7 +1248,7 @@ def stack_impedance(result_or_store, masks=(), chunk_s: float | None = None) -> 
         "z": z, "z_err": z_err, "zxy": z[:, 0, 1], "zyx": z[:, 1, 0],
         "zxy_err": z_err[:, 0, 1], "zyx_err": z_err[:, 1, 0],
         "n_chunks": kept_n, "n_masked": masked_n, "n_windows": windows, "n_windows_masked": windows_masked,
-        "notes": notes,
+        "n_windows_row": windows_row, "notes": notes,
     }
 
 

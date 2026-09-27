@@ -45,8 +45,9 @@ process_rr.py calls it before every run. Stages:
   against it, and scores.csv's `period_max` shows how far each product
   reaches. A config that
   turns masks.yaml on while `runner.masks` is off (`masked: [--masks]`) is
-  skipped for a site when masks.yaml holds no entry for the site and no
-  entry of scope both for its remote (no entry for either under
+  skipped for a site when masks.yaml holds no entry of scope local or
+  both for the site and no entry of scope both or remote naming hx, hy
+  or every channel for its remote (no entry for either under
   `--mask-scope union`), since the run would repeat the default.
 
 Per-site decisions in the plan: `remotes: {SITE: REMOTE}` makes REMOTE (a
@@ -265,7 +266,7 @@ class Plan:
     peak_percentile: float = 90.0
     peak_recent: int = 30
     move_products: bool = True
-    masks: bool = False       # rr runs apply masks.yaml, the local's entries and the remote's of scope both (else --no-masks: every remote and option on the same data)
+    masks: bool = False       # rr runs apply masks.yaml, the local's entries of scope local or both and the remote's of scope both or remote (else --no-masks: every remote and option on the same data)
     remotes: dict[str, str] = field(default_factory=dict)       # site -> its stage 3 remote
     modes: dict[str, list[str]] = field(default_factory=dict)   # site -> the modes its score uses
     windows: dict[str, dict] = field(default_factory=dict)      # site -> {"modes": {mode: (start, end)}, "merge"}
@@ -1027,17 +1028,22 @@ class Campaign:
         """Return the input signature of a job; a change means the job is re-run."""
         sig = ";".join(self.signature(s) for s in job.input_sites)
         if job.kind in ("rr", "merge") and self.rr_masks_on(job.config):
-            # process_rr applies every masks.yaml entry of the local and the remote's entries
-            # of scope both, or all of them under --mask-scope union (a stack has none of its
-            # own, by the name rule of crust.masks.is_stack). The hash covers the entries a
-            # run applies, each without its scope key, so an edit that changes them makes
-            # the product stale
+            # process_rr applies the local's masks.yaml entries of scope local or both and
+            # the remote's of scope both or remote that name hx, hy or every channel, or all
+            # of them under --mask-scope union (a stack has none of its own, by the name rule
+            # of crust.masks.is_stack). The hash covers the entries a run applies, each
+            # without its scope key and without `channels` when it is every channel (an
+            # entry written before the key existed hashes as it did), so an edit that
+            # changes them makes the product stale; a local entry's channels decide the rows
+            # it applies to and are in the hash
             rule = self.config_mask_scope(job.config)
             for site, role in ((job.local, "local"), (job.remote, "remote")):
                 if not site or is_stack(site):
                     continue
-                applied = [{k: v for k, v in m.items() if k != "scope"}
-                           for m in masks_for_role(load_masks(self.survey, site), role, rule)]
+                masks = (masks_for_role(load_masks(self.survey, site), "local", rule) if role == "local"
+                         else remote_masks(self.survey, site, rule))
+                applied = [{k: v for k, v in m.items() if k != "scope" and not (k == "channels" and v == "all")}
+                           for m in masks]
                 digest = hashlib.sha1(json.dumps(applied, sort_keys=True).encode()).hexdigest()[:8]
                 sig += f";{site}:m{digest}"
         if job.window:
@@ -1175,7 +1181,8 @@ class Campaign:
                 if (self.rr_masks_on(config) and not self.plan.masks and remote != "<best-of-stage-1>"
                         and not self.has_masks(s, remote, rule)):
                     # the run would repeat the default: masks.yaml holds no entry it applies
-                    which = f"{s} or {remote}" if rule == "union" else f"{s} and none of scope both for {remote}"
+                    which = (f"{s} or {remote}" if rule == "union" else
+                             f"{s} of scope local or both and none of scope both or remote for {remote}")
                     self.log(f"stage 3: {s}: {config}: no masks.yaml entry for {which}: skipped")
                     continue
                 job = self.rr_job(3, s, remote, config, f"s3_{s}_rr-{remote}_{config}")
@@ -1228,9 +1235,11 @@ class Campaign:
     def has_masks(self, local: str, remote: str, rule: str = "role") -> bool:
         """Return whether masks.yaml holds an entry an rr run of `local` against `remote` applies.
 
-        Every entry of the local applies; of the remote, the entries of scope
-        both, or all of them under the rule union (`crust.masks.remote_masks`;
-        a stack has none).
+        Of the local, the entries of scope local or both apply; of the
+        remote, the entries of scope both or remote that name hx, hy or every
+        channel; under the rule union every entry of each, the remote's
+        channels still applying (`crust.masks.masks_for_role`,
+        `crust.masks.remote_masks`; a stack has none).
 
         Args:
             local (str): The local site.
@@ -1240,7 +1249,8 @@ class Campaign:
         Returns:
             bool: True when the run applies at least one entry.
         """
-        return bool(load_masks(self.survey, local)) or bool(remote_masks(self.survey, remote, rule))
+        return (bool(masks_for_role(load_masks(self.survey, local), "local", rule))
+                or bool(remote_masks(self.survey, remote, rule)))
 
     # --------------------------------------------------------------- choices
 

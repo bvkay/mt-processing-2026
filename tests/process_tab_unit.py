@@ -43,7 +43,12 @@ keeps it once the file is fixed; the stack STK_E08u as remote is not left
 out of the label ("(D02: 4)"); with data_root pointed at a folder that does
 not exist (the data drive unplugged) D02 against E08 does not still read
 "(D02: 3, E08: 2)"; E08 gaining a mask of scope local changes that label;
-or any Qt slot raised.
+E08 gaining a mask of scope remote does not make it "(D02: 3, E08: 3)", or
+D02 gaining one, or E08 one of scope both naming ey alone (the remote
+contributes H only), changes it; the Cross-powers tab's list of E08's masks
+does not show the columns "channels" and "scope" with "ey" and "both" on
+the ey entry, "all" and "remote" on the remote-scoped one; or any Qt slot
+raised.
 """
 
 from __future__ import annotations
@@ -90,6 +95,10 @@ MASKS = {
 }
 EXTRA_E08 = _mask("2021-06-30T03:00:00Z", "2021-06-30T03:30:00Z", scope="both")
 LOCAL_E08 = _mask("2021-06-30T05:00:00Z", "2021-06-30T05:30:00Z", reason="E08 ey", scope="local")
+REMOTE_E08 = _mask("2021-06-30T06:00:00Z", "2021-06-30T06:30:00Z", reason="E08 as a remote", scope="remote")
+REMOTE_D02 = _mask("2021-06-30T07:00:00Z", "2021-06-30T07:30:00Z", reason="D02 as a remote", scope="remote")
+EY_E08 = {**_mask("2021-06-30T08:00:00Z", "2021-06-30T08:30:00Z", reason="E08 ey only", scope="both"),
+          "channels": ["ey"]}
 
 # run_now records the argv of a job the window would start at once (a basemap fetch) instead of starting it
 STARTED: list[list[str]] = []
@@ -284,6 +293,34 @@ def main() -> int:
     options.describe_masks("D02", "E08")
     assert box.text() == "apply masks.yaml (D02: 3, E08: 2)", box.text()
     print(f"  E08 gains a mask of scope local, D02 rr E08: {box.text()!r}")
+
+    # scope remote: E08's applies to D02 rr E08; D02's does not apply to D02 as the local; an E-only
+    # entry of E08 does not apply to E08 as the remote
+    write_masks({**MASKS, "E08": MASKS["E08"] + [REMOTE_E08]})
+    options.describe_masks("D02", "E08")
+    assert box.text() == "apply masks.yaml (D02: 3, E08: 3)", box.text()
+    write_masks({**MASKS, "D02": MASKS["D02"] + [REMOTE_D02], "E08": MASKS["E08"] + [EY_E08]})
+    options.describe_masks("D02", "E08")
+    assert box.text() == "apply masks.yaml (D02: 3, E08: 2)", box.text()
+    print(f"  E08 gains a mask of scope remote: (D02: 3, E08: 3); D02 one of scope remote and E08 an [ey] one "
+          f"of scope both: {box.text()!r}")
+
+    # the Cross-powers tab lists a mask's channels and scope
+    from crust.gui.tabs.crosspower import COLUMNS
+    from crust.masks import load_masks
+
+    write_masks({**MASKS, "E08": MASKS["E08"] + [REMOTE_E08, EY_E08]})
+    cross = window.crosspower_tab
+    cross.masks = load_masks(copy_yaml, "E08")
+    cross._fill_table()
+    table = cross.table
+    heads = [table.horizontalHeaderItem(c).text() for c in range(table.columnCount())]
+    assert heads == list(COLUMNS) and heads[-2:] == ["channels", "scope"], heads
+    shown = {table.item(r, 0).text(): (table.item(r, heads.index("channels")).text(),
+                                       table.item(r, heads.index("scope")).text()) for r in range(table.rowCount())}
+    assert shown[EY_E08["start"]] == ("ey", "both") and shown[REMOTE_E08["start"]] == ("all", "remote"), shown
+    print(f"  Cross-powers list of E08: columns {heads[-2:]}, [ey] entry {shown[EY_E08['start']]}, "
+          f"remote-scoped {shown[REMOTE_E08['start']]}")
 
     assert not SLOT_ERRORS, f"{len(SLOT_ERRORS)} Qt slot error(s)"
     assert not (SURVEY_DIR / "masks.yaml").exists(), "a masks.yaml was written to the real survey folder"

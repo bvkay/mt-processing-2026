@@ -2,8 +2,9 @@
 """
 Unit test for the scope of masks.yaml entries
 
-Checks the `scope` key of a mask (`crust.masks`: `normalise`, `load_masks`,
-`save_masks`, `masks_for_role`, `remote_masks`), the masks
+Checks the `scope` key of a mask, local, both or remote (`crust.masks`:
+`normalise`, `load_masks`, `save_masks`, `masks_for_role`, `remote_masks`),
+the masks
 scripts/process_rr.py takes from each site of a pair (`resolve`, the
 sidecar and the resolution line) under the rule `role` and under
 `--mask-scope union`, and the scope the mask writers give their entries
@@ -19,30 +20,36 @@ Usage:
 
 **This test fails if**
 
-1. a mask without `scope` does not normalise to scope "local", one with
-   scope "both" does not keep it, or scope "remote" (not one of
-   `crust.masks.SCOPES`) is not refused with ValueError, directly and when
-   masks.yaml holds it; or a site saved with a both-scoped and a default
-   entry does not write "scope: both" and "scope: local" into masks.yaml
-   and load back with the same scopes;
-2. `masks_for_role` does not return every entry for the role local and only
-   the both-scoped ones for the role remote, every entry for the remote
+1. `crust.masks.SCOPES` is not (local, both, remote); a mask without
+   `scope` does not normalise to scope "local", one with scope "both" or
+   "remote" does not keep it, or scope "reference" (not one of `SCOPES`) is
+   not refused with ValueError, directly and when masks.yaml holds it; or a
+   site saved with a both-scoped, a remote-scoped and a default entry does
+   not write "scope: both", "scope: remote" and "scope: local" into
+   masks.yaml and load back with the same scopes;
+2. `masks_for_role` does not return B's local- and both-scoped entries for
+   the role local (the remote-scoped one left out), the both- and
+   remote-scoped ones for the role remote, every entry for the remote
    under the rule union, or does not refuse an unknown role or rule;
-   `remote_masks` does not give B's both-scoped entry alone (all three
-   under union), or gives any entry of the stack STK_Bu;
+   `remote_masks` does not give B's both- and remote-scoped entries (all
+   four under union), or gives any entry of the stack STK_Bu;
 3. process_rr's `resolve` for A rr B, where A declares a default-scoped and
    a both-scoped mask and B two local-scoped masks (one written without the
-   key) and one both-scoped mask, does not give `masks_local` A's two,
-   `masks_remote` B's both-scoped one and `masks` exactly the starts of
-   MASK_ROLE_STARTS; the sidecar does not record `mask_scope` "role" and
-   `mask_counts` {local 2, remote 1, remote_left_out 2} beside the same
-   three lists; the resolution line is not exactly MASK_ROLE_LINE; B rr A
-   does not take all three of B's entries as local and A's both-scoped one
-   as remote; with `--mask-scope union` A rr B does not take all three of
+   key), one both-scoped and one remote-scoped mask, does not give
+   `masks_local` A's two, `masks_remote` B's both- and remote-scoped ones
+   and `masks` exactly the starts of MASK_ROLE_STARTS; the sidecar does not
+   record `mask_scope` "role", `mask_counts` {local 2, remote 2,
+   remote_left_out 2, remote_left_out_channels 0,
+   local_left_out_channels 0} and one channel run of ex, ey and hz with 4
+   masks, the base, beside the same three lists; the resolution line is
+   not exactly MASK_ROLE_LINE; B rr A takes B's remote-scoped entry as
+   local, or does not take B's other three as local and A's both-scoped one
+   as remote; with `--mask-scope union` A rr B does not take all four of
    B's entries (`masks` exactly MASK_UNION_STARTS), with `mask_scope`
-   "union", `mask_counts` {local 2, remote 3, remote_left_out 0} and the
-   line MASK_UNION_LINE; `--no-masks` leaves a list non-empty or a count
-   non-zero; or the parser accepts `--mask-scope remote`;
+   "union", `mask_counts` {local 2, remote 4, remote_left_out 0, ...} and
+   the line MASK_UNION_LINE; `--no-masks` leaves a list non-empty or a
+   count non-zero; or the parser accepts `--mask-scope remote` (a scope,
+   not a rule);
 4. the masks cluster_masks.py (`mask_records`) and gate_masks.py
    (`spans_to_masks`, `night_masks`) build are not scope "local", or
    `write_site_masks` replacing a site's cluster masks does not keep its
@@ -97,15 +104,18 @@ MASKS = {
           entry(5.0, 5.25, "A mains at both", scope="both")],
     "B": [entry(2.0, 2.25, "B ey burst"),
           entry(3.0, 3.5, "B ex polar", bands=[0.1, 1.0], scope="local"),
-          entry(4.0, 4.25, "B mains at both", scope="both")],
+          entry(4.0, 4.25, "B mains at both", scope="both"),
+          entry(7.0, 7.5, "B railway pass, as a remote only", scope="remote")],
     "STK_Bu": [entry(6.0, 6.5, "a stack's entry", scope="both")],
 }
 # stated here, not computed from the masks: the starts each rule applies to A rr B, earliest first
-MASK_ROLE_STARTS = ["2023-09-22T01:00:00Z", "2023-09-22T04:00:00Z", "2023-09-22T05:00:00Z"]
+MASK_ROLE_STARTS = ["2023-09-22T01:00:00Z", "2023-09-22T04:00:00Z", "2023-09-22T05:00:00Z",
+                    "2023-09-22T07:00:00Z"]
 MASK_UNION_STARTS = ["2023-09-22T01:00:00Z", "2023-09-22T02:00:00Z", "2023-09-22T03:00:00Z",
-                     "2023-09-22T04:00:00Z", "2023-09-22T05:00:00Z"]
-MASK_ROLE_LINE = "masks: A 2, B 1 (3 applied; B 2 of scope local left out)"
-MASK_UNION_LINE = "masks: A 2, B 3 (5 applied; --mask-scope union)"
+                     "2023-09-22T04:00:00Z", "2023-09-22T05:00:00Z", "2023-09-22T07:00:00Z"]
+MASK_ROLE_LINE = "masks: A 2, B 2 (4 applied; B 2 of scope local left out)"
+MASK_UNION_LINE = "masks: A 2, B 4 (6 applied; --mask-scope union)"
+NO_CHANNELS = {"remote_left_out_channels": 0, "local_left_out_channels": 0}
 
 
 def make_survey(root: Path) -> Path:
@@ -133,40 +143,43 @@ def load_process_rr():
 
 
 def test_scope_key() -> None:
-    assert SCOPES == ("local", "both"), SCOPES
+    assert SCOPES == ("local", "both", "remote"), SCOPES
     assert normalise(entry(1, 2, "x"))["scope"] == "local"
     assert normalise(entry(1, 2, "x", scope="both"))["scope"] == "both"
+    assert normalise(entry(1, 2, "x", scope="remote"))["scope"] == "remote"
     try:
-        normalise(entry(1, 2, "x", scope="remote"))
+        normalise(entry(1, 2, "x", scope="reference"))
     except ValueError as exc:
-        assert "scope" in str(exc) and "remote" in str(exc), exc
+        assert "scope" in str(exc) and "reference" in str(exc), exc
     else:
-        raise AssertionError("scope 'remote' was accepted")
+        raise AssertionError("scope 'reference' was accepted")
     with tempfile.TemporaryDirectory() as tmp:
         survey_yaml = Path(tmp) / "survey.yaml"
         survey_yaml.write_text("name: x\n", encoding="utf-8")
-        masks_path(survey_yaml).write_text(yaml.safe_dump({"X": [entry(1, 2, "x", scope="remote")]}),
+        masks_path(survey_yaml).write_text(yaml.safe_dump({"X": [entry(1, 2, "x", scope="reference")]}),
                                            encoding="utf-8")
         try:
             load_masks(survey_yaml, "X")
         except ValueError as exc:
             assert "scope" in str(exc), exc
         else:
-            raise AssertionError("masks.yaml holding scope 'remote' loaded")
+            raise AssertionError("masks.yaml holding scope 'reference' loaded")
         masks_path(survey_yaml).unlink()
-        save_masks(survey_yaml, "X", [entry(1, 2, "default"), entry(3, 4, "both", scope="both")])
+        save_masks(survey_yaml, "X", [entry(1, 2, "default"), entry(3, 4, "both", scope="both"),
+                                      entry(5, 6, "remote", scope="remote")])
         text = masks_path(survey_yaml).read_text(encoding="utf-8")
-        assert "  scope: local\n" in text and "  scope: both\n" in text, text
+        assert all(f"  scope: {s}\n" in text for s in ("local", "both", "remote")), text
         got = [(m["reason"], m["scope"]) for m in load_masks(survey_yaml, "X")]
-        assert got == [("default", "local"), ("both", "both")], got
-    print("  no key -> local; both kept; 'remote' refused by normalise and by load_masks; "
-          "save_masks writes both scopes and they load back")
+        assert got == [("default", "local"), ("both", "both"), ("remote", "remote")], got
+    print("  no key -> local; both and remote kept; 'reference' refused by normalise and by load_masks; "
+          "save_masks writes the three scopes and they load back")
 
 
 def test_role_filter() -> None:
     masks = [normalise(m) for m in MASKS["B"]]
-    assert [m["reason"] for m in masks_for_role(masks, "local")] == [m["reason"] for m in masks]
-    assert [m["reason"] for m in masks_for_role(masks, "remote")] == ["B mains at both"]
+    assert [m["reason"] for m in masks_for_role(masks, "local")] == [m["reason"] for m in masks[:3]]
+    assert [m["reason"] for m in masks_for_role(masks, "remote")] == ["B mains at both",
+                                                                      "B railway pass, as a remote only"]
     assert [m["reason"] for m in masks_for_role(masks, "remote", rule="union")] == [m["reason"] for m in masks]
     for kwargs in ({"role": "reference"}, {"role": "remote", "rule": "all"}):
         try:
@@ -177,11 +190,12 @@ def test_role_filter() -> None:
             raise AssertionError(f"masks_for_role accepted {kwargs}")
     with tempfile.TemporaryDirectory() as tmp:
         survey_yaml = make_survey(Path(tmp))
-        assert [m["reason"] for m in remote_masks(survey_yaml, "B")] == ["B mains at both"]
-        assert len(remote_masks(survey_yaml, "B", rule="union")) == 3
+        assert [m["reason"] for m in remote_masks(survey_yaml, "B")] == ["B mains at both",
+                                                                         "B railway pass, as a remote only"]
+        assert len(remote_masks(survey_yaml, "B", rule="union")) == 4
         assert remote_masks(survey_yaml, "STK_Bu") == [] and remote_masks(survey_yaml, "STK_Bu", rule="union") == []
-    print("  local role: all 3 of B's; remote role: the both-scoped one; union: all 3; unknown role and rule "
-          "refused; remote_masks alike, a stack none")
+    print("  local role: B's 3 of scope local or both; remote role: the both- and remote-scoped two; union: all 4; "
+          "unknown role and rule refused; remote_masks alike, a stack none")
 
 
 def resolve_line(process_rr, res) -> str:
@@ -206,15 +220,20 @@ def test_process_rr_selection() -> None:
             sidecar = process_rr.build_sidecar(res, args, started, started, edi, edi.with_suffix(".png"), {}, [])
             json.loads(json.dumps(sidecar, default=str))
             for key in ("masks_local", "masks_remote", "masks"):
-                assert sidecar[key] == res[key], (key, sidecar[key])
+                assert [normalise(m) for m in sidecar[key]] == res[key], (key, sidecar[key])
+                assert not any("channels" in m for m in sidecar[key]), (key, sidecar[key])
             return res, sidecar, resolve_line(process_rr, res)
 
         res, sidecar, line = resolved("A", "B")
         assert [m["reason"] for m in res["masks_local"]] == ["A ey night", "A mains at both"], res["masks_local"]
-        assert [m["reason"] for m in res["masks_remote"]] == ["B mains at both"], res["masks_remote"]
+        assert [m["reason"] for m in res["masks_remote"]] == ["B mains at both", "B railway pass, as a remote only"], \
+            res["masks_remote"]
         assert [m["start"] for m in res["masks"]] == MASK_ROLE_STARTS, [m["start"] for m in res["masks"]]
         assert sidecar["mask_scope"] == "role", sidecar["mask_scope"]
-        assert sidecar["mask_counts"] == {"local": 2, "remote": 1, "remote_left_out": 2}, sidecar["mask_counts"]
+        assert sidecar["mask_counts"] == {"local": 2, "remote": 2, "remote_left_out": 2, **NO_CHANNELS}, \
+            sidecar["mask_counts"]
+        assert sidecar["channel_runs"] == [{"channels": ["ex", "ey", "hz"], "masks": 4, "base": True}], \
+            sidecar["channel_runs"]
         assert line == MASK_ROLE_LINE, line
         print(f"  A rr B: {len(res['masks'])} applied, starts {[s[11:16] for s in MASK_ROLE_STARTS]}; "
               f"counts {sidecar['mask_counts']}; {line!r}")
@@ -222,22 +241,27 @@ def test_process_rr_selection() -> None:
         res, sidecar, line = resolved("B", "A")
         assert [m["reason"] for m in res["masks_local"]] == ["B ey burst", "B ex polar", "B mains at both"], \
             res["masks_local"]
+        assert "2023-09-22T07:00:00Z" not in [m["start"] for m in res["masks"]], res["masks"]
         assert [m["reason"] for m in res["masks_remote"]] == ["A mains at both"], res["masks_remote"]
-        assert sidecar["mask_counts"] == {"local": 3, "remote": 1, "remote_left_out": 1}, sidecar["mask_counts"]
-        print(f"  B rr A: B's 3 as local, A's both-scoped one as remote; counts {sidecar['mask_counts']}")
+        assert sidecar["mask_counts"] == {"local": 3, "remote": 1, "remote_left_out": 1, **NO_CHANNELS}, \
+            sidecar["mask_counts"]
+        print(f"  B rr A: B's 3 of scope local or both as local (its remote-scoped one not), A's both-scoped one "
+              f"as remote; counts {sidecar['mask_counts']}")
 
         res, sidecar, line = resolved("A", "B", "--mask-scope", "union")
-        assert [m["reason"] for m in res["masks_remote"]] == ["B ey burst", "B ex polar", "B mains at both"], \
-            res["masks_remote"]
+        assert [m["reason"] for m in res["masks_remote"]] == ["B ey burst", "B ex polar", "B mains at both",
+                                                              "B railway pass, as a remote only"], res["masks_remote"]
         assert [m["start"] for m in res["masks"]] == MASK_UNION_STARTS, [m["start"] for m in res["masks"]]
         assert sidecar["mask_scope"] == "union", sidecar["mask_scope"]
-        assert sidecar["mask_counts"] == {"local": 2, "remote": 3, "remote_left_out": 0}, sidecar["mask_counts"]
+        assert sidecar["mask_counts"] == {"local": 2, "remote": 4, "remote_left_out": 0, **NO_CHANNELS}, \
+            sidecar["mask_counts"]
         assert line == MASK_UNION_LINE, line
         print(f"  A rr B --mask-scope union: {len(res['masks'])} applied; counts {sidecar['mask_counts']}; {line!r}")
 
         res, sidecar, line = resolved("A", "B", "--no-masks")
         assert res["masks_local"] == res["masks_remote"] == res["masks"] == [], res
-        assert sidecar["mask_counts"] == {"local": 0, "remote": 0, "remote_left_out": 0}, sidecar["mask_counts"]
+        assert sidecar["mask_counts"] == {"local": 0, "remote": 0, "remote_left_out": 0, **NO_CHANNELS}, \
+            sidecar["mask_counts"]
         assert line == "masks: ignored (--no-masks)", line
         print(f"  --no-masks: nothing applied, counts {sidecar['mask_counts']}")
 

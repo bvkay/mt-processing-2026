@@ -30,18 +30,38 @@ opening a file or building a variant.
 
 Time masks (`<survey>/masks.yaml`, declared per site on the GUI's
 Cross-powers tab or by scripts/cluster_masks.py and scripts/gate_masks.py)
-are applied by role: every entry of the local site, and the entries of the
-remote site whose `scope` is `both`, joined with `crust.masks.union_masks`.
-An entry of scope `local`, the default, applies only when its site is the
-local, so a mask of a site's electric channels keeps its windows in the
-pairs that use the site as a remote, where its magnetics alone are used. A
-stacked remote (`STK_...`) has no entry of its own; the remote is looked up
-by its name (`crust.masks.remote_masks`), so its masks apply whether or not
-data_root is mounted. `--mask-scope union` applies every entry of both
-sites, whatever its scope, for comparison. The sidecar records the rule
-(`mask_scope`) and the counts applied from each site (`mask_counts`: local,
-remote, and remote_left_out, the remote's entries of scope local left out).
-`--no-masks` ignores the file for both sites.
+are applied by role: the entries of the local site whose `scope` is `local`
+or `both`, and the entries of the remote site whose `scope` is `both` or
+`remote`, joined with `crust.masks.union_masks`. An entry of scope
+`local`, the default, applies only when its site is the local, so a mask
+of a site's electric channels keeps its windows in the pairs that use the
+site as a remote, where its magnetics alone are used; an entry of scope
+`remote` applies only when its site is the remote. A stacked remote
+(`STK_...`) has no entry of its own; the remote is looked up by its name
+(`crust.masks.remote_masks`), so its masks apply whether or not data_root
+is mounted. `--mask-scope union` applies every entry of both sites,
+whatever its scope, for comparison.
+
+An entry's `channels` (every channel without the key) narrows it. Of the
+remote, an entry naming neither hx nor hy is left out, since the remote
+contributes its magnetics alone. Of the applied entries, one naming hx, hy
+or every channel leaves out whole windows for every output row, and one
+naming only output channels (ex, ey, hz) leaves out windows of those rows
+alone: row r takes the whole-window entries and the entries naming r
+(`row_runs`), aurora runs once per distinct set of entries, and the rows
+are merged into one transfer function before the EDI, the figure, the
+quadrant check and the sidecar (`merge_rows`): row r's transfer function,
+its errors and row and column r of the residual covariance from row r's
+run, the rest from the base run (the set with the fewest entries). With
+one distinct set, the usual case, there is one run and no merge.
+
+The sidecar records the rule (`mask_scope`), the counts applied from each
+site (`mask_counts`: local, remote, remote_left_out, the remote's entries
+its scope leaves out, remote_left_out_channels, the remote's entries
+naming no magnetic channel, and local_left_out_channels, the local's
+entries naming only output channels the run does not estimate) and the
+runs (`channel_runs`: the rows each served, its entry count and which is
+the base). `--no-masks` ignores the file for both sites.
 
 A derived site (`<site>L`, written by scripts/decimate_site.py at its own
 `sample_rate:`, 1 Hz) is processed from its archive as it is, against a
@@ -135,6 +155,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "src"))
 
+import numpy as np
 import pandas as pd
 import yaml
 from loguru import logger
@@ -142,7 +163,10 @@ from loguru import logger
 from crust.bands import build_band_scheme, lowest_harmonic
 from crust.compare import phase_quadrants, plot_comparison
 from crust.ingest import default_archive_path, filters_hash, ingest_site, processing_archive, variant_path, variant_ready
-from crust.masks import FOUND_BY, SCOPE_RULES, load_masks, masks_for_role, remote_masks, union_masks
+from crust.masks import (
+    FOUND_BY, OUTPUTS, SCOPE_RULES, load_masks, masks_for_role, masks_for_row, remote_channel_split, remote_masks,
+    stored, union_masks,
+)
 from crust.process import ESTIMATOR_DEFAULTS, TAPERS, process_station
 from crust.survey import Survey
 
@@ -181,8 +205,8 @@ def build_parser() -> argparse.ArgumentParser:
                    help="apply only the masks.yaml entries found by these origins, a comma list of "
                         + ", ".join(FOUND_BY) + " (default: every entry)")
     p.add_argument("--mask-scope", choices=SCOPE_RULES, default="role",
-                   help="role (the default): every masks.yaml entry of the local and the remote's entries of "
-                        "scope both; union: every entry of both sites, whatever its scope")
+                   help="role (the default): the local's masks.yaml entries of scope local or both and the "
+                        "remote's of scope both or remote; union: every entry of both sites, whatever its scope")
     p.add_argument("--tag", default=None, help="suffix appended to the output stem")
     p.add_argument("--dry-run", action="store_true",
                    help="print what this run resolved to and exit, opening nothing")
@@ -386,15 +410,21 @@ def resolve(args, started) -> dict:
     overwrites these two entries before the sidecar is written.
 
     `masks_local`/`masks_remote` are the `masks.yaml` entries applied from
-    each site (`masks_for_role` under the rule `mask_scope`: every entry of
-    the local, the remote's entries of scope both, or all of them under
-    `--mask-scope union`; `remote_masks` gives [] for a stack named
-    `STK_...`), each narrowed to `--mask-origins` when given, and `masks` is
-    their union in start order, as passed to `process_station`.
-    `mask_counts` holds the number applied from the local and from the
-    remote, and `remote_left_out` the remote's entries its scope leaves out.
-    With `--no-masks` all three lists are [], every count 0 and
-    `masks_ignored` True.
+    each site (`masks_for_role` under the rule `mask_scope`: the local's
+    entries of scope local or both, the remote's of scope both or remote,
+    or all of them under `--mask-scope union`; `remote_masks` gives [] for a
+    stack named `STK_...`), each narrowed to `--mask-origins` when given;
+    of the remote's, those naming neither hx nor hy are left out
+    (`crust.masks.remote_channel_split`). `masks` is their union in start
+    order, and `channel_runs` (`row_runs`) groups it by output row: one
+    entry per aurora run, its rows, its masks as passed to
+    `process_station`, and whether it is the base run. `mask_counts` holds
+    the number applied from the local and from the remote,
+    `remote_left_out` the remote's entries its scope leaves out,
+    `remote_left_out_channels` those of the remote its channels leave out,
+    and `local_left_out_channels` the local's entries that name no row the
+    run estimates. With `--no-masks` all three lists are [], every count 0,
+    one run with no masks, and `masks_ignored` True.
 
     `sample_rate` and `remote_sample_rate` are `Survey.sample_rate_of` of
     the two sites; the band scheme and the quadrant window use
@@ -460,12 +490,17 @@ def resolve(args, started) -> dict:
     # by name (`remote_masks`), not by `virtual`: with data_root unmounted every
     # remote that has an archive looks virtual, and its masks would be dropped;
     # every entry is read once, and the scope rule picks the ones applied
-    declared_remote = [] if ignore_masks else remote_masks(survey, args.remote, rule="union")
+    declared_remote = [] if ignore_masks else remote_masks(survey, args.remote, rule="union", channels=False)
     origins = mask_origins(getattr(args, "mask_origins", None))
     if origins is not None:
         masks_local = [m for m in masks_local if m["found_by"] in origins]
         declared_remote = [m for m in declared_remote if m["found_by"] in origins]
-    masks_remote = masks_for_role(declared_remote, "remote", scope_rule)
+    in_scope_remote = masks_for_role(declared_remote, "remote", scope_rule)
+    # the remote contributes hx and hy alone: an entry naming neither leaves out nothing there
+    masks_remote, channel_left_out = remote_channel_split(in_scope_remote)
+    masks = union_masks(masks_local, masks_remote)
+    rows = output_channels(survey, args.local) or list(OUTPUTS)
+    runs, row_left_out = row_runs(masks, rows)
     tweaks = tweaks_from(args)
     engine = getattr(args, "engine", "aurora")
     if engine == "mantle":
@@ -516,12 +551,15 @@ def resolve(args, started) -> dict:
         "tweaks": tweaks,
         "masks_local": masks_local,
         "masks_remote": masks_remote,
-        "masks": union_masks(masks_local, masks_remote),
+        "masks": masks,
+        "channel_runs": runs,
         "masks_ignored": ignore_masks,
         "mask_origins": sorted(origins) if origins is not None else None,
         "mask_scope": scope_rule,
         "mask_counts": {"local": len(masks_local), "remote": len(masks_remote),
-                        "remote_left_out": len(declared_remote) - len(masks_remote)},
+                        "remote_left_out": len(declared_remote) - len(in_scope_remote),
+                        "remote_left_out_channels": len(channel_left_out),
+                        "local_left_out_channels": len(row_left_out)},
         "engine": engine,
         "mantle_whiten": getattr(args, "mantle_whiten", "none"),
         "mantle_max_hours": max_hours,
@@ -545,6 +583,107 @@ def output_channels(survey, site: str) -> list[str] | None:
         return None
     declared = [c.lower() for c in declared]
     return [c for c in ("ex", "ey", "hz") if c in declared]
+
+
+def row_runs(masks, rows) -> tuple[list[dict], list[dict]]:
+    """Group the applied masks by output row into the aurora runs they need.
+
+    Row r takes the masks that leave out whole windows (naming hx, hy or
+    every channel) and the masks naming r (`crust.masks.masks_for_row`),
+    in the order of `masks`. Rows with the same set share one run. The base
+    run is the one with the fewest masks, ties going to the run of the
+    earliest row in `rows`; its inverse signal power and everything else
+    outside the rows goes into the merged transfer function (`merge_rows`).
+
+    Args:
+        masks (list of dict): The masks applied, both sites' joined
+            (`crust.masks.union_masks`), normalised.
+        rows (list of str): The output channels estimated, in order.
+
+    Returns:
+        tuple: ``(runs, left_out)``. `runs` is a list, in the order of each
+        run's first row, of ``{"channels": [rows served], "masks": [...],
+        "base": bool}``; `left_out` the masks applying to no row (naming
+        only output channels the run does not estimate).
+    """
+    runs: list[dict] = []
+    by_key: dict[tuple, dict] = {}
+    used: set[int] = set()
+    for row in rows:
+        key = tuple(k for k, m in enumerate(masks) if masks_for_row([m], row))
+        used.update(key)
+        if key in by_key:
+            by_key[key]["channels"].append(row)
+            continue
+        by_key[key] = {"channels": [row], "masks": [masks[k] for k in key], "base": False}
+        runs.append(by_key[key])
+    if runs:
+        min(runs, key=lambda run: len(run["masks"]))["base"] = True
+    return runs, [m for k, m in enumerate(masks) if k not in used]
+
+
+def _period_union(tfs, rtol: float = 1e-9) -> np.ndarray:
+    """Return the periods of several transfer functions joined, ascending; periods within `rtol` are one."""
+    out: list[float] = []
+    for tf in tfs:
+        for p in np.asarray(tf.period, dtype=float):
+            if not any(math.isclose(p, q, rel_tol=rtol) for q in out):
+                out.append(float(p))
+    return np.array(sorted(out))
+
+
+def _on_periods(dataset, periods: np.ndarray, rtol: float = 1e-9):
+    """Return a TF dataset on `periods`: each of its periods snapped to its match, NaN where it has none."""
+    own = np.asarray(dataset["period"].values, dtype=float)
+    snapped = [next(q for q in periods if math.isclose(p, q, rel_tol=rtol)) for p in own]
+    return dataset.assign_coords(period=snapped).reindex(period=periods)
+
+
+def merge_rows(tfs, runs):
+    """Merge the transfer functions of the per-row runs into one.
+
+    Every run's dataset is placed on the union of the runs' periods (a band
+    one run lacks, aurora having dropped it for too few windows, is NaN
+    there). The merged transfer function is a copy of the base run's
+    (`row_runs`), metadata, inverse signal power, model errors and all;
+    then for each run and each row r it served, row r of
+    ``transfer_function`` and ``transfer_function_error`` and row and
+    column r of ``residual_covariance`` are taken from that run. Rows are
+    written in the order of the runs, so an off-diagonal residual
+    covariance term between two rows of different runs comes from the
+    later run, row and column alike.
+
+    Args:
+        tfs (list of TF): mt_metadata transfer functions, one per run, in
+            the order of `runs`.
+        runs (list of dict): From `row_runs`.
+
+    Returns:
+        TF: The merged transfer function.
+
+    Raises:
+        ValueError: If `tfs` and `runs` differ in length or no run is the base.
+    """
+    if len(tfs) != len(runs):
+        raise ValueError(f"{len(tfs)} transfer function(s) for {len(runs)} run(s)")
+    try:
+        base = next(i for i, run in enumerate(runs) if run["base"])
+    except StopIteration:
+        raise ValueError("no run is marked as the base") from None
+    periods = _period_union(tfs)
+    merged = tfs[base].copy()
+    ds = _on_periods(tfs[base]._transfer_function, periods)
+    for tf, run in zip(tfs, runs):
+        src = _on_periods(tf._transfer_function, periods)
+        for row in run["channels"]:
+            name = getattr(tf, row)  # the channel's name under the TF's nomenclature
+            for var in ("transfer_function", "transfer_function_error"):
+                ds[var].loc[dict(output=name)] = src[var].sel(output=name).reindex(input=ds["input"].values).values
+            cov = "residual_covariance"
+            ds[cov].loc[dict(output=name)] = src[cov].sel(output=name).reindex(input=ds["input"].values).values
+            ds[cov].loc[dict(input=name)] = src[cov].sel(input=name).reindex(output=ds["output"].values).values
+    merged._transfer_function = ds
+    return merged
 
 
 class RateMismatch(ValueError):
@@ -702,13 +841,20 @@ def build_sidecar(res: dict, args, started, finished, edi_path: Path, png_path: 
         },
         # the masks.yaml entries applied from each site, the scope rule that chose the
         # remote's and the counts, and the union actually applied (the key the
-        # existing sidecar readers use)
-        "masks_local": list(res.get("masks_local") or []),
-        "masks_remote": list(res.get("masks_remote") or []),
+        # existing sidecar readers use); each entry as masks.yaml holds it, `channels`
+        # only when it names channels
+        "masks_local": [stored(m) for m in res.get("masks_local") or []],
+        "masks_remote": [stored(m) for m in res.get("masks_remote") or []],
         "mask_origins": res.get("mask_origins"),
         "mask_scope": res.get("mask_scope", "role"),
-        "mask_counts": dict(res.get("mask_counts") or {"local": 0, "remote": 0, "remote_left_out": 0}),
-        "masks": list(res.get("masks") or []),
+        "mask_counts": dict(res.get("mask_counts") or {"local": 0, "remote": 0, "remote_left_out": 0,
+                                                       "remote_left_out_channels": 0,
+                                                       "local_left_out_channels": 0}),
+        "masks": [stored(m) for m in res.get("masks") or []],
+        # the aurora runs the masks' channels needed (`row_runs`): the output rows each
+        # served, its mask count, and the base run whose other fields the EDI carries
+        "channel_runs": [{"channels": list(run["channels"]), "masks": len(run["masks"]), "base": bool(run["base"])}
+                         for run in res.get("channel_runs") or []],
         "masks_ignored": bool(res.get("masks_ignored")),
         "argv": list(sys.argv),
         "tag": res["tag"],
@@ -803,12 +949,20 @@ def print_resolution(res: dict) -> None:
     if res["masks_ignored"]:
         print("masks: ignored (--no-masks)")
     else:
-        left_out = res.get("mask_counts", {}).get("remote_left_out", 0)
+        counts = res.get("mask_counts", {})
+        left_out = counts.get("remote_left_out", 0)
         scope = ("; --mask-scope union" if res.get("mask_scope") == "union" else
                  f"; {res['remote']} {left_out} of scope local left out" if left_out else "")
+        n_ch = counts.get("remote_left_out_channels", 0)
+        if n_ch:
+            scope += f"; {res['remote']} {n_ch} naming no magnetic channel left out"
+        n_row = counts.get("local_left_out_channels", 0)
+        if n_row:
+            scope += f"; {res['local']} {n_row} naming no output channel estimated left out"
         print(f"masks: {res['local']} {len(res['masks_local'])}, {res['remote']} "
               f"{len(res['masks_remote'])} ({len(res['masks'])} applied"
               + (f"; origins {', '.join(res['mask_origins'])}" if res.get("mask_origins") else "") + scope + ")")
+        print(f"mask runs: {runs_text(res.get('channel_runs') or [])}")
     for key, value in res["tweaks"].items():
         print(f"tweak.{key}: {value}")
     if not res["tweaks"]:
@@ -816,6 +970,12 @@ def print_resolution(res: dict) -> None:
     if res["engine"] == "mantle":
         print(f"mantle.whiten: {res['mantle_whiten']}")
         print(f"mantle.max_hours: {res['mantle_max_hours']:g}")
+
+
+def runs_text(runs) -> str:
+    """Describe the per-row runs as "ex 5; ey+hz 3 (base)": each run's rows, its mask count, the base marked."""
+    return "; ".join(f"{'+'.join(run['channels'])} {len(run['masks'])}" + (" (base)" if run["base"] else "")
+                     for run in runs) or "none"
 
 
 def main(args) -> None:
@@ -884,13 +1044,17 @@ def main(args) -> None:
             logger.info(f"{local}: {len(res['masks_local'])} mask(s) declared in masks.yaml "
                         f"({all_band(res['masks_local'])} all-band, applied as time cuts)")
         left_out = res["mask_counts"]["remote_left_out"]
-        if res["masks_remote"] or left_out:
-            chosen = "every entry (--mask-scope union)" if res["mask_scope"] == "union" else "scope both"
+        left_channels = res["mask_counts"].get("remote_left_out_channels", 0)
+        if res["masks_remote"] or left_out or left_channels:
+            chosen = "every entry (--mask-scope union)" if res["mask_scope"] == "union" else "scope both or remote"
             logger.info(f"{remote} (remote): {len(res['masks_remote'])} mask(s) applied, {chosen} "
                         f"({all_band(res['masks_remote'])} all-band, applied as time cuts); "
-                        f"{left_out} of scope local left out")
+                        f"{left_out} of scope local left out; {left_channels} naming no magnetic channel left out")
         if res["masks_remote"]:
             logger.info(f"{local} rr {remote}: {len(masks)} mask(s) applied (both sites' entries joined)")
+        if len(res["channel_runs"]) > 1:
+            logger.info(f"{local} rr {remote}: masks by output row, one aurora run each: "
+                        f"{runs_text(res['channel_runs'])}")
     extras: dict = {}
     if res["engine"] == "mantle":
         # the second engine: the same archives and window, MANTLE's cascade, the EDI on the same
@@ -909,13 +1073,27 @@ def main(args) -> None:
         tf.write(fn=edi_path, file_type="edi")
         logger.info(f"wrote {edi_path}")
     else:
-        tf = process_station(
-            local_h5, local, remote_h5, remote,
-            out_dir=survey.workspace / "tf", band_scheme=scheme,
-            start=args.start, end=args.end, tag=stem, tweaks=res["tweaks"] or None,
-            time_masks=masks or None,
+        runs = res["channel_runs"]
+        station_kwargs = dict(
+            band_scheme=scheme, start=args.start, end=args.end, tag=stem, tweaks=res["tweaks"] or None,
             **({"output_channels": res["output_channels"]} if res["output_channels"] else {}),
         )
+        if len(runs) == 1:
+            tf = process_station(local_h5, local, remote_h5, remote, out_dir=survey.workspace / "tf",
+                                 time_masks=runs[0]["masks"] or None, **station_kwargs)
+        else:
+            # one run per distinct set of masks by output row, merged row by row (`merge_rows`)
+            tfs = []
+            for k, run in enumerate(runs, 1):
+                logger.info(f"{local} rr {remote}: run {k} of {len(runs)}, rows {', '.join(run['channels'])}, "
+                            f"{len(run['masks'])} mask(s)" + (" (the base run)" if run["base"] else ""))
+                tfs.append(process_station(local_h5, local, remote_h5, remote, out_dir=None,
+                                           time_masks=run["masks"] or None, **station_kwargs))
+            tf = merge_rows(tfs, runs)
+            edi_path = survey.workspace / "tf" / f"{stem}.edi"
+            edi_path.parent.mkdir(parents=True, exist_ok=True)
+            tf.write(fn=edi_path, file_type="edi")
+            logger.info(f"wrote {edi_path} (rows merged from {len(runs)} runs)")
 
     pmin, pmax = quadrant_window(res["sample_rate"])
     logger.info(

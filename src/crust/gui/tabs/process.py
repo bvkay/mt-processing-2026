@@ -36,8 +36,9 @@ which adds `--no-filters` and processes both sites from their raw archives.
 "apply masks.yaml" is on by default; its label counts the `masks.yaml`
 entries process_rr applies for the pair and is refreshed when the pair
 changes, the survey is opened and the tab is shown, since masks are saved
-on the Cross-powers tab. process_rr applies the station's masks and the
-remote site's masks of scope both; switching it off adds `--no-masks`,
+on the Cross-powers tab. process_rr applies the station's masks of scope
+local or both and the remote site's masks of scope both or remote (those
+naming hx, hy or every channel); switching it off adds `--no-masks`,
 which ignores both. A remote is
 required, since every product is remote-referenced. The engine combo's
 "mantle" adds `--engine mantle`: the run goes to MANTLE on the same

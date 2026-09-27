@@ -153,7 +153,19 @@ Usage:
      its yx row not the window product's at a period both hold; the merged
      product does not outscore the full-record default, or summary.md does
      not show its score as A's with "the default is the merged product";
-     or a second pass starts a child or rebuilds the merge.
+     or a second pass starts a child or rebuilds the merge;
+
+(14) the masks signature and stage 3 check miss a mask's `channels` or
+     scope remote: A's all-band entry without `channels` does not hash to
+     the digest computed here from its six keys without scope (sha1 of the
+     sorted JSON, as before the key existed); the same entry with
+     `channels: [ex]` hashes the same; a both-scoped `channels: [ex]` entry
+     of B changes A rr B's inputs (the remote takes H alone) or leaves B rr
+     A's unchanged; a remote-scoped entry of B leaves A rr B's inputs
+     unchanged or changes B rr A's; a remote-scoped entry of A changes A rr
+     B's inputs; a stage 3 [--masks] job for A rr B is built while A holds
+     only a remote-scoped entry and B only a both-scoped `channels: [ey]`
+     entry, or not built once B holds a remote-scoped entry.
 """
 
 from __future__ import annotations
@@ -718,6 +730,59 @@ def test_inputs_masks_both_sites() -> None:
     print(f"  stage 3 with one mask of scope local for B: {local_only}")
 
 
+def test_inputs_masks_channels_and_remote_scope() -> None:
+    import hashlib
+
+    root = ROOT / "channels"
+    survey_yaml = make_survey(root)
+    runner = {"minutes_per_job": {"rr": 8, "variant": 8, "stack": 1}, "min_available_gb": 0.2, "masks": True}
+    c = cp.Campaign(survey_yaml, cp.load_plan(make_plan(root, runner=runner)), parallel=2, create=False)
+    job = c.rr_job(1, "A", "B", "default", "s1_A_rr-B")
+    reverse = c.rr_job(1, "B", "A", "default", "s1_B_rr-A")
+
+    def mask(h0: float, scope: str = "local", channels=None) -> dict:
+        """Build a 30 min all-band mask from h0 hours after T0, with `channels` when given."""
+        out = {"start": iso(h0), "end": iso(h0 + 0.5), "bands": "all", "reason": "test", "found_by": "time",
+               "scope": scope}
+        return out if channels is None else {**out, "channels": channels}
+
+    def write(blocks: dict) -> None:
+        (root / "masks.yaml").write_text(yaml.safe_dump(blocks), encoding="utf-8")
+
+    def digest(site: str, sig: str) -> str:
+        return sig.split(f";{site}:m")[1][:8]
+
+    write({})
+    bare, reverse_bare = c.inputs(job), c.inputs(reverse)
+    write({"A": [mask(20)]})
+    old = {k: v for k, v in mask(20).items() if k != "scope"}  # the six keys a pre-channels entry hashed
+    want = hashlib.sha1(json.dumps([old], sort_keys=True).encode()).hexdigest()[:8]
+    plain = c.inputs(job)
+    assert digest("A", plain) == want, (plain, want)
+    write({"A": [mask(20, channels=["ex"])]})
+    assert digest("A", c.inputs(job)) != want, "A's channels: [ex] left its masks hash as without the key"
+    write({"B": [mask(10, "both", ["ex"])]})
+    assert c.inputs(job) == bare, ("B's E-only entry changed A rr B's inputs", c.inputs(job))
+    assert c.inputs(reverse) != reverse_bare, "B's E-only entry left B rr A's inputs unchanged"
+    write({"B": [mask(10, "remote")]})
+    assert c.inputs(job) != bare, "B's remote-scoped entry left A rr B's inputs unchanged"
+    assert c.inputs(reverse) == reverse_bare, ("B's remote-scoped entry changed B rr A's inputs", c.inputs(reverse))
+    write({"A": [mask(20, "remote")]})
+    assert c.inputs(job) == bare, ("A's remote-scoped entry changed A rr B's inputs", c.inputs(job))
+    print(f"  A's entry without channels hashes to {want} as before; channels [ex] moves it; B's E-only entry: "
+          f"A rr B unchanged, B rr A changed; scope remote: B's applies to A rr B only, A's to neither")
+
+    off = cp.Campaign(survey_yaml, cp.load_plan(make_plan(root / "off")), parallel=2, create=False)
+    off.plan.configs = {"masked": ["--masks"], "hamming": ["--taper", "hamming"]}
+    off.best_remotes = lambda sites, persist=True, df=None: {s: {"remote": "B"} for s in sites}
+    write({"A": [mask(20, "remote")], "B": [mask(10, "both", ["ey"])]})
+    none = [j.config for j in off.stage3_jobs(["A"])]
+    write({"A": [mask(20, "remote")], "B": [mask(10, "remote")]})
+    some = [j.config for j in off.stage3_jobs(["A"])]
+    assert none == ["hamming"] and some == ["masked", "hamming"], (none, some)
+    print(f"  stage 3: A remote-scoped + B E-only: {none}; B remote-scoped: {some}")
+
+
 def test_mantle_config() -> None:
     root = ROOT / "mantle"
     survey_yaml = make_survey(root)
@@ -980,7 +1045,8 @@ def main() -> int:
     print(__doc__.split("**This test fails if**")[1].strip())
     print()
     tests = [test_plan_parser, test_overlap_rule, test_stacks, test_dry_run_counts, test_runner_and_resume,
-             test_filter_check, test_parse_products, test_inputs_masks_both_sites, test_mantle_config,
+             test_filter_check, test_parse_products, test_inputs_masks_both_sites,
+             test_inputs_masks_channels_and_remote_scope, test_mantle_config,
              test_mantle_runner_figures, test_mantle_runner_and_scores, test_site_overrides]
     failed = 0
     for t in tests:

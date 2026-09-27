@@ -16,8 +16,9 @@ Stack builder and run options of the Process tab
 `StackBuilder.argv` and `RunOptions.flags` assemble command lines from a
 `WindowBar`, the survey's `processing:` block (`band_defaults`) and the
 estimator defaults. The masks switch shows, for the pair, the count of the
-station's masks (`crust.masks.load_masks`) and of the remote's masks of
-scope both (`crust.masks.remote_masks`), the ones process_rr.py applies.
+station's masks of scope local or both (`crust.masks.masks_for_role`) and
+of the remote's masks of scope both or remote that name hx, hy or every
+channel (`crust.masks.remote_masks`), the ones process_rr.py applies.
 
 @author: ben kay (ben@auscope.org.au)
 
@@ -38,7 +39,7 @@ from PySide6.QtWidgets import (
 
 from crust.bands import build_band_scheme
 from crust.ingest import variant_ready
-from crust.masks import is_stack, load_masks, remote_masks
+from crust.masks import is_stack, load_masks, masks_for_role, remote_masks
 from crust.process import ESTIMATOR_DEFAULTS, TAPERS
 from crust.gui.window_bar import UTC_FMT, WindowBar
 
@@ -192,8 +193,9 @@ class RunOptions(QGroupBox):
     MASKS_TIP = (
         "On (default): the run leaves out the intervals in masks.yaml. Masks are declared "
         "per site on the Cross-powers tab and apply with any remote; the remote site's masks "
-        "of scope both apply too (scope local, the default, applies only when the site is the "
-        "local; a stacked remote, STK_..., has none). Off adds --no-masks: masks.yaml is "
+        "of scope both or remote apply too (scope local, the default, applies only when the site is "
+        "the local, scope remote only when it is the remote; a remote's mask naming only ex, ey or hz "
+        "is left out; a stacked remote, STK_..., has none). Off adds --no-masks: masks.yaml is "
         "ignored for both sites."
     )
 
@@ -317,8 +319,10 @@ class RunOptions(QGroupBox):
         """Label the masks switch with the mask count of each site of the pair.
 
         The label reads 'apply masks.yaml (<station>: n, <remote>: m)', the
-        masks process_rr applies from each site: n from `load_masks`, m from
-        `remote_masks` (the remote's masks of scope both). A stacked remote
+        masks process_rr applies from each site: n from `masks_for_role` (the
+        station's masks of scope local or both), m from `remote_masks` (the
+        remote's masks of scope both or remote naming hx, hy or every
+        channel). A stacked remote
         (`is_stack`, the name rule process_rr uses, independent of
         `data_root` being mounted) has no masks and is left out. When
         neither site has masks to apply the switch
@@ -334,7 +338,7 @@ class RunOptions(QGroupBox):
         counts = []
         try:
             if station and survey is not None:
-                counts.append((station, len(load_masks(survey, station))))
+                counts.append((station, len(masks_for_role(load_masks(survey, station), "local"))))
                 if remote and remote != station and not is_stack(remote):
                     counts.append((remote, len(remote_masks(survey, remote))))
         except (OSError, ValueError, yaml.YAMLError) as exc:

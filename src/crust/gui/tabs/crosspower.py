@@ -59,7 +59,9 @@ chunk. Masks are declared per site, whatever the remote; Save masks writes
 the site's block of masks.yaml and a change of site reloads it. A new mask
 is written with scope local (`crust.masks`): it applies when the site is
 the local of a pair, and the pairs that use the site as a remote keep its
-windows; an entry set to scope both in masks.yaml keeps that scope. In
+windows, and with no `channels` (every channel); an entry set to scope both
+or remote in masks.yaml, or given `channels`, keeps them through a load,
+an edit and a save, and the list shows both. In
 processing an all-band mask is a time cut and a band mask drops the
 windows it overlaps in its bands (`MASK_ROUTE`).
 
@@ -107,7 +109,7 @@ DEFAULT_PERIOD_S = 0.05
 SIZE, SELECTED_SIZE = 8, 12
 SMALL_SIZE, MANY = 5, 300  # the spot size past MANY spots
 PARTLY_TINT = 0.55  # a partly masked chunk's fill: its colour taken this far towards white (opaque)
-COLUMNS = ("start (UTC)", "end (UTC)", "bands (s)", "reason", "found by")
+COLUMNS = ("start (UTC)", "end (UTC)", "bands (s)", "reason", "found by", "channels", "scope")
 REASON = 3
 OVERLAP, PROCESSING, QC = "overlap", "processing", "qc"  # the window choices, in the combo's order
 # a store by the kind of window it was computed for, as the status line names it
@@ -116,9 +118,10 @@ MASK_ROUTE = "all-band masks: time cuts; band masks: their windows dropped in th
 ALL_BANDS_TIP = ("ticked: a time-panel mask is a time cut, every band left out (bands: all); unticked: it "
                  "covers the shown band only, like a polar-panel mask")
 MASKS_TIP = ("this site's masks (its block of <survey>/masks.yaml): declared per site, they apply whichever remote "
-             "it is processed with; new masks are scope local, applied when this site is the local of a pair, and "
-             "a mask set to scope both in masks.yaml applies when it is the remote too (Process tab, \"apply "
-             "masks.yaml\", on by default)")
+             "it is processed with; new masks are scope local, applied when this site is the local of a pair, "
+             "a mask set to scope both in masks.yaml applies when it is the remote too, and scope remote only "
+             "when it is the remote; a mask given channels (ex, say) leaves out that TF row alone (Process tab, "
+             "\"apply masks.yaml\", on by default)")
 
 
 def span_text(start, end, seconds: bool = False) -> str:
@@ -1273,7 +1276,10 @@ class CrossPowerTab(QWidget):
         self.table.setRowCount(len(self.masks))
         for row, m in enumerate(self.masks):
             bands = "all" if m["bands"] == "all" else f"{m['bands'][0]:.4g}-{m['bands'][1]:.4g}"
-            for col, text in enumerate((m["start"], m["end"], bands, m["reason"], m["found_by"])):
+            channels = m.get("channels", "all")
+            channels = channels if channels == "all" else ", ".join(channels)
+            for col, text in enumerate((m["start"], m["end"], bands, m["reason"], m["found_by"], channels,
+                                        m.get("scope", "local"))):
                 item = QTableWidgetItem(str(text))
                 if col != REASON:
                     item.setFlags(item.flags() & ~Qt.ItemIsEditable)
