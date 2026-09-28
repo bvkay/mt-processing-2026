@@ -42,6 +42,7 @@ overlap:
 remotes:
   D01: D14          # D13's coils are dead at 3-13 s (the 23 Sep sawtooth was the remote)
   D03: D02          # the better remote once the nights and the storm are masked
+  D05: D14          # the D05 dive and sceptic, 27 Sep: D14 over the whole record (the score's pick is D16)
   D07: D09          # coils 0.95-0.99 coherent; D08's are incoherent at 1-30 s
   D08: D07          # smoother at 12-1000 s xy and 3-30 s yx with the masks
   D09: D07          # D07 with its pickup masked (scope both)
