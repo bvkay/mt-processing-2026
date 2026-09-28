@@ -192673,8 +192673,8 @@ C09:
   bands: all
   reason: C09 dusk-to-after-dawn ex noise that begins with the 50 Hz night state (a switched load, 50
     Hz 3-4x up on all four channels; ex on C09's H 0.01-0.09 at night against 0.34-0.95 by day; on 27
-    Sep the noise outlives the 05:56 switch-off to the pickup). C09 dive and sceptic, 28 Sep (qc/reports/2026-09-28_lineC-site-dives_dive-C09.json,
-    verify-C09.json); declared on Ben's word of 28 Sep
+    Sep the noise outlives the 05:56 switch-off to the pickup). C09 dive and sceptic, 28 Sep (qc/reports/2026-09-28_lineC-site-dives_dive-C09_a2fd0d5d.json,
+    2026-09-28_lineC-site-dives_verify-C09_a3cde583.json); declared on Ben's word of 28 Sep
   found_by: night
   scope: local
   channels: [ex]
@@ -192683,8 +192683,8 @@ C09:
   bands: all
   reason: C09 dusk-to-after-dawn ex noise that begins with the 50 Hz night state (a switched load, 50
     Hz 3-4x up on all four channels; ex on C09's H 0.01-0.09 at night against 0.34-0.95 by day; on 27
-    Sep the noise outlives the 05:56 switch-off to the pickup). C09 dive and sceptic, 28 Sep (qc/reports/2026-09-28_lineC-site-dives_dive-C09.json,
-    verify-C09.json); declared on Ben's word of 28 Sep
+    Sep the noise outlives the 05:56 switch-off to the pickup). C09 dive and sceptic, 28 Sep (qc/reports/2026-09-28_lineC-site-dives_dive-C09_a2fd0d5d.json,
+    2026-09-28_lineC-site-dives_verify-C09_a3cde583.json); declared on Ben's word of 28 Sep
   found_by: night
   scope: local
   channels: [ex]
@@ -192694,8 +192694,8 @@ C09L:
   bands: all
   reason: C09 dusk-to-after-dawn ex noise that begins with the 50 Hz night state (a switched load, 50
     Hz 3-4x up on all four channels; ex on C09's H 0.01-0.09 at night against 0.34-0.95 by day; on 27
-    Sep the noise outlives the 05:56 switch-off to the pickup). C09 dive and sceptic, 28 Sep (qc/reports/2026-09-28_lineC-site-dives_dive-C09.json,
-    verify-C09.json); declared on Ben's word of 28 Sep
+    Sep the noise outlives the 05:56 switch-off to the pickup). C09 dive and sceptic, 28 Sep (qc/reports/2026-09-28_lineC-site-dives_dive-C09_a2fd0d5d.json,
+    2026-09-28_lineC-site-dives_verify-C09_a3cde583.json); declared on Ben's word of 28 Sep
   found_by: night
   scope: local
   channels: [ex]
@@ -192704,8 +192704,8 @@ C09L:
   bands: all
   reason: C09 dusk-to-after-dawn ex noise that begins with the 50 Hz night state (a switched load, 50
     Hz 3-4x up on all four channels; ex on C09's H 0.01-0.09 at night against 0.34-0.95 by day; on 27
-    Sep the noise outlives the 05:56 switch-off to the pickup). C09 dive and sceptic, 28 Sep (qc/reports/2026-09-28_lineC-site-dives_dive-C09.json,
-    verify-C09.json); declared on Ben's word of 28 Sep
+    Sep the noise outlives the 05:56 switch-off to the pickup). C09 dive and sceptic, 28 Sep (qc/reports/2026-09-28_lineC-site-dives_dive-C09_a2fd0d5d.json,
+    2026-09-28_lineC-site-dives_verify-C09_a3cde583.json); declared on Ben's word of 28 Sep
   found_by: night
   scope: local
   channels: [ex]
