@@ -332,7 +332,17 @@ p.add_argument("--tag")
 p.add_argument("--engine", default="aurora")
 p.add_argument("--mantle-max-hours", type=float, default=24.0)
 p.add_argument("--mantle-window", default=None)
+# the plan configs' options that take a value: left undeclared, Python 3.13's
+# argparse hands the value (e.g. "hamming" of --taper hamming) to `start`
+for name in ("--taper", "--per-decade", "--mask-scope"):
+    p.add_argument(name)
 args, _ = p.parse_known_args()
+for value in (args.start, args.end):
+    if value is not None:
+        try:
+            dt.datetime.fromisoformat(value)
+        except ValueError:
+            sys.exit(f"stand-in process_rr.py: window bound {value!r} is not a time (an undeclared option's value?)")
 cfg = yaml.safe_load(Path(args.survey_yaml).read_text(encoding="utf-8"))
 work = Path(cfg["workspace"])
 kind = "mantle" if args.engine == "mantle" else "window" if args.start else "full"
@@ -1246,6 +1256,9 @@ def test_site_overrides() -> None:
     b_rows = df[df["local"] == "B"]
     assert len(b_rows) and (b_rows["modes"] == "xy").all(), b_rows[["run_id", "modes"]]
     assert np.allclose(b_rows["score"], b_rows["xy_score"]), b_rows[["score", "xy_score"]]
+    # the fixture: every B product is a full-record one (scattered yx), not the window's (sound yx, to 200 s)
+    fixture = (b_rows["yx_score"] < 0.1) & (b_rows["period_max"] > 1000.0)
+    assert fixture.all(), b_rows[["run_id", "yx_score", "period_max"]]
     assert ((b_rows["overall_score"] - b_rows["score"]).abs() > 0.1).all(), b_rows[["score", "overall_score"]]
     m = df[df["run_id"] == merged["run_id"]].iloc[0]
     full = df[df["run_id"] == "s1_A_rr-C"].iloc[0]
