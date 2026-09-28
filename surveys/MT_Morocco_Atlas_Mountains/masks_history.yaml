@@ -35751,3 +35751,18 @@ B10:
     'on': '2026-09-27'
     why: 'gate mask (bands all, scope both): it cut the clock rule''s quiet windows in a run with all
       masks; retired by Ben''s line B decision of 27 Sep'
+D02:
+- start: '2023-09-19T21:00:00Z'
+  end: '2023-09-20T08:00:00Z'
+  bands: [1.0, 30.0]
+  reason: D02 hx noisy through the outage night (hx-hx with D01/D03/D13 0.18-0.41 against 0.55-0.89 otherwise;
+    line D profile, untested)
+  found_by: time
+  scope: local
+  retired:
+    'on': '2026-09-28'
+    why: 'replaced on 28 Sep by the D02 dive''s storm, night and 21 Sep entries (scope both): in aurora
+      it made rr D03 worse (0.839 to 0.829, yx 1-10 s 0.07 dex further from lemimt), and as scope local
+      it left the outage-night hx in D03''s products, where D02 is the remote (the D02 dive and its sceptic,
+      28 Sep; the trials in qc/lineD/D02/declare); Ben, 28 Sep about 08:20 WAST: "we can try the mask
+      swap, remote and band limited storm entry for D02"'

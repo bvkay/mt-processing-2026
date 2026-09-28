@@ -150530,13 +150530,49 @@ D01:
   found_by: night
   scope: local
 D02:
-- start: '2023-09-19T21:00:00Z'
-  end: '2023-09-20T08:00:00Z'
-  bands: [1.0, 30.0]
-  reason: D02 hx noisy through the outage night (hx-hx with D01/D03/D13 0.18-0.41 against 0.55-0.89 otherwise;
-    line D profile, untested)
+- start: '2023-09-19T14:00:00Z'
+  end: '2023-09-19T20:00:00Z'
+  bands: all
+  reason: '19 Sep storm over D01-D03: D02 coils at the rails 15:50-19:30 UTC; plain RR errors 1.5-10x
+    lower without it on D13/D14 (D02 dive)'
   found_by: time
-  scope: local
+  scope: both
+- start: '2023-09-19T20:00:00Z'
+  end: '2023-09-20T08:00:00Z'
+  bands: [0.1, 1000.0]
+  reason: D02 hx and ey incoherent with every neighbour 22:00-05:30 UTC (hx-hx 0.00-0.25 at 1-10 s, ey
+    on remote H 0.02-0.27); declared hours widened to 20:00 (hx 0.13-0.18 at 10-30 s at 20:30-20:45) and
+    bands to [0.1, 1000] s (D02 dive and its sceptic)
+  found_by: time
+  scope: both
+- start: '2023-09-21T00:21:00Z'
+  end: '2023-09-21T00:22:00Z'
+  bands: [0.001, 100.0]
+  reason: D02 hx coil bursts 00:21:00-00:21:50 UTC (15-min hx-D01hx 0.17 at 1-3 s against 0.82-0.93 for
+    D03-D01; the D02 dive's sceptic)
+  found_by: time
+  scope: both
+- start: '2023-09-21T03:19:00Z'
+  end: '2023-09-21T03:29:00Z'
+  bands: [0.001, 100.0]
+  reason: D02 hx coil bursts 03:19:30-03:28:30 UTC (15-min hx-D01hx 0.03 at 1-3 s against 0.82-0.93 for
+    D03-D01; the D02 dive's sceptic)
+  found_by: time
+  scope: both
+- start: '2023-09-21T04:11:00Z'
+  end: '2023-09-21T04:21:00Z'
+  bands: [0.001, 100.0]
+  reason: D02 hx coil bursts 04:11:20-04:20:00 UTC (15-min hx-D01hx 0.01 at 1-3 s against 0.82-0.93 for
+    D03-D01; the D02 dive's sceptic)
+  found_by: time
+  scope: both
+- start: '2023-09-21T05:30:00Z'
+  end: '2023-09-21T05:34:00Z'
+  bands: [0.001, 100.0]
+  reason: D02 hy coil bursts 05:30:10-05:33:20 UTC (15-min hy-D01hy 0.06 at 1-3 s against 0.82-0.93 for
+    D03-D01; the D02 dive's sceptic)
+  found_by: time
+  scope: both
 D03:
 - start: '2023-09-19T15:00:00Z'
   end: '2023-09-19T19:00:00Z'

@@ -41,6 +41,7 @@ overlap:
 # per-site decisions from the dives (notes/lineD/<site>.md), sceptic-supported
 remotes:
   D01: D14          # D13's coils are dead at 3-13 s (the 23 Sep sawtooth was the remote)
+  D02: D14          # the D02 dive and trials, 28 Sep: D03 pulls yx at 1-10 s 0.2 dex low; D13 within 0.003 dex
   D03: D02          # the better remote once the nights and the storm are masked
   D05: D14          # the D05 dive and sceptic, 27 Sep: D14 over the whole record (the score's pick is D16)
   D07: D09          # coils 0.95-0.99 coherent; D08's are incoherent at 1-30 s
