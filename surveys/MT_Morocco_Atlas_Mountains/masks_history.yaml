@@ -35766,3 +35766,225 @@ D02:
       it left the outage-night hx in D03''s products, where D02 is the remote (the D02 dive and its sceptic,
       28 Sep; the trials in qc/lineD/D02/declare); Ben, 28 Sep about 08:20 WAST: "we can try the mask
       swap, remote and band limited storm entry for D02"'
+B13:
+- start: '2023-07-25T05:00:00Z'
+  end: '2023-07-25T06:00:00Z'
+  bands: all
+  reason: 'line noise profile (hourly, 20 min per hour): max(step_ey, shift_ey) > 0.05; proposed for the
+    line B campaign''s masked config, not reviewed by hand'
+  found_by: time
+  scope: both
+  retired:
+    'on': '2026-09-28'
+    why: 'B13 dive 28 Sep: they hold the ey night load (19:29-05:40 UTC) and its switch-off, which the
+      declared chain removes; auto-proposed from ey step metrics, not reviewed by hand; 0 of 12 plain-stack
+      cells on B16; campaign masked 0.498 against 0.515 (qc/reports/2026-09-28_lineB-site-dive_dive-B13.json,
+      verify-B13.json); Ben, 28 Sep about 13:22 WAST: "approved for line B masks"'
+- start: '2023-07-25T10:00:00Z'
+  end: '2023-07-25T11:00:00Z'
+  bands: all
+  reason: 'line noise profile (hourly, 20 min per hour): max(step_ey, shift_ey) > 0.05; proposed for the
+    line B campaign''s masked config, not reviewed by hand'
+  found_by: time
+  scope: both
+  retired:
+    'on': '2026-09-28'
+    why: 'B13 dive 28 Sep: they hold the ey night load (19:29-05:40 UTC) and its switch-off, which the
+      declared chain removes; auto-proposed from ey step metrics, not reviewed by hand; 0 of 12 plain-stack
+      cells on B16; campaign masked 0.498 against 0.515 (qc/reports/2026-09-28_lineB-site-dive_dive-B13.json,
+      verify-B13.json); Ben, 28 Sep about 13:22 WAST: "approved for line B masks"'
+- start: '2023-07-25T23:00:00Z'
+  end: '2023-07-26T01:00:00Z'
+  bands: all
+  reason: 'line noise profile (hourly, 20 min per hour): max(step_ey, shift_ey) > 0.05; proposed for the
+    line B campaign''s masked config, not reviewed by hand'
+  found_by: time
+  scope: both
+  retired:
+    'on': '2026-09-28'
+    why: 'B13 dive 28 Sep: they hold the ey night load (19:29-05:40 UTC) and its switch-off, which the
+      declared chain removes; auto-proposed from ey step metrics, not reviewed by hand; 0 of 12 plain-stack
+      cells on B16; campaign masked 0.498 against 0.515 (qc/reports/2026-09-28_lineB-site-dive_dive-B13.json,
+      verify-B13.json); Ben, 28 Sep about 13:22 WAST: "approved for line B masks"'
+- start: '2023-07-26T23:00:00Z'
+  end: '2023-07-27T00:00:00Z'
+  bands: all
+  reason: 'line noise profile (hourly, 20 min per hour): max(step_ey, shift_ey) > 0.05; proposed for the
+    line B campaign''s masked config, not reviewed by hand'
+  found_by: time
+  scope: both
+  retired:
+    'on': '2026-09-28'
+    why: 'B13 dive 28 Sep: they hold the ey night load (19:29-05:40 UTC) and its switch-off, which the
+      declared chain removes; auto-proposed from ey step metrics, not reviewed by hand; 0 of 12 plain-stack
+      cells on B16; campaign masked 0.498 against 0.515 (qc/reports/2026-09-28_lineB-site-dive_dive-B13.json,
+      verify-B13.json); Ben, 28 Sep about 13:22 WAST: "approved for line B masks"'
+- start: '2023-07-27T01:00:00Z'
+  end: '2023-07-27T02:00:00Z'
+  bands: all
+  reason: 'line noise profile (hourly, 20 min per hour): max(step_ey, shift_ey) > 0.05; proposed for the
+    line B campaign''s masked config, not reviewed by hand'
+  found_by: time
+  scope: both
+  retired:
+    'on': '2026-09-28'
+    why: 'B13 dive 28 Sep: they hold the ey night load (19:29-05:40 UTC) and its switch-off, which the
+      declared chain removes; auto-proposed from ey step metrics, not reviewed by hand; 0 of 12 plain-stack
+      cells on B16; campaign masked 0.498 against 0.515 (qc/reports/2026-09-28_lineB-site-dive_dive-B13.json,
+      verify-B13.json); Ben, 28 Sep about 13:22 WAST: "approved for line B masks"'
+- start: '2023-07-27T05:00:00Z'
+  end: '2023-07-27T06:00:00Z'
+  bands: all
+  reason: 'line noise profile (hourly, 20 min per hour): max(step_ey, shift_ey) > 0.05; proposed for the
+    line B campaign''s masked config, not reviewed by hand'
+  found_by: time
+  scope: both
+  retired:
+    'on': '2026-09-28'
+    why: 'B13 dive 28 Sep: they hold the ey night load (19:29-05:40 UTC) and its switch-off, which the
+      declared chain removes; auto-proposed from ey step metrics, not reviewed by hand; 0 of 12 plain-stack
+      cells on B16; campaign masked 0.498 against 0.515 (qc/reports/2026-09-28_lineB-site-dive_dive-B13.json,
+      verify-B13.json); Ben, 28 Sep about 13:22 WAST: "approved for line B masks"'
+B14:
+- start: '2023-07-23T11:00:00Z'
+  end: '2023-07-23T12:00:00Z'
+  bands: all
+  reason: 'line noise profile (hourly, 20 min per hour): max(step_ey, shift_ey) > 0.05; proposed for the
+    line B campaign''s masked config, not reviewed by hand'
+  found_by: time
+  scope: both
+  retired:
+    'on': '2026-09-28'
+    why: 'B14 dive 28 Sep: hold nothing distinct from control hours; 0 of 12 plain-stack cells on B16
+      and B17; campaign masked 0.633 against default 0.660 (qc/reports/2026-09-28_lineB-site-dive_dive-B14.json,
+      verify-B14.json); Ben, 28 Sep about 13:22 WAST: "approved for line B masks"'
+- start: '2023-07-24T10:00:00Z'
+  end: '2023-07-24T12:00:00Z'
+  bands: all
+  reason: 'line noise profile (hourly, 20 min per hour): max(step_ey, shift_ey) > 0.05; proposed for the
+    line B campaign''s masked config, not reviewed by hand'
+  found_by: time
+  scope: both
+  retired:
+    'on': '2026-09-28'
+    why: 'B14 dive 28 Sep: hold nothing distinct from control hours; 0 of 12 plain-stack cells on B16
+      and B17; campaign masked 0.633 against default 0.660 (qc/reports/2026-09-28_lineB-site-dive_dive-B14.json,
+      verify-B14.json); Ben, 28 Sep about 13:22 WAST: "approved for line B masks"'
+- start: '2023-07-24T19:00:00Z'
+  end: '2023-07-24T20:00:00Z'
+  bands: all
+  reason: 'line noise profile (hourly, 20 min per hour): max(step_ey, shift_ey) > 0.05; proposed for the
+    line B campaign''s masked config, not reviewed by hand'
+  found_by: time
+  scope: both
+  retired:
+    'on': '2026-09-28'
+    why: 'B14 dive 28 Sep: hold nothing distinct from control hours; 0 of 12 plain-stack cells on B16
+      and B17; campaign masked 0.633 against default 0.660 (qc/reports/2026-09-28_lineB-site-dive_dive-B14.json,
+      verify-B14.json); Ben, 28 Sep about 13:22 WAST: "approved for line B masks"'
+B18:
+- start: '2023-07-23T17:00:00Z'
+  end: '2023-07-23T18:00:00Z'
+  bands: all
+  reason: 'line noise profile (hourly, 20 min per hour): max(step_ey, shift_ey) > 0.05; proposed for the
+    line B campaign''s masked config, not reviewed by hand'
+  found_by: time
+  scope: both
+  retired:
+    'on': '2026-09-28'
+    why: 'replaced on 28 Sep by B18''s 93 coil-burst spans (scope both, [0.2, 52] s). The B18 sceptic
+      kept them until B17 rr B18 was rerun without them; the B17 dive did (today''s code: hours 0.774
+      with 58 periods, spans 0.777 with 60, both 0.786): they cost B17''s yx two long periods and raise
+      its errors at 1-10, 10-100 and 1000-5000 s, and raise the plain-stack errors in 7 of 8 cells; they
+      also cost B20 rr B18 0.058 and B18 rr B21 its six longest periods (qc/reports/2026-09-27_lineB-site-dive_verify-B18.json,
+      dive-B17.json, verify-B17.json); Ben, 28 Sep about 13:22 WAST: "approved for line B masks"'
+- start: '2023-07-23T19:00:00Z'
+  end: '2023-07-23T20:00:00Z'
+  bands: all
+  reason: 'line noise profile (hourly, 20 min per hour): max(step_ey, shift_ey) > 0.05; proposed for the
+    line B campaign''s masked config, not reviewed by hand'
+  found_by: time
+  scope: both
+  retired:
+    'on': '2026-09-28'
+    why: 'replaced on 28 Sep by B18''s 93 coil-burst spans (scope both, [0.2, 52] s). The B18 sceptic
+      kept them until B17 rr B18 was rerun without them; the B17 dive did (today''s code: hours 0.774
+      with 58 periods, spans 0.777 with 60, both 0.786): they cost B17''s yx two long periods and raise
+      its errors at 1-10, 10-100 and 1000-5000 s, and raise the plain-stack errors in 7 of 8 cells; they
+      also cost B20 rr B18 0.058 and B18 rr B21 its six longest periods (qc/reports/2026-09-27_lineB-site-dive_verify-B18.json,
+      dive-B17.json, verify-B17.json); Ben, 28 Sep about 13:22 WAST: "approved for line B masks"'
+- start: '2023-07-23T22:00:00Z'
+  end: '2023-07-24T01:00:00Z'
+  bands: all
+  reason: 'line noise profile (hourly, 20 min per hour): max(step_ey, shift_ey) > 0.05; proposed for the
+    line B campaign''s masked config, not reviewed by hand'
+  found_by: time
+  scope: both
+  retired:
+    'on': '2026-09-28'
+    why: 'replaced on 28 Sep by B18''s 93 coil-burst spans (scope both, [0.2, 52] s). The B18 sceptic
+      kept them until B17 rr B18 was rerun without them; the B17 dive did (today''s code: hours 0.774
+      with 58 periods, spans 0.777 with 60, both 0.786): they cost B17''s yx two long periods and raise
+      its errors at 1-10, 10-100 and 1000-5000 s, and raise the plain-stack errors in 7 of 8 cells; they
+      also cost B20 rr B18 0.058 and B18 rr B21 its six longest periods (qc/reports/2026-09-27_lineB-site-dive_verify-B18.json,
+      dive-B17.json, verify-B17.json); Ben, 28 Sep about 13:22 WAST: "approved for line B masks"'
+- start: '2023-07-24T11:00:00Z'
+  end: '2023-07-24T12:00:00Z'
+  bands: all
+  reason: 'line noise profile (hourly, 20 min per hour): max(step_ey, shift_ey) > 0.05; proposed for the
+    line B campaign''s masked config, not reviewed by hand'
+  found_by: time
+  scope: both
+  retired:
+    'on': '2026-09-28'
+    why: 'replaced on 28 Sep by B18''s 93 coil-burst spans (scope both, [0.2, 52] s). The B18 sceptic
+      kept them until B17 rr B18 was rerun without them; the B17 dive did (today''s code: hours 0.774
+      with 58 periods, spans 0.777 with 60, both 0.786): they cost B17''s yx two long periods and raise
+      its errors at 1-10, 10-100 and 1000-5000 s, and raise the plain-stack errors in 7 of 8 cells; they
+      also cost B20 rr B18 0.058 and B18 rr B21 its six longest periods (qc/reports/2026-09-27_lineB-site-dive_verify-B18.json,
+      dive-B17.json, verify-B17.json); Ben, 28 Sep about 13:22 WAST: "approved for line B masks"'
+- start: '2023-07-24T16:00:00Z'
+  end: '2023-07-24T17:00:00Z'
+  bands: all
+  reason: 'line noise profile (hourly, 20 min per hour): max(step_ey, shift_ey) > 0.05; proposed for the
+    line B campaign''s masked config, not reviewed by hand'
+  found_by: time
+  scope: both
+  retired:
+    'on': '2026-09-28'
+    why: 'replaced on 28 Sep by B18''s 93 coil-burst spans (scope both, [0.2, 52] s). The B18 sceptic
+      kept them until B17 rr B18 was rerun without them; the B17 dive did (today''s code: hours 0.774
+      with 58 periods, spans 0.777 with 60, both 0.786): they cost B17''s yx two long periods and raise
+      its errors at 1-10, 10-100 and 1000-5000 s, and raise the plain-stack errors in 7 of 8 cells; they
+      also cost B20 rr B18 0.058 and B18 rr B21 its six longest periods (qc/reports/2026-09-27_lineB-site-dive_verify-B18.json,
+      dive-B17.json, verify-B17.json); Ben, 28 Sep about 13:22 WAST: "approved for line B masks"'
+- start: '2023-07-24T19:00:00Z'
+  end: '2023-07-24T20:00:00Z'
+  bands: all
+  reason: 'line noise profile (hourly, 20 min per hour): max(step_ey, shift_ey) > 0.05; proposed for the
+    line B campaign''s masked config, not reviewed by hand'
+  found_by: time
+  scope: both
+  retired:
+    'on': '2026-09-28'
+    why: 'replaced on 28 Sep by B18''s 93 coil-burst spans (scope both, [0.2, 52] s). The B18 sceptic
+      kept them until B17 rr B18 was rerun without them; the B17 dive did (today''s code: hours 0.774
+      with 58 periods, spans 0.777 with 60, both 0.786): they cost B17''s yx two long periods and raise
+      its errors at 1-10, 10-100 and 1000-5000 s, and raise the plain-stack errors in 7 of 8 cells; they
+      also cost B20 rr B18 0.058 and B18 rr B21 its six longest periods (qc/reports/2026-09-27_lineB-site-dive_verify-B18.json,
+      dive-B17.json, verify-B17.json); Ben, 28 Sep about 13:22 WAST: "approved for line B masks"'
+- start: '2023-07-25T23:00:00Z'
+  end: '2023-07-26T01:00:00Z'
+  bands: all
+  reason: 'line noise profile (hourly, 20 min per hour): max(step_ey, shift_ey) > 0.05; proposed for the
+    line B campaign''s masked config, not reviewed by hand'
+  found_by: time
+  scope: both
+  retired:
+    'on': '2026-09-28'
+    why: 'replaced on 28 Sep by B18''s 93 coil-burst spans (scope both, [0.2, 52] s). The B18 sceptic
+      kept them until B17 rr B18 was rerun without them; the B17 dive did (today''s code: hours 0.774
+      with 58 periods, spans 0.777 with 60, both 0.786): they cost B17''s yx two long periods and raise
+      its errors at 1-10, 10-100 and 1000-5000 s, and raise the plain-stack errors in 7 of 8 cells; they
+      also cost B20 rr B18 0.058 and B18 rr B21 its six longest periods (qc/reports/2026-09-27_lineB-site-dive_verify-B18.json,
+      dive-B17.json, verify-B17.json); Ben, 28 Sep about 13:22 WAST: "approved for line B masks"'
