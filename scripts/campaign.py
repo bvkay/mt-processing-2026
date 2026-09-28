@@ -2467,8 +2467,17 @@ def _label(r) -> str:
     return r["remote"] + ("" if r["config"] in ("default", "") else f"/{r['config']}")
 
 
-def fig_pseudosection(c: "Campaign", df: pd.DataFrame, out: Path) -> bool:
+def fig_pseudosection(c: "Campaign", df: pd.DataFrame, out: Path, title: str | None = None) -> bool:
     """Draw rho_xy, rho_yx and both phases of each site's best product along the line, log period down.
+
+    Args:
+        c (Campaign): The campaign; its plan's sites give the columns and its
+            name the default title.
+        df (pd.DataFrame): The scored products, one row each (local, remote,
+            config, score, edi).
+        out (Path): The PNG to write.
+        title (str | None): The figure's title; None gives the campaign's own
+            ("<plan>: best product per site ...").
 
     Returns:
         bool: False when no product is scored.
@@ -2506,12 +2515,12 @@ def fig_pseudosection(c: "Campaign", df: pd.DataFrame, out: Path) -> bool:
         ye = np.concatenate([[grid[0] - 0.05], (grid[1:] + grid[:-1]) / 2, [grid[-1] + 0.05]])
         panels = (("rxy", "log10 rho_xy (ohm m)", "Spectral", rlim), ("ryx", "log10 rho_yx (ohm m)", "Spectral", rlim),
                   ("pxy", "phase xy (deg)", "Spectral_r", (0, 90)), ("pyx", "phase yx + 180 (deg)", "Spectral_r", (0, 90)))
-        for a, (key, title, cmap, lim) in zip(ax.flat, panels):
+        for a, (key, label, cmap, lim) in zip(ax.flat, panels):
             cm = plt.get_cmap(cmap).copy()
             cm.set_bad("#2b2b2b")
             m = a.pcolormesh(xe, ye, np.ma.masked_invalid(data[key]), cmap=cm, vmin=lim[0], vmax=lim[1])
-            fig.colorbar(m, ax=a, shrink=0.9, label=title)
-            a.set_title(title)
+            fig.colorbar(m, ax=a, shrink=0.9, label=label)
+            a.set_title(label)
             a.set_xticks(range(len(sites)))
             a.set_xticklabels(sites, rotation=90, fontsize=8)
             a.set_ylabel("log10 period (s)")
@@ -2520,8 +2529,10 @@ def fig_pseudosection(c: "Campaign", df: pd.DataFrame, out: Path) -> bool:
             if s in best:
                 ax[0][0].text(col, ye[0], f" {_label(best[s])} {best[s]['score']:.2f}", rotation=90, va="bottom",
                               ha="center", fontsize=6.5, color="#bdbdbd", clip_on=False)
-        fig.suptitle(f"{c.plan.name}: best product per site (highest score, any stage), sites in order along "
-                     f"the line; grey = no product or outside its band", fontsize=11)
+        if title is None:
+            title = (f"{c.plan.name}: best product per site (highest score, any stage), sites in order along "
+                     f"the line; grey = no product or outside its band")
+        fig.suptitle(title, fontsize=11)
         fig.savefig(out, dpi=110)
         plt.close(fig)
     return True
