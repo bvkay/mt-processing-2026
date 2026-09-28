@@ -24,13 +24,31 @@ The station metadata, location and header come from the first xy source; its
 INFO block's processing parameters are replaced by ``crust.*`` lines naming
 the recipe, each source and its range. The station ids of all sources must
 agree (--force merges them regardless); their remotes may differ.
-``OUT.json`` beside the output records the recipe, each source (path,
-station, and the remote, tag, window and masks of its ``<stem>.json``
-sidecar), the periods taken from each source per mode, the gaps, and the UTC
-time. Exit status: 0 written, 2 when a recipe entry lacks edi, pmin or pmax,
-a range is not 0 < pmin <= pmax, a mode has no source listed, a source is
-missing, a mode takes no period, or the stations differ without --force.
-`merge_files` is the same merge for a caller in Python.
+
+The text mt_metadata's writer produces is then patched in three blocks
+(`patch_edi_text`); the data from >FREQ to the end stay as written. The
+>HEAD block carries the station longitude as both LON and LONG, and the
+>=DEFINEMEAS block the reference longitude as both REFLON and REFLONG, the
+same value under each spelling, because readers differ in which spelling
+they look for (mt_metadata writes LON and REFLON, lemimt LONG and REFLONG).
+A recipe may hold, beside its sites, a ``header:`` block with the optional
+strings ``acqby`` and ``prosby``. ACQBY is set to acqby. FILEBY is set to
+prosby, PROSBY (not a SEG 1.0 key; mt_metadata reads the file with it
+without complaint) is added after FILEBY with the same value, and the INFO
+line ``transfer_function.processed_by.author`` (the name mt_metadata reads
+the processor from) is set to it, as is a ``provenance.submitter.author``
+line where the writer wrote one. Without the block ACQBY and FILEBY are as
+the first xy source had them.
+
+``OUT.json`` beside the output records the recipe, the header block, each
+source (path, station, and the remote, tag, window and masks of its
+``<stem>.json`` sidecar), the periods taken from each source per mode, the
+gaps, and the UTC time. Exit status: 0 written, 2 when a recipe entry lacks
+edi, pmin or pmax, a range is not 0 < pmin <= pmax, a mode has no source
+listed, a source is missing, a mode takes no period, the header block holds
+a key other than acqby and prosby or a value that is not a non-empty string
+free of line breaks and of the characters = < > ", or the stations differ
+without --force. `merge_files` is the same merge for a caller in Python.
 
 With --auto the script proposes a recipe for one site from candidate EDIs
 and writes it to --propose. Per quarter-decade band and mode, a candidate is
@@ -81,6 +99,13 @@ ROWS = {"xy": X_ROW, "yx": Y_ROW}
 BANDS_PER_DECADE = 4  # --auto bands: quarter decades
 JUMP_DEX = 0.3  # --auto: a band whose median rho is this far from each neighbouring band's drops the candidate
 PREFER = 0.2  # --auto: the candidate holding the band below is kept while its error is within this of the lowest
+HEADER_KEYS = ("acqby", "prosby")  # the recipe's optional header block
+HEADER_BAD = ("=", "<", ">", '"', "\r", "\n")  # characters EDI readers split or stop on
+LONGITUDE_KEYS = {">HEAD": ("LON", "LONG"), ">=DEFINEMEAS": ("REFLON", "REFLONG")}
+# mt_metadata 1.0 holds the processor as a person; its INFO key is processed_by.author, and a bare
+# transfer_function.processed_by=<text> line fails validation when the file is read.
+PROCESSED_BY = "transfer_function.processed_by.author"
+SUBMITTER = "provenance.submitter.author"
 RULE = ("per mode, at each period of the grid (the union of the sources' usable periods inside their ranges, "
         "merged within LOG_TOL in log10 period), the first listed source whose range covers the period and which "
         "gives a value there: copied at a period it holds within LOG_TOL where its row is usable, interpolated "
@@ -90,7 +115,7 @@ RULE = ("per mode, at each period of the grid (the union of the sources' usable 
 
 
 def load_recipe(path) -> dict:
-    """Read a recipe file, a mapping of site to its recipe."""
+    """Read a recipe file, a mapping of site to its recipe with an optional ``header`` block."""
     with open(path, encoding="utf-8") as handle:
         recipe = yaml.safe_load(handle)
     if not isinstance(recipe, dict):
@@ -262,6 +287,151 @@ def _joined(values: list) -> str | None:
     return "/".join(seen) if seen else None
 
 
+def check_header(header) -> list[str]:
+    """Return one line per problem of a recipe's header block; empty when it is absent or sound."""
+    if header is None:
+        return []
+    if not isinstance(header, dict):
+        return [f"header: {header!r} is not a mapping of {' and '.join(HEADER_KEYS)}"]
+    errors = [f"header: unknown key {key!r} (keys: {', '.join(HEADER_KEYS)})" for key in header
+              if key not in HEADER_KEYS]
+    for key in HEADER_KEYS:
+        if key not in header:
+            continue
+        value = header[key]
+        if not isinstance(value, str) or not value.strip():
+            errors.append(f"header: {key} {value!r} is not a non-empty string")
+        elif any(c in value for c in HEADER_BAD):
+            errors.append(f"header: {key} {value!r} holds a line break or one of = < > \"")
+    return errors
+
+
+def _key(line: str) -> str | None:
+    """Return the lower-case key of a KEY=VALUE line of an EDI block, None for any other line."""
+    body = line.strip()
+    if "=" not in body or body.startswith(">"):
+        return None
+    return body.split("=", 1)[0].strip().lower()
+
+
+def _value(line: str) -> str:
+    """Return the text after the first = of a KEY=VALUE line, without its line ending."""
+    return line.rstrip("\r\n").split("=", 1)[1]
+
+
+def _with_value(line: str, value: str) -> str:
+    """Return a KEY=VALUE line with a new value, its key, indentation and line ending kept."""
+    body = line.rstrip("\r\n")
+    return f"{body.split('=', 1)[0]}={value}{line[len(body):]}"
+
+
+def _bounds(lines: list[str], block: str) -> tuple[int, int] | None:
+    """Return the first and one past the last line of a block's body, None when the text has no such block.
+
+    The body runs from the line after the block's > line (e.g. ">HEAD") to the
+    next line starting with >.
+    """
+    for k, line in enumerate(lines):
+        if line.strip().split(" ")[0].upper() == block:
+            end = next((m for m in range(k + 1, len(lines)) if lines[m].lstrip().startswith(">")), len(lines))
+            return k + 1, end
+    return None
+
+
+def _set_key(lines: list[str], block: str, key: str, value: str, after: str | None = None,
+             add: bool = True) -> None:
+    """Set a key's value in a block of EDI lines in place, adding the line when the block lacks it.
+
+    The key is matched without regard to case, and a key present is set, never
+    written again. A new line goes after the line of `after` when given and
+    present, otherwise among the keys of its family (the part before the first
+    dot; all undotted keys for a >HEAD key) in alphabetical order, and takes
+    the indentation and line ending of the line it is placed beside.
+
+    Args:
+        lines (list[str]): The EDI's lines with their line endings.
+        block (str): The block's > line, e.g. ">HEAD".
+        key (str): The key as it is to be written.
+        value (str): The value.
+        after (str | None): The key whose line a new line follows.
+        add (bool): Add the line when the block lacks it; False only sets a
+            line present.
+    """
+    bounds = _bounds(lines, block)
+    if bounds is None:
+        return
+    lo, hi = bounds
+    name = key.lower()
+    keyed = [k for k in range(lo, hi) if _key(lines[k]) is not None]
+    same = [k for k in keyed if _key(lines[k]) == name]
+    if same:
+        lines[same[0]] = _with_value(lines[same[0]], value)
+        return
+    if not add:
+        return
+    anchor = next((k for k in keyed if after is not None and _key(lines[k]) == after.lower()), None)
+    template = None if anchor is None else lines[anchor]
+    if anchor is None:
+        family = [k for k in keyed if _key(lines[k]).split(".")[0] == name.split(".")[0]
+                  or ("." not in name and "." not in _key(lines[k]))] or keyed
+        earlier = [k for k in family if _key(lines[k]) < name]
+        if earlier:
+            anchor, template = earlier[-1], lines[earlier[-1]]
+        elif family:
+            anchor, template = family[0] - 1, lines[family[0]]
+        else:
+            anchor = lo - 1
+    if template is None:
+        indent, eol = "    ", lines[lo - 1][len(lines[lo - 1].rstrip("\r\n")):]
+    else:
+        indent, eol = template[:len(template) - len(template.lstrip())], template[len(template.rstrip("\r\n")):]
+    lines.insert(anchor + 1, f"{indent}{key}={value}{eol}")
+
+
+def patch_edi_text(text: str, header: dict | None = None) -> str:
+    """Give the text of a written EDI both longitude spellings and the recipe's header credits.
+
+    In >HEAD, LONG is added after LON with its value (LON after LONG when the
+    writer wrote LONG only; LONG is set to LON's value when both are there),
+    and in >=DEFINEMEAS REFLONG likewise beside REFLON. With ``acqby`` ACQBY
+    is set to it. With ``prosby`` FILEBY is set to it, PROSBY is added after
+    FILEBY with it, the INFO line transfer_function.processed_by.author is set
+    to it or added among the transfer_function lines, and a
+    provenance.submitter.author line is set to it where the writer wrote one.
+    No key is written twice; an added line takes the indentation and line
+    ending of the line beside it, and the text outside these three blocks is
+    returned unchanged.
+
+    Args:
+        text (str): The EDI as mt_metadata's writer wrote it, line endings
+            as written.
+        header (dict | None): The recipe's header block, ``acqby`` and
+            ``prosby`` both optional.
+
+    Returns:
+        str: The patched text.
+    """
+    header = header or {}
+    lines = text.splitlines(keepends=True)
+    for block, pair in LONGITUDE_KEYS.items():
+        bounds = _bounds(lines, block)
+        if bounds is None:
+            continue
+        found = {key: next((k for k in range(*bounds) if _key(lines[k]) == key.lower()), None) for key in pair}
+        have = [key for key in pair if found[key] is not None]
+        if have:
+            other = pair[1] if have[0] == pair[0] else pair[0]
+            _set_key(lines, block, other, _value(lines[found[have[0]]]), after=have[0])
+    if header.get("acqby"):
+        _set_key(lines, ">HEAD", "ACQBY", header["acqby"])
+    if header.get("prosby"):
+        _set_key(lines, ">HEAD", "FILEBY", header["prosby"])
+        _set_key(lines, ">HEAD", "PROSBY", header["prosby"], after="FILEBY")
+        _set_key(lines, ">INFO", PROCESSED_BY, header["prosby"])
+        _set_key(lines, ">INFO", SUBMITTER, header["prosby"], add=False)
+    return "".join(lines)
+
+
 def _write_atomic(path: Path, text: str) -> None:
     """Write text to a temporary file beside `path`, then move it into place."""
     tmp = path.with_name(path.name + ".part")
@@ -350,7 +520,8 @@ def mode_block(mode: str, entries: list[dict], taken: tuple, grid: np.ndarray, p
 
 
 def merge_files(out, recipe_for_site: dict, tag: str | None = None, force: bool = False,
-                argv: list[str] | None = None, site: str | None = None, recipe_path=None) -> int:
+                argv: list[str] | None = None, site: str | None = None, recipe_path=None,
+                header: dict | None = None) -> int:
     """Write the merged EDI and its sidecar from one site's recipe, printing what was taken from each source.
 
     Args:
@@ -367,16 +538,20 @@ def merge_files(out, recipe_for_site: dict, tag: str | None = None, force: bool 
         recipe_path (str | Path | None): The recipe file, recorded; relative
             EDI paths are taken from its directory, or from the working
             directory when None.
+        header (dict | None): The recipe's header block, ``acqby`` and
+            ``prosby`` both optional, applied by `patch_edi_text` and
+            recorded in the sidecar.
 
     Returns:
         int: 0 when written, 2 when a recipe entry lacks edi, pmin or pmax,
         a range is not 0 < pmin <= pmax, a mode has no source listed, a
-        source is missing, a mode takes no period, or the stations differ
-        without `force`.
+        source is missing, a mode takes no period, the header block is not
+        sound (`check_header`), or the stations differ without `force`.
     """
     out = Path(out).resolve()
     recipe_path = None if recipe_path is None else Path(recipe_path).resolve()
     plan, errors = resolve_plan(recipe_for_site, recipe_path.parent if recipe_path else Path.cwd())
+    errors += check_header(header)
     for line in errors:
         print(f"ERROR {line}", file=sys.stderr)
     if errors:
@@ -417,6 +592,7 @@ def merge_files(out, recipe_for_site: dict, tag: str | None = None, force: bool 
         "edi": out.name,
         "site": site or station,
         "recipe": {"path": None if recipe_path is None else str(recipe_path), "site": recipe_for_site},
+        "header": dict(header or {}),
         "merge": {"rule": RULE, "log10_period_tolerance": LOG_TOL, "n_periods": int(grid.size),
                   "period_range": [float(grid.min()), float(grid.max())], "modes": modes,
                   "tipper": "recipe" if "tipper" in plan else None},
@@ -433,6 +609,11 @@ def merge_files(out, recipe_for_site: dict, tag: str | None = None, force: bool 
     out.parent.mkdir(parents=True, exist_ok=True)
     tmp = out.with_name(out.stem + "_part.edi")
     tf.write(fn=str(tmp), file_type="edi")
+    # mt_metadata's writer opens its file with the locale's encoding: read and write it back the same way
+    with open(tmp, encoding="locale", newline="") as handle:
+        text = handle.read()
+    with open(tmp, "w", encoding="locale", newline="") as handle:
+        handle.write(patch_edi_text(text, header))
     os.replace(tmp, out)
     side_path = out.with_suffix(".json")
     _write_atomic(side_path, json.dumps(side, indent=2, default=str) + "\n")
@@ -648,7 +829,8 @@ def main(argv=None) -> int:
     """
     parser = argparse.ArgumentParser(description=__doc__.strip().splitlines()[0])
     parser.add_argument("out", nargs="?", help="merged EDI to write; its sidecar is written beside it as .json")
-    parser.add_argument("--recipe", help="recipe YAML, site: {xy: [{edi, pmin, pmax}, ...], yx: [...]}")
+    parser.add_argument("--recipe", help="recipe YAML, site: {xy: [{edi, pmin, pmax}, ...], yx: [...]}, "
+                                         "and an optional header: {acqby, prosby}")
     parser.add_argument("--site", required=True, help="site of the recipe to merge, or to propose a recipe for")
     parser.add_argument("--tag", default=None, help="label recorded in the sidecar and the INFO block")
     parser.add_argument("--force", action="store_true", help="merge sources whose stations differ")
@@ -663,12 +845,13 @@ def main(argv=None) -> int:
     if not args.out or not args.recipe:
         parser.error("OUT and --recipe are needed without --auto")
     recipe = load_recipe(args.recipe)
+    header = recipe.pop("header", None)
     if args.site not in recipe:
         print(f"ERROR site {args.site} is not in {args.recipe}", file=sys.stderr)
         return 2
     return merge_files(args.out, recipe[args.site], tag=args.tag, force=args.force,
                        argv=["merge_best.py", *(sys.argv[1:] if argv is None else argv)], site=args.site,
-                       recipe_path=args.recipe)
+                       recipe_path=args.recipe, header=header)
 
 
 if __name__ == "__main__":

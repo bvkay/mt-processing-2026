@@ -13,7 +13,8 @@ the relative rho errors are set per band: A 0.10 throughout; B 0.05 below
 0.1-0.178 s; C 0.30 below 3.16 s, 0.09 in 3.16-5.62 s, 0.08 in 5.62-10 s,
 0.02 above, and its rho ten times higher (1 dex) in the band 31.6-56.2 s.
 A_hole is A with its x row EMPTY at 3.16 s; its y row still puts 3.16 s on
-the grid. The merges run through the script's `main` with a recipe file whose EDI
+the grid. A_hdr is A with ACQBY "Field crew" and FILEBY "Source filer" in its
+header. The merges run through the script's `main` with a recipe file whose EDI
 paths are relative to it, and through `merge_files`.
 
 Usage:
@@ -23,7 +24,8 @@ Usage:
 
 :license: MIT
 
-This test fails if a merged row does not come from the source and range the recipe names for it.
+This test fails if a merged row does not come from the source and range the recipe names for it, or the
+written EDI lacks either longitude spelling or the recipe's header credits.
 
 **This test fails if** (1) with xy from A over 0.01-1 s and B over 3-100 s
 and yx from A throughout, `main` does not return 0, the merged periods are
@@ -64,7 +66,24 @@ xy from A_hole alone, the file does not hold EMPTY in ZXXR and ZXYR at
 3.16 s, or the sidecar's xy gaps are not 3.16-3.16 s with n_nan 1; with xy
 from A_hole then C over 0.01-1000 s, C's two periods either side of 3.16 s
 are not C's own values, or the x row at 3.16 s is not on the straight line
-in log10 period between them.
+in log10 period between them; (9) merged through `main` from a recipe file
+whose header block gives acqby "UM6P, AU" and prosby "Ben Kay, AuScope",
+with A_hdr as the first xy source, the file's >HEAD does not hold exactly
+one LON and one LONG line with the same value, ACQBY equal to acqby and
+FILEBY and PROSBY equal to prosby, its >=DEFINEMEAS exactly one REFLON and
+one REFLONG line with the same value, or its >INFO the line
+transfer_function.processed_by.author=<prosby>, the sidecar's header is not
+the block, or mt_metadata reading the file does not give acqby, prosby and
+prosby as the station's acquired_by, processed_by and submitter; the same
+merge with `patch_edi_text` disabled (the writer's own text, which holds no
+LONG) does not equal the patched file byte for byte from >FREQ to the end,
+or read with mt_metadata does not give the same station id, longitude, Z and
+Z errors; the recipe without the header block does not write LON and LONG
+and REFLON and REFLONG with equal values, or does not leave ACQBY and FILEBY
+as A_hdr has them and PROSBY and the processed_by line out; `patch_edi_text`
+on text holding only LONG and REFLONG does not add LON and REFLON with the
+same values; or a header block with an unknown key or a value holding = does
+not make `main` return 2 without writing an EDI.
 
 The mutations: with the script's PREFER set to 0 the band 3.16-5.62 s goes
 to C and with JUMP_DEX set to 10 the band 31.6-56.2 s goes to C, so the
@@ -111,6 +130,8 @@ PRODUCTS = {
               remote="R03", tag="night", masks=["S01 storm"]),
 }
 TIPPER = np.array([0.12 + 0.05j, -0.08 + 0.03j])
+HEADER = {"acqby": "UM6P, AU", "prosby": "Ben Kay, AuScope"}
+SOURCE_CREDITS = {"ACQBY": "Field crew", "FILEBY": "Source filer"}
 TIPPER_ERR = np.array([0.011, 0.023])
 SIDECAR_KEYS = {"local", "remote", "created", "tag", "edi", "site", "recipe", "merge", "sources", "forced",
                 "mismatches", "argv", "versions"}
@@ -138,12 +159,13 @@ def load_script():
 
 
 def write_product(name: str, periods: np.ndarray, station: str = "S01", tipper: bool = False,
-                  auto: bool = False, hole: float | None = None) -> Path:
+                  auto: bool = False, hole: float | None = None, credits: bool = False) -> Path:
     """Write one product's EDI and sidecar under SCRATCH; return the EDI path.
 
     With `auto` the errors follow `auto_errors`, B's yx phase is flipped in
     0.1-0.178 s and C's rho is ten times higher in 31.6-56.2 s. With `hole`
-    the x row and its errors are NaN at that period, written as EMPTY.
+    the x row and its errors are NaN at that period, written as EMPTY. With
+    `credits` the header's ACQBY and FILEBY are SOURCE_CREDITS'.
     """
     spec = PRODUCTS[name[0]]
     zh = np.sqrt(spec["rho"] / (0.2 * periods)) * np.exp(0.25j * np.pi)
@@ -165,6 +187,9 @@ def write_product(name: str, periods: np.ndarray, station: str = "S01", tipper: 
     tf.survey_metadata.id = "merge_best_unit"
     tf.station_metadata.location.latitude = spec["lat"]
     tf.station_metadata.location.longitude = spec["lon"]
+    if credits:
+        tf.station_metadata.acquired_by.author = SOURCE_CREDITS["ACQBY"]
+        tf.station_metadata.provenance.submitter.author = SOURCE_CREDITS["FILEBY"]
     tf.period = periods
     tf.impedance = z
     tf.impedance_error = err
@@ -501,6 +526,115 @@ def test_empty_period(module, b: Path, c: Path) -> None:
     print(f"      A_hole then C: x row at {beside[0]:.4g} and {beside[1]:.4g} s = C's own, at {hole:.4g} s on C's line")
 
 
+def block_values(path: Path, block: str) -> dict[str, list[str]]:
+    """Return the KEY=VALUE lines of one block of an EDI file, upper-case key to its values in file order."""
+    lines = path.read_text(encoding="utf-8").splitlines()
+    start = next(k for k, line in enumerate(lines) if line.strip().split(" ")[0].upper() == block)
+    found = {}
+    for line in lines[start + 1:]:
+        if line.lstrip().startswith(">"):
+            break
+        if "=" in line:
+            key, value = line.strip().split("=", 1)
+            found.setdefault(key.strip().upper(), []).append(value.strip())
+    return found
+
+
+def data_section(path: Path) -> bytes:
+    """Return the bytes of an EDI file from its >FREQ line to the end."""
+    raw = path.read_bytes()
+    return raw[raw.index(b">FREQ "):]
+
+
+def spellings(path: Path) -> list[str]:
+    """Check that an EDI holds LON and LONG, and REFLON and REFLONG, once each with one value; return the failures."""
+    fails = []
+    for block, pair in ((">HEAD", ("LON", "LONG")), (">=DEFINEMEAS", ("REFLON", "REFLONG"))):
+        found = block_values(path, block)
+        got = [found.get(key, []) for key in pair]
+        if not (len(got[0]) == len(got[1]) == 1 and got[0] == got[1]):
+            fails.append(f"{path.name} {block}: {dict(zip(pair, got))}")
+    return fails
+
+
+def test_header(module, b: Path) -> None:
+    """Test (9): both longitude spellings and the recipe's header credits, the data untouched."""
+    a_hdr = write_product("A_hdr", P8, credits=True)
+    src = block_values(a_hdr, ">HEAD")
+    assert all(src.get(key) == [value] for key, value in SOURCE_CREDITS.items()), src
+    sites = {"S01": {"xy": [entry("A_hdr.edi", 0.01, 1.0), entry(b.name, 3.0, 100.0)],
+                     "yx": [entry("A_hdr.edi", 0.01, 1000)]}}
+    with_header, plain = SCRATCH / "recipes_header.yaml", SCRATCH / "recipes_plain.yaml"
+    with_header.write_text(yaml.safe_dump({"header": HEADER, **sites}, sort_keys=False), encoding="utf-8")
+    plain.write_text(yaml.safe_dump(sites, sort_keys=False), encoding="utf-8")
+    out = SCRATCH / "out"
+
+    patched = out / "S01_header.edi"
+    status, _text, err = run(module, str(patched), "--recipe", str(with_header), "--site", "S01", "--tag", "hdr")
+    assert status == 0, err
+    head, info = block_values(patched, ">HEAD"), block_values(patched, ">INFO")
+    want = {"ACQBY": [HEADER["acqby"]], "FILEBY": [HEADER["prosby"]], "PROSBY": [HEADER["prosby"]]}
+    fails = spellings(patched) + [f">HEAD {key}: {head.get(key)}" for key in want if head.get(key) != want[key]]
+    if info.get("TRANSFER_FUNCTION.PROCESSED_BY.AUTHOR") != [HEADER["prosby"]]:
+        fails.append(f">INFO processed_by: {info.get('TRANSFER_FUNCTION.PROCESSED_BY.AUTHOR')}")
+    if sidecar(patched).get("header") != HEADER:
+        fails.append(f"sidecar header: {sidecar(patched).get('header')}")
+    assert not fails, fails
+    sm = read(patched).station_metadata
+    credits = (sm.acquired_by.author, sm.transfer_function.processed_by.author, sm.provenance.submitter.author)
+    assert credits == (HEADER["acqby"], HEADER["prosby"], HEADER["prosby"]), credits
+    print(f"  (9) header block: LON = LONG = {head['LON'][0]}, REFLON = REFLONG, ACQBY {head['ACQBY'][0]!r}, "
+          f"FILEBY = PROSBY = {head['FILEBY'][0]!r}, INFO processed_by.author; mt_metadata reads {credits}")
+
+    raw = out / "S01_header_raw.edi"
+    original = module.patch_edi_text
+    module.patch_edi_text = lambda text, header=None: text
+    try:
+        status, _text, err = run(module, str(raw), "--recipe", str(with_header), "--site", "S01", "--tag", "hdr")
+    finally:
+        module.patch_edi_text = original
+    assert status == 0 and "LONG" not in block_values(raw, ">HEAD"), (status, err)
+    assert data_section(patched) == data_section(raw), "the text from >FREQ on differs from the writer's"
+    tf_p, tf_r = read(patched), read(raw)
+    same = (tf_p.station_metadata.id == tf_r.station_metadata.id
+            and tf_p.station_metadata.location.longitude == tf_r.station_metadata.location.longitude
+            and np.array_equal(np.asarray(tf_p.impedance.data), np.asarray(tf_r.impedance.data), equal_nan=True)
+            and np.array_equal(np.asarray(tf_p.impedance_error.data), np.asarray(tf_r.impedance_error.data),
+                               equal_nan=True))
+    assert same, "the patched file reads back differently from the writer's text"
+    print(f"      against the writer's text: {len(data_section(raw))} bytes from >FREQ identical; station "
+          f"{tf_p.station_metadata.id}, longitude {tf_p.station_metadata.location.longitude}, Z and errors equal")
+
+    bare = out / "S01_plain.edi"
+    status, _text, err = run(module, str(bare), "--recipe", str(plain), "--site", "S01")
+    assert status == 0, err
+    head, info = block_values(bare, ">HEAD"), block_values(bare, ">INFO")
+    fails = spellings(bare) + [f">HEAD {key}: {head.get(key)}" for key, value in SOURCE_CREDITS.items()
+                               if head.get(key) != [value]]
+    if "PROSBY" in head or "TRANSFER_FUNCTION.PROCESSED_BY.AUTHOR" in info or sidecar(bare).get("header") != {}:
+        fails.append(f"no header block: PROSBY {head.get('PROSBY')}, processed_by "
+                     f"{info.get('TRANSFER_FUNCTION.PROCESSED_BY.AUTHOR')}, sidecar {sidecar(bare).get('header')}")
+    assert not fails, fails
+    print(f"      no header block: LON = LONG, REFLON = REFLONG, ACQBY {head['ACQBY'][0]!r} and FILEBY "
+          f"{head['FILEBY'][0]!r} as A_hdr's, no PROSBY")
+
+    text = raw.read_text(encoding="utf-8").replace("\tLON=", "\tLONG=").replace(" REFLON=", " REFLONG=")
+    long_only = out / "S01_long_only.edi"
+    long_only.write_text(module.patch_edi_text(text), encoding="utf-8")
+    fails = spellings(long_only)
+    assert not fails, fails
+    print("      text with LONG and REFLONG only: LON and REFLON added with the same values")
+
+    for label, block in (("unknown key", {"acqby": "UM6P, AU", "processedby": "x"}),
+                         ("value holding =", {"prosby": "Ben Kay=AuScope"})):
+        bad = SCRATCH / "recipes_bad_header.yaml"
+        bad.write_text(yaml.safe_dump({"header": block, **sites}, sort_keys=False), encoding="utf-8")
+        refused = out / "S01_bad_header.edi"
+        status, _text, err = run(module, str(refused), "--recipe", str(bad), "--site", "S01")
+        assert status == 2 and not refused.exists(), (label, status, err)
+        print(f"      header {label}: exit 2, {err.strip()}")
+
+
 def main() -> None:
     shutil.rmtree(SCRATCH, ignore_errors=True)
     SCRATCH.mkdir(parents=True, exist_ok=True)
@@ -513,6 +647,7 @@ def main() -> None:
     test_auto(module)
     test_merge_files(module, a, b)
     test_empty_period(module, b, c)
+    test_header(module, b)
 
 
 if __name__ == "__main__":
