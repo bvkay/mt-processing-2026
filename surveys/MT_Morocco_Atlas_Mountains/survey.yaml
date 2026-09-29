@@ -1928,3 +1928,17 @@ sites:
     end: '2023-02-26T10:12:01Z'
     notes: A26 decimated to 1 Hz from A26.h5 by scripts/decimate_site.py, 2026-09-26T10:26:10Z
       (lineA dive)
+  A28L:
+    derived_from: A28
+    sample_rate: 1.0
+    dipole_length_ex: 54.0
+    dipole_length_ey: 52.0
+    azimuth_ex: 0.0
+    azimuth_ey: 90.0
+    latitude: 30.314837
+    longitude: -9.46386
+    elevation: 49.1
+    start: '2023-03-07T11:32:58Z'
+    end: '2023-03-10T08:49:37Z'
+    notes: A28 decimated to 1 Hz from A28.h5 by scripts/decimate_site.py, 2026-09-26T11:55:38Z
+      (A29 dive); registered 29 Sep 2026 as the A28 dive's scratch entry (A28L rr SPT)

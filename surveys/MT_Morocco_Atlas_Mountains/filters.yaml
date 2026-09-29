@@ -1004,3 +1004,57 @@ A31:
     harmonics: 9
     q: 30.0
     passes: 2
+A02:
+- notch:
+    f0: 50.0
+    harmonics: 9
+    q: 30.0
+    passes: 2
+A03:
+- notch:
+    f0: 50.0
+    harmonics: 9
+    q: 30.0
+    passes: 2
+A04:
+- notch:
+    f0: 50.0
+    harmonics: 9
+    q: 30.0
+    passes: 2
+A07:
+- notch:
+    f0: 50.0
+    harmonics: 9
+    q: 30.0
+    passes: 2
+A08:
+- notch:
+    f0: 50.0
+    harmonics: 9
+    q: 30.0
+    passes: 2
+A09:
+- notch:
+    f0: 50.0
+    harmonics: 9
+    q: 30.0
+    passes: 2
+A10:
+- notch:
+    f0: 50.0
+    harmonics: 9
+    q: 30.0
+    passes: 2
+A11:
+- notch:
+    f0: 50.0
+    harmonics: 9
+    q: 30.0
+    passes: 2
+A15:
+- notch:
+    f0: 50.0
+    harmonics: 9
+    q: 30.0
+    passes: 2

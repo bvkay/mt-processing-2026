@@ -53,6 +53,9 @@ overlap:
 remotes:
   A01: A06          # E-side noise; A02 and A04 have bad coils; A07 1.1-7x worse
   A02: A06          # its own coils fail at 0.002-4 s; A06 gives the smoothest short periods
+  A04: A08          # D07: notch + coil masks tested on A08 (A04 dive, verify-A04); declared 29 Sep
+  A07: A08          # D11: notch + coil masks rr A08, both modes (A07 dive, verify-A07); declared 29 Sep
+  A08: A07          # D13: notched A08 rr A07, both modes (A08 dive, verify-A08); declared 29 Sep
   A14: A13          # A15's coils share A14's 20-100 Hz skirt; A12 is the alternative
   A18: A16          # A17 ruins both modes at 0.006-0.023 s
   A19: A21          # on phase roughness; A20 is better at 100-1000 s (a per-band choice later)
