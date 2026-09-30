@@ -44,6 +44,7 @@ overlap:
 
 # per-site decisions from the dives (notes/lineB/<site>.md), sceptic-supported
 remotes:
+  B11: B16          # the B11 dive and sceptic, 28 Sep: B16 over the whole 47.1 h (the stored pick), fixed against a re-selection (pass 2 would pick B13 at 0.429)
   B15: B17          # the B15 dive, 28 Sep: 41.5 h on B17, where B13 overlaps only 16.9 h; its sceptic would try a masked rr B18 first
   B20: B21          # the B20 dive and sceptic, 27-28 Sep: the whole 42.9 h with B21's 263 spans (masked 0.790, rr B18 0.727)
 

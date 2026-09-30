@@ -35988,3 +35988,157 @@ B18:
       its errors at 1-10, 10-100 and 1000-5000 s, and raise the plain-stack errors in 7 of 8 cells; they
       also cost B20 rr B18 0.058 and B18 rr B21 its six longest periods (qc/reports/2026-09-27_lineB-site-dive_verify-B18.json,
       dive-B17.json, verify-B17.json); Ben, 28 Sep about 13:22 WAST: "approved for line B masks"'
+B11:
+- start: '2023-07-24T12:08:26Z'
+  end: '2023-07-25T00:10:00Z'
+  bands: all
+  reason: 'night mask: outside the north-end source''s quiet windows 00:10-01:30 and 02:50-03:51 UTC (01:10-02:30
+    and 03:50-04:51 local) on July nights, 03:10-04:52 UTC on Sunday 23 Jul (clock rule, northend group
+    26 Sep)'
+  found_by: night
+  scope: local
+  retired:
+    'on': '2026-09-30'
+    why: 'B11 dive 28 Sep: the clock rule keeps only the north-end source''s quiet windows and cuts 86.6
+      h of B11; 0 of 12 plain-stack cells on B16; on equal periods in aurora the error is lower in only
+      23 of 62 moved bands (B16) and 16 of 62 (B13); the kept quiet windows recover no natural impedance
+      at 1-100 s and triple the error in the only usable range (0.006 to 0.018 at 0.005-0.1 s, B16 xy).
+      B11''s 92 pass entries stay (the railway session''s subject). B11 dive and sceptic (qc/reports/2026-09-27_lineB-site-dive_dive-B11.json,
+      qc/reports/2026-09-27_lineB-site-dive_verify-B11.json); Ben, 30 Sep 2026 about 09:19 WAST: "approved
+      for all of line B"'
+- start: '2023-07-25T01:30:00Z'
+  end: '2023-07-25T02:50:00Z'
+  bands: all
+  reason: 'night mask: outside the north-end source''s quiet windows 00:10-01:30 and 02:50-03:51 UTC (01:10-02:30
+    and 03:50-04:51 local) on July nights, 03:10-04:52 UTC on Sunday 23 Jul (clock rule, northend group
+    26 Sep)'
+  found_by: night
+  scope: local
+  retired:
+    'on': '2026-09-30'
+    why: 'B11 dive 28 Sep: the clock rule keeps only the north-end source''s quiet windows and cuts 86.6
+      h of B11; 0 of 12 plain-stack cells on B16; on equal periods in aurora the error is lower in only
+      23 of 62 moved bands (B16) and 16 of 62 (B13); the kept quiet windows recover no natural impedance
+      at 1-100 s and triple the error in the only usable range (0.006 to 0.018 at 0.005-0.1 s, B16 xy).
+      B11''s 92 pass entries stay (the railway session''s subject). B11 dive and sceptic (qc/reports/2026-09-27_lineB-site-dive_dive-B11.json,
+      qc/reports/2026-09-27_lineB-site-dive_verify-B11.json); Ben, 30 Sep 2026 about 09:19 WAST: "approved
+      for all of line B"'
+- start: '2023-07-25T03:51:00Z'
+  end: '2023-07-26T00:10:00Z'
+  bands: all
+  reason: 'night mask: outside the north-end source''s quiet windows 00:10-01:30 and 02:50-03:51 UTC (01:10-02:30
+    and 03:50-04:51 local) on July nights, 03:10-04:52 UTC on Sunday 23 Jul (clock rule, northend group
+    26 Sep)'
+  found_by: night
+  scope: local
+  retired:
+    'on': '2026-09-30'
+    why: 'B11 dive 28 Sep: the clock rule keeps only the north-end source''s quiet windows and cuts 86.6
+      h of B11; 0 of 12 plain-stack cells on B16; on equal periods in aurora the error is lower in only
+      23 of 62 moved bands (B16) and 16 of 62 (B13); the kept quiet windows recover no natural impedance
+      at 1-100 s and triple the error in the only usable range (0.006 to 0.018 at 0.005-0.1 s, B16 xy).
+      B11''s 92 pass entries stay (the railway session''s subject). B11 dive and sceptic (qc/reports/2026-09-27_lineB-site-dive_dive-B11.json,
+      qc/reports/2026-09-27_lineB-site-dive_verify-B11.json); Ben, 30 Sep 2026 about 09:19 WAST: "approved
+      for all of line B"'
+- start: '2023-07-26T01:30:00Z'
+  end: '2023-07-26T02:50:00Z'
+  bands: all
+  reason: 'night mask: outside the north-end source''s quiet windows 00:10-01:30 and 02:50-03:51 UTC (01:10-02:30
+    and 03:50-04:51 local) on July nights, 03:10-04:52 UTC on Sunday 23 Jul (clock rule, northend group
+    26 Sep)'
+  found_by: night
+  scope: local
+  retired:
+    'on': '2026-09-30'
+    why: 'B11 dive 28 Sep: the clock rule keeps only the north-end source''s quiet windows and cuts 86.6
+      h of B11; 0 of 12 plain-stack cells on B16; on equal periods in aurora the error is lower in only
+      23 of 62 moved bands (B16) and 16 of 62 (B13); the kept quiet windows recover no natural impedance
+      at 1-100 s and triple the error in the only usable range (0.006 to 0.018 at 0.005-0.1 s, B16 xy).
+      B11''s 92 pass entries stay (the railway session''s subject). B11 dive and sceptic (qc/reports/2026-09-27_lineB-site-dive_dive-B11.json,
+      qc/reports/2026-09-27_lineB-site-dive_verify-B11.json); Ben, 30 Sep 2026 about 09:19 WAST: "approved
+      for all of line B"'
+- start: '2023-07-26T03:51:00Z'
+  end: '2023-07-27T00:10:00Z'
+  bands: all
+  reason: 'night mask: outside the north-end source''s quiet windows 00:10-01:30 and 02:50-03:51 UTC (01:10-02:30
+    and 03:50-04:51 local) on July nights, 03:10-04:52 UTC on Sunday 23 Jul (clock rule, northend group
+    26 Sep)'
+  found_by: night
+  scope: local
+  retired:
+    'on': '2026-09-30'
+    why: 'B11 dive 28 Sep: the clock rule keeps only the north-end source''s quiet windows and cuts 86.6
+      h of B11; 0 of 12 plain-stack cells on B16; on equal periods in aurora the error is lower in only
+      23 of 62 moved bands (B16) and 16 of 62 (B13); the kept quiet windows recover no natural impedance
+      at 1-100 s and triple the error in the only usable range (0.006 to 0.018 at 0.005-0.1 s, B16 xy).
+      B11''s 92 pass entries stay (the railway session''s subject). B11 dive and sceptic (qc/reports/2026-09-27_lineB-site-dive_dive-B11.json,
+      qc/reports/2026-09-27_lineB-site-dive_verify-B11.json); Ben, 30 Sep 2026 about 09:19 WAST: "approved
+      for all of line B"'
+- start: '2023-07-27T01:30:00Z'
+  end: '2023-07-27T02:50:00Z'
+  bands: all
+  reason: 'night mask: outside the north-end source''s quiet windows 00:10-01:30 and 02:50-03:51 UTC (01:10-02:30
+    and 03:50-04:51 local) on July nights, 03:10-04:52 UTC on Sunday 23 Jul (clock rule, northend group
+    26 Sep)'
+  found_by: night
+  scope: local
+  retired:
+    'on': '2026-09-30'
+    why: 'B11 dive 28 Sep: the clock rule keeps only the north-end source''s quiet windows and cuts 86.6
+      h of B11; 0 of 12 plain-stack cells on B16; on equal periods in aurora the error is lower in only
+      23 of 62 moved bands (B16) and 16 of 62 (B13); the kept quiet windows recover no natural impedance
+      at 1-100 s and triple the error in the only usable range (0.006 to 0.018 at 0.005-0.1 s, B16 xy).
+      B11''s 92 pass entries stay (the railway session''s subject). B11 dive and sceptic (qc/reports/2026-09-27_lineB-site-dive_dive-B11.json,
+      qc/reports/2026-09-27_lineB-site-dive_verify-B11.json); Ben, 30 Sep 2026 about 09:19 WAST: "approved
+      for all of line B"'
+- start: '2023-07-27T03:51:00Z'
+  end: '2023-07-28T00:10:00Z'
+  bands: all
+  reason: 'night mask: outside the north-end source''s quiet windows 00:10-01:30 and 02:50-03:51 UTC (01:10-02:30
+    and 03:50-04:51 local) on July nights, 03:10-04:52 UTC on Sunday 23 Jul (clock rule, northend group
+    26 Sep)'
+  found_by: night
+  scope: local
+  retired:
+    'on': '2026-09-30'
+    why: 'B11 dive 28 Sep: the clock rule keeps only the north-end source''s quiet windows and cuts 86.6
+      h of B11; 0 of 12 plain-stack cells on B16; on equal periods in aurora the error is lower in only
+      23 of 62 moved bands (B16) and 16 of 62 (B13); the kept quiet windows recover no natural impedance
+      at 1-100 s and triple the error in the only usable range (0.006 to 0.018 at 0.005-0.1 s, B16 xy).
+      B11''s 92 pass entries stay (the railway session''s subject). B11 dive and sceptic (qc/reports/2026-09-27_lineB-site-dive_dive-B11.json,
+      qc/reports/2026-09-27_lineB-site-dive_verify-B11.json); Ben, 30 Sep 2026 about 09:19 WAST: "approved
+      for all of line B"'
+- start: '2023-07-28T01:30:00Z'
+  end: '2023-07-28T02:50:00Z'
+  bands: all
+  reason: 'night mask: outside the north-end source''s quiet windows 00:10-01:30 and 02:50-03:51 UTC (01:10-02:30
+    and 03:50-04:51 local) on July nights, 03:10-04:52 UTC on Sunday 23 Jul (clock rule, northend group
+    26 Sep)'
+  found_by: night
+  scope: local
+  retired:
+    'on': '2026-09-30'
+    why: 'B11 dive 28 Sep: the clock rule keeps only the north-end source''s quiet windows and cuts 86.6
+      h of B11; 0 of 12 plain-stack cells on B16; on equal periods in aurora the error is lower in only
+      23 of 62 moved bands (B16) and 16 of 62 (B13); the kept quiet windows recover no natural impedance
+      at 1-100 s and triple the error in the only usable range (0.006 to 0.018 at 0.005-0.1 s, B16 xy).
+      B11''s 92 pass entries stay (the railway session''s subject). B11 dive and sceptic (qc/reports/2026-09-27_lineB-site-dive_dive-B11.json,
+      qc/reports/2026-09-27_lineB-site-dive_verify-B11.json); Ben, 30 Sep 2026 about 09:19 WAST: "approved
+      for all of line B"'
+- start: '2023-07-28T03:51:00Z'
+  end: '2023-07-28T12:08:30Z'
+  bands: all
+  reason: 'night mask: outside the north-end source''s quiet windows 00:10-01:30 and 02:50-03:51 UTC (01:10-02:30
+    and 03:50-04:51 local) on July nights, 03:10-04:52 UTC on Sunday 23 Jul (clock rule, northend group
+    26 Sep)'
+  found_by: night
+  scope: local
+  retired:
+    'on': '2026-09-30'
+    why: 'B11 dive 28 Sep: the clock rule keeps only the north-end source''s quiet windows and cuts 86.6
+      h of B11; 0 of 12 plain-stack cells on B16; on equal periods in aurora the error is lower in only
+      23 of 62 moved bands (B16) and 16 of 62 (B13); the kept quiet windows recover no natural impedance
+      at 1-100 s and triple the error in the only usable range (0.006 to 0.018 at 0.005-0.1 s, B16 xy).
+      B11''s 92 pass entries stay (the railway session''s subject). B11 dive and sceptic (qc/reports/2026-09-27_lineB-site-dive_dive-B11.json,
+      qc/reports/2026-09-27_lineB-site-dive_verify-B11.json); Ben, 30 Sep 2026 about 09:19 WAST: "approved
+      for all of line B"'
