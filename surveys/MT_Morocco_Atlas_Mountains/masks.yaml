@@ -201062,3 +201062,144 @@ C01:
     qc/reports/2026-09-28_lineC-site-dives_verify-C01.json); declared on Ben''s approval of 29 Sep'
   found_by: time
   scope: both
+A11:
+- start: '2023-07-13T21:00:00Z'
+  end: '2023-07-14T05:30:00Z'
+  bands: [1.0, 30.0]
+  reason: A11 ex night component, shared with A10 and A12 ex and absent from every coil; it raises xy
+    0.02-0.09 dex at 1-6 s; ex only, 1-30 s. The dive's trial form, ends 05:30 UTC (run as A11dive-exn);
+    the sceptic's 06:00 ends gave no gain in the confirming run (xy 1-10 s roughness 1.21x). A11 dive
+    and sceptic, 28 Sep (qc/reports/2026-09-27_lineA-site-dives_dive-A11.json, qc/reports/2026-09-27_lineA-site-dives_verify-A11.json);
+    confirming run of 29 Sep (qc/reports/2026-09-29_pathB-declare-prep-A-C_confirm-pathB-A11-A12-A13-A31.json);
+    declared in the trial form on Ben's approval of 30 Sep 2026 ("approved for trial forms")
+  found_by: night
+  scope: local
+  channels: [ex]
+- start: '2023-07-14T21:00:00Z'
+  end: '2023-07-15T05:30:00Z'
+  bands: [1.0, 30.0]
+  reason: A11 ex night component, shared with A10 and A12 ex and absent from every coil; it raises xy
+    0.02-0.09 dex at 1-6 s; ex only, 1-30 s. The dive's trial form, ends 05:30 UTC (run as A11dive-exn);
+    the sceptic's 06:00 ends gave no gain in the confirming run (xy 1-10 s roughness 1.21x). A11 dive
+    and sceptic, 28 Sep (qc/reports/2026-09-27_lineA-site-dives_dive-A11.json, qc/reports/2026-09-27_lineA-site-dives_verify-A11.json);
+    confirming run of 29 Sep (qc/reports/2026-09-29_pathB-declare-prep-A-C_confirm-pathB-A11-A12-A13-A31.json);
+    declared in the trial form on Ben's approval of 30 Sep 2026 ("approved for trial forms")
+  found_by: night
+  scope: local
+  channels: [ex]
+A12:
+- start: '2023-07-14T20:00:00Z'
+  end: '2023-07-15T05:00:00Z'
+  bands: [1.0, 30.0]
+  reason: A12 ex night component, shared with A10 and A11 ex and not in ey; it biases xy low at 1-5 s;
+    ex only, 1-30 s. The dive's trial form (run as A12dive-exnbl). A12 dive and sceptic, 28 Sep (qc/reports/2026-09-27_lineA-site-dives_dive-A12.json,
+    qc/reports/2026-09-27_lineA-site-dives_verify-A12.json); confirming run of 29 Sep (qc/reports/2026-09-29_pathB-declare-prep-A-C_confirm-pathB-A11-A12-A13-A31.json);
+    declared in the trial form on Ben's approval of 30 Sep 2026 ("approved for trial forms")
+  found_by: night
+  scope: local
+  channels: [ex]
+- start: '2023-07-15T00:40:00Z'
+  end: '2023-07-15T01:15:00Z'
+  bands: all
+  reason: 'A12 ex episode (15 Jul 00:43-01:10 UTC: 1-10 Hz power 650-700x the median, broadband); ex only,
+    every band. The dive''s trial form, from 00:40 UTC (run as A12dive-exnbl); the sceptic''s 00:15 start
+    undid the trial''s -0.43 dex correction of the xy tail at 1168-2942 s in the confirming run. A12 dive
+    and sceptic, 28 Sep (qc/reports/2026-09-27_lineA-site-dives_dive-A12.json, qc/reports/2026-09-27_lineA-site-dives_verify-A12.json);
+    confirming run of 29 Sep (qc/reports/2026-09-29_pathB-declare-prep-A-C_confirm-pathB-A11-A12-A13-A31.json);
+    declared in the trial form on Ben''s approval of 30 Sep 2026 ("approved for trial forms")'
+  found_by: time
+  scope: local
+  channels: [ex]
+- start: '2023-07-15T20:00:00Z'
+  end: '2023-07-16T05:00:00Z'
+  bands: [1.0, 30.0]
+  reason: A12 ex night component, shared with A10 and A11 ex and not in ey; it biases xy low at 1-5 s;
+    ex only, 1-30 s. The dive's trial form (run as A12dive-exnbl). A12 dive and sceptic, 28 Sep (qc/reports/2026-09-27_lineA-site-dives_dive-A12.json,
+    qc/reports/2026-09-27_lineA-site-dives_verify-A12.json); confirming run of 29 Sep (qc/reports/2026-09-29_pathB-declare-prep-A-C_confirm-pathB-A11-A12-A13-A31.json);
+    declared in the trial form on Ben's approval of 30 Sep 2026 ("approved for trial forms")
+  found_by: night
+  scope: local
+  channels: [ex]
+A13:
+- start: '2023-07-14T20:20:00Z'
+  end: '2023-07-15T04:50:00Z'
+  bands: [0.005, 1000.0]
+  reason: 'A13 night E source: a drifting line near 0.87 Hz with harmonics in both E channels, never in
+    the coils; in its ON hours A13''s E is incoherent with every H at 0.3-1000 s; E only. The dive''s
+    trial form, ends 04:50 UTC (run as A13dive-enight1000); the sceptic''s 05:50 ends raised the xy error
+    at 100-1000 s 1.27x in the confirming run. A13 dive and sceptic, 28 Sep (qc/reports/2026-09-27_lineA-site-dives_dive-A13.json,
+    qc/reports/2026-09-27_lineA-site-dives_verify-A13.json); confirming run of 29 Sep (qc/reports/2026-09-29_pathB-declare-prep-A-C_confirm-pathB-A11-A12-A13-A31.json);
+    declared in the trial form on Ben''s approval of 30 Sep 2026 ("approved for trial forms")'
+  found_by: night
+  scope: local
+  channels: [ex, ey]
+- start: '2023-07-15T21:00:00Z'
+  end: '2023-07-16T04:50:00Z'
+  bands: [0.005, 1000.0]
+  reason: 'A13 night E source: a drifting line near 0.87 Hz with harmonics in both E channels, never in
+    the coils; in its ON hours A13''s E is incoherent with every H at 0.3-1000 s; E only. The dive''s
+    trial form, ends 04:50 UTC (run as A13dive-enight1000); the sceptic''s 05:50 ends raised the xy error
+    at 100-1000 s 1.27x in the confirming run. A13 dive and sceptic, 28 Sep (qc/reports/2026-09-27_lineA-site-dives_dive-A13.json,
+    qc/reports/2026-09-27_lineA-site-dives_verify-A13.json); confirming run of 29 Sep (qc/reports/2026-09-29_pathB-declare-prep-A-C_confirm-pathB-A11-A12-A13-A31.json);
+    declared in the trial form on Ben''s approval of 30 Sep 2026 ("approved for trial forms")'
+  found_by: night
+  scope: local
+  channels: [ex, ey]
+A31:
+- start: '2023-03-01T17:09:23Z'
+  end: '2023-03-02T00:00:00Z'
+  bands: [0.3, 30.0]
+  reason: 'A31 E noise, local 09-01 h: a broadband day source and an evening source at 0.3-30 s, polarised,
+    in both E channels and not in the coils; E only, 0.3-30 s. The dive''s trial form (run as A31dive-emask30).
+    A31 dive and sceptic, 28 Sep (qc/reports/2026-09-27_lineA-site-dives_dive-A31.json, qc/reports/2026-09-27_lineA-site-dives_verify-A31.json);
+    confirming run of 29 Sep (qc/reports/2026-09-29_pathB-declare-prep-A-C_confirm-pathB-A11-A12-A13-A31.json);
+    declared in the trial form on Ben''s approval of 30 Sep 2026 ("approved for trial forms")'
+  found_by: time
+  scope: local
+  channels: [ex, ey]
+- start: '2023-03-02T08:00:00Z'
+  end: '2023-03-03T00:00:00Z'
+  bands: [0.3, 30.0]
+  reason: 'A31 E noise, local 09-01 h: a broadband day source and an evening source at 0.3-30 s, polarised,
+    in both E channels and not in the coils; E only, 0.3-30 s. The dive''s trial form (run as A31dive-emask30).
+    A31 dive and sceptic, 28 Sep (qc/reports/2026-09-27_lineA-site-dives_dive-A31.json, qc/reports/2026-09-27_lineA-site-dives_verify-A31.json);
+    confirming run of 29 Sep (qc/reports/2026-09-29_pathB-declare-prep-A-C_confirm-pathB-A11-A12-A13-A31.json);
+    declared in the trial form on Ben''s approval of 30 Sep 2026 ("approved for trial forms")'
+  found_by: time
+  scope: local
+  channels: [ex, ey]
+- start: '2023-03-02T23:00:00Z'
+  end: '2023-03-03T03:20:00Z'
+  bands: [0.3, 30.0]
+  reason: A31 E episode on the night of 2-3 Mar, 23:00-03:20 UTC (the dive finds it strongest at 10-1000
+    s; this entry masks 0.3-30 s only); E only, 0.3-30 s. The dive's trial form (run as A31dive-emask30);
+    the sceptic's extension to 06:00 UTC, over hours it found noisy, lowered the masked errors 15-32 %
+    but roughened xy at 0.3-1 s 1.31x (0.0017 dex) and so failed the confirming run's criterion; 03:20-06:00
+    UTC stays unmasked. A31 dive and sceptic, 28 Sep (qc/reports/2026-09-27_lineA-site-dives_dive-A31.json,
+    qc/reports/2026-09-27_lineA-site-dives_verify-A31.json); confirming run of 29 Sep (qc/reports/2026-09-29_pathB-declare-prep-A-C_confirm-pathB-A11-A12-A13-A31.json);
+    declared in the trial form on Ben's approval of 30 Sep 2026 ("approved for trial forms")
+  found_by: time
+  scope: local
+  channels: [ex, ey]
+- start: '2023-03-03T08:00:00Z'
+  end: '2023-03-04T00:00:00Z'
+  bands: [0.3, 30.0]
+  reason: 'A31 E noise, local 09-01 h: a broadband day source and an evening source at 0.3-30 s, polarised,
+    in both E channels and not in the coils; E only, 0.3-30 s. The dive''s trial form (run as A31dive-emask30).
+    A31 dive and sceptic, 28 Sep (qc/reports/2026-09-27_lineA-site-dives_dive-A31.json, qc/reports/2026-09-27_lineA-site-dives_verify-A31.json);
+    confirming run of 29 Sep (qc/reports/2026-09-29_pathB-declare-prep-A-C_confirm-pathB-A11-A12-A13-A31.json);
+    declared in the trial form on Ben''s approval of 30 Sep 2026 ("approved for trial forms")'
+  found_by: time
+  scope: local
+  channels: [ex, ey]
+- start: '2023-03-04T08:00:00Z'
+  end: '2023-03-05T00:00:00Z'
+  bands: [0.3, 30.0]
+  reason: 'A31 E noise, local 09-01 h: a broadband day source and an evening source at 0.3-30 s, polarised,
+    in both E channels and not in the coils; E only, 0.3-30 s. The dive''s trial form (run as A31dive-emask30).
+    A31 dive and sceptic, 28 Sep (qc/reports/2026-09-27_lineA-site-dives_dive-A31.json, qc/reports/2026-09-27_lineA-site-dives_verify-A31.json);
+    confirming run of 29 Sep (qc/reports/2026-09-29_pathB-declare-prep-A-C_confirm-pathB-A11-A12-A13-A31.json);
+    declared in the trial form on Ben''s approval of 30 Sep 2026 ("approved for trial forms")'
+  found_by: time
+  scope: local
+  channels: [ex, ey]
