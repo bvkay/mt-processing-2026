@@ -20,10 +20,43 @@ passes to the next source in the list. A period for which no source of a
 mode gives a value is NaN, which mt_metadata's EDI writer stores as the
 EMPTY value 1e+32. Without a tipper list the EDI has no tipper.
 
+A site's recipe may hold ``grid: first`` (``grid: union``, the default, is
+the rule above). The 1 Hz products of a site sit on a period grid 1.6 %
+below its 1000 Hz products' grid, and the union of the two holds both, in
+pairs of periods that are not independent. With ``first`` the grid is built
+on the lattice of the first xy source. The lattice is that source's full
+period list, extended by the periods outside that source's period span of
+each listed source on the lattice; a source lies on it when at least half of
+its periods inside the span equal one of the first xy source's periods
+within LOG_TOL (all of a source's periods count, usable or not, inside its
+recipe range or not). The gathered lattice periods are the union's periods
+on the lattice and, for each entry whose source is off the lattice, the
+lattice periods that entry can fill: within LOG_TOL of one of its usable
+periods inside its range, or between two neighbouring ones with no unusable
+period of the source between them. A union period off the lattice stays on
+the grid only when no gathered lattice period lies within CLOSE_DEX of it in
+log10 period; the other union periods off the lattice are left out. Each
+mode is then filled by the rule above, so a source whose periods are left
+out gives values at the gathered lattice periods between its own periods by
+interpolation, and at a period both grids hold the values are the union's.
+A lattice period beyond an entry's last own period, or across one of its
+unusable periods, is out of that entry's reach and takes the next listed
+source's value, NaN when there is none, so a left-out period's value can be
+lost: per mode, the left-out periods at which the union's row holds a value
+while no grid period within CLOSE_DEX holds one in that mode are listed in a
+WARNING line and the sidecar (``lost``); the list changes no value. With the
+site named and the first xy source's station id another (a 1 Hz station), a
+WARNING says whose lattice is used. Whatever the grid, adjacent grid periods
+closer than CLOSE_DEX in log10 period are reported as close pairs (a WARNING
+line, when there is one, and the sidecar); the report changes no value.
+
 The station metadata, location and header come from the first xy source; its
 INFO block's processing parameters are replaced by ``crust.*`` lines naming
-the recipe, each source and its range. The station ids of all sources must
-agree (--force merges them regardless); their remotes may differ.
+the recipe, each source and its range, and under ``grid: first`` a
+``crust.grid`` line (first, the lattice's first source, the number of grid
+periods and the number of distinct periods left out of any source). The
+station ids of all sources must agree (--force merges them regardless);
+their remotes may differ.
 
 The text mt_metadata's writer produces is then patched in three blocks
 (`patch_edi_text`); the data from >FREQ to the end stay as written. The
@@ -43,10 +76,12 @@ the first xy source had them.
 ``OUT.json`` beside the output records the recipe, the header block, each
 source (path, station, and the remote, tag, window and masks of its
 ``<stem>.json`` sidecar), the periods taken from each source per mode, the
-gaps, and the UTC time. Exit status: 0 written, 2 when a recipe entry lacks
-edi, pmin or pmax, a range is not 0 < pmin <= pmax, a mode has no source
-listed, a source is missing, a mode takes no period, the header block holds
-a key other than acqby and prosby or a value that is not a non-empty string
+gaps, the grid (its key, the lattice with ``first``, the periods left out
+per source, the values lost per mode, the close pairs), and the UTC time.
+Exit status: 0 written, 2 when a recipe entry lacks edi, pmin or pmax, a
+range is not 0 < pmin <= pmax, a mode has no source listed, a source is
+missing, a mode takes no period, the grid is neither union nor first, the
+header block holds a key other than acqby and prosby or a value that is not a non-empty string
 free of line breaks and of the characters = < > ", or the stations differ
 without --force. `merge_files` is the same merge for a caller in Python.
 
@@ -95,6 +130,8 @@ from merge_modes import (ISO, LOG_TOL, X_ROW, Y_ROW, read_sidecar, read_tf, row_
 
 MODES = ("xy", "yx", "tipper")
 REQUIRED = ("xy", "yx")
+GRIDS = ("union", "first")  # the recipe's per-site grid key; union when absent
+CLOSE_DEX = 0.02  # adjacent grid periods closer than this in log10 period (4.7 %) are reported as close pairs
 ROWS = {"xy": X_ROW, "yx": Y_ROW}
 BANDS_PER_DECADE = 4  # --auto bands: quarter decades
 JUMP_DEX = 0.3  # --auto: a band whose median rho is this far from each neighbouring band's drops the candidate
@@ -111,7 +148,16 @@ RULE = ("per mode, at each period of the grid (the union of the sources' usable 
         "gives a value there: copied at a period it holds within LOG_TOL where its row is usable, interpolated "
         "linearly in log10 period between its two neighbouring periods inside the range when both are usable "
         "(real and imaginary parts separately, errors likewise) at a period it does not hold; a held period whose "
-        "row is zero or non-finite passes to the next source; NaN where no source gives a value")
+        "row is zero or non-finite passes to the next source; NaN where no source gives a value. With the site's "
+        "grid: first, the grid is built on the lattice of the first xy source (its periods, and the periods outside "
+        "its span of each listed source on it, a source being on it when at least half of all its periods inside "
+        "the span, usable or not, equal one of the first source's within LOG_TOL): the union's lattice periods "
+        "and, for each entry of a source off the lattice, the lattice periods that entry can fill (at or between "
+        "its usable periods inside its range, not across one of its unusable periods); a union period off the "
+        "lattice stays only when none of these lattice periods lies within CLOSE_DEX of it in log10 period, and "
+        "is left out otherwise; each mode is filled by the same rule, so a source whose periods are left out gives "
+        "values between its own periods by interpolation; a left-out period at which the union's row holds a value "
+        "while no grid period within CLOSE_DEX holds one in that mode is listed as lost")
 
 
 def load_recipe(path) -> dict:
@@ -169,12 +215,164 @@ def period_grid(plan: dict, rows: dict) -> np.ndarray:
         for entry in entries:
             p, z, _e = rows[(entry["edi"], mode)]
             found.append(p[usable(z) & in_range(p, entry)])
+    return merged_periods(found)
+
+
+def merged_periods(found: list[np.ndarray]) -> np.ndarray:
+    """Return the sorted periods of several arrays, of several within LOG_TOL in log10 period the shortest."""
     keep, last = [], None
-    for value in np.sort(np.concatenate(found)):
+    for value in np.sort(np.concatenate([np.zeros(0), *found])):
         if last is None or np.log10(value) - np.log10(last) > LOG_TOL:
             keep.append(value)
             last = value
     return np.asarray(keep, dtype=float)
+
+
+def on_periods(period, ref) -> np.ndarray:
+    """Flag the periods that equal a period of `ref` within LOG_TOL in log10 period."""
+    x, x_ref = np.log10(np.asarray(period, dtype=float)), np.log10(np.asarray(ref, dtype=float))
+    if x.size == 0 or x_ref.size == 0:
+        return np.zeros(x.size, dtype=bool)
+    return np.abs(x[:, None] - x_ref[None, :]).min(axis=1) <= LOG_TOL
+
+
+def lattice_of(plan: dict, rows: dict) -> dict:
+    """Return the lattice of the first xy source: its periods and the periods beyond its span of the sources on it.
+
+    A listed source lies on the lattice when at least half of its periods
+    inside the first xy source's period span equal, within LOG_TOL, one of
+    that source's periods; all of a source's periods count, usable or not,
+    inside its recipe range or not. A source with no period inside the span
+    does not lie on it.
+    The lattice is the first xy source's full period list and, of each source
+    on it, the periods outside that span; a source's periods inside the span
+    that are not the first xy source's do not join the lattice.
+
+    Args:
+        plan (dict): Mode to its list of entries.
+        rows (dict): ``(edi, mode)`` to the output of `mode_row`.
+
+    Returns:
+        dict: ``periods`` (the lattice in s, ascending, merged within
+        LOG_TOL), ``sources`` (the first xy source and the sources on the
+        lattice) and ``extended_by`` (those of them holding a period outside
+        the first xy source's span).
+    """
+    first = plan["xy"][0]["edi"]
+    ref = rows[(first, "xy")][0]
+    lo, hi = np.log10(ref.min()) - LOG_TOL, np.log10(ref.max()) + LOG_TOL
+    full = {entry["edi"]: rows[(entry["edi"], mode)][0] for mode, entries in plan.items() for entry in entries}
+    sources, extended, found = [first], [], [ref]
+    for path, p in full.items():
+        x = np.log10(p)
+        inside = (x >= lo) & (x <= hi)
+        if path == first or not inside.any() or 2 * on_periods(p[inside], ref).sum() < inside.sum():
+            continue
+        sources.append(path)
+        if not inside.all():
+            found.append(p[~inside])
+            extended.append(path)
+    return {"periods": merged_periods(found), "sources": sources, "extended_by": extended}
+
+
+def first_grid(plan: dict, rows: dict, union: np.ndarray, lattice: dict) -> tuple[np.ndarray, np.ndarray]:
+    """Return the grid on the first xy source's lattice.
+
+    The gathered lattice periods are the union's lattice periods and, for
+    each entry of a source off the lattice, the lattice periods that entry
+    can fill, where `take` places that source: within LOG_TOL of one of its
+    usable periods inside its range, or between two neighbouring ones with
+    no unusable period of the source between them. A union period off the
+    lattice stays on the grid only when no gathered lattice period lies
+    within CLOSE_DEX of it in log10 period; the others are left out.
+
+    Args:
+        plan (dict): Mode to its list of entries.
+        rows (dict): ``(edi, mode)`` to the output of `mode_row`.
+        union (np.ndarray): The output of `period_grid`.
+        lattice (dict): The output of `lattice_of`.
+
+    Returns:
+        tuple: ``(grid, added)``: the grid periods in s, ascending, and the
+        lattice periods on it that the union does not hold.
+    """
+    lat = lattice["periods"]
+    on = on_periods(union, lat)
+    placed = [union[on]]
+    for mode, entries in plan.items():
+        for entry in entries:
+            if entry["edi"] in lattice["sources"]:
+                continue
+            # the lattice periods this entry gives a value at under `take`'s rule, none across an unusable period
+            p, z, e = rows[(entry["edi"], mode)]
+            inside, good = in_range(p, entry), usable(z)
+            keep = good & inside
+            kind = row_on_grid(p[keep], z[keep], e[keep], lat)[2]
+            kind[across_empty(lat, p[keep], p[inside & ~good], kind)] = "nan"
+            placed.append(lat[(kind != "nan") & in_range(lat, entry)])
+    kept = merged_periods(placed)
+    off = union[~on]
+    near = np.zeros(off.size, dtype=bool)
+    if kept.size and off.size:
+        near = np.abs(np.log10(off)[:, None] - np.log10(kept)[None, :]).min(axis=1) < CLOSE_DEX
+    grid = merged_periods([kept, off[~near]])
+    return grid, kept[~on_periods(kept, union)]
+
+
+def close_pairs(grid: np.ndarray) -> list[list[float]]:
+    """Return the adjacent grid periods closer than CLOSE_DEX in log10 period, as [shorter, longer] pairs."""
+    near = np.flatnonzero(np.diff(np.log10(grid)) < CLOSE_DEX)
+    return [[float(grid[k]), float(grid[k + 1])] for k in near]
+
+
+def left_out(plan: dict, rows: dict, grid: np.ndarray, paths: list[Path]) -> dict[str, list[float]]:
+    """Return per source the periods it holds usable inside the range of one of its entries that are not on the grid."""
+    out = {}
+    for path in paths:
+        found = []
+        for mode, entries in plan.items():
+            for entry in entries:
+                if entry["edi"] == path:
+                    p, z, _e = rows[(path, mode)]
+                    found.append(p[usable(z) & in_range(p, entry)])
+        held = merged_periods(found)
+        missing = held[~on_periods(held, grid)]
+        if missing.size:
+            out[str(path)] = [float(p) for p in missing]
+    return out
+
+
+def lost_values(plan: dict, rows: dict, union: np.ndarray, grid: np.ndarray, taken: dict) -> dict[str, list[float]]:
+    """Return per mode the left-out periods whose value the union's row holds and no grid period near them does.
+
+    A union period not on the grid is lost in a mode when that mode's row
+    filled on the union grid by `take` holds a value there while no grid
+    period within CLOSE_DEX in log10 period holds one in the mode's row of
+    `taken`.
+
+    Args:
+        plan (dict): Mode to its list of entries.
+        rows (dict): ``(edi, mode)`` to the output of `mode_row`.
+        union (np.ndarray): The output of `period_grid`.
+        grid (np.ndarray): The grid the merge is written on.
+        taken (dict): Mode to the output of `take` on `grid`.
+
+    Returns:
+        dict: Mode to its lost periods in s, ascending; modes with none are
+        absent.
+    """
+    out = {}
+    gone = ~on_periods(union, grid)
+    if not gone.any():
+        return out
+    near = np.abs(np.log10(union[gone])[:, None] - np.log10(grid)[None, :]) < CLOSE_DEX
+    for mode, entries in plan.items():
+        held_union = take(union, entries, mode, rows)[2][gone] >= 0
+        held_near = (near & (taken[mode][2] >= 0)[None, :]).any(axis=1)
+        lost = held_union & ~held_near
+        if lost.any():
+            out[mode] = [float(p) for p in union[gone][lost]]
+    return out
 
 
 def across_empty(grid: np.ndarray, p_good: np.ndarray, p_empty: np.ndarray, kind: np.ndarray) -> np.ndarray:
@@ -440,11 +638,26 @@ def _write_atomic(path: Path, text: str) -> None:
 
 
 def info_lines(side: dict) -> list[str]:
-    """Build the ``crust.*`` lines of the merged EDI's INFO block."""
+    """Build the ``crust.*`` lines of the merged EDI's INFO block.
+
+    Under ``grid: first`` a ``crust.grid`` line follows ``crust.recipe``:
+    first, the file name of the lattice's first source, the number of grid
+    periods and the number of distinct periods left out of any source (a
+    period two sources leave out counts once); under union there is none.
+    A left-out period's value is carried by its source's interpolation at
+    the lattice periods beside it only where that source reaches them; the
+    sidecar's ``lost`` lists per mode the left-out periods whose value the
+    union holds while no grid period within CLOSE_DEX holds one.
+    """
     recipe = side["recipe"]["path"]
     lines = [f"crust.version={side['versions']['crust']}", f"crust.merged={side['created']}",
              f"crust.tag={side['tag'] or ''}", f"crust.site={side['site']}",
              f"crust.recipe={Path(recipe).name if recipe else ''}"]
+    merge = side["merge"]
+    if merge.get("lattice") is not None:
+        n_left = merged_periods([np.asarray(v, dtype=float) for v in merge["left_out"].values()]).size
+        lines.append(f"crust.grid={merge['grid']},{Path(merge['lattice']['first']).name},{merge['n_periods']},"
+                     f"{n_left}")
     for mode, block in side["merge"]["modes"].items():
         for k, entry in enumerate(block["entries"], start=1):
             lines.append(f"crust.best_{mode}_{k}={Path(entry['edi']).name},{entry['pmin']:g},{entry['pmax']:g}")
@@ -457,14 +670,18 @@ def resolve_plan(recipe_for_site: dict, base: Path) -> tuple[dict, list[str]]:
 
     Args:
         recipe_for_site (dict): ``{xy: [...], yx: [...], tipper: [...],
-            note: str}``, each entry ``{edi, pmin, pmax}``.
+            note: str, grid: str}``, each entry ``{edi, pmin, pmax}``.
         base (Path): Directory relative EDI paths are taken from.
 
     Returns:
         tuple: ``(plan, errors)``: mode to its list of entries with ``edi``
-        resolved and ``pmin``, ``pmax`` as floats, and one line per problem.
+        resolved and ``pmin``, ``pmax`` as floats, and one line per problem,
+        a grid other than GRIDS' among them.
     """
     plan, errors = {}, []
+    grid = recipe_for_site.get("grid", "union")
+    if grid not in GRIDS:
+        errors.append(f"grid: {grid!r} is not one of {', '.join(GRIDS)}")
     for mode in MODES:
         entries = recipe_for_site.get(mode)
         if entries is None and mode == "tipper":
@@ -528,13 +745,16 @@ def merge_files(out, recipe_for_site: dict, tag: str | None = None, force: bool 
         out (str | Path): Merged EDI to write; the sidecar goes beside it as
             .json.
         recipe_for_site (dict): ``{xy: [{edi, pmin, pmax}, ...], yx: [...],
-            tipper: [...] (optional), note: str (optional)}``.
+            tipper: [...] (optional), note: str (optional), grid: "union"
+            or "first" (optional, union when absent)}``.
         tag (str | None): Label recorded in the sidecar and the INFO block.
         force (bool): Merge sources whose stations differ.
         argv (list[str] | None): Command line recorded in the sidecar;
             sys.argv when None.
         site (str | None): Site name recorded; the first xy source's station
-            when None.
+            when None. Under grid first, a named site that is not the first
+            xy source's station id prints a WARNING naming whose lattice is
+            used; the merge is unchanged.
         recipe_path (str | Path | None): The recipe file, recorded; relative
             EDI paths are taken from its directory, or from the working
             directory when None.
@@ -545,8 +765,9 @@ def merge_files(out, recipe_for_site: dict, tag: str | None = None, force: bool 
     Returns:
         int: 0 when written, 2 when a recipe entry lacks edi, pmin or pmax,
         a range is not 0 < pmin <= pmax, a mode has no source listed, a
-        source is missing, a mode takes no period, the header block is not
-        sound (`check_header`), or the stations differ without `force`.
+        source is missing, a mode takes no period, the grid is not one of
+        GRIDS, the header block is not sound (`check_header`), or the
+        stations differ without `force`.
     """
     out = Path(out).resolve()
     recipe_path = None if recipe_path is None else Path(recipe_path).resolve()
@@ -572,13 +793,44 @@ def merge_files(out, recipe_for_site: dict, tag: str | None = None, force: bool 
 
     rows = {(entry["edi"], mode): mode_row(tfs[entry["edi"]], mode)
             for mode, entries in plan.items() for entry in entries}
-    grid = period_grid(plan, rows)
+    union = grid = period_grid(plan, rows)
+    grid_key = recipe_for_site.get("grid", "union")
+    lattice = None
+    if grid_key == "first":
+        found_lattice = lattice_of(plan, rows)
+        grid, added = first_grid(plan, rows, union, found_lattice)
+        lat = found_lattice["periods"]
+        lattice = {"first": str(first_path), "first_station": station, "span": [float(lat.min()), float(lat.max())],
+                   "n_periods": int(lat.size), "sources": [str(p) for p in found_lattice["sources"]],
+                   "extended_by": [str(p) for p in found_lattice["extended_by"]],
+                   "added": [float(p) for p in added]}
+        print(f"grid first: the lattice of {first_path.name}, {lat.size} periods, {_span(lat.min(), lat.max())}; "
+              f"extended by {', '.join(p.name for p in found_lattice['extended_by']) or 'none'}; "
+              f"{added.size} lattice periods added for the sources off it")
+        if site is not None and station != site:
+            print(f"WARNING grid first: the lattice used is that of {first_path.name} (station {station}, not the "
+                  f"site {site}); the first xy source should be the product whose grid is to be kept")
+    omitted = left_out(plan, rows, grid, paths)
+    for path, periods in omitted.items():
+        print(f"grid {grid_key}: {Path(path).name} left out at {len(periods)} periods, "
+              f"{_span(min(periods), max(periods))}")
+    pairs = close_pairs(grid)
+    if len(pairs) == 1:
+        print(f"WARNING 1 close pair of grid periods (adjacent within {CLOSE_DEX} in log10 period), at "
+              f"{pairs[0][0]:.4g} and {pairs[0][1]:.4g} s")
+    elif pairs:
+        print(f"WARNING {len(pairs)} close pairs of grid periods (adjacent within {CLOSE_DEX} in log10 period), the "
+              f"first {pairs[0][0]:.4g} and {pairs[0][1]:.4g} s, the last {pairs[-1][0]:.4g} and {pairs[-1][1]:.4g} s")
     taken = {mode: take(grid, entries, mode, rows) for mode, entries in plan.items()}
     empty = [mode for mode, result in taken.items() if not (result[2] >= 0).any()]
     for mode in empty:
         print(f"ERROR mode {mode}: no source gives a value inside its range", file=sys.stderr)
     if empty:
         return 2
+    lost = lost_values(plan, rows, union, grid, taken) if grid_key == "first" else {}
+    for mode, periods in lost.items():
+        print(f"WARNING grid first: mode {mode}: {len(periods)} left-out period(s) with no grid period within "
+              f"{CLOSE_DEX} in log10 period holding a value: {', '.join(f'{p:.4g}' for p in periods)} s")
 
     sidecars = {path: read_sidecar(path) for path in paths}
     modes = {mode: mode_block(mode, entries, taken[mode], grid, paths) for mode, entries in plan.items()}
@@ -594,7 +846,8 @@ def merge_files(out, recipe_for_site: dict, tag: str | None = None, force: bool 
         "recipe": {"path": None if recipe_path is None else str(recipe_path), "site": recipe_for_site},
         "header": dict(header or {}),
         "merge": {"rule": RULE, "log10_period_tolerance": LOG_TOL, "n_periods": int(grid.size),
-                  "period_range": [float(grid.min()), float(grid.max())], "modes": modes,
+                  "period_range": [float(grid.min()), float(grid.max())], "grid": grid_key, "lattice": lattice,
+                  "left_out": omitted, "lost": lost, "close_dex": CLOSE_DEX, "close_pairs": pairs, "modes": modes,
                   "tipper": "recipe" if "tipper" in plan else None},
         "sources": [source_entry(path, tfs[path], *sidecars[path]) for path in paths],
         "forced": bool(force),
@@ -829,8 +1082,8 @@ def main(argv=None) -> int:
     """
     parser = argparse.ArgumentParser(description=__doc__.strip().splitlines()[0])
     parser.add_argument("out", nargs="?", help="merged EDI to write; its sidecar is written beside it as .json")
-    parser.add_argument("--recipe", help="recipe YAML, site: {xy: [{edi, pmin, pmax}, ...], yx: [...]}, "
-                                         "and an optional header: {acqby, prosby}")
+    parser.add_argument("--recipe", help="recipe YAML, site: {xy: [{edi, pmin, pmax}, ...], yx: [...], "
+                                         "grid: union or first}, and an optional header: {acqby, prosby}")
     parser.add_argument("--site", required=True, help="site of the recipe to merge, or to propose a recipe for")
     parser.add_argument("--tag", default=None, help="label recorded in the sidecar and the INFO block")
     parser.add_argument("--force", action="store_true", help="merge sources whose stations differ")

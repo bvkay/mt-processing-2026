@@ -14,7 +14,17 @@ the relative rho errors are set per band: A 0.10 throughout; B 0.05 below
 0.02 above, and its rho ten times higher (1 dex) in the band 31.6-56.2 s.
 A_hole is A with its x row EMPTY at 3.16 s; its y row still puts 3.16 s on
 the grid. A_hdr is A with ACQBY "Field crew" and FILEBY "Source filer" in its
-header. The merges run through the script's `main` with a recipe file whose EDI
+header. L (station S01L, remote R04) stands for a 1 Hz product: 64 ohm-m
+on 33 periods from 0.984 to 9843 s, each 1000 Hz period divided by 1.0159,
+so 1.6 % below A's periods where the two overlap. L2 is L again under
+another file name; L_hole is L with both rows EMPTY at 13.13 s. A_cut is A
+cut at 100 s. M (remote R05, 36 ohm-m) holds A's 41 periods with every odd
+one divided by 1.0159; M20 (the first review's E4 source) A's first 20
+periods and the next 20 divided by 1.0159, ending at 738.2 s, so exactly
+half of its 40 periods on A's; M19 the same with 19 and 21. F (remote R06,
+144 ohm-m) holds A's periods shifted by 1.4e-5 in log10 period, just beyond
+LOG_TOL.
+The merges run through the script's `main` with a recipe file whose EDI
 paths are relative to it, and through `merge_files`.
 
 Usage:
@@ -83,7 +93,88 @@ and REFLON and REFLONG with equal values, or does not leave ACQBY and FILEBY
 as A_hdr has them and PROSBY and the processed_by line out; `patch_edi_text`
 on text holding only LONG and REFLONG does not add LON and REFLON with the
 same values; or a header block with an unknown key or a value holding = does
-not make `main` return 2 without writing an EDI.
+not make `main` return 2 without writing an EDI; (10) with xy from A then L
+and yx from L over 3-100000 s then A, and no grid key, the merged periods
+are not A's 41 and L's 33, or the 25 close pairs (L's periods from 0.984 to
+984.3 s each beside A's 1.6 % above) are not in the one WARNING line and the
+sidecar's close_pairs, or the sidecar's grid is not union with no lattice,
+nothing left out and nothing lost; with yx from L over 0.9-0.99 s (its
+0.9843 s only) then A, the one WARNING line does not end "1 close pair of
+grid periods (adjacent within 0.02 in log10 period), at 0.9843 and 1 s";
+(11) the same recipe with grid: first does not give
+A's 41 periods and L's 8 beyond 1000 s with no two adjacent periods closer
+than 0.02 in log10 period, the y row at A's 21 periods from 3.16 s is not on
+the straight line in log10 period between L's neighbouring periods (rows and
+errors, computed in the test), or the x row is not A's and the y row below
+3 s is not A's; (12) L's 8 periods beyond 1000 s do not carry L's rows in
+both modes, or the sidecar does not record them as copied from L's xy entry,
+none interpolated; (13) with xy from A_cut, B and L, the lattice is not
+extended by B.edi to 41 periods over 0.01-1000 s, the grid is not A's 41 and
+L's 8 beyond, L's left_out is not its 25 periods below 1000 s, or the x row
+above 100 s is not B's; (14) at every period of the grid-first product of
+(11) the union product of (10) differs in Z or its errors by more than 1e-12
+relative; (15) the sidecar of (11) does not record grid first, the lattice of
+A.edi (station S01, 41 periods, 0.01-1000 s, no source extending it, none
+added), L's 25 left-out periods, nothing lost and no close pair; (16) grid: nonsense does
+not make `main` return 2 with an ERROR line naming the grid, writing no EDI;
+(17) with both modes from A over 0.01-3 s, L over 3-300 s and A over
+300-100000 s and grid: first, A's 15 periods between L's first and last
+period in 3-300 s are not added to the grid, recorded in the sidecar's
+lattice.added and filled on L's line in both rows, L's 233.4 s (no gathered
+lattice period within 0.02 in log10 period: 177.8 and 316.2 s are 0.12 and
+0.13 away) is not on the grid with L's own rows, L's left_out is not its 15
+periods 3.113-175 s, or a mode holds a NaN; (18) with both modes from A over
+100-100000 s then L over 1-100 s and grid: first, the grid is not A's 24
+periods 1.334-1000 s (L's 1.313 s, below the shortest gathered lattice
+period 1.334 s and within 0.02 of it, left out), a close pair remains, L's
+left_out is not its 16 periods 1.313-98.43 s, or the rows at A's 15 periods
+1.334-74.99 s are not on L's line; (19) with xy from A and yx from M (A's
+periods, every odd one divided by 1.0159: 21 on A's lattice, 20 off) and
+grid: first, M is not on the lattice, M extends it, the grid is not A's 41
+periods, a close pair remains, M's left_out is not its 20 off periods, or
+the y row is not M's own at its 21 lattice periods and on M's line at the
+other 20; (20) with xy from A and yx from F (A's periods shifted by 1.4e-5
+in log10 period, beyond LOG_TOL) then A and grid: first, the grid is not A's
+41 periods (F's 1000.03 s beside A's 1000 s left out), a close pair remains,
+F's left_out is not its 41 periods, or the y row is not A's at 0.01 s and on
+F's line at A's other 40 periods; (21) with xy from L then A and grid: first
+under the site name S01, the merge does not return 0 with one WARNING line
+naming L.edi, station S01L and the site, or the sidecar's lattice does not
+record first_station S01L; or the same merge under the site name S01L
+prints that WARNING or writes other bytes from >FREQ on; (22) the INFO
+block's crust keys of the union product of (10) are not version, merged,
+tag, site, recipe, the four best lines and sidecar in that order, or those
+of the grid-first product of (11) are not the same with crust.grid after
+crust.recipe, its value first,A.edi,49,25, or with xy from A then L and yx
+from L2 over 3-100000 s then A (L left out at 25 periods, L2 at 21 of the
+same) that line does not count the 25 distinct periods; (23) with both modes
+from A over 0.01-3 s, L_hole over 3-300 s and A over 300-100000 s and grid:
+first, the grid is not A's 20 periods to 2.371 s, A's 13 lattice periods
+3.162-177.8 s other than 10 and 13.34 s (L_hole cannot fill those two, their
+neighbours 9.843 and 17.50 s enclosing its EMPTY 13.13 s), L_hole's 9.843
+and 233.4 s and A's 5 periods from 316.2 s, a close pair remains, a mode
+holds a NaN, L_hole's rows at 9.843 s are not its own or those at 7.499 and
+17.78 s not on its line, lattice.added is not the 13, L_hole's left_out is
+not its other 13 usable periods in 3-300 s, or something is lost; (24) with
+xy from A and yx from M20 and grid: first (the first review's E4), M20 does
+not lie on the lattice (exactly half of its periods on it), the merge does
+not return 0 with the one line "WARNING grid first: mode yx: 1 left-out
+period(s) with no grid period within 0.02 in log10 period holding a value:
+738.2 s", the sidecar's lost is not {yx: [738.2 s]}, the same merge with the
+list disabled does not return 0 with the same bytes from >FREQ on, or the
+same recipe under grid: union records anything lost or prints that WARNING.
+Each of (10) to (24) runs its check once more on a deliberately wrong
+expectation (a close pair short, the one pair worded as several, L's 984.3 s
+on the grid, L's own neighbouring values, L's values off by 0.1 %, the
+lattice not extended, each union period's neighbour, a left-out period
+short, the valid grid union refused, the grid without the added periods and
+the grid without L's 233.4 s, the grid with L's 1.313 s, the grid with M's
+off periods, the grid with F's 1000.03 s, the WARNING looked for in the S01L
+merge, the union's keys with crust.grid, the grid line with 24 periods left
+out and with the per-source counts summed (46), round two's grid with 10
+and 13.34 s and without 9.843 s, the lattice test on M19 (19 of 40 on), and
+738.2 s looked for as lost in the same merge with A behind M20 in yx), which
+must fail.
 
 The mutations: with the script's PREFER set to 0 the band 3.16-5.62 s goes
 to C and with JUMP_DEX set to 10 the band 31.6-56.2 s goes to C, so the
@@ -119,6 +210,9 @@ EMPTY = 1.0e32
 
 P8 = 10.0 ** (-2 + np.arange(41) / 8)  # 0.01 .. 1000 s, eight per decade
 P_OFFSET = P8 * 10 ** (1 / 16)
+L_FACTOR = 1.0159  # a 1 Hz product's periods are its 1000 Hz product's divided by this
+P_L = 10.0 ** (np.arange(33) / 8) / L_FACTOR  # 0.984 .. 9843 s, eight per decade, 1.6 % below P8's
+CLOSE = 0.02  # adjacent periods closer than this in log10 period are a close pair
 
 # per product: resistivity, Zxx and Zyy as fractions of Zxy, location, remote, tag
 PRODUCTS = {
@@ -128,6 +222,12 @@ PRODUCTS = {
               remote="R02", tag="redo", masks=[]),
     "C": dict(rho=25.0, dxx=0.30 * np.exp(-0.5j), dyy=0.25 * np.exp(0.6j), lat=-32.00, lon=141.00,
               remote="R03", tag="night", masks=["S01 storm"]),
+    "L": dict(rho=64.0, dxx=0.15 * np.exp(-0.7j), dyy=0.35 * np.exp(0.4j), lat=-30.25, lon=139.22,
+              remote="R04", tag="1hz", masks=[]),
+    "M": dict(rho=36.0, dxx=0.12 * np.exp(0.5j), dyy=0.22 * np.exp(-0.9j), lat=-30.25, lon=139.22,
+              remote="R05", tag="half", masks=[]),
+    "F": dict(rho=144.0, dxx=0.18 * np.exp(-0.3j), dyy=0.28 * np.exp(0.7j), lat=-30.25, lon=139.22,
+              remote="R06", tag="near", masks=[]),
 }
 TIPPER = np.array([0.12 + 0.05j, -0.08 + 0.03j])
 HEADER = {"acqby": "UM6P, AU", "prosby": "Ben Kay, AuScope"}
@@ -159,13 +259,15 @@ def load_script():
 
 
 def write_product(name: str, periods: np.ndarray, station: str = "S01", tipper: bool = False,
-                  auto: bool = False, hole: float | None = None, credits: bool = False) -> Path:
+                  auto: bool = False, hole: float | None = None, credits: bool = False,
+                  hole_rows: tuple[int, ...] = (0,)) -> Path:
     """Write one product's EDI and sidecar under SCRATCH; return the EDI path.
 
     With `auto` the errors follow `auto_errors`, B's yx phase is flipped in
     0.1-0.178 s and C's rho is ten times higher in 31.6-56.2 s. With `hole`
-    the x row and its errors are NaN at that period, written as EMPTY. With
-    `credits` the header's ACQBY and FILEBY are SOURCE_CREDITS'.
+    the rows `hole_rows` (the x row by default) and their errors are NaN at
+    that period, written as EMPTY. With `credits` the header's ACQBY and
+    FILEBY are SOURCE_CREDITS'.
     """
     spec = PRODUCTS[name[0]]
     zh = np.sqrt(spec["rho"] / (0.2 * periods)) * np.exp(0.25j * np.pi)
@@ -181,7 +283,8 @@ def write_product(name: str, periods: np.ndarray, station: str = "S01", tipper: 
     err = (0.5 * rel * np.abs(zh))[:, None, None] * np.ones((1, 2, 2))
     if hole is not None:
         k = at(periods, hole)
-        z[k, 0, :], err[k, 0, :] = np.nan, np.nan
+        for row in hole_rows:
+            z[k, row, :], err[k, row, :] = np.nan, np.nan
     tf = TF()
     tf.station_metadata.id = station
     tf.survey_metadata.id = "merge_best_unit"
@@ -635,6 +738,459 @@ def test_header(module, b: Path) -> None:
         print(f"      header {label}: exit 2, {err.strip()}")
 
 
+def periods_fail(got, want) -> list[str]:
+    """Compare two period lists within 1e-6 in log10 period; return the difference, empty when they agree."""
+    got, want = np.asarray(got, dtype=float), np.asarray(want, dtype=float)
+    if got.size == want.size and np.allclose(np.log10(got), np.log10(want), rtol=0, atol=1e-6):
+        return []
+    extra = [f"{p:.4g}" for p in got if np.abs(np.log10(want) - np.log10(p)).min() > 1e-6] if want.size else []
+    short = [f"{p:.4g}" for p in want if np.abs(np.log10(got) - np.log10(p)).min() > 1e-6] if got.size else []
+    return [f"{got.size} periods, not {want.size}; not wanted {extra}; missing {short}"]
+
+
+def pairs_of(periods) -> list[list[float]]:
+    """Return the adjacent periods closer than CLOSE in log10 period, computed here."""
+    p = np.sort(np.asarray(periods, dtype=float))
+    return [[float(p[k]), float(p[k + 1])] for k in range(p.size - 1) if np.log10(p[k + 1] / p[k]) < CLOSE]
+
+
+def pairs_fail(got, want) -> list[str]:
+    """Compare two lists of period pairs within 1e-6 relative; return the difference."""
+    if len(got) == len(want) and all(np.allclose(g, w, rtol=1e-6, atol=0) for g, w in zip(got, want)):
+        return []
+    return [f"{len(got)} pairs, not {len(want)}: {got[:2]} ... against {want[:2]} ..."]
+
+
+def log_line(source: Path, row: int, periods) -> tuple[np.ndarray, np.ndarray]:
+    """Return a source's row and errors on the straight line in log10 period at the given periods, computed here."""
+    p_s, z_s, e_s = arrays(source)
+    order = np.argsort(p_s)
+    x, z_s, e_s = np.log10(p_s[order]), z_s[order, row, :], e_s[order, row, :]
+    xq = np.log10(np.asarray(periods, dtype=float))
+    z = np.stack([np.interp(xq, x, z_s[:, j].real) + 1j * np.interp(xq, x, z_s[:, j].imag) for j in range(2)], axis=1)
+    e = np.stack([np.interp(xq, x, e_s[:, j]) for j in range(2)], axis=1)
+    return z, e
+
+
+def values_fail(merged: Path, row: int, periods, z_want, e_want) -> list[str]:
+    """Compare one row of the merged EDI and its errors with wanted values at the given periods; return the failures."""
+    p_m, z_m, e_m = arrays(merged)
+    fails = []
+    for p, zw, ew in zip(periods, z_want, e_want):
+        i = at(p_m, p)
+        if not (close(z_m[i, row], zw) and close(e_m[i, row], ew)):
+            fails.append(f"{p:.4g} s: {z_m[i, row]} is not {zw}")
+    return fails
+
+
+def must_fail(label: str, fails: list[str]) -> None:
+    """Assert that a check given a deliberately wrong expectation reports a failure."""
+    assert fails, f"control {label}: the check passed a wrong expectation"
+    print(f"      control {label}: fails as it must ({fails[0][:90]})")
+
+
+def test_grid(module, a: Path, b: Path) -> None:
+    """Tests (10) to (24): the grid key, with L, station S01L, on P_L, 1.6 % below A's periods."""
+    lp = write_product("L", P_L, station="S01L")
+    a_cut = write_product("A_cut", P8[:33])
+    out = SCRATCH / "out"
+    base = {"xy": [entry(str(a), 0.01, 1e5), entry(str(lp), 0.01, 1e5)],
+            "yx": [entry(str(lp), 3.0, 1e5), entry(str(a), 0.01, 1e5)]}
+    inside, beyond = P_L[P_L < 1000.0], P_L[P_L > 1000.0]
+    owned_l = P8[P8 >= 3.0]  # A's periods at which L gives yx, between its own periods
+    p_l, z_l, e_l = arrays(lp)
+
+    # (10) without the key: both grids, the close pairs reported
+    m_u = out / "S01_union_L.edi"
+    status, text, err = quiet(module.merge_files, m_u, base, force=True)
+    assert status == 0, err
+    p_u = arrays(m_u)[0]
+    side_u = sidecar(m_u)["merge"]
+    want_pairs = [[float(q), float(q * L_FACTOR)] for q in inside]
+    warn = [ln for ln in text.splitlines() if ln.startswith("WARNING") and "close pairs" in ln]
+    fails = (periods_fail(p_u, np.sort(np.concatenate([P8, P_L]))) + pairs_fail(pairs_of(p_u), want_pairs)
+             + pairs_fail(side_u["close_pairs"], want_pairs))
+    if not (len(warn) == 1 and warn[0].startswith(f"WARNING {inside.size} close pairs")):
+        fails.append(f"warning lines {warn}")
+    if not (side_u["grid"] == "union" and side_u["lattice"] is None and side_u["left_out"] == {}
+            and side_u["lost"] == {}):
+        fails.append(f"sidecar grid {side_u['grid']}, lattice {side_u['lattice']}, left_out {side_u['left_out']}, "
+                     f"lost {side_u['lost']}")
+    assert not fails, fails
+    print(f"  (10) no grid key: {p_u.size} periods (A's {P8.size} and L's {P_L.size}), {len(want_pairs)} close pairs "
+          f"{want_pairs[0][0]:.4g}/{want_pairs[0][1]:.4g} .. {want_pairs[-1][0]:.4g}/{want_pairs[-1][1]:.4g} s in "
+          f"the WARNING line and the sidecar; nothing lost")
+    must_fail("close pairs one short", pairs_fail(side_u["close_pairs"], want_pairs[1:]))
+
+    # (10) one close pair: the WARNING names its two periods
+    m_1 = out / "S01_union_one_pair.edi"
+    rec = {"xy": [entry(str(a), 0.01, 1e5)], "yx": [entry(str(lp), 0.9, 0.99), entry(str(a), 0.01, 1e5)]}
+    status, text, err = quiet(module.merge_files, m_1, rec, force=True)
+    assert status == 0, err
+
+    def one_pair_fail(text: str, ending: str) -> list[str]:
+        warn = [ln for ln in text.splitlines() if ln.startswith("WARNING") and "close pair" in ln]
+        if len(warn) == 1 and warn[0].startswith("WARNING 1 close pair of grid periods") and warn[0].endswith(ending):
+            return []
+        return [f"warning lines {warn}"]
+
+    ending = f"(adjacent within {CLOSE} in log10 period), at {P_L[0]:.4g} and {P8[16]:.4g} s"
+    assert not one_pair_fail(text, ending), one_pair_fail(text, ending)
+    print(f"      one close pair: {[ln for ln in text.splitlines() if 'close pair' in ln][0]}")
+    must_fail("the one pair worded as several", one_pair_fail(
+        text, f"the first {P_L[0]:.4g} and {P8[16]:.4g} s, the last {P_L[0]:.4g} and {P8[16]:.4g} s"))
+
+    # (11) grid first: A's lattice, L's yx on it by interpolation, A's xy as it is
+    m_f = out / "S01_first_L.edi"
+    status, text, err = quiet(module.merge_files, m_f, {**base, "grid": "first"}, force=True)
+    assert status == 0, err
+    p_f = arrays(m_f)[0]
+    want_grid = np.concatenate([P8, beyond])
+    z_want, e_want = log_line(lp, 1, owned_l)
+    fails = (periods_fail(p_f, want_grid) + pairs_fail(pairs_of(p_f), [])
+             + values_fail(m_f, 1, owned_l, z_want, e_want) + row_matches(m_f, a, 0, P8)
+             + row_matches(m_f, a, 1, P8[P8 < 3.0]))
+    assert not fails, fails
+    print(f"  (11) grid first: {p_f.size} periods, A's {P8.size} and L's {beyond.size} beyond 1000 s; no close pair; "
+          f"yx at A's {owned_l.size} periods from 3.16 s on L's line, x row = A's")
+    must_fail("L's 984.3 s on the grid", periods_fail(p_f, np.sort(np.append(want_grid, inside[-1]))))
+    near = [at(p_l, q / L_FACTOR) for q in owned_l]
+    must_fail("L's own neighbouring values", values_fail(m_f, 1, owned_l, z_l[near, 1, :], e_l[near, 1, :]))
+
+    # (12) L's periods beyond A's longest are on the grid, copied
+    k = [at(p_l, q) for q in beyond]
+    fails = sum((values_fail(m_f, row, beyond, z_l[k, row, :], e_l[k, row, :]) for row in (0, 1)), [])
+    xy_l = sidecar(m_f)["merge"]["modes"]["xy"]["entries"][1]
+    fails += periods_fail(xy_l["copied"], beyond) + (["xy from L interpolated"] if xy_l["interpolated"] else [])
+    assert not fails, fails
+    print(f"  (12) L's {beyond.size} periods {beyond[0]:.4g} .. {beyond[-1]:.4g} s on the grid, both rows copied")
+    must_fail("L's values off by 0.1 %", values_fail(m_f, 0, beyond, z_l[k, 0, :] * 1.001, e_l[k, 0, :]))
+
+    # (13) a first xy source cut at 100 s, the lattice extended by B
+    m_x = out / "S01_first_ext.edi"
+    rec = {"xy": [entry(str(a_cut), 0.01, 1e5), entry(str(b), 0.01, 1e5), entry(str(lp), 0.01, 1e5)],
+           "yx": [entry(str(lp), 3.0, 1e5), entry(str(a_cut), 0.01, 1e5)], "grid": "first"}
+    status, text, err = quiet(module.merge_files, m_x, rec, force=True)
+    assert status == 0, err
+    p_x, side_x = arrays(m_x)[0], sidecar(m_x)["merge"]
+    lat = side_x["lattice"]
+    left = {Path(k).name: v for k, v in side_x["left_out"].items()}
+    fails = (periods_fail(p_x, want_grid) + periods_fail(left.get("L.edi", []), inside)
+             + row_matches(m_x, b, 0, P8[P8 > 100.0]))
+    if not ([Path(p).name for p in lat["extended_by"]] == ["B.edi"] and lat["n_periods"] == P8.size
+            and np.allclose(lat["span"], [P8[0], P8[-1]], rtol=1e-6)):
+        fails.append(f"lattice {lat}")
+    assert not fails, fails
+    print(f"  (13) A_cut ({P8[:33].size} periods to 100 s) then B: the lattice extended by B.edi to "
+          f"{lat['n_periods']} periods, {lat['span'][0]:.4g} .. {lat['span'][1]:.4g} s; L left out at its "
+          f"{inside.size} periods inside; x row above 100 s = B's")
+    unextended = np.sort(np.concatenate([P8, P_L[P_L > 100.0]]))
+    must_fail("the lattice not extended", periods_fail(p_x, unextended))
+
+    # (14) at the periods both hold, the grid-first product is the union product
+    p_u, z_u, e_u = arrays(m_u)
+    p_f, z_f, e_f = arrays(m_f)
+    both = [(at(p_f, p), at(p_u, p)) for p in p_f]
+    i_f, i_u = np.array([i for i, _ in both]), np.array([j for _, j in both])
+
+    def largest(zf, zu) -> float:
+        return float(np.max(np.abs(zf - zu) / np.abs(zu)))
+
+    worst = max(largest(z_f[i_f], z_u[i_u]), largest(e_f[i_f], e_u[i_u]))
+    assert len(both) == p_f.size and worst <= 1e-12, (len(both), worst)
+    print(f"  (14) at the {len(both)} periods both products hold: largest relative difference {worst:.1e} (Z and "
+          f"errors, both rows)")
+    shifted = largest(z_f[i_f[:-1]], z_u[i_u[:-1] + 1])
+    assert shifted > 1e-12, shifted
+    print(f"      control each union period's neighbour: largest relative difference {shifted:.2g}, fails as it must")
+
+    # (15) the sidecar of the grid-first merge
+    side_f = sidecar(m_f)["merge"]
+    lat = side_f["lattice"]
+    left = {Path(k).name: v for k, v in side_f["left_out"].items()}
+    fails = periods_fail(left.get("L.edi", []), inside) + pairs_fail(side_f["close_pairs"], [])
+    if not (side_f["grid"] == "first" and set(left) == {"L.edi"} and Path(lat["first"]).name == "A.edi"
+            and lat["first_station"] == "S01"
+            and [Path(p).name for p in lat["sources"]] == ["A.edi"] and lat["extended_by"] == []
+            and lat["added"] == [] and lat["n_periods"] == P8.size
+            and np.allclose(lat["span"], [P8[0], P8[-1]], rtol=1e-6) and side_f["close_dex"] == CLOSE
+            and side_f["lost"] == {}):
+        fails.append(f"grid {side_f['grid']}, lattice {lat}, left_out sources {list(left)}")
+    assert not fails, fails
+    print(f"  (15) sidecar: grid first, lattice of A.edi {lat['n_periods']} periods {lat['span'][0]:.4g} .. "
+          f"{lat['span'][1]:.4g} s, left_out L.edi {len(left['L.edi'])} periods, lost {{}}, close_pairs []")
+    must_fail("left_out one short", periods_fail(left["L.edi"], inside[:-1]))
+
+    # (16) an unknown grid
+    def refused_fail(grid: str, name: str) -> list[str]:
+        path = SCRATCH / "recipes_grid.yaml"
+        path.write_text(yaml.safe_dump({"S01": {**base, "grid": grid}}, sort_keys=False), encoding="utf-8")
+        target = out / name
+        status, _text, err = run(module, str(target), "--recipe", str(path), "--site", "S01", "--force")
+        if status == 2 and f"ERROR grid: {grid!r}" in err and not target.exists():
+            return []
+        return [f"grid {grid}: exit {status}, stderr {err.strip()!r}, written {target.exists()}"]
+
+    assert not refused_fail("nonsense", "S01_grid_nonsense.edi")
+    print("  (16) grid: nonsense: exit 2, ERROR grid: 'nonsense' is not one of union, first; no EDI")
+    must_fail("the valid grid union refused", refused_fail("union", "S01_grid_union.edi"))
+
+    # (17) L alone over a range A does not cover: A's lattice periods between L's own go on the grid
+    m_h = out / "S01_first_hole.edi"
+    rec = {mode: [entry(str(a), 0.01, 3.0), entry(str(lp), 3.0, 300.0), entry(str(a), 300.0, 1e5)]
+           for mode in ("xy", "yx")}
+    status, text, err = quiet(module.merge_files, m_h, {**rec, "grid": "first"}, force=True)
+    assert status == 0, err
+    own = P_L[(P_L >= 3.0) & (P_L <= 300.0)]
+    added = P8[(P8 >= own.min()) & (P8 <= own.max())]
+    last = own[-1:]  # 233.4 s: the nearest gathered lattice periods, 177.8 and 316.2 s, are 0.12 and 0.13 away
+    want = np.sort(np.concatenate([P8[P8 <= 3.0], added, last, P8[P8 >= 300.0]]))
+    side_h = sidecar(m_h)["merge"]
+    left = {Path(k).name: v for k, v in side_h["left_out"].items()}
+    fails = (periods_fail(arrays(m_h)[0], want) + periods_fail(side_h["lattice"]["added"], added)
+             + periods_fail(left.get("L.edi", []), own[:-1]))
+    k_last = [at(p_l, q) for q in last]
+    for row in (0, 1):
+        fails += values_fail(m_h, row, added, *log_line(lp, row, added))
+        fails += values_fail(m_h, row, last, z_l[k_last, row, :], e_l[k_last, row, :])
+    nans = [side_h["modes"][mode]["n_nan"] for mode in ("xy", "yx")]
+    assert not fails and nans == [0, 0], (fails, nans)
+    print(f"  (17) L alone over 3-300 s: A's {added.size} periods {added[0]:.4g} .. {added[-1]:.4g} s added and "
+          f"filled from L's line in both rows; L's {last[0]:.4g} s kept with L's rows; L left out at "
+          f"{len(left['L.edi'])} periods; {want.size} periods, none NaN")
+    must_fail("the union less L's periods", periods_fail(arrays(m_h)[0], np.concatenate([P8[P8 <= 3.0],
+                                                                                        P8[P8 >= 300.0]])))
+    must_fail("the grid without L's 233.4 s", periods_fail(arrays(m_h)[0], np.setdiff1d(want, last)))
+
+    # (18) an off-lattice source below the shortest gathered lattice period: no close pair at the short end
+    m_s = out / "S01_first_short.edi"
+    rec = {mode: [entry(str(a), 100.0, 1e5), entry(str(lp), 1.0, 100.0)] for mode in ("xy", "yx")}
+    status, text, err = quiet(module.merge_files, m_s, {**rec, "grid": "first"}, force=True)
+    assert status == 0, err
+    own = P_L[(P_L >= 1.0) & (P_L <= 100.0)]
+    added = P8[(P8 >= own.min()) & (P8 <= own.max()) & (P8 < 100.0)]
+    want = P8[P8 >= own.min()]
+    p_s = arrays(m_s)[0]
+    side_s = sidecar(m_s)["merge"]
+    left = {Path(k).name: v for k, v in side_s["left_out"].items()}
+    fails = (periods_fail(p_s, want) + pairs_fail(pairs_of(p_s), []) + pairs_fail(side_s["close_pairs"], [])
+             + periods_fail(left.get("L.edi", []), own) + row_matches(m_s, a, 0, P8[P8 >= 100.0]))
+    for row in (0, 1):
+        fails += values_fail(m_s, row, added, *log_line(lp, row, added))
+    assert not fails, fails
+    print(f"  (18) A over 100 s and up, L over 1-100 s: {p_s.size} periods {p_s[0]:.4g} .. {p_s[-1]:.4g} s, no close "
+          f"pair; L left out at {len(left['L.edi'])} periods {own[0]:.4g} .. {own[-1]:.4g} s; rows at A's "
+          f"{added.size} periods {added[0]:.4g} .. {added[-1]:.4g} s on L's line")
+    must_fail("the grid with L's 1.313 s", periods_fail(p_s, np.sort(np.append(want, own[0]))))
+
+    # (19) a source on the lattice at half its periods does not extend it inside the first xy source's span
+    p_m = P8.copy()
+    p_m[1::2] /= L_FACTOR
+    mp = write_product("M", p_m)
+    m_m = out / "S01_first_half.edi"
+    rec = {"xy": [entry(str(a), 0.01, 1e5)], "yx": [entry(str(mp), 0.01, 1e5)], "grid": "first"}
+    status, text, err = quiet(module.merge_files, m_m, rec)
+    assert status == 0, err
+    p_g = arrays(m_m)[0]
+    side_m = sidecar(m_m)["merge"]
+    lat = side_m["lattice"]
+    left = {Path(k).name: v for k, v in side_m["left_out"].items()}
+    off_m = p_m[1::2]
+    z_m, e_m = log_line(mp, 1, P8[1::2])
+    fails = (periods_fail(p_g, P8) + pairs_fail(pairs_of(p_g), []) + periods_fail(left.get("M.edi", []), off_m)
+             + row_matches(m_m, mp, 1, P8[0::2]) + values_fail(m_m, 1, P8[1::2], z_m, e_m))
+    if not ([Path(p).name for p in lat["sources"]] == ["A.edi", "M.edi"] and lat["extended_by"] == []
+            and lat["n_periods"] == P8.size):
+        fails.append(f"lattice {lat}")
+    assert not fails, fails
+    print(f"  (19) M with {P8[0::2].size} of its {p_m.size} periods on A's lattice: on it, extending nothing; "
+          f"{p_g.size} periods, no close pair; M left out at its {len(left['M.edi'])} off periods; y row M's own "
+          f"at {P8[0::2].size}, on M's line at {P8[1::2].size}")
+    must_fail("the grid with M's off periods", periods_fail(p_g, np.sort(np.concatenate([P8, off_m]))))
+
+    # (20) a source a little beyond LOG_TOL from the lattice: its longest period beside A's is left out too
+    p_fs = P8 * 10 ** 1.4e-5
+    fp = write_product("F", p_fs)
+    m_n = out / "S01_first_near.edi"
+    rec = {"xy": [entry(str(a), 0.01, 1e5)], "yx": [entry(str(fp), 0.01, 1e5), entry(str(a), 0.01, 1e5)],
+           "grid": "first"}
+    status, text, err = quiet(module.merge_files, m_n, rec)
+    assert status == 0, err
+    p_n = arrays(m_n)[0]
+    side_n = sidecar(m_n)["merge"]
+    left = {Path(k).name: v for k, v in side_n["left_out"].items()}
+    fails = (periods_fail(p_n, P8) + pairs_fail(pairs_of(p_n), []) + periods_fail(left.get("F.edi", []), p_fs)
+             + row_matches(m_n, a, 1, P8[:1]) + values_fail(m_n, 1, P8[1:], *log_line(fp, 1, P8[1:])))
+    assert not fails, fails
+    print(f"  (20) F 1.4e-5 from A in log10 period: {p_n.size} periods, no close pair; F left out at "
+          f"{len(left['F.edi'])} periods; y row A's at {P8[0]:.4g} s, on F's line at the other {P8.size - 1}")
+    must_fail("the grid with F's 1000.03 s", periods_fail(p_n, np.append(P8, p_fs[-1])))
+
+    # (21) the first xy source is the 1 Hz station: a WARNING, the merge unchanged
+    rec = {"xy": [entry(str(lp), 0.01, 1e5), entry(str(a), 0.01, 1e5)], "yx": [entry(str(a), 0.01, 1e5)],
+           "grid": "first"}
+    m_w, m_q = out / "S01_first_is_L.edi", out / "S01L_first_is_L.edi"
+    status_w, text_w, err_w = quiet(module.merge_files, m_w, rec, force=True, site="S01")
+    status_q, text_q, err_q = quiet(module.merge_files, m_q, rec, force=True, site="S01L")
+
+    def warned(text: str, site: str) -> list[str]:
+        found = [ln for ln in text.splitlines() if ln.startswith("WARNING grid first")]
+        if len(found) == 1 and "L.edi" in found[0] and "station S01L" in found[0] and f"site {site}" in found[0]:
+            return []
+        return [f"WARNING lines {found}"]
+
+    fails = warned(text_w, "S01")
+    if not (status_w == status_q == 0 and sidecar(m_w)["merge"]["lattice"]["first_station"] == "S01L"):
+        fails.append(f"exit {status_w}, {status_q}; lattice {sidecar(m_w)['merge']['lattice']}")
+    if [ln for ln in text_q.splitlines() if ln.startswith("WARNING grid first")]:
+        fails.append("site S01L warned")
+    if data_section(m_w) != data_section(m_q):
+        fails.append("the data from >FREQ on differ between the two site names")
+    assert not fails, fails
+    print(f"  (21) L first under site S01: exit 0, "
+          f"{[ln for ln in text_w.splitlines() if ln.startswith('WARNING grid first')][0]}; lattice first_station "
+          f"S01L; under site S01L no WARNING, {len(data_section(m_q))} bytes from >FREQ identical")
+    must_fail("the WARNING looked for in the S01L merge", warned(text_q, "S01L"))
+
+    # (22) the INFO block's crust lines: crust.grid under grid first only
+    def crust_lines(path: Path) -> list[tuple[str, str]]:
+        # written as transfer_function.processing_parameters.crust.<key>=<value>, the = dropped for an empty value
+        return re.findall(r"^\s*\S*?(crust\.[A-Za-z0-9_]+)=?(.*?)\s*$", path.read_text(encoding="utf-8"), flags=re.M)
+
+    def keys_fail(path: Path, want: list[str], grid_value: str | None) -> list[str]:
+        got = crust_lines(path)
+        fails = [] if [k for k, _v in got] == want else [f"{path.name} keys {[k for k, _v in got]}"]
+        value = dict(got).get("crust.grid")
+        if value != grid_value:
+            fails.append(f"{path.name} crust.grid {value!r}, not {grid_value!r}")
+        return fails
+
+    best = ["crust.best_xy_1", "crust.best_xy_2", "crust.best_yx_1", "crust.best_yx_2"]
+    head = ["crust.version", "crust.merged", "crust.tag", "crust.site", "crust.recipe"]
+    want_u, want_f = head + best + ["crust.sidecar"], head + ["crust.grid"] + best + ["crust.sidecar"]
+    grid_value = f"first,A.edi,{P8.size + beyond.size},{inside.size}"
+    fails = keys_fail(m_u, want_u, None) + keys_fail(m_f, want_f, grid_value)
+    assert not fails, fails
+    print(f"  (22) INFO crust lines: union {len(want_u)} without crust.grid; grid first crust.grid={grid_value} after "
+          f"crust.recipe")
+    must_fail("the union's keys with crust.grid", keys_fail(m_u, want_f, grid_value))
+    must_fail("the grid line with 24 periods left out", keys_fail(m_f, want_f, grid_value.rsplit(",", 1)[0] + ",24"))
+
+    # (22) two off-lattice sources left out at the same periods: the count is of distinct periods
+    l2 = write_product("L2", P_L, station="S01L")
+    m_d = out / "S01_first_L_L2.edi"
+    rec = {"xy": [entry(str(a), 0.01, 1e5), entry(str(lp), 0.01, 1e5)],
+           "yx": [entry(str(l2), 3.0, 1e5), entry(str(a), 0.01, 1e5)], "grid": "first"}
+    status, text, err = quiet(module.merge_files, m_d, rec, force=True)
+    assert status == 0, err
+    left = {Path(k).name: v for k, v in sidecar(m_d)["merge"]["left_out"].items()}
+    counts = {name: len(v) for name, v in left.items()}
+    assert counts == {"L.edi": inside.size, "L2.edi": int((inside > 3.0).sum())}, counts
+    fails = keys_fail(m_d, want_f, grid_value)
+    assert not fails, fails
+    print(f"      L and L2 left out at {counts['L.edi']} and {counts['L2.edi']} periods, {inside.size} distinct: "
+          f"crust.grid={grid_value}")
+    summed = f"{grid_value.rsplit(',', 1)[0]},{sum(counts.values())}"
+    must_fail(f"the per-source counts summed ({sum(counts.values())})", keys_fail(m_d, want_f, summed))
+
+    # (23) an off-lattice entry does not gather the lattice periods across one of its unusable periods
+    l_hole = write_product("L_hole", P_L, station="S01L", hole=float(P_L[9]), hole_rows=(0, 1))
+    p_lh, z_lh, e_lh = arrays(l_hole)
+    assert not np.all(np.isfinite(z_lh[9]) & (z_lh[9] != 0)), f"L_hole at {P_L[9]:.4g} s reads {z_lh[9]}"
+    m_n1 = out / "S01_first_L_hole.edi"
+    rec = {mode: [entry(str(a), 0.01, 3.0), entry(str(l_hole), 3.0, 300.0), entry(str(a), 300.0, 1e5)]
+           for mode in ("xy", "yx")}
+    status, text, err = quiet(module.merge_files, m_n1, {**rec, "grid": "first"}, force=True)
+    assert status == 0, err
+    usable_l = np.delete(P_L, 9)
+    own = usable_l[(usable_l >= 3.0) & (usable_l <= 300.0)]
+    span = P8[(P8 >= own.min()) & (P8 <= own.max())]
+    across = span[(span > P_L[8]) & (span < P_L[10])]  # 10 and 13.34 s, between L_hole's 9.843 and 17.50 s
+    added = np.setdiff1d(span, across)
+    kept_l = P_L[[8, 19]]  # 9.843 s (nearest gathered lattice periods 7.499 and 17.78 s) and 233.4 s
+    want = np.sort(np.concatenate([P8[P8 <= 3.0], added, kept_l, P8[P8 >= 300.0]]))
+    p_n1 = arrays(m_n1)[0]
+    side_n1 = sidecar(m_n1)["merge"]
+    left = {Path(k).name: v for k, v in side_n1["left_out"].items()}
+    fails = (periods_fail(p_n1, want) + pairs_fail(pairs_of(p_n1), [])
+             + periods_fail(side_n1["lattice"]["added"], added)
+             + periods_fail(left.get("L_hole.edi", []), np.setdiff1d(own, kept_l)))
+    assert not fails, fails
+    beside = P8[[23, 26]]  # 7.499 and 17.78 s, next to the unusable 13.13 s's neighbours
+    for row in (0, 1):
+        fails += values_fail(m_n1, row, kept_l[:1], z_lh[[8], row, :], e_lh[[8], row, :])
+        fails += values_fail(m_n1, row, beside, *log_line(l_hole, row, beside))
+    nans = [side_n1["modes"][mode]["n_nan"] for mode in ("xy", "yx")]
+    if nans != [0, 0] or side_n1["lost"] != {}:
+        fails.append(f"n_nan {nans}, lost {side_n1['lost']}")
+    assert not fails, fails
+    print(f"  (23) L_hole (EMPTY at {P_L[9]:.4g} s) over 3-300 s: {p_n1.size} periods, no close pair, none NaN, "
+          f"nothing lost; {added.size} lattice periods added, not {across[0]:.4g} and {across[1]:.4g} s; L_hole's "
+          f"{kept_l[0]:.4g} and {kept_l[1]:.4g} s kept with its rows; left out at {len(left['L_hole.edi'])} periods")
+    round_two = np.sort(np.concatenate([P8[P8 <= 3.0], span, kept_l[1:], P8[P8 >= 300.0]]))
+    must_fail("round two's grid with 10 and 13.34 s and without 9.843 s", periods_fail(p_n1, round_two))
+
+    # (24) E4: a value the union holds that no grid period near it holds is reported; A behind M20 holds it
+    p_m20 = np.concatenate([P8[:20], P8[20:40] / L_FACTOR])
+    p_m19 = np.concatenate([P8[:19], P8[19:40] / L_FACTOR])
+    m20, m19 = write_product("M20", p_m20), write_product("M19", p_m19)
+    e4 = {"xy": [entry(str(a), 0.01, 1e5)], "yx": [entry(str(m20), 0.01, 1e5)]}
+    m_e4, m_e4u, m_e4q = out / "S01_first_E4.edi", out / "S01_union_E4.edi", out / "S01_first_E4_quiet.edi"
+    status, text, err = quiet(module.merge_files, m_e4, {**e4, "grid": "first"})
+    status_u, text_u, err_u = quiet(module.merge_files, m_e4u, e4)
+    original = module.lost_values
+    module.lost_values = lambda *args, **kwargs: {}
+    try:
+        status_q, _text_q, err_q = quiet(module.merge_files, m_e4q, {**e4, "grid": "first"})
+    finally:
+        module.lost_values = original
+    assert status == status_u == status_q == 0, (err, err_u, err_q)
+    last_m = p_m20[-1:]  # 738.2 s; the grid's 749.9 s is 0.0068 away and beyond M20's reach, 562.3 s 0.12 away
+
+    def lost_fail(text: str, path: Path, want: dict) -> list[str]:
+        side = sidecar(path)["merge"]
+        found = [ln for ln in text.splitlines() if ln.startswith("WARNING grid first: mode")]
+        wanted = [f"WARNING grid first: mode {mode}: {len(v)} left-out period(s) with no grid period within "
+                  f"{CLOSE} in log10 period holding a value: {', '.join(f'{q:.4g}' for q in v)} s"
+                  for mode, v in want.items()]
+        fails = [] if found == wanted else [f"WARNING lines {found}, not {wanted}"]
+        if set(side["lost"]) != set(want):
+            fails.append(f"lost {side['lost']}, not {want}")
+        for mode, v in want.items():
+            fails += periods_fail(side["lost"].get(mode, []), v)
+        return fails
+
+    def on_lattice_fail(path: Path, name: str) -> list[str]:
+        sources = [Path(p).name for p in sidecar(path)["merge"]["lattice"]["sources"]]
+        return [] if sources == ["A.edi", name] else [f"lattice sources {sources}"]
+
+    fails = lost_fail(text, m_e4, {"yx": last_m}) + lost_fail(text_u, m_e4u, {}) + on_lattice_fail(m_e4, "M20.edi")
+    if data_section(m_e4) != data_section(m_e4q):
+        fails.append("the bytes from >FREQ on change with the lost list disabled")
+    assert not fails, fails
+    print(f"  (24) E4, M20 ({int(on_periods_count(p_m20))} of {p_m20.size} on A's lattice) on the lattice: "
+          f"{[ln for ln in text.splitlines() if ln.startswith('WARNING grid first: mode')][0]}; sidecar lost "
+          f"{ {k: [round(q, 2) for q in v] for k, v in sidecar(m_e4)['merge']['lost'].items()} }; union lost {{}}; "
+          f"{len(data_section(m_e4))} bytes from >FREQ as with the list disabled")
+    m_e4a = out / "S01_first_E4_behind.edi"
+    rec = {"xy": e4["xy"], "yx": [entry(str(m20), 0.01, 1e5), entry(str(a), 0.01, 1e5)], "grid": "first"}
+    status, text_a, err = quiet(module.merge_files, m_e4a, rec)
+    assert status == 0 and not lost_fail(text_a, m_e4a, {}), (err, lost_fail(text_a, m_e4a, {}))
+    print("      A behind M20 in yx: nothing lost, no WARNING")
+    must_fail("738.2 s looked for as lost with A behind M20", lost_fail(text_a, m_e4a, {"yx": last_m}))
+    m_e419 = out / "S01_first_E4_M19.edi"
+    status, _text, err = quiet(module.merge_files, m_e419, {"xy": e4["xy"], "yx": [entry(str(m19), 0.01, 1e5)],
+                                                            "grid": "first"})
+    assert status == 0, err
+    must_fail("the lattice test on M19 (19 of 40 on)", on_lattice_fail(m_e419, "M19.edi"))
+
+
+def on_periods_count(periods) -> int:
+    """Count the periods that equal one of P8's within 1e-6 in log10 period, computed here."""
+    x = np.log10(np.asarray(periods, dtype=float))
+    return int((np.abs(x[:, None] - np.log10(P8)[None, :]).min(axis=1) < 1e-6).sum())
+
+
 def main() -> None:
     shutil.rmtree(SCRATCH, ignore_errors=True)
     SCRATCH.mkdir(parents=True, exist_ok=True)
@@ -648,6 +1204,7 @@ def main() -> None:
     test_merge_files(module, a, b)
     test_empty_period(module, b, c)
     test_header(module, b)
+    test_grid(module, a, b)
 
 
 if __name__ == "__main__":
