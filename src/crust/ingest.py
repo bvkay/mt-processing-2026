@@ -849,7 +849,7 @@ B423_MIN_FILL = 0.01   # a site whose files hold under 1 % of their nominal leng
 B423_MIN_FILES_FOR_FILL = 10
 
 
-def readable_b423(files: list[Path]) -> tuple[list[Path], list[str]]:
+def readable_b423(files: list[Path], sample_rate: float = 1000.0) -> tuple[list[Path], list[str]]:
     """Split B423 files into the readable ones and reasons for the rest.
 
     A logger that loses its card mid-record writes a file of the right
@@ -858,8 +858,16 @@ def readable_b423(files: list[Path]) -> tuple[list[Path], list[str]]:
     one such file must not abort the site: it is left out here, with a
     reason, and the run splits at the gap it leaves.
 
+    The fill test counts a file's records at the site's sample rate: a
+    logger recording at 1 Hz (R05 on the Atlas survey, an instrument fault)
+    writes 5400 records per 90-minute file, which at 1000 records a second
+    would read as five seconds of data and be refused.
+
     Args:
         files (list[Path]): The site's B423 files in name order.
+        sample_rate (float): The site's sample rate in Hz
+            (`Survey.sample_rate_of`); 1000 for a LEMI-423 at its usual
+            rate.
 
     Returns:
         tuple[list[Path], list[str]]: The files to read, and one line per
@@ -867,9 +875,9 @@ def readable_b423(files: list[Path]) -> tuple[list[Path], list[str]]:
 
     Raises:
         ValueError: If, over ten or more files, the median file holds under
-            one percent of the interval between file names (at the nominal
-            1000 records a second), which means the logger had no card
-            space and there is no recording to ingest.
+            one percent of the interval between file names at the site's
+            sample rate, which means the logger had no card space and there
+            is no recording to ingest.
     """
     from mt_io.lemi.lemi423 import Read_Lemi_Data, Read_Lemi_Header
 
@@ -893,13 +901,13 @@ def readable_b423(files: list[Path]) -> tuple[list[Path], list[str]]:
         spacing = sorted(b - a for a, b in zip(epochs, epochs[1:]))
         if spacing:
             nominal = spacing[len(spacing) // 2]
-            seconds = sorted((f.stat().st_size - B423_HEADER_BYTES) / record / 1000.0 for f in keep)
+            seconds = sorted((f.stat().st_size - B423_HEADER_BYTES) / record / float(sample_rate) for f in keep)
             fill = seconds[len(seconds) // 2] / nominal if nominal > 0 else 1.0
             if fill < B423_MIN_FILL:
                 raise ValueError(
                     f"the B423 files are nearly empty (a median of {seconds[len(seconds) // 2]:.0f} s of data "
-                    f"per file, {nominal} s apart, over {len(keep)} files): the logger had no card space; "
-                    f"there is no recording to ingest"
+                    f"per file at {sample_rate:g} Hz, {nominal} s apart, over {len(keep)} files): the logger had "
+                    f"no card space; there is no recording to ingest"
                 )
     return keep, skipped
 
@@ -1110,7 +1118,7 @@ def ingest_site(
     skipped: list[str] = []
     if instrument == "lemi423":
         try:
-            files, skipped = readable_b423(files)
+            files, skipped = readable_b423(files, sample_rate=survey.sample_rate_of(site_name))
         except ValueError as exc:
             raise ValueError(f"{site_name}: {exc}") from None
         for line in skipped:

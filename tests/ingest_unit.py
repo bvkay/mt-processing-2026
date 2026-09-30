@@ -138,7 +138,9 @@ It also fails if `readable_b423` does not leave out a B423 file whose
 1024-byte header block is all zero (naming it, with the reason) or a
 file with no records while keeping the readable files, or does not refuse
 a folder of ten or more files whose median file holds under one percent of
-the interval between file names, with a message about card space.
+the interval between file names, with a message about card space; or if
+the same files, read at a sample rate of 1 Hz (R05's native rate), are
+not accepted in full while they stay refused at 1000 Hz.
 """
 
 from __future__ import annotations
@@ -297,7 +299,7 @@ def run_ingest(filters, ignore_filters: bool):
                  "_standardise_e_orientation", "_apply_h_scale")}
     try:
         ingest.read_lemi423 = read
-        ingest.readable_b423 = lambda files: (files, [])
+        ingest.readable_b423 = lambda files, **kw: (files, [])
         ingest.read_run = not_this_reader
         ingest.MTH5 = _MTH5
         ingest._keep_channels = bump("keep")
@@ -359,7 +361,7 @@ def test_run_comment_carries_no_filters() -> None:
         try:
             ingest.read_lemi423 = lambda *_a, **_k: run
             ingest.MTH5 = _MTH5
-            ingest.readable_b423 = lambda files: (files, [])
+            ingest.readable_b423 = lambda files, **kw: (files, [])
             ingest._keep_channels = lambda *_a, **_k: None
             ingest._standardise_e_orientation = lambda *_a, **_k: None
             ingest._apply_h_scale = lambda *_a, **_k: None
@@ -1163,6 +1165,16 @@ def test_readable_b423() -> None:
         else:
             raise AssertionError("a folder of nearly empty files was not refused")
         print("  twelve files holding six seconds each, 5400 s apart, are refused as nearly empty")
+        # the same files at a native 1 Hz rate hold 6000 s each: a full recording
+        keep, skipped = readable_b423(files, sample_rate=1.0)
+        assert keep == files and skipped == [], (len(keep), skipped)
+        try:
+            readable_b423(files, sample_rate=1000.0)
+        except ValueError as exc:
+            assert "at 1000 Hz" in str(exc), exc
+        else:
+            raise AssertionError("the control at 1000 Hz was not refused")
+        print("  the same twelve files at 1 Hz (6000 s each) are accepted in full; at 1000 Hz still refused")
 
 if __name__ == "__main__":
     SCRATCH.mkdir(parents=True, exist_ok=True)
