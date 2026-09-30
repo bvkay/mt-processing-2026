@@ -207204,3 +207204,108 @@ B14L:
     declared on Ben's approval of 30 Sep 2026 ("approved for all of line B")
   found_by: time
   scope: both
+R06:
+- start: '2023-09-17T00:00:00Z'
+  end: '2023-09-19T03:00:00Z'
+  bands: all
+  reason: 'R06 railway hours outside its quiet E-only spans: this entry rejects 17 Sep 00:00 - 19 Sep
+    03:00 UTC, before the first kept span, 19 Sep 03:00-03:30 UTC; R06 as the local keeps only the seven
+    spans (19 Sep 03:00-03:30, 20 Sep 03:00-03:50, 21 Sep 00:30-01:00, 22 Sep 03:10-03:50, 24 Sep 02:50-04:20,
+    26 Sep 02:40-03:10, 29 Sep 02:50-04:20 UTC; 6.0 h). Spans from the R06 quiet-hours scan (qc/survey/R_stations_20260930/quiet_hours/),
+    E-only set QE; tested at 1000 Hz in the full-rate quiet trial of 30 Sep 2026 (qc/survey/R_stations_20260930/quiet_trial_1000Hz/;
+    R06 rr D14 at 0.1-1 s: median relative rho error xy 0.281, yx 0.022, against 3.72 and 0.416 on all
+    hours). R06 quiet-window trial, 30 Sep 2026. Declared on Ben''s word of 30 Sep 2026 (15:58 WAST):
+    "yes for R06''s quiet block"'
+  found_by: time
+  scope: local
+- start: '2023-09-19T03:30:00Z'
+  end: '2023-09-20T03:00:00Z'
+  bands: all
+  reason: 'R06 railway hours outside its quiet E-only spans: this entry rejects 19 Sep 03:30 - 20 Sep
+    03:00 UTC, between the kept spans 19 Sep 03:00-03:30 and 20 Sep 03:00-03:50 UTC; R06 as the local
+    keeps only the seven spans (19 Sep 03:00-03:30, 20 Sep 03:00-03:50, 21 Sep 00:30-01:00, 22 Sep 03:10-03:50,
+    24 Sep 02:50-04:20, 26 Sep 02:40-03:10, 29 Sep 02:50-04:20 UTC; 6.0 h). Spans from the R06 quiet-hours
+    scan (qc/survey/R_stations_20260930/quiet_hours/), E-only set QE; tested at 1000 Hz in the full-rate
+    quiet trial of 30 Sep 2026 (qc/survey/R_stations_20260930/quiet_trial_1000Hz/; R06 rr D14 at 0.1-1
+    s: median relative rho error xy 0.281, yx 0.022, against 3.72 and 0.416 on all hours). R06 quiet-window
+    trial, 30 Sep 2026. Declared on Ben''s word of 30 Sep 2026 (15:58 WAST): "yes for R06''s quiet block"'
+  found_by: time
+  scope: local
+- start: '2023-09-20T03:50:00Z'
+  end: '2023-09-21T00:30:00Z'
+  bands: all
+  reason: 'R06 railway hours outside its quiet E-only spans: this entry rejects 20 Sep 03:50 - 21 Sep
+    00:30 UTC, between the kept spans 20 Sep 03:00-03:50 and 21 Sep 00:30-01:00 UTC; R06 as the local
+    keeps only the seven spans (19 Sep 03:00-03:30, 20 Sep 03:00-03:50, 21 Sep 00:30-01:00, 22 Sep 03:10-03:50,
+    24 Sep 02:50-04:20, 26 Sep 02:40-03:10, 29 Sep 02:50-04:20 UTC; 6.0 h). Spans from the R06 quiet-hours
+    scan (qc/survey/R_stations_20260930/quiet_hours/), E-only set QE; tested at 1000 Hz in the full-rate
+    quiet trial of 30 Sep 2026 (qc/survey/R_stations_20260930/quiet_trial_1000Hz/; R06 rr D14 at 0.1-1
+    s: median relative rho error xy 0.281, yx 0.022, against 3.72 and 0.416 on all hours). R06 quiet-window
+    trial, 30 Sep 2026. Declared on Ben''s word of 30 Sep 2026 (15:58 WAST): "yes for R06''s quiet block"'
+  found_by: time
+  scope: local
+- start: '2023-09-21T01:00:00Z'
+  end: '2023-09-22T03:10:00Z'
+  bands: all
+  reason: 'R06 railway hours outside its quiet E-only spans: this entry rejects 21 Sep 01:00 - 22 Sep
+    03:10 UTC, between the kept spans 21 Sep 00:30-01:00 and 22 Sep 03:10-03:50 UTC; R06 as the local
+    keeps only the seven spans (19 Sep 03:00-03:30, 20 Sep 03:00-03:50, 21 Sep 00:30-01:00, 22 Sep 03:10-03:50,
+    24 Sep 02:50-04:20, 26 Sep 02:40-03:10, 29 Sep 02:50-04:20 UTC; 6.0 h). Spans from the R06 quiet-hours
+    scan (qc/survey/R_stations_20260930/quiet_hours/), E-only set QE; tested at 1000 Hz in the full-rate
+    quiet trial of 30 Sep 2026 (qc/survey/R_stations_20260930/quiet_trial_1000Hz/; R06 rr D14 at 0.1-1
+    s: median relative rho error xy 0.281, yx 0.022, against 3.72 and 0.416 on all hours). R06 quiet-window
+    trial, 30 Sep 2026. Declared on Ben''s word of 30 Sep 2026 (15:58 WAST): "yes for R06''s quiet block"'
+  found_by: time
+  scope: local
+- start: '2023-09-22T03:50:00Z'
+  end: '2023-09-24T02:50:00Z'
+  bands: all
+  reason: 'R06 railway hours outside its quiet E-only spans: this entry rejects 22 Sep 03:50 - 24 Sep
+    02:50 UTC, between the kept spans 22 Sep 03:10-03:50 and 24 Sep 02:50-04:20 UTC; R06 as the local
+    keeps only the seven spans (19 Sep 03:00-03:30, 20 Sep 03:00-03:50, 21 Sep 00:30-01:00, 22 Sep 03:10-03:50,
+    24 Sep 02:50-04:20, 26 Sep 02:40-03:10, 29 Sep 02:50-04:20 UTC; 6.0 h). Spans from the R06 quiet-hours
+    scan (qc/survey/R_stations_20260930/quiet_hours/), E-only set QE; tested at 1000 Hz in the full-rate
+    quiet trial of 30 Sep 2026 (qc/survey/R_stations_20260930/quiet_trial_1000Hz/; R06 rr D14 at 0.1-1
+    s: median relative rho error xy 0.281, yx 0.022, against 3.72 and 0.416 on all hours). R06 quiet-window
+    trial, 30 Sep 2026. Declared on Ben''s word of 30 Sep 2026 (15:58 WAST): "yes for R06''s quiet block"'
+  found_by: time
+  scope: local
+- start: '2023-09-24T04:20:00Z'
+  end: '2023-09-26T02:40:00Z'
+  bands: all
+  reason: 'R06 railway hours outside its quiet E-only spans: this entry rejects 24 Sep 04:20 - 26 Sep
+    02:40 UTC, between the kept spans 24 Sep 02:50-04:20 and 26 Sep 02:40-03:10 UTC; R06 as the local
+    keeps only the seven spans (19 Sep 03:00-03:30, 20 Sep 03:00-03:50, 21 Sep 00:30-01:00, 22 Sep 03:10-03:50,
+    24 Sep 02:50-04:20, 26 Sep 02:40-03:10, 29 Sep 02:50-04:20 UTC; 6.0 h). Spans from the R06 quiet-hours
+    scan (qc/survey/R_stations_20260930/quiet_hours/), E-only set QE; tested at 1000 Hz in the full-rate
+    quiet trial of 30 Sep 2026 (qc/survey/R_stations_20260930/quiet_trial_1000Hz/; R06 rr D14 at 0.1-1
+    s: median relative rho error xy 0.281, yx 0.022, against 3.72 and 0.416 on all hours). R06 quiet-window
+    trial, 30 Sep 2026. Declared on Ben''s word of 30 Sep 2026 (15:58 WAST): "yes for R06''s quiet block"'
+  found_by: time
+  scope: local
+- start: '2023-09-26T03:10:00Z'
+  end: '2023-09-29T02:50:00Z'
+  bands: all
+  reason: 'R06 railway hours outside its quiet E-only spans: this entry rejects 26 Sep 03:10 - 29 Sep
+    02:50 UTC, between the kept spans 26 Sep 02:40-03:10 and 29 Sep 02:50-04:20 UTC; R06 as the local
+    keeps only the seven spans (19 Sep 03:00-03:30, 20 Sep 03:00-03:50, 21 Sep 00:30-01:00, 22 Sep 03:10-03:50,
+    24 Sep 02:50-04:20, 26 Sep 02:40-03:10, 29 Sep 02:50-04:20 UTC; 6.0 h). Spans from the R06 quiet-hours
+    scan (qc/survey/R_stations_20260930/quiet_hours/), E-only set QE; tested at 1000 Hz in the full-rate
+    quiet trial of 30 Sep 2026 (qc/survey/R_stations_20260930/quiet_trial_1000Hz/; R06 rr D14 at 0.1-1
+    s: median relative rho error xy 0.281, yx 0.022, against 3.72 and 0.416 on all hours). R06 quiet-window
+    trial, 30 Sep 2026. Declared on Ben''s word of 30 Sep 2026 (15:58 WAST): "yes for R06''s quiet block"'
+  found_by: time
+  scope: local
+- start: '2023-09-29T04:20:00Z'
+  end: '2023-09-30T00:00:00Z'
+  bands: all
+  reason: 'R06 railway hours outside its quiet E-only spans: this entry rejects 29 Sep 04:20 - 30 Sep
+    00:00 UTC, after the last kept span, 29 Sep 02:50-04:20 UTC; R06 as the local keeps only the seven
+    spans (19 Sep 03:00-03:30, 20 Sep 03:00-03:50, 21 Sep 00:30-01:00, 22 Sep 03:10-03:50, 24 Sep 02:50-04:20,
+    26 Sep 02:40-03:10, 29 Sep 02:50-04:20 UTC; 6.0 h). Spans from the R06 quiet-hours scan (qc/survey/R_stations_20260930/quiet_hours/),
+    E-only set QE; tested at 1000 Hz in the full-rate quiet trial of 30 Sep 2026 (qc/survey/R_stations_20260930/quiet_trial_1000Hz/;
+    R06 rr D14 at 0.1-1 s: median relative rho error xy 0.281, yx 0.022, against 3.72 and 0.416 on all
+    hours). R06 quiet-window trial, 30 Sep 2026. Declared on Ben''s word of 30 Sep 2026 (15:58 WAST):
+    "yes for R06''s quiet block"'
+  found_by: time
+  scope: local
