@@ -15788,11 +15788,16 @@ B01:
   scope: local
 B02:
 - start: '2023-02-15T11:40:51Z'
-  end: '2023-02-16T03:00:00Z'
+  end: '2023-02-15T23:10:00Z'
   bands: all
-  reason: 'night mask: outside the north-end source''s February quiet window 03:00-03:51 UTC (04:00-04:51
-    local) (clock rule, northend group 26 Sep)'
-  found_by: night
+  reason: 'BEN keep-only block (B02 relaxed quiet-set trial, 30 Sep 2026): rejects 15 Feb 11:40:51 to
+    15 Feb 23:10 UTC 2023, from the start of B02''s record and before the kept span 15 Feb 23:10-16 Feb
+    01:00; the block keeps Ben''s four spans only (15 Feb 23:10 to 16 Feb 01:00, 16 Feb 23:00-23:40, 17
+    Feb 03:00-03:50, 18 Feb 00:20-03:00 UTC 2023, 360 min) and replaces B02''s clock rule of 26 Sep (north-end
+    group); Approved by Ben on 30 Sep 2026 (19:19 WAST): "yes for the line B calls"; trial D:\MT_DATA\MT_Morocco_Atlas_Mountains_Workspace\qc\lineB\B02\quiet_relaxed_20260930
+    (README.md; masks file scratch_survey\masks_BEN.yaml; rows tf\B02_rr-R01_20260930-1804_B02quiet-BEN-R01.edi
+    and tf\B02_rr-B01_20260930-1806_B02quiet-BEN-B01.edi)'
+  found_by: time
   scope: local
 - start: '2023-02-15T11:40:56Z'
   end: '2023-02-15T11:45:00Z'
@@ -15850,13 +15855,6 @@ B02:
     64.6 deg, 818/3631 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-02-15T12:09:00Z'
-  end: '2023-02-15T12:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-02-15T12:14:00Z'
   end: '2023-02-15T12:28:00Z'
   bands: [0.1007936839915898, 0.12699208415745594]
@@ -15948,13 +15946,6 @@ B02:
     65.4 deg, 2581/3752 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-02-15T13:09:00Z'
-  end: '2023-02-15T13:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-02-15T13:11:00Z'
   end: '2023-02-15T13:36:00Z'
   bands: [0.20158736798317972, 0.25398416831491194]
@@ -16067,13 +16058,6 @@ B02:
     55.4 deg, 1409/3652 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-02-15T14:09:00Z'
-  end: '2023-02-15T14:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-02-15T14:17:00Z'
   end: '2023-02-15T14:47:00Z'
   bands: [0.08, 0.1007936839915898]
@@ -16158,13 +16142,6 @@ B02:
     55.4 deg, 1409/3652 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-02-15T15:09:00Z'
-  end: '2023-02-15T15:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-02-15T15:15:00Z'
   end: '2023-02-15T15:48:00Z'
   bands: [0.08, 0.1007936839915898]
@@ -16228,13 +16205,6 @@ B02:
     66.2 deg, 2739/3487 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-02-15T16:09:00Z'
-  end: '2023-02-15T16:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-02-15T16:14:00Z'
   end: '2023-02-15T16:35:00Z'
   bands: [0.12699208415745594, 0.16]
@@ -16354,13 +16324,6 @@ B02:
     67.8 deg, 2772/3683 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-02-15T17:09:00Z'
-  end: '2023-02-15T17:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-02-15T17:11:00Z'
   end: '2023-02-15T18:00:00Z'
   bands: [0.12699208415745594, 0.16]
@@ -16410,13 +16373,6 @@ B02:
     64.6 deg, 818/3631 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-02-15T18:09:00Z'
-  end: '2023-02-15T18:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-02-15T18:19:00Z'
   end: '2023-02-15T18:25:00Z'
   bands: [0.25398416831491194, 0.32]
@@ -16529,13 +16485,6 @@ B02:
     66.2 deg, 2739/3487 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-02-15T19:09:00Z'
-  end: '2023-02-15T19:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-02-15T19:14:00Z'
   end: '2023-02-15T19:19:00Z'
   bands: [0.040000000000000015, 0.05039684199579493]
@@ -16613,13 +16562,6 @@ B02:
     66.2 deg, 2739/3487 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-02-15T20:09:00Z'
-  end: '2023-02-15T20:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-02-15T20:12:00Z'
   end: '2023-02-15T20:17:00Z'
   bands: [0.12699208415745594, 0.16]
@@ -16683,13 +16625,6 @@ B02:
     59.0 deg, 187/3506 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-02-15T21:09:00Z'
-  end: '2023-02-15T21:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-02-15T21:12:00Z'
   end: '2023-02-15T21:17:00Z'
   bands: [0.20158736798317972, 0.25398416831491194]
@@ -16746,13 +16681,6 @@ B02:
     65.4 deg, 2581/3752 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-02-15T22:09:00Z'
-  end: '2023-02-15T22:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-02-15T22:12:00Z'
   end: '2023-02-15T22:31:00Z'
   bands: [0.12699208415745594, 0.16]
@@ -16830,13 +16758,6 @@ B02:
     58.8 deg, 789/3583 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-02-15T23:09:00Z'
-  end: '2023-02-15T23:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-02-15T23:27:00Z'
   end: '2023-02-15T23:40:00Z'
   bands: [0.20158736798317972, 0.25398416831491194]
@@ -16865,13 +16786,6 @@ B02:
     64.6 deg, 818/3631 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-02-16T00:09:00Z'
-  end: '2023-02-16T00:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-02-16T00:18:00Z'
   end: '2023-02-16T00:23:00Z'
   bands: [0.25398416831491194, 0.32]
@@ -16914,6 +16828,18 @@ B02:
     65.4 deg, 2581/3752 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
+- start: '2023-02-16T01:00:00Z'
+  end: '2023-02-16T23:00:00Z'
+  bands: all
+  reason: 'BEN keep-only block (B02 relaxed quiet-set trial, 30 Sep 2026): rejects 16 Feb 01:00 to 16
+    Feb 23:00 UTC 2023, after the kept span 15 Feb 23:10-16 Feb 01:00 and before the kept span 16 Feb
+    23:00-16 Feb 23:40; the block keeps Ben''s four spans only (15 Feb 23:10 to 16 Feb 01:00, 16 Feb 23:00-23:40,
+    17 Feb 03:00-03:50, 18 Feb 00:20-03:00 UTC 2023, 360 min) and replaces B02''s clock rule of 26 Sep
+    (north-end group); Approved by Ben on 30 Sep 2026 (19:19 WAST): "yes for the line B calls"; trial
+    D:\MT_DATA\MT_Morocco_Atlas_Mountains_Workspace\qc\lineB\B02\quiet_relaxed_20260930 (README.md; masks
+    file scratch_survey\masks_BEN.yaml; rows tf\B02_rr-R01_20260930-1804_B02quiet-BEN-R01.edi and tf\B02_rr-B01_20260930-1806_B02quiet-BEN-B01.edi)'
+  found_by: time
+  scope: local
 - start: '2023-02-16T01:07:00Z'
   end: '2023-02-16T01:23:00Z'
   bands: [0.16, 0.20158736798317972]
@@ -16928,13 +16854,6 @@ B02:
     67.8 deg, 2772/3683 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-02-16T01:09:00Z'
-  end: '2023-02-16T01:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-02-16T01:12:00Z'
   end: '2023-02-16T01:22:00Z'
   bands: [0.08, 0.1007936839915898]
@@ -17026,13 +16945,6 @@ B02:
     58.8 deg, 789/3583 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-02-16T02:09:00Z'
-  end: '2023-02-16T02:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-02-16T02:16:00Z'
   end: '2023-02-16T02:29:00Z'
   bands: [0.1007936839915898, 0.12699208415745594]
@@ -17110,13 +17022,6 @@ B02:
     66.2 deg, 2739/3487 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-02-16T03:51:00Z'
-  end: '2023-02-17T03:00:00Z'
-  bands: all
-  reason: 'night mask: outside the north-end source''s February quiet window 03:00-03:51 UTC (04:00-04:51
-    local) (clock rule, northend group 26 Sep)'
-  found_by: night
-  scope: local
 - start: '2023-02-16T03:57:00Z'
   end: '2023-02-16T04:02:00Z'
   bands: [0.25398416831491194, 0.32]
@@ -17138,13 +17043,6 @@ B02:
     66.2 deg, 2739/3487 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-02-16T04:09:00Z'
-  end: '2023-02-16T04:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-02-16T04:16:00Z'
   end: '2023-02-16T04:54:00Z'
   bands: [0.16, 0.20158736798317972]
@@ -17229,13 +17127,6 @@ B02:
     66.2 deg, 2739/3487 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-02-16T05:09:00Z'
-  end: '2023-02-16T05:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-02-16T05:15:00Z'
   end: '2023-02-16T08:29:00Z'
   bands: [0.25398416831491194, 0.32]
@@ -17348,13 +17239,6 @@ B02:
     65.4 deg, 2581/3752 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-02-16T06:09:00Z'
-  end: '2023-02-16T06:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-02-16T06:12:00Z'
   end: '2023-02-16T06:17:00Z'
   bands: [0.08, 0.1007936839915898]
@@ -17397,13 +17281,6 @@ B02:
     55.4 deg, 1409/3652 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-02-16T07:09:00Z'
-  end: '2023-02-16T07:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-02-16T07:13:00Z'
   end: '2023-02-16T07:48:00Z'
   bands: [0.1007936839915898, 0.12699208415745594]
@@ -17460,13 +17337,6 @@ B02:
     55.4 deg, 1409/3652 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-02-16T08:09:00Z'
-  end: '2023-02-16T08:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-02-16T08:13:00Z'
   end: '2023-02-16T08:20:00Z'
   bands: [0.1007936839915898, 0.12699208415745594]
@@ -17530,13 +17400,6 @@ B02:
     66.2 deg, 2739/3487 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-02-16T09:09:00Z'
-  end: '2023-02-16T09:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-02-16T09:13:00Z'
   end: '2023-02-16T10:04:00Z'
   bands: [0.12699208415745594, 0.16]
@@ -17635,13 +17498,6 @@ B02:
     58.8 deg, 789/3583 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-02-16T10:09:00Z'
-  end: '2023-02-16T10:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-02-16T10:15:00Z'
   end: '2023-02-16T10:35:00Z'
   bands: [0.12699208415745594, 0.16]
@@ -17733,13 +17589,6 @@ B02:
     55.4 deg, 1409/3652 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-02-16T11:09:00Z'
-  end: '2023-02-16T11:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-02-16T11:16:00Z'
   end: '2023-02-16T11:27:00Z'
   bands: [0.06349604207872796, 0.08]
@@ -17789,13 +17638,6 @@ B02:
     55.4 deg, 1409/3652 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-02-16T12:09:00Z'
-  end: '2023-02-16T12:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-02-16T12:11:00Z'
   end: '2023-02-16T12:16:00Z'
   bands: [0.1007936839915898, 0.12699208415745594]
@@ -17845,13 +17687,6 @@ B02:
     59.0 deg, 187/3506 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-02-16T13:09:00Z'
-  end: '2023-02-16T13:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-02-16T13:15:00Z'
   end: '2023-02-16T13:31:00Z'
   bands: [0.1007936839915898, 0.12699208415745594]
@@ -17929,13 +17764,6 @@ B02:
     66.2 deg, 2739/3487 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-02-16T14:09:00Z'
-  end: '2023-02-16T14:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-02-16T14:14:00Z'
   end: '2023-02-16T15:54:00Z'
   bands: [0.16, 0.20158736798317972]
@@ -18013,13 +17841,6 @@ B02:
     55.4 deg, 1409/3652 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-02-16T15:09:00Z'
-  end: '2023-02-16T15:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-02-16T15:12:00Z'
   end: '2023-02-16T15:54:00Z'
   bands: [0.12699208415745594, 0.16]
@@ -18104,13 +17925,6 @@ B02:
     55.4 deg, 1409/3652 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-02-16T16:09:00Z'
-  end: '2023-02-16T16:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-02-16T16:16:00Z'
   end: '2023-02-16T16:50:00Z'
   bands: [0.08, 0.1007936839915898]
@@ -18209,13 +18023,6 @@ B02:
     67.8 deg, 2772/3683 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-02-16T17:09:00Z'
-  end: '2023-02-16T17:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-02-16T17:15:00Z'
   end: '2023-02-16T17:32:00Z'
   bands: [0.12699208415745594, 0.16]
@@ -18314,13 +18121,6 @@ B02:
     58.8 deg, 789/3583 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-02-16T18:09:00Z'
-  end: '2023-02-16T18:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-02-16T18:22:00Z'
   end: '2023-02-16T18:38:00Z'
   bands: [0.12699208415745594, 0.16]
@@ -18384,13 +18184,6 @@ B02:
     59.0 deg, 187/3506 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-02-16T19:09:00Z'
-  end: '2023-02-16T19:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-02-16T19:30:00Z'
   end: '2023-02-16T19:58:00Z'
   bands: [0.25398416831491194, 0.32]
@@ -18440,13 +18233,6 @@ B02:
     66.2 deg, 2739/3487 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-02-16T20:09:00Z'
-  end: '2023-02-16T20:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-02-16T20:12:00Z'
   end: '2023-02-16T22:07:00Z'
   bands: [0.16, 0.20158736798317972]
@@ -18510,13 +18296,6 @@ B02:
     58.8 deg, 789/3583 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-02-16T21:09:00Z'
-  end: '2023-02-16T21:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-02-16T21:24:00Z'
   end: '2023-02-16T21:57:00Z'
   bands: [0.08, 0.1007936839915898]
@@ -18608,13 +18387,6 @@ B02:
     66.2 deg, 2739/3487 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-02-16T22:09:00Z'
-  end: '2023-02-16T22:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-02-16T22:13:00Z'
   end: '2023-02-16T22:28:00Z'
   bands: [0.12699208415745594, 0.16]
@@ -18699,13 +18471,6 @@ B02:
     66.2 deg, 2739/3487 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-02-16T23:09:00Z'
-  end: '2023-02-16T23:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-02-16T23:12:00Z'
   end: '2023-02-16T23:22:00Z'
   bands: [0.16, 0.20158736798317972]
@@ -18748,6 +18513,18 @@ B02:
     67.8 deg, 2772/3683 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
+- start: '2023-02-16T23:40:00Z'
+  end: '2023-02-17T03:00:00Z'
+  bands: all
+  reason: 'BEN keep-only block (B02 relaxed quiet-set trial, 30 Sep 2026): rejects 16 Feb 23:40 to 17
+    Feb 03:00 UTC 2023, after the kept span 16 Feb 23:00-16 Feb 23:40 and before the kept span 17 Feb
+    03:00-17 Feb 03:50; the block keeps Ben''s four spans only (15 Feb 23:10 to 16 Feb 01:00, 16 Feb 23:00-23:40,
+    17 Feb 03:00-03:50, 18 Feb 00:20-03:00 UTC 2023, 360 min) and replaces B02''s clock rule of 26 Sep
+    (north-end group); Approved by Ben on 30 Sep 2026 (19:19 WAST): "yes for the line B calls"; trial
+    D:\MT_DATA\MT_Morocco_Atlas_Mountains_Workspace\qc\lineB\B02\quiet_relaxed_20260930 (README.md; masks
+    file scratch_survey\masks_BEN.yaml; rows tf\B02_rr-R01_20260930-1804_B02quiet-BEN-R01.edi and tf\B02_rr-B01_20260930-1806_B02quiet-BEN-B01.edi)'
+  found_by: time
+  scope: local
 - start: '2023-02-16T23:41:00Z'
   end: '2023-02-16T23:46:00Z'
   bands: [0.08, 0.1007936839915898]
@@ -18804,13 +18581,6 @@ B02:
     55.4 deg, 1409/3652 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-02-17T00:09:00Z'
-  end: '2023-02-17T00:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-02-17T00:13:00Z'
   end: '2023-02-17T00:20:00Z'
   bands: [0.08, 0.1007936839915898]
@@ -18888,13 +18658,6 @@ B02:
     67.8 deg, 2772/3683 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-02-17T01:09:00Z'
-  end: '2023-02-17T01:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-02-17T01:14:00Z'
   end: '2023-02-17T01:19:00Z'
   bands: [0.08, 0.1007936839915898]
@@ -18979,13 +18742,6 @@ B02:
     66.2 deg, 2739/3487 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-02-17T02:09:00Z'
-  end: '2023-02-17T02:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-02-17T02:14:00Z'
   end: '2023-02-17T02:56:00Z'
   bands: [0.25398416831491194, 0.32]
@@ -19126,12 +18882,17 @@ B02:
     66.2 deg, 2739/3487 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-02-17T03:51:00Z'
-  end: '2023-02-18T03:00:00Z'
+- start: '2023-02-17T03:50:00Z'
+  end: '2023-02-18T00:20:00Z'
   bands: all
-  reason: 'night mask: outside the north-end source''s February quiet window 03:00-03:51 UTC (04:00-04:51
-    local) (clock rule, northend group 26 Sep)'
-  found_by: night
+  reason: 'BEN keep-only block (B02 relaxed quiet-set trial, 30 Sep 2026): rejects 17 Feb 03:50 to 18
+    Feb 00:20 UTC 2023, after the kept span 17 Feb 03:00-17 Feb 03:50 and before the kept span 18 Feb
+    00:20-18 Feb 03:00; the block keeps Ben''s four spans only (15 Feb 23:10 to 16 Feb 01:00, 16 Feb 23:00-23:40,
+    17 Feb 03:00-03:50, 18 Feb 00:20-03:00 UTC 2023, 360 min) and replaces B02''s clock rule of 26 Sep
+    (north-end group); Approved by Ben on 30 Sep 2026 (19:19 WAST): "yes for the line B calls"; trial
+    D:\MT_DATA\MT_Morocco_Atlas_Mountains_Workspace\qc\lineB\B02\quiet_relaxed_20260930 (README.md; masks
+    file scratch_survey\masks_BEN.yaml; rows tf\B02_rr-R01_20260930-1804_B02quiet-BEN-R01.edi and tf\B02_rr-B01_20260930-1806_B02quiet-BEN-B01.edi)'
+  found_by: time
   scope: local
 - start: '2023-02-17T03:57:00Z'
   end: '2023-02-17T04:02:00Z'
@@ -19154,13 +18915,6 @@ B02:
     65.4 deg, 2581/3752 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-02-17T04:09:00Z'
-  end: '2023-02-17T04:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-02-17T04:11:00Z'
   end: '2023-02-17T04:32:00Z'
   bands: [0.08, 0.1007936839915898]
@@ -19315,13 +19069,6 @@ B02:
     66.2 deg, 2739/3487 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-02-17T05:09:00Z'
-  end: '2023-02-17T05:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-02-17T05:10:00Z'
   end: '2023-02-17T05:28:00Z'
   bands: [0.08, 0.1007936839915898]
@@ -19406,13 +19153,6 @@ B02:
     64.6 deg, 818/3631 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-02-17T06:09:00Z'
-  end: '2023-02-17T06:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-02-17T06:10:00Z'
   end: '2023-02-17T06:15:00Z'
   bands: [0.08, 0.1007936839915898]
@@ -19539,13 +19279,6 @@ B02:
     55.4 deg, 1409/3652 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-02-17T07:09:00Z'
-  end: '2023-02-17T07:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-02-17T07:12:00Z'
   end: '2023-02-17T07:35:00Z'
   bands: [0.1007936839915898, 0.12699208415745594]
@@ -19616,13 +19349,6 @@ B02:
     58.8 deg, 789/3583 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-02-17T08:09:00Z'
-  end: '2023-02-17T08:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-02-17T08:35:00Z'
   end: '2023-02-17T08:40:00Z'
   bands: [0.16, 0.20158736798317972]
@@ -19700,13 +19426,6 @@ B02:
     66.2 deg, 2739/3487 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-02-17T09:09:00Z'
-  end: '2023-02-17T09:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-02-17T09:14:00Z'
   end: '2023-02-17T09:35:00Z'
   bands: [0.12699208415745594, 0.16]
@@ -19805,13 +19524,6 @@ B02:
     55.4 deg, 1409/3652 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-02-17T10:09:00Z'
-  end: '2023-02-17T10:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-02-17T10:10:00Z'
   end: '2023-02-17T10:15:00Z'
   bands: [0.1007936839915898, 0.12699208415745594]
@@ -19903,13 +19615,6 @@ B02:
     55.4 deg, 1409/3652 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-02-17T11:09:00Z'
-  end: '2023-02-17T11:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-02-17T11:10:00Z'
   end: '2023-02-17T11:53:00Z'
   bands: [0.08, 0.1007936839915898]
@@ -19980,13 +19685,6 @@ B02:
     55.4 deg, 1409/3652 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-02-17T12:09:00Z'
-  end: '2023-02-17T12:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-02-17T12:15:00Z'
   end: '2023-02-17T12:35:00Z'
   bands: [0.1007936839915898, 0.12699208415745594]
@@ -20036,13 +19734,6 @@ B02:
     66.2 deg, 2739/3487 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-02-17T13:09:00Z'
-  end: '2023-02-17T13:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-02-17T13:14:00Z'
   end: '2023-02-17T13:59:00Z'
   bands: [0.25398416831491194, 0.32]
@@ -20134,13 +19825,6 @@ B02:
     66.2 deg, 2739/3487 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-02-17T14:09:00Z'
-  end: '2023-02-17T14:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-02-17T14:14:00Z'
   end: '2023-02-17T14:34:00Z'
   bands: [0.12699208415745594, 0.16]
@@ -20211,13 +19895,6 @@ B02:
     55.4 deg, 1409/3652 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-02-17T15:09:00Z'
-  end: '2023-02-17T15:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-02-17T15:14:00Z'
   end: '2023-02-17T15:24:00Z'
   bands: [0.040000000000000015, 0.05039684199579493]
@@ -20295,13 +19972,6 @@ B02:
     55.4 deg, 1409/3652 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-02-17T16:09:00Z'
-  end: '2023-02-17T16:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-02-17T16:17:00Z'
   end: '2023-02-17T16:27:00Z'
   bands: [0.08, 0.1007936839915898]
@@ -20379,13 +20049,6 @@ B02:
     67.8 deg, 2772/3683 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-02-17T17:09:00Z'
-  end: '2023-02-17T17:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-02-17T17:17:00Z'
   end: '2023-02-17T17:22:00Z'
   bands: [0.040000000000000015, 0.05039684199579493]
@@ -20505,13 +20168,6 @@ B02:
     59.0 deg, 187/3506 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-02-17T18:09:00Z'
-  end: '2023-02-17T18:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-02-17T18:33:00Z'
   end: '2023-02-17T18:40:00Z'
   bands: [0.040000000000000015, 0.05039684199579493]
@@ -20575,13 +20231,6 @@ B02:
     55.4 deg, 1409/3652 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-02-17T19:09:00Z'
-  end: '2023-02-17T19:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-02-17T19:16:00Z'
   end: '2023-02-17T19:27:00Z'
   bands: [0.12699208415745594, 0.16]
@@ -20638,13 +20287,6 @@ B02:
     65.4 deg, 2581/3752 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-02-17T20:09:00Z'
-  end: '2023-02-17T20:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-02-17T20:16:00Z'
   end: '2023-02-17T20:42:00Z'
   bands: [0.12699208415745594, 0.16]
@@ -20729,13 +20371,6 @@ B02:
     59.0 deg, 187/3506 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-02-17T21:09:00Z'
-  end: '2023-02-17T21:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-02-17T21:16:00Z'
   end: '2023-02-17T21:24:00Z'
   bands: [0.08, 0.1007936839915898]
@@ -20799,13 +20434,6 @@ B02:
     55.4 deg, 1409/3652 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-02-17T22:09:00Z'
-  end: '2023-02-17T22:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-02-17T22:18:00Z'
   end: '2023-02-17T22:23:00Z'
   bands: [0.12699208415745594, 0.16]
@@ -20869,13 +20497,6 @@ B02:
     55.4 deg, 1409/3652 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-02-17T23:09:00Z'
-  end: '2023-02-17T23:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-02-17T23:13:00Z'
   end: '2023-02-17T23:26:00Z'
   bands: [0.16, 0.20158736798317972]
@@ -20939,13 +20560,6 @@ B02:
     64.6 deg, 818/3631 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-02-18T00:09:00Z'
-  end: '2023-02-18T00:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-02-18T00:12:00Z'
   end: '2023-02-18T00:17:00Z'
   bands: [0.08, 0.1007936839915898]
@@ -21023,13 +20637,6 @@ B02:
     66.2 deg, 2739/3487 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-02-18T01:09:00Z'
-  end: '2023-02-18T01:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-02-18T01:20:00Z'
   end: '2023-02-18T01:30:00Z'
   bands: [0.16, 0.20158736798317972]
@@ -21058,13 +20665,6 @@ B02:
     66.2 deg, 2739/3487 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-02-18T02:09:00Z'
-  end: '2023-02-18T02:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-02-18T02:10:00Z'
   end: '2023-02-18T02:41:00Z'
   bands: [0.25398416831491194, 0.32]
@@ -21142,6 +20742,18 @@ B02:
     66.2 deg, 2739/3487 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
+- start: '2023-02-18T03:00:00Z'
+  end: '2023-02-18T11:40:55Z'
+  bands: all
+  reason: 'BEN keep-only block (B02 relaxed quiet-set trial, 30 Sep 2026): rejects 18 Feb 03:00 to 18
+    Feb 11:40:55 UTC 2023, after the kept span 18 Feb 00:20-18 Feb 03:00 and to the end of B02''s record;
+    the block keeps Ben''s four spans only (15 Feb 23:10 to 16 Feb 01:00, 16 Feb 23:00-23:40, 17 Feb 03:00-03:50,
+    18 Feb 00:20-03:00 UTC 2023, 360 min) and replaces B02''s clock rule of 26 Sep (north-end group);
+    Approved by Ben on 30 Sep 2026 (19:19 WAST): "yes for the line B calls"; trial D:\MT_DATA\MT_Morocco_Atlas_Mountains_Workspace\qc\lineB\B02\quiet_relaxed_20260930
+    (README.md; masks file scratch_survey\masks_BEN.yaml; rows tf\B02_rr-R01_20260930-1804_B02quiet-BEN-R01.edi
+    and tf\B02_rr-B01_20260930-1806_B02quiet-BEN-B01.edi)'
+  found_by: time
+  scope: local
 - start: '2023-02-18T03:04:00Z'
   end: '2023-02-18T03:09:00Z'
   bands: [0.16, 0.20158736798317972]
@@ -21254,13 +20866,6 @@ B02:
     58.8 deg, 789/3583 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-02-18T03:51:00Z'
-  end: '2023-02-18T11:40:55Z'
-  bands: all
-  reason: 'night mask: outside the north-end source''s February quiet window 03:00-03:51 UTC (04:00-04:51
-    local) (clock rule, northend group 26 Sep)'
-  found_by: night
-  scope: local
 - start: '2023-02-18T03:54:00Z'
   end: '2023-02-18T04:00:00Z'
   bands: [0.20158736798317972, 0.25398416831491194]
@@ -21268,13 +20873,6 @@ B02:
     67.8 deg, 2772/3683 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-02-18T04:09:00Z'
-  end: '2023-02-18T04:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-02-18T04:10:00Z'
   end: '2023-02-18T04:52:00Z'
   bands: [0.20158736798317972, 0.25398416831491194]
@@ -21373,13 +20971,6 @@ B02:
     67.8 deg, 2772/3683 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-02-18T05:09:00Z'
-  end: '2023-02-18T05:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-02-18T05:17:00Z'
   end: '2023-02-18T05:34:00Z'
   bands: [0.12699208415745594, 0.16]
@@ -21485,13 +21076,6 @@ B02:
     67.8 deg, 2772/3683 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-02-18T06:09:00Z'
-  end: '2023-02-18T06:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-02-18T06:17:00Z'
   end: '2023-02-18T06:43:00Z'
   bands: [0.25398416831491194, 0.32]
@@ -21562,13 +21146,6 @@ B02:
     58.8 deg, 789/3583 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-02-18T07:09:00Z'
-  end: '2023-02-18T07:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-02-18T07:13:00Z'
   end: '2023-02-18T07:35:00Z'
   bands: [0.1007936839915898, 0.12699208415745594]
@@ -21625,13 +21202,6 @@ B02:
     67.8 deg, 2772/3683 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-02-18T08:09:00Z'
-  end: '2023-02-18T08:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-02-18T08:25:00Z'
   end: '2023-02-18T11:04:00Z'
   bands: [0.25398416831491194, 0.32]
@@ -21702,13 +21272,6 @@ B02:
     59.0 deg, 187/3506 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-02-18T09:09:00Z'
-  end: '2023-02-18T09:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-02-18T09:16:00Z'
   end: '2023-02-18T09:32:00Z'
   bands: [0.08, 0.1007936839915898]
@@ -21758,13 +21321,6 @@ B02:
     64.6 deg, 818/3631 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-02-18T10:09:00Z'
-  end: '2023-02-18T10:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-02-18T10:11:00Z'
   end: '2023-02-18T10:33:00Z'
   bands: [0.08, 0.1007936839915898]
@@ -21821,13 +21377,6 @@ B02:
     59.0 deg, 187/3506 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-02-18T11:09:00Z'
-  end: '2023-02-18T11:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-02-18T11:10:00Z'
   end: '2023-02-18T11:25:10.170000Z'
   bands: [0.12699208415745594, 0.16]
@@ -21865,571 +21414,31 @@ B02:
   scope: both
 B03:
 - start: '2023-07-19T10:22:47Z'
-  end: '2023-07-20T00:10:00Z'
-  bands: all
-  reason: 'night mask: outside the north-end source''s quiet windows 00:10-01:30 and 02:50-03:51 UTC (01:10-02:30
-    and 03:50-04:51 local) on July nights, 03:10-04:52 UTC on Sunday 23 Jul (clock rule, northend group
-    26 Sep)'
-  found_by: night
-  scope: local
-- start: '2023-07-19T10:22:47Z'
-  end: '2023-07-19T10:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-19T11:09:00Z'
-  end: '2023-07-19T11:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-19T12:09:00Z'
-  end: '2023-07-19T12:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-19T13:09:00Z'
-  end: '2023-07-19T13:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-19T14:09:00Z'
-  end: '2023-07-19T14:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-19T15:09:00Z'
-  end: '2023-07-19T15:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-19T16:09:00Z'
-  end: '2023-07-19T16:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-19T17:09:00Z'
-  end: '2023-07-19T17:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-19T18:09:00Z'
-  end: '2023-07-19T18:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-19T19:09:00Z'
-  end: '2023-07-19T19:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-19T20:09:00Z'
-  end: '2023-07-19T20:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-19T21:09:00Z'
-  end: '2023-07-19T21:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-19T22:09:00Z'
-  end: '2023-07-19T22:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-19T23:09:00Z'
-  end: '2023-07-19T23:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-20T00:09:00Z'
-  end: '2023-07-20T00:10:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-20T01:30:00Z'
-  end: '2023-07-20T02:50:00Z'
-  bands: all
-  reason: 'night mask: outside the north-end source''s quiet windows 00:10-01:30 and 02:50-03:51 UTC (01:10-02:30
-    and 03:50-04:51 local) on July nights, 03:10-04:52 UTC on Sunday 23 Jul (clock rule, northend group
-    26 Sep)'
-  found_by: night
-  scope: local
-- start: '2023-07-20T01:30:00Z'
-  end: '2023-07-20T01:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-20T02:09:00Z'
-  end: '2023-07-20T02:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-20T03:51:00Z'
   end: '2023-07-21T00:10:00Z'
   bands: all
-  reason: 'night mask: outside the north-end source''s quiet windows 00:10-01:30 and 02:50-03:51 UTC (01:10-02:30
-    and 03:50-04:51 local) on July nights, 03:10-04:52 UTC on Sunday 23 Jul (clock rule, northend group
-    26 Sep)'
+  reason: 'B03 quiet pass 2, set QR (keep-only): outside the quiet windows 21 Jul 00:10-01:10, 22 Jul
+    02:50-03:50 and 23 Jul 03:10-04:50 UTC (E score under -1, 1/10 of the night median); trial D:\MT_DATA\MT_Morocco_Atlas_Mountains_Workspace\qc\lineB\B03\quiet_relaxed_20260930
+    (README.md, scratch_survey\masks_QR.yaml; rows B03quiet2-QR-B04 and B03quiet2-QR-B06); Approved by
+    Ben on 30 Sep 2026 (19:19 WAST): "yes for the line B calls"'
   found_by: night
   scope: local
-- start: '2023-07-20T04:09:00Z'
-  end: '2023-07-20T04:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-20T05:09:00Z'
-  end: '2023-07-20T05:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-20T06:09:00Z'
-  end: '2023-07-20T06:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-20T07:09:00Z'
-  end: '2023-07-20T07:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-20T08:09:00Z'
-  end: '2023-07-20T08:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-20T09:09:00Z'
-  end: '2023-07-20T09:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-20T10:09:00Z'
-  end: '2023-07-20T10:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-20T11:09:00Z'
-  end: '2023-07-20T11:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-20T12:09:00Z'
-  end: '2023-07-20T12:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-20T13:09:00Z'
-  end: '2023-07-20T13:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-20T14:09:00Z'
-  end: '2023-07-20T14:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-20T15:09:00Z'
-  end: '2023-07-20T15:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-20T16:09:00Z'
-  end: '2023-07-20T16:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-20T17:09:00Z'
-  end: '2023-07-20T17:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-20T18:09:00Z'
-  end: '2023-07-20T18:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-20T19:09:00Z'
-  end: '2023-07-20T19:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-20T20:09:00Z'
-  end: '2023-07-20T20:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-20T21:09:00Z'
-  end: '2023-07-20T21:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-20T22:09:00Z'
-  end: '2023-07-20T22:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-20T23:09:00Z'
-  end: '2023-07-20T23:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-21T00:09:00Z'
-  end: '2023-07-21T00:10:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-21T01:30:00Z'
-  end: '2023-07-21T02:50:00Z'
-  bands: all
-  reason: 'night mask: outside the north-end source''s quiet windows 00:10-01:30 and 02:50-03:51 UTC (01:10-02:30
-    and 03:50-04:51 local) on July nights, 03:10-04:52 UTC on Sunday 23 Jul (clock rule, northend group
-    26 Sep)'
-  found_by: night
-  scope: local
-- start: '2023-07-21T01:30:00Z'
-  end: '2023-07-21T01:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-21T02:09:00Z'
-  end: '2023-07-21T02:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-21T03:51:00Z'
-  end: '2023-07-22T00:10:00Z'
-  bands: all
-  reason: 'night mask: outside the north-end source''s quiet windows 00:10-01:30 and 02:50-03:51 UTC (01:10-02:30
-    and 03:50-04:51 local) on July nights, 03:10-04:52 UTC on Sunday 23 Jul (clock rule, northend group
-    26 Sep)'
-  found_by: night
-  scope: local
-- start: '2023-07-21T04:09:00Z'
-  end: '2023-07-21T04:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-21T05:09:00Z'
-  end: '2023-07-21T05:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-21T06:09:00Z'
-  end: '2023-07-21T06:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-21T07:09:00Z'
-  end: '2023-07-21T07:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-21T08:09:00Z'
-  end: '2023-07-21T08:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-21T09:09:00Z'
-  end: '2023-07-21T09:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-21T10:09:00Z'
-  end: '2023-07-21T10:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-21T11:09:00Z'
-  end: '2023-07-21T11:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-21T12:09:00Z'
-  end: '2023-07-21T12:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-21T13:09:00Z'
-  end: '2023-07-21T13:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-21T14:09:00Z'
-  end: '2023-07-21T14:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-21T15:09:00Z'
-  end: '2023-07-21T15:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-21T16:09:00Z'
-  end: '2023-07-21T16:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-21T17:09:00Z'
-  end: '2023-07-21T17:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-21T18:09:00Z'
-  end: '2023-07-21T18:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-21T19:09:00Z'
-  end: '2023-07-21T19:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-21T20:09:00Z'
-  end: '2023-07-21T20:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-21T21:09:00Z'
-  end: '2023-07-21T21:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-21T22:09:00Z'
-  end: '2023-07-21T22:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-21T23:09:00Z'
-  end: '2023-07-21T23:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-22T00:09:00Z'
-  end: '2023-07-22T00:10:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-22T01:30:00Z'
+- start: '2023-07-21T01:10:00Z'
   end: '2023-07-22T02:50:00Z'
   bands: all
-  reason: 'night mask: outside the north-end source''s quiet windows 00:10-01:30 and 02:50-03:51 UTC (01:10-02:30
-    and 03:50-04:51 local) on July nights, 03:10-04:52 UTC on Sunday 23 Jul (clock rule, northend group
-    26 Sep)'
+  reason: 'B03 quiet pass 2, set QR (keep-only): outside the quiet windows 21 Jul 00:10-01:10, 22 Jul
+    02:50-03:50 and 23 Jul 03:10-04:50 UTC (E score under -1, 1/10 of the night median); trial D:\MT_DATA\MT_Morocco_Atlas_Mountains_Workspace\qc\lineB\B03\quiet_relaxed_20260930
+    (README.md, scratch_survey\masks_QR.yaml; rows B03quiet2-QR-B04 and B03quiet2-QR-B06); Approved by
+    Ben on 30 Sep 2026 (19:19 WAST): "yes for the line B calls"'
   found_by: night
   scope: local
-- start: '2023-07-22T01:30:00Z'
-  end: '2023-07-22T01:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-22T02:09:00Z'
-  end: '2023-07-22T02:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-22T03:51:00Z'
+- start: '2023-07-22T03:50:00Z'
   end: '2023-07-23T03:10:00Z'
   bands: all
-  reason: 'night mask: outside the north-end source''s quiet windows 00:10-01:30 and 02:50-03:51 UTC (01:10-02:30
-    and 03:50-04:51 local) on July nights, 03:10-04:52 UTC on Sunday 23 Jul (clock rule, northend group
-    26 Sep)'
+  reason: 'B03 quiet pass 2, set QR (keep-only): outside the quiet windows 21 Jul 00:10-01:10, 22 Jul
+    02:50-03:50 and 23 Jul 03:10-04:50 UTC (E score under -1, 1/10 of the night median); trial D:\MT_DATA\MT_Morocco_Atlas_Mountains_Workspace\qc\lineB\B03\quiet_relaxed_20260930
+    (README.md, scratch_survey\masks_QR.yaml; rows B03quiet2-QR-B04 and B03quiet2-QR-B06); Approved by
+    Ben on 30 Sep 2026 (19:19 WAST): "yes for the line B calls"'
   found_by: night
-  scope: local
-- start: '2023-07-22T04:09:00Z'
-  end: '2023-07-22T04:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-22T05:09:00Z'
-  end: '2023-07-22T05:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-22T06:09:00Z'
-  end: '2023-07-22T06:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-22T07:09:00Z'
-  end: '2023-07-22T07:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-22T08:09:00Z'
-  end: '2023-07-22T08:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-22T09:09:00Z'
-  end: '2023-07-22T09:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-22T10:09:00Z'
-  end: '2023-07-22T10:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-22T11:09:00Z'
-  end: '2023-07-22T11:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-22T12:09:00Z'
-  end: '2023-07-22T12:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-22T13:09:00Z'
-  end: '2023-07-22T13:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
   scope: local
 - start: '2023-07-22T13:16:32Z'
   end: '2023-07-22T13:25:00Z'
@@ -22662,13 +21671,6 @@ B03:
     50.5 deg, 272/1019 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-07-22T14:09:00Z'
-  end: '2023-07-22T14:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-07-22T14:14:00Z'
   end: '2023-07-22T14:37:00Z'
   bands: [0.25398416831491194, 0.32]
@@ -22858,13 +21860,6 @@ B03:
     44.7 deg, 255/1026 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-07-22T15:09:00Z'
-  end: '2023-07-22T15:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-07-22T15:12:00Z'
   end: '2023-07-22T15:30:00Z'
   bands: [0.5079683366298239, 0.64]
@@ -23040,13 +22035,6 @@ B03:
     57.7 deg, 211/450 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-07-22T16:09:00Z'
-  end: '2023-07-22T16:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-07-22T16:10:00Z'
   end: '2023-07-22T16:52:00Z'
   bands: [0.32, 0.40317473596635944]
@@ -23229,13 +22217,6 @@ B03:
     50.5 deg, 272/1019 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-07-22T17:09:00Z'
-  end: '2023-07-22T17:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-07-22T17:11:00Z'
   end: '2023-07-22T18:01:00Z'
   bands: [1.28, 1.6126989438654376]
@@ -23418,13 +22399,6 @@ B03:
     57.8 deg, 97/161 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-07-22T18:09:00Z'
-  end: '2023-07-22T18:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-07-22T18:14:00Z'
   end: '2023-07-22T18:58:00Z'
   bands: [0.8063494719327189, 1.0159366732596478]
@@ -23565,13 +22539,6 @@ B03:
     53.9 deg, 190/448 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-07-22T19:09:00Z'
-  end: '2023-07-22T19:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-07-22T19:12:00Z'
   end: '2023-07-22T19:22:00Z'
   bands: [0.40317473596635944, 0.5079683366298239]
@@ -23726,13 +22693,6 @@ B03:
     57.7 deg, 211/450 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-07-22T20:09:00Z'
-  end: '2023-07-22T20:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-07-22T20:14:00Z'
   end: '2023-07-22T20:58:00Z'
   bands: [0.8063494719327189, 1.0159366732596478]
@@ -23887,13 +22847,6 @@ B03:
     54.7 deg, 174/464 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-07-22T21:09:00Z'
-  end: '2023-07-22T21:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-07-22T21:14:00Z'
   end: '2023-07-22T21:24:00Z'
   bands: [0.8063494719327189, 1.0159366732596478]
@@ -24041,13 +22994,6 @@ B03:
     50.5 deg, 272/1019 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-07-22T22:09:00Z'
-  end: '2023-07-22T22:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-07-22T22:16:00Z'
   end: '2023-07-22T23:00:00Z'
   bands: [0.64, 0.8063494719327189]
@@ -24188,13 +23134,6 @@ B03:
     44.7 deg, 255/1026 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-07-22T23:09:00Z'
-  end: '2023-07-22T23:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-07-22T23:12:00Z'
   end: '2023-07-22T23:30:00Z'
   bands: [0.64, 0.8063494719327189]
@@ -24342,13 +23281,6 @@ B03:
     53.9 deg, 190/448 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-07-23T00:09:00Z'
-  end: '2023-07-23T00:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-07-23T00:24:00Z'
   end: '2023-07-23T00:34:00Z'
   bands: [0.64, 0.8063494719327189]
@@ -24461,13 +23393,6 @@ B03:
     50.5 deg, 272/1019 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-07-23T01:09:00Z'
-  end: '2023-07-23T01:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-07-23T01:12:00Z'
   end: '2023-07-23T01:22:00Z'
   bands: [0.64, 0.8063494719327189]
@@ -24594,13 +23519,6 @@ B03:
     47.0 deg, 221/1031 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-07-23T02:09:00Z'
-  end: '2023-07-23T02:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-07-23T02:38:00Z'
   end: '2023-07-23T02:43:00Z'
   bands: [0.25398416831491194, 0.32]
@@ -24629,13 +23547,6 @@ B03:
     57.7 deg, 211/450 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-07-23T03:09:00Z'
-  end: '2023-07-23T03:10:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-07-23T03:51:00Z'
   end: '2023-07-23T04:16:00Z'
   bands: [1.28, 1.6126989438654376]
@@ -24657,6 +23568,15 @@ B03:
     57.7 deg, 211/450 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
+- start: '2023-07-23T04:50:00Z'
+  end: '2023-07-23T10:22:51Z'
+  bands: all
+  reason: 'B03 quiet pass 2, set QR (keep-only): outside the quiet windows 21 Jul 00:10-01:10, 22 Jul
+    02:50-03:50 and 23 Jul 03:10-04:50 UTC (E score under -1, 1/10 of the night median); trial D:\MT_DATA\MT_Morocco_Atlas_Mountains_Workspace\qc\lineB\B03\quiet_relaxed_20260930
+    (README.md, scratch_survey\masks_QR.yaml; rows B03quiet2-QR-B04 and B03quiet2-QR-B06); Approved by
+    Ben on 30 Sep 2026 (19:19 WAST): "yes for the line B calls"'
+  found_by: night
+  scope: local
 - start: '2023-07-23T04:51:00Z'
   end: '2023-07-23T06:46:00Z'
   bands: [1.28, 1.6126989438654376]
@@ -24664,14 +23584,6 @@ B03:
     57.8 deg, 97/161 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-07-23T04:52:00Z'
-  end: '2023-07-23T10:22:51Z'
-  bands: all
-  reason: 'night mask: outside the north-end source''s quiet windows 00:10-01:30 and 02:50-03:51 UTC (01:10-02:30
-    and 03:50-04:51 local) on July nights, 03:10-04:52 UTC on Sunday 23 Jul (clock rule, northend group
-    26 Sep)'
-  found_by: night
-  scope: local
 - start: '2023-07-23T04:54:00Z'
   end: '2023-07-23T05:04:00Z'
   bands: [1.0159366732596478, 1.28]
@@ -24728,13 +23640,6 @@ B03:
     47.6 deg, 134/487 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-07-23T05:09:00Z'
-  end: '2023-07-23T05:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-07-23T05:14:00Z'
   end: '2023-07-23T05:30:00Z'
   bands: [0.40317473596635944, 0.5079683366298239]
@@ -24903,13 +23808,6 @@ B03:
     50.5 deg, 272/1019 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-07-23T06:09:00Z'
-  end: '2023-07-23T06:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-07-23T06:12:00Z'
   end: '2023-07-23T06:50:00Z'
   bands: [0.5079683366298239, 0.64]
@@ -25078,13 +23976,6 @@ B03:
     50.5 deg, 272/1019 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-07-23T07:09:00Z'
-  end: '2023-07-23T07:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-07-23T07:12:00Z'
   end: '2023-07-23T07:32:00Z'
   bands: [0.5079683366298239, 0.64]
@@ -25281,13 +24172,6 @@ B03:
     42.6 deg, 28/981 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-07-23T08:09:00Z'
-  end: '2023-07-23T08:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-07-23T08:10:00Z'
   end: '2023-07-23T08:26:00Z'
   bands: [0.20158736798317972, 0.25398416831491194]
@@ -25407,572 +24291,77 @@ B03:
     44.7 deg, 255/1026 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-07-23T09:09:00Z'
-  end: '2023-07-23T09:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-23T10:09:00Z'
-  end: '2023-07-23T10:22:51Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 B04:
-- start: '2023-07-19T12:21:21Z'
-  end: '2023-07-20T00:10:00Z'
+- start: '2023-07-19T00:00:00Z'
+  end: '2023-07-20T01:00:00Z'
   bands: all
-  reason: 'night mask: outside the north-end source''s quiet windows 00:10-01:30 and 02:50-03:51 UTC (01:10-02:30
-    and 03:50-04:51 local) on July nights, 03:10-04:52 UTC on Sunday 23 Jul (clock rule, northend group
-    26 Sep)'
-  found_by: night
-  scope: local
-- start: '2023-07-19T12:21:21Z'
-  end: '2023-07-19T12:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-19T13:09:00Z'
-  end: '2023-07-19T13:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-19T14:09:00Z'
-  end: '2023-07-19T14:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-19T15:09:00Z'
-  end: '2023-07-19T15:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-19T16:09:00Z'
-  end: '2023-07-19T16:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-19T17:09:00Z'
-  end: '2023-07-19T17:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-19T18:09:00Z'
-  end: '2023-07-19T18:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-19T19:09:00Z'
-  end: '2023-07-19T19:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-19T20:09:00Z'
-  end: '2023-07-19T20:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-19T21:09:00Z'
-  end: '2023-07-19T21:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-19T22:09:00Z'
-  end: '2023-07-19T22:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-19T23:09:00Z'
-  end: '2023-07-19T23:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-20T00:09:00Z'
-  end: '2023-07-20T00:10:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
+  reason: 'B04 QR keep-only (quiet set of the pass-2 quiet trial): rejects 2023-07-19T00:00:00Z - 2023-07-20T01:00:00Z,
+    before the kept span starting 2023-07-20T01:00:00Z; the block keeps only the 8 QR spans of 19-24 Jul
+    2023 (20 Jul 01:00-01:30 and 02:40-03:20; 21 Jul 00:10-01:20 and 03:00-03:50; 22 Jul 02:50-03:50;
+    23 Jul 00:20-00:50, 02:30-03:00 and 03:10-04:50 UTC; 410 min); it replaces the clock rule''s 99 bands-all
+    entries; trial D:\MT_DATA\MT_Morocco_Atlas_Mountains_Workspace\qc\lineB\B04\quiet_relaxed_20260930
+    (README.md; scratch_survey\masks_QR.yaml sha1 7a5cbe50, rows B04quiet2-QR-B06 and B04quiet2-QR-B05);
+    yx source rr B06; Approved by Ben on 30 Sep 2026 (19:19 WAST): "yes for the line B calls"'
   found_by: time
   scope: local
 - start: '2023-07-20T01:30:00Z'
-  end: '2023-07-20T02:50:00Z'
+  end: '2023-07-20T02:40:00Z'
   bands: all
-  reason: 'night mask: outside the north-end source''s quiet windows 00:10-01:30 and 02:50-03:51 UTC (01:10-02:30
-    and 03:50-04:51 local) on July nights, 03:10-04:52 UTC on Sunday 23 Jul (clock rule, northend group
-    26 Sep)'
-  found_by: night
-  scope: local
-- start: '2023-07-20T01:30:00Z'
-  end: '2023-07-20T01:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
+  reason: 'B04 QR keep-only (quiet set of the pass-2 quiet trial): rejects 2023-07-20T01:30:00Z - 2023-07-20T02:40:00Z,
+    after the kept span ending 2023-07-20T01:30:00Z and before the kept span starting 2023-07-20T02:40:00Z;
+    the block keeps only the 8 QR spans of 19-24 Jul 2023 (20 Jul 01:00-01:30 and 02:40-03:20; 21 Jul
+    00:10-01:20 and 03:00-03:50; 22 Jul 02:50-03:50; 23 Jul 00:20-00:50, 02:30-03:00 and 03:10-04:50 UTC;
+    410 min); it replaces the clock rule''s 99 bands-all entries; trial D:\MT_DATA\MT_Morocco_Atlas_Mountains_Workspace\qc\lineB\B04\quiet_relaxed_20260930
+    (README.md; scratch_survey\masks_QR.yaml sha1 7a5cbe50, rows B04quiet2-QR-B06 and B04quiet2-QR-B05);
+    yx source rr B06; Approved by Ben on 30 Sep 2026 (19:19 WAST): "yes for the line B calls"'
   found_by: time
   scope: local
-- start: '2023-07-20T02:09:00Z'
-  end: '2023-07-20T02:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-20T03:51:00Z'
+- start: '2023-07-20T03:20:00Z'
   end: '2023-07-21T00:10:00Z'
   bands: all
-  reason: 'night mask: outside the north-end source''s quiet windows 00:10-01:30 and 02:50-03:51 UTC (01:10-02:30
-    and 03:50-04:51 local) on July nights, 03:10-04:52 UTC on Sunday 23 Jul (clock rule, northend group
-    26 Sep)'
-  found_by: night
-  scope: local
-- start: '2023-07-20T04:09:00Z'
-  end: '2023-07-20T04:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
+  reason: 'B04 QR keep-only (quiet set of the pass-2 quiet trial): rejects 2023-07-20T03:20:00Z - 2023-07-21T00:10:00Z,
+    after the kept span ending 2023-07-20T03:20:00Z and before the kept span starting 2023-07-21T00:10:00Z;
+    the block keeps only the 8 QR spans of 19-24 Jul 2023 (20 Jul 01:00-01:30 and 02:40-03:20; 21 Jul
+    00:10-01:20 and 03:00-03:50; 22 Jul 02:50-03:50; 23 Jul 00:20-00:50, 02:30-03:00 and 03:10-04:50 UTC;
+    410 min); it replaces the clock rule''s 99 bands-all entries; trial D:\MT_DATA\MT_Morocco_Atlas_Mountains_Workspace\qc\lineB\B04\quiet_relaxed_20260930
+    (README.md; scratch_survey\masks_QR.yaml sha1 7a5cbe50, rows B04quiet2-QR-B06 and B04quiet2-QR-B05);
+    yx source rr B06; Approved by Ben on 30 Sep 2026 (19:19 WAST): "yes for the line B calls"'
   found_by: time
   scope: local
-- start: '2023-07-20T05:09:00Z'
-  end: '2023-07-20T05:34:00Z'
+- start: '2023-07-21T01:20:00Z'
+  end: '2023-07-21T03:00:00Z'
   bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
+  reason: 'B04 QR keep-only (quiet set of the pass-2 quiet trial): rejects 2023-07-21T01:20:00Z - 2023-07-21T03:00:00Z,
+    after the kept span ending 2023-07-21T01:20:00Z and before the kept span starting 2023-07-21T03:00:00Z;
+    the block keeps only the 8 QR spans of 19-24 Jul 2023 (20 Jul 01:00-01:30 and 02:40-03:20; 21 Jul
+    00:10-01:20 and 03:00-03:50; 22 Jul 02:50-03:50; 23 Jul 00:20-00:50, 02:30-03:00 and 03:10-04:50 UTC;
+    410 min); it replaces the clock rule''s 99 bands-all entries; trial D:\MT_DATA\MT_Morocco_Atlas_Mountains_Workspace\qc\lineB\B04\quiet_relaxed_20260930
+    (README.md; scratch_survey\masks_QR.yaml sha1 7a5cbe50, rows B04quiet2-QR-B06 and B04quiet2-QR-B05);
+    yx source rr B06; Approved by Ben on 30 Sep 2026 (19:19 WAST): "yes for the line B calls"'
   found_by: time
   scope: local
-- start: '2023-07-20T06:09:00Z'
-  end: '2023-07-20T06:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-20T07:09:00Z'
-  end: '2023-07-20T07:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-20T08:09:00Z'
-  end: '2023-07-20T08:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-20T09:09:00Z'
-  end: '2023-07-20T09:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-20T10:09:00Z'
-  end: '2023-07-20T10:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-20T11:09:00Z'
-  end: '2023-07-20T11:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-20T12:09:00Z'
-  end: '2023-07-20T12:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-20T13:09:00Z'
-  end: '2023-07-20T13:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-20T14:09:00Z'
-  end: '2023-07-20T14:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-20T15:09:00Z'
-  end: '2023-07-20T15:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-20T16:09:00Z'
-  end: '2023-07-20T16:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-20T17:09:00Z'
-  end: '2023-07-20T17:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-20T18:09:00Z'
-  end: '2023-07-20T18:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-20T19:09:00Z'
-  end: '2023-07-20T19:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-20T20:09:00Z'
-  end: '2023-07-20T20:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-20T21:09:00Z'
-  end: '2023-07-20T21:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-20T22:09:00Z'
-  end: '2023-07-20T22:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-20T23:09:00Z'
-  end: '2023-07-20T23:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-21T00:09:00Z'
-  end: '2023-07-21T00:10:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-21T01:30:00Z'
-  end: '2023-07-21T02:50:00Z'
-  bands: all
-  reason: 'night mask: outside the north-end source''s quiet windows 00:10-01:30 and 02:50-03:51 UTC (01:10-02:30
-    and 03:50-04:51 local) on July nights, 03:10-04:52 UTC on Sunday 23 Jul (clock rule, northend group
-    26 Sep)'
-  found_by: night
-  scope: local
-- start: '2023-07-21T01:30:00Z'
-  end: '2023-07-21T01:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-21T02:09:00Z'
-  end: '2023-07-21T02:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-21T03:51:00Z'
-  end: '2023-07-22T00:10:00Z'
-  bands: all
-  reason: 'night mask: outside the north-end source''s quiet windows 00:10-01:30 and 02:50-03:51 UTC (01:10-02:30
-    and 03:50-04:51 local) on July nights, 03:10-04:52 UTC on Sunday 23 Jul (clock rule, northend group
-    26 Sep)'
-  found_by: night
-  scope: local
-- start: '2023-07-21T04:09:00Z'
-  end: '2023-07-21T04:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-21T05:09:00Z'
-  end: '2023-07-21T05:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-21T06:09:00Z'
-  end: '2023-07-21T06:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-21T07:09:00Z'
-  end: '2023-07-21T07:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-21T08:09:00Z'
-  end: '2023-07-21T08:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-21T09:09:00Z'
-  end: '2023-07-21T09:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-21T10:09:00Z'
-  end: '2023-07-21T10:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-21T11:09:00Z'
-  end: '2023-07-21T11:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-21T12:09:00Z'
-  end: '2023-07-21T12:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-21T13:09:00Z'
-  end: '2023-07-21T13:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-21T14:09:00Z'
-  end: '2023-07-21T14:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-21T15:09:00Z'
-  end: '2023-07-21T15:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-21T16:09:00Z'
-  end: '2023-07-21T16:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-21T17:09:00Z'
-  end: '2023-07-21T17:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-21T18:09:00Z'
-  end: '2023-07-21T18:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-21T19:09:00Z'
-  end: '2023-07-21T19:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-21T20:09:00Z'
-  end: '2023-07-21T20:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-21T21:09:00Z'
-  end: '2023-07-21T21:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-21T22:09:00Z'
-  end: '2023-07-21T22:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-21T23:09:00Z'
-  end: '2023-07-21T23:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-22T00:09:00Z'
-  end: '2023-07-22T00:10:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-22T01:30:00Z'
+- start: '2023-07-21T03:50:00Z'
   end: '2023-07-22T02:50:00Z'
   bands: all
-  reason: 'night mask: outside the north-end source''s quiet windows 00:10-01:30 and 02:50-03:51 UTC (01:10-02:30
-    and 03:50-04:51 local) on July nights, 03:10-04:52 UTC on Sunday 23 Jul (clock rule, northend group
-    26 Sep)'
-  found_by: night
-  scope: local
-- start: '2023-07-22T01:30:00Z'
-  end: '2023-07-22T01:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
+  reason: 'B04 QR keep-only (quiet set of the pass-2 quiet trial): rejects 2023-07-21T03:50:00Z - 2023-07-22T02:50:00Z,
+    after the kept span ending 2023-07-21T03:50:00Z and before the kept span starting 2023-07-22T02:50:00Z;
+    the block keeps only the 8 QR spans of 19-24 Jul 2023 (20 Jul 01:00-01:30 and 02:40-03:20; 21 Jul
+    00:10-01:20 and 03:00-03:50; 22 Jul 02:50-03:50; 23 Jul 00:20-00:50, 02:30-03:00 and 03:10-04:50 UTC;
+    410 min); it replaces the clock rule''s 99 bands-all entries; trial D:\MT_DATA\MT_Morocco_Atlas_Mountains_Workspace\qc\lineB\B04\quiet_relaxed_20260930
+    (README.md; scratch_survey\masks_QR.yaml sha1 7a5cbe50, rows B04quiet2-QR-B06 and B04quiet2-QR-B05);
+    yx source rr B06; Approved by Ben on 30 Sep 2026 (19:19 WAST): "yes for the line B calls"'
   found_by: time
   scope: local
-- start: '2023-07-22T02:09:00Z'
-  end: '2023-07-22T02:34:00Z'
+- start: '2023-07-22T03:50:00Z'
+  end: '2023-07-23T00:20:00Z'
   bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-22T03:51:00Z'
-  end: '2023-07-23T03:10:00Z'
-  bands: all
-  reason: 'night mask: outside the north-end source''s quiet windows 00:10-01:30 and 02:50-03:51 UTC (01:10-02:30
-    and 03:50-04:51 local) on July nights, 03:10-04:52 UTC on Sunday 23 Jul (clock rule, northend group
-    26 Sep)'
-  found_by: night
-  scope: local
-- start: '2023-07-22T04:09:00Z'
-  end: '2023-07-22T04:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-22T05:09:00Z'
-  end: '2023-07-22T05:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-22T06:09:00Z'
-  end: '2023-07-22T06:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-22T07:09:00Z'
-  end: '2023-07-22T07:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-22T08:09:00Z'
-  end: '2023-07-22T08:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-22T09:09:00Z'
-  end: '2023-07-22T09:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-22T10:09:00Z'
-  end: '2023-07-22T10:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-22T11:09:00Z'
-  end: '2023-07-22T11:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-22T12:09:00Z'
-  end: '2023-07-22T12:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-22T13:09:00Z'
-  end: '2023-07-22T13:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
+  reason: 'B04 QR keep-only (quiet set of the pass-2 quiet trial): rejects 2023-07-22T03:50:00Z - 2023-07-23T00:20:00Z,
+    after the kept span ending 2023-07-22T03:50:00Z and before the kept span starting 2023-07-23T00:20:00Z;
+    the block keeps only the 8 QR spans of 19-24 Jul 2023 (20 Jul 01:00-01:30 and 02:40-03:20; 21 Jul
+    00:10-01:20 and 03:00-03:50; 22 Jul 02:50-03:50; 23 Jul 00:20-00:50, 02:30-03:00 and 03:10-04:50 UTC;
+    410 min); it replaces the clock rule''s 99 bands-all entries; trial D:\MT_DATA\MT_Morocco_Atlas_Mountains_Workspace\qc\lineB\B04\quiet_relaxed_20260930
+    (README.md; scratch_survey\masks_QR.yaml sha1 7a5cbe50, rows B04quiet2-QR-B06 and B04quiet2-QR-B05);
+    yx source rr B06; Approved by Ben on 30 Sep 2026 (19:19 WAST): "yes for the line B calls"'
   found_by: time
   scope: local
 - start: '2023-07-22T13:16:32Z'
@@ -27703,13 +26092,6 @@ B04:
   reason: polar xy panel, 0.2263 s band
   found_by: polar
   scope: both
-- start: '2023-07-22T14:09:00Z'
-  end: '2023-07-22T14:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-07-22T14:10:00Z'
   end: '2023-07-22T14:11:00Z'
   bands: [0.01, 0.012599210498948734]
@@ -30002,13 +28384,6 @@ B04:
   reason: polar xy panel, 0.1131 s band
   found_by: polar
   scope: both
-- start: '2023-07-22T15:09:00Z'
-  end: '2023-07-22T15:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-07-22T15:10:00Z'
   end: '2023-07-22T15:11:00Z'
   bands: [0.08, 0.1007936839915898]
@@ -31947,13 +30322,6 @@ B04:
   reason: polar yx panel, 0.1796 s band
   found_by: polar
   scope: both
-- start: '2023-07-22T16:09:00Z'
-  end: '2023-07-22T16:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-07-22T16:10:00Z'
   end: '2023-07-22T16:11:00Z'
   bands: [0.012599210498948734, 0.015874010519681993]
@@ -33928,13 +32296,6 @@ B04:
   reason: polar yx panel, 0.2851 s band
   found_by: polar
   scope: both
-- start: '2023-07-22T17:09:00Z'
-  end: '2023-07-22T17:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-07-22T17:10:00Z'
   end: '2023-07-22T17:11:00Z'
   bands: [0.015874010519681993, 0.018518518518518517]
@@ -35639,13 +34000,6 @@ B04:
   reason: time panel, 0.7184 s band, level 3 chunks of 2 min
   found_by: time
   scope: both
-- start: '2023-07-22T18:09:00Z'
-  end: '2023-07-22T18:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-07-22T18:10:00Z'
   end: '2023-07-22T18:11:00Z'
   bands: [0.20158736798317972, 0.25398416831491194]
@@ -37086,13 +35440,6 @@ B04:
   reason: polar xy panel, 0.1796 s band
   found_by: polar
   scope: both
-- start: '2023-07-22T19:09:00Z'
-  end: '2023-07-22T19:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-07-22T19:10:00Z'
   end: '2023-07-22T19:11:00Z'
   bands: [0.16, 0.20158736798317972]
@@ -38473,13 +36820,6 @@ B04:
   reason: polar xy panel, 0.1796 s band
   found_by: polar
   scope: both
-- start: '2023-07-22T20:09:00Z'
-  end: '2023-07-22T20:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-07-22T20:10:00Z'
   end: '2023-07-22T20:18:00Z'
   bands: [0.40317473596635944, 0.5079683366298239]
@@ -40196,13 +38536,6 @@ B04:
   reason: polar yx panel, 0.2851 s band
   found_by: polar
   scope: both
-- start: '2023-07-22T21:09:00Z'
-  end: '2023-07-22T21:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-07-22T21:10:00Z'
   end: '2023-07-22T21:11:00Z'
   bands: [0.01, 0.012599210498948734]
@@ -42399,13 +40732,6 @@ B04:
   reason: polar xy panel, 0.1796 s band
   found_by: polar
   scope: both
-- start: '2023-07-22T22:09:00Z'
-  end: '2023-07-22T22:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-07-22T22:10:00Z'
   end: '2023-07-22T22:12:00Z'
   bands: [0.02519842099789746, 0.03174802103936399]
@@ -44446,13 +42772,6 @@ B04:
   reason: polar yx panel, 0.2851 s band
   found_by: polar
   scope: both
-- start: '2023-07-22T23:09:00Z'
-  end: '2023-07-22T23:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-07-22T23:10:00Z'
   end: '2023-07-22T23:12:00Z'
   bands: [0.03174802103936399, 0.040000000000000015]
@@ -46535,13 +44854,6 @@ B04:
   reason: polar xy panel, 0.2263 s band
   found_by: polar
   scope: both
-- start: '2023-07-23T00:09:00Z'
-  end: '2023-07-23T00:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-07-23T00:10:00Z'
   end: '2023-07-23T00:11:00Z'
   bands: [0.021739130434782608, 0.02519842099789746]
@@ -47898,6 +46210,18 @@ B04:
   reason: polar yx panel, 1.14 s band, level 3 chunks of 2 min
   found_by: polar
   scope: both
+- start: '2023-07-23T00:50:00Z'
+  end: '2023-07-23T02:30:00Z'
+  bands: all
+  reason: 'B04 QR keep-only (quiet set of the pass-2 quiet trial): rejects 2023-07-23T00:50:00Z - 2023-07-23T02:30:00Z,
+    after the kept span ending 2023-07-23T00:50:00Z and before the kept span starting 2023-07-23T02:30:00Z;
+    the block keeps only the 8 QR spans of 19-24 Jul 2023 (20 Jul 01:00-01:30 and 02:40-03:20; 21 Jul
+    00:10-01:20 and 03:00-03:50; 22 Jul 02:50-03:50; 23 Jul 00:20-00:50, 02:30-03:00 and 03:10-04:50 UTC;
+    410 min); it replaces the clock rule''s 99 bands-all entries; trial D:\MT_DATA\MT_Morocco_Atlas_Mountains_Workspace\qc\lineB\B04\quiet_relaxed_20260930
+    (README.md; scratch_survey\masks_QR.yaml sha1 7a5cbe50, rows B04quiet2-QR-B06 and B04quiet2-QR-B05);
+    yx source rr B06; Approved by Ben on 30 Sep 2026 (19:19 WAST): "yes for the line B calls"'
+  found_by: time
+  scope: local
 - start: '2023-07-23T00:51:00Z'
   end: '2023-07-23T00:56:00Z'
   bands: [0.02519842099789746, 0.03174802103936399]
@@ -48426,13 +46750,6 @@ B04:
   reason: time panel, 0.2851 s band
   found_by: time
   scope: both
-- start: '2023-07-23T01:09:00Z'
-  end: '2023-07-23T01:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-07-23T01:10:00Z'
   end: '2023-07-23T01:11:00Z'
   bands: [0.1007936839915898, 0.12699208415745594]
@@ -50311,13 +48628,6 @@ B04:
   reason: time panel, 0.05657 s band
   found_by: time
   scope: both
-- start: '2023-07-23T02:09:00Z'
-  end: '2023-07-23T02:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-07-23T02:10:00Z'
   end: '2023-07-23T02:11:00Z'
   bands: [0.015874010519681993, 0.018518518518518517]
@@ -51770,6 +50080,18 @@ B04:
   reason: polar xy panel, 0.1131 s band
   found_by: polar
   scope: both
+- start: '2023-07-23T03:00:00Z'
+  end: '2023-07-23T03:10:00Z'
+  bands: all
+  reason: 'B04 QR keep-only (quiet set of the pass-2 quiet trial): rejects 2023-07-23T03:00:00Z - 2023-07-23T03:10:00Z,
+    after the kept span ending 2023-07-23T03:00:00Z and before the kept span starting 2023-07-23T03:10:00Z;
+    the block keeps only the 8 QR spans of 19-24 Jul 2023 (20 Jul 01:00-01:30 and 02:40-03:20; 21 Jul
+    00:10-01:20 and 03:00-03:50; 22 Jul 02:50-03:50; 23 Jul 00:20-00:50, 02:30-03:00 and 03:10-04:50 UTC;
+    410 min); it replaces the clock rule''s 99 bands-all entries; trial D:\MT_DATA\MT_Morocco_Atlas_Mountains_Workspace\qc\lineB\B04\quiet_relaxed_20260930
+    (README.md; scratch_survey\masks_QR.yaml sha1 7a5cbe50, rows B04quiet2-QR-B06 and B04quiet2-QR-B05);
+    yx source rr B06; Approved by Ben on 30 Sep 2026 (19:19 WAST): "yes for the line B calls"'
+  found_by: time
+  scope: local
 - start: '2023-07-23T03:01:00Z'
   end: '2023-07-23T03:02:00Z'
   bands: [0.040000000000000015, 0.05039684199579493]
@@ -52004,13 +50326,6 @@ B04:
   reason: time panel, 0.01715 s band
   found_by: time
   scope: both
-- start: '2023-07-23T03:09:00Z'
-  end: '2023-07-23T03:10:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-07-23T03:10:00Z'
   end: '2023-07-23T03:12:00Z'
   bands: [0.012599210498948734, 0.015874010519681993]
@@ -54759,6 +53074,18 @@ B04:
   reason: polar yx panel, 0.4525 s band, level 3 chunks of 2 min
   found_by: polar
   scope: both
+- start: '2023-07-23T04:50:00Z'
+  end: '2023-07-24T00:00:00Z'
+  bands: all
+  reason: 'B04 QR keep-only (quiet set of the pass-2 quiet trial): rejects 2023-07-23T04:50:00Z - 2023-07-24T00:00:00Z,
+    after the kept span ending 2023-07-23T04:50:00Z; the block keeps only the 8 QR spans of 19-24 Jul
+    2023 (20 Jul 01:00-01:30 and 02:40-03:20; 21 Jul 00:10-01:20 and 03:00-03:50; 22 Jul 02:50-03:50;
+    23 Jul 00:20-00:50, 02:30-03:00 and 03:10-04:50 UTC; 410 min); it replaces the clock rule''s 99 bands-all
+    entries; trial D:\MT_DATA\MT_Morocco_Atlas_Mountains_Workspace\qc\lineB\B04\quiet_relaxed_20260930
+    (README.md; scratch_survey\masks_QR.yaml sha1 7a5cbe50, rows B04quiet2-QR-B06 and B04quiet2-QR-B05);
+    yx source rr B06; Approved by Ben on 30 Sep 2026 (19:19 WAST): "yes for the line B calls"'
+  found_by: time
+  scope: local
 - start: '2023-07-23T04:51:00Z'
   end: '2023-07-23T04:59:00Z'
   bands: [0.012599210498948734, 0.015874010519681993]
@@ -54945,14 +53272,6 @@ B04:
   reason: polar yx panel, 18.25 s band, level 5 chunks of 18 min
   found_by: polar
   scope: both
-- start: '2023-07-23T04:52:00Z'
-  end: '2023-07-23T10:51:25Z'
-  bands: all
-  reason: 'night mask: outside the north-end source''s quiet windows 00:10-01:30 and 02:50-03:51 UTC (01:10-02:30
-    and 03:50-04:51 local) on July nights, 03:10-04:52 UTC on Sunday 23 Jul (clock rule, northend group
-    26 Sep)'
-  found_by: night
-  scope: local
 - start: '2023-07-23T04:53:00Z'
   end: '2023-07-23T04:59:00Z'
   bands: [0.040000000000000015, 0.05039684199579493]
@@ -55403,13 +53722,6 @@ B04:
   reason: polar yx panel, 0.2851 s band
   found_by: polar
   scope: both
-- start: '2023-07-23T05:09:00Z'
-  end: '2023-07-23T05:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-07-23T05:10:00Z'
   end: '2023-07-23T05:11:00Z'
   bands: [0.12699208415745594, 0.16]
@@ -57348,13 +55660,6 @@ B04:
   reason: time panel, 0.2851 s band
   found_by: time
   scope: both
-- start: '2023-07-23T06:09:00Z'
-  end: '2023-07-23T06:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-07-23T06:10:00Z'
   end: '2023-07-23T06:11:00Z'
   bands: [0.12699208415745594, 0.16]
@@ -59791,13 +58096,6 @@ B04:
   reason: polar yx panel, 0.2851 s band
   found_by: polar
   scope: both
-- start: '2023-07-23T07:09:00Z'
-  end: '2023-07-23T07:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-07-23T07:10:00Z'
   end: '2023-07-23T07:13:00Z'
   bands: [0.16, 0.20158736798317972]
@@ -62252,13 +60550,6 @@ B04:
   reason: polar yx panel, 0.1796 s band
   found_by: polar
   scope: both
-- start: '2023-07-23T08:09:00Z'
-  end: '2023-07-23T08:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-07-23T08:10:00Z'
   end: '2023-07-23T08:11:00Z'
   bands: [0.021739130434782608, 0.02519842099789746]
@@ -64485,13 +62776,6 @@ B04:
   reason: polar yx panel, 0.2851 s band
   found_by: polar
   scope: both
-- start: '2023-07-23T09:09:00Z'
-  end: '2023-07-23T09:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-07-23T09:10:00Z'
   end: '2023-07-23T09:12:00Z'
   bands: [0.021739130434782608, 0.02519842099789746]
@@ -65218,20 +63502,13 @@ B04:
   reason: time panel, 0.3592 s band, level 3 chunks of 2 min
   found_by: time
   scope: both
-- start: '2023-07-23T10:09:00Z'
-  end: '2023-07-23T10:34:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :19-:24 at B01-B04), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 B05:
-- start: '2023-07-17T15:11:55Z'
-  end: '2023-07-18T00:10:00Z'
+- start: '2023-07-17T00:00:00Z'
+  end: '2023-07-18T00:20:00Z'
   bands: all
-  reason: 'night mask: outside the north-end source''s quiet windows 00:10-01:30 and 02:50-03:51 UTC (01:10-02:30
-    and 03:50-04:51 local) on July nights, 03:10-04:52 UTC on Sunday 23 Jul (clock rule, northend group
-    26 Sep)'
+  reason: 'outside the relaxed quiet windows QR (E score under -1, runs of 30 min or more; B05 pass 2,
+    30 Sep 2026): keep-only, B05 is read only inside the QR windows; trial D:\MT_DATA\MT_Morocco_Atlas_Mountains_Workspace\qc\lineB\B05\quiet_relaxed_20260930
+    (README.md); Approved by Ben on 30 Sep 2026 (19:19 WAST): "yes for the line B calls"'
   found_by: night
   scope: local
 - start: '2023-07-17T15:11:55Z'
@@ -65305,11 +63582,11 @@ B05:
   found_by: time
   scope: local
 - start: '2023-07-18T01:30:00Z'
-  end: '2023-07-18T02:50:00Z'
+  end: '2023-07-18T02:40:00Z'
   bands: all
-  reason: 'night mask: outside the north-end source''s quiet windows 00:10-01:30 and 02:50-03:51 UTC (01:10-02:30
-    and 03:50-04:51 local) on July nights, 03:10-04:52 UTC on Sunday 23 Jul (clock rule, northend group
-    26 Sep)'
+  reason: 'outside the relaxed quiet windows QR (E score under -1, runs of 30 min or more; B05 pass 2,
+    30 Sep 2026): keep-only, B05 is read only inside the QR windows; trial D:\MT_DATA\MT_Morocco_Atlas_Mountains_Workspace\qc\lineB\B05\quiet_relaxed_20260930
+    (README.md); Approved by Ben on 30 Sep 2026 (19:19 WAST): "yes for the line B calls"'
   found_by: night
   scope: local
 - start: '2023-07-18T01:56:00Z'
@@ -65319,12 +63596,12 @@ B05:
     rule, northend group 26 Sep)
   found_by: time
   scope: local
-- start: '2023-07-18T03:51:00Z'
+- start: '2023-07-18T03:20:00Z'
   end: '2023-07-19T00:10:00Z'
   bands: all
-  reason: 'night mask: outside the north-end source''s quiet windows 00:10-01:30 and 02:50-03:51 UTC (01:10-02:30
-    and 03:50-04:51 local) on July nights, 03:10-04:52 UTC on Sunday 23 Jul (clock rule, northend group
-    26 Sep)'
+  reason: 'outside the relaxed quiet windows QR (E score under -1, runs of 30 min or more; B05 pass 2,
+    30 Sep 2026): keep-only, B05 is read only inside the QR windows; trial D:\MT_DATA\MT_Morocco_Atlas_Mountains_Workspace\qc\lineB\B05\quiet_relaxed_20260930
+    (README.md); Approved by Ben on 30 Sep 2026 (19:19 WAST): "yes for the line B calls"'
   found_by: night
   scope: local
 - start: '2023-07-18T03:56:00Z'
@@ -66944,6 +65221,14 @@ B05:
     29.0 deg, 999/1250 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
+- start: '2023-07-19T01:20:00Z'
+  end: '2023-07-19T02:00:00Z'
+  bands: all
+  reason: 'outside the relaxed quiet windows QR (E score under -1, runs of 30 min or more; B05 pass 2,
+    30 Sep 2026): keep-only, B05 is read only inside the QR windows; trial D:\MT_DATA\MT_Morocco_Atlas_Mountains_Workspace\qc\lineB\B05\quiet_relaxed_20260930
+    (README.md); Approved by Ben on 30 Sep 2026 (19:19 WAST): "yes for the line B calls"'
+  found_by: night
+  scope: local
 - start: '2023-07-19T01:22:00Z'
   end: '2023-07-19T01:27:00Z'
   bands: [0.12699208415745594, 0.16]
@@ -66972,14 +65257,6 @@ B05:
     29.1 deg, 859/2396 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-07-19T01:30:00Z'
-  end: '2023-07-19T02:50:00Z'
-  bands: all
-  reason: 'night mask: outside the north-end source''s quiet windows 00:10-01:30 and 02:50-03:51 UTC (01:10-02:30
-    and 03:50-04:51 local) on July nights, 03:10-04:52 UTC on Sunday 23 Jul (clock rule, northend group
-    26 Sep)'
-  found_by: night
-  scope: local
 - start: '2023-07-19T01:31:00Z'
   end: '2023-07-19T02:00:00Z'
   bands: [0.16, 0.20158736798317972]
@@ -67127,6 +65404,14 @@ B05:
     34.3 deg, 1730/2527 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
+- start: '2023-07-19T03:00:00Z'
+  end: '2023-07-19T03:10:00Z'
+  bands: all
+  reason: 'outside the relaxed quiet windows QR (E score under -1, runs of 30 min or more; B05 pass 2,
+    30 Sep 2026): keep-only, B05 is read only inside the QR windows; trial D:\MT_DATA\MT_Morocco_Atlas_Mountains_Workspace\qc\lineB\B05\quiet_relaxed_20260930
+    (README.md); Approved by Ben on 30 Sep 2026 (19:19 WAST): "yes for the line B calls"'
+  found_by: night
+  scope: local
 - start: '2023-07-19T03:05:00Z'
   end: '2023-07-19T03:14:00Z'
   bands: [0.16, 0.20158736798317972]
@@ -67141,6 +65426,14 @@ B05:
     29.0 deg, 999/1250 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
+- start: '2023-07-19T03:50:00Z'
+  end: '2023-07-19T20:40:00Z'
+  bands: all
+  reason: 'outside the relaxed quiet windows QR (E score under -1, runs of 30 min or more; B05 pass 2,
+    30 Sep 2026): keep-only, B05 is read only inside the QR windows; trial D:\MT_DATA\MT_Morocco_Atlas_Mountains_Workspace\qc\lineB\B05\quiet_relaxed_20260930
+    (README.md); Approved by Ben on 30 Sep 2026 (19:19 WAST): "yes for the line B calls"'
+  found_by: night
+  scope: local
 - start: '2023-07-19T03:51:00Z'
   end: '2023-07-19T04:29:00Z'
   bands: [0.20158736798317972, 0.25398416831491194]
@@ -67155,14 +65448,6 @@ B05:
     30.4 deg, 1857/2493 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-07-19T03:51:00Z'
-  end: '2023-07-20T00:10:00Z'
-  bands: all
-  reason: 'night mask: outside the north-end source''s quiet windows 00:10-01:30 and 02:50-03:51 UTC (01:10-02:30
-    and 03:50-04:51 local) on July nights, 03:10-04:52 UTC on Sunday 23 Jul (clock rule, northend group
-    26 Sep)'
-  found_by: night
-  scope: local
 - start: '2023-07-19T03:52:00Z'
   end: '2023-07-19T04:29:00Z'
   bands: [0.16, 0.20158736798317972]
@@ -68843,6 +67128,14 @@ B05:
     rule, northend group 26 Sep)
   found_by: time
   scope: local
+- start: '2023-07-19T21:40:00Z'
+  end: '2023-07-19T22:30:00Z'
+  bands: all
+  reason: 'outside the relaxed quiet windows QR (E score under -1, runs of 30 min or more; B05 pass 2,
+    30 Sep 2026): keep-only, B05 is read only inside the QR windows; trial D:\MT_DATA\MT_Morocco_Atlas_Mountains_Workspace\qc\lineB\B05\quiet_relaxed_20260930
+    (README.md); Approved by Ben on 30 Sep 2026 (19:19 WAST): "yes for the line B calls"'
+  found_by: night
+  scope: local
 - start: '2023-07-19T21:43:00Z'
   end: '2023-07-19T22:33:00Z'
   bands: [0.32, 0.40317473596635944]
@@ -68947,6 +67240,14 @@ B05:
   reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
     rule, northend group 26 Sep)
   found_by: time
+  scope: local
+- start: '2023-07-19T23:00:00Z'
+  end: '2023-07-20T01:00:00Z'
+  bands: all
+  reason: 'outside the relaxed quiet windows QR (E score under -1, runs of 30 min or more; B05 pass 2,
+    30 Sep 2026): keep-only, B05 is read only inside the QR windows; trial D:\MT_DATA\MT_Morocco_Atlas_Mountains_Workspace\qc\lineB\B05\quiet_relaxed_20260930
+    (README.md); Approved by Ben on 30 Sep 2026 (19:19 WAST): "yes for the line B calls"'
+  found_by: night
   scope: local
 - start: '2023-07-19T23:01:00Z'
   end: '2023-07-20T02:03:00Z'
@@ -69165,14 +67466,6 @@ B05:
     30.4 deg, 1857/2493 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-07-20T01:30:00Z'
-  end: '2023-07-20T02:50:00Z'
-  bands: all
-  reason: 'night mask: outside the north-end source''s quiet windows 00:10-01:30 and 02:50-03:51 UTC (01:10-02:30
-    and 03:50-04:51 local) on July nights, 03:10-04:52 UTC on Sunday 23 Jul (clock rule, northend group
-    26 Sep)'
-  found_by: night
-  scope: local
 - start: '2023-07-20T01:45:00Z'
   end: '2023-07-20T01:50:00Z'
   bands: [0.25398416831491194, 0.32]
@@ -69250,6 +67543,14 @@ B05:
     29.0 deg, 999/1250 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
+- start: '2023-07-20T03:30:00Z'
+  end: '2023-07-21T00:00:00Z'
+  bands: all
+  reason: 'outside the relaxed quiet windows QR (E score under -1, runs of 30 min or more; B05 pass 2,
+    30 Sep 2026): keep-only, B05 is read only inside the QR windows; trial D:\MT_DATA\MT_Morocco_Atlas_Mountains_Workspace\qc\lineB\B05\quiet_relaxed_20260930
+    (README.md); Approved by Ben on 30 Sep 2026 (19:19 WAST): "yes for the line B calls"'
+  found_by: night
+  scope: local
 - start: '2023-07-20T03:31:00Z'
   end: '2023-07-20T03:36:00Z'
   bands: [0.1007936839915898, 0.12699208415745594]
@@ -69334,14 +67635,6 @@ B05:
     29.4 deg, 870/2432 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-07-20T03:51:00Z'
-  end: '2023-07-20T10:41:59Z'
-  bands: all
-  reason: 'night mask: outside the north-end source''s quiet windows 00:10-01:30 and 02:50-03:51 UTC (01:10-02:30
-    and 03:50-04:51 local) on July nights, 03:10-04:52 UTC on Sunday 23 Jul (clock rule, northend group
-    26 Sep)'
-  found_by: night
-  scope: local
 - start: '2023-07-20T03:56:00Z'
   end: '2023-07-20T04:19:00Z'
   bands: all
@@ -69903,613 +68196,64 @@ B05:
   found_by: time
   scope: local
 B06:
-- start: '2023-07-18T11:20:14Z'
-  end: '2023-07-19T00:10:00Z'
+- start: '2023-07-18T00:00:00Z'
+  end: '2023-07-19T00:30:00Z'
   bands: all
-  reason: 'night mask: outside the north-end source''s quiet windows 00:10-01:30 and 02:50-03:51 UTC (01:10-02:30
-    and 03:50-04:51 local) on July nights, 03:10-04:52 UTC on Sunday 23 Jul (clock rule, northend group
-    26 Sep)'
-  found_by: night
-  scope: local
-- start: '2023-07-18T11:56:00Z'
-  end: '2023-07-18T12:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
+  reason: 'B06 QR keep-only entry: cuts 2023-07-18T00:00:00Z to 2023-07-19T00:30:00Z, outside the QR quiet
+    windows (E score under -1, runs of 30 min or more); B06 quiet-hours call: the 11-entry QR keep-only
+    block (B06 pass-2 quiet trial, set QR, 510 min kept) replaces B06''s 121 clock-rule entries; yx from
+    rr B03 on the quiet hours (0.226-0.718 s well determined, 0.905-1.14 s flagged); trial D:\MT_DATA\MT_Morocco_Atlas_Mountains_Workspace\qc\lineB\B06\quiet_relaxed_20260930
+    (README.md); Approved by Ben on 30 Sep 2026 (19:19 WAST): "yes for the line B calls"'
   found_by: time
   scope: local
-- start: '2023-07-18T12:56:00Z'
-  end: '2023-07-18T13:19:00Z'
+- start: '2023-07-19T01:10:00Z'
+  end: '2023-07-19T03:20:00Z'
   bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
+  reason: 'B06 QR keep-only entry: cuts 2023-07-19T01:10:00Z to 2023-07-19T03:20:00Z, outside the QR quiet
+    windows (E score under -1, runs of 30 min or more); B06 quiet-hours call: the 11-entry QR keep-only
+    block (B06 pass-2 quiet trial, set QR, 510 min kept) replaces B06''s 121 clock-rule entries; yx from
+    rr B03 on the quiet hours (0.226-0.718 s well determined, 0.905-1.14 s flagged); trial D:\MT_DATA\MT_Morocco_Atlas_Mountains_Workspace\qc\lineB\B06\quiet_relaxed_20260930
+    (README.md); Approved by Ben on 30 Sep 2026 (19:19 WAST): "yes for the line B calls"'
   found_by: time
   scope: local
-- start: '2023-07-18T13:56:00Z'
-  end: '2023-07-18T14:19:00Z'
+- start: '2023-07-19T03:50:00Z'
+  end: '2023-07-20T02:10:00Z'
   bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
+  reason: 'B06 QR keep-only entry: cuts 2023-07-19T03:50:00Z to 2023-07-20T02:10:00Z, outside the QR quiet
+    windows (E score under -1, runs of 30 min or more); B06 quiet-hours call: the 11-entry QR keep-only
+    block (B06 pass-2 quiet trial, set QR, 510 min kept) replaces B06''s 121 clock-rule entries; yx from
+    rr B03 on the quiet hours (0.226-0.718 s well determined, 0.905-1.14 s flagged); trial D:\MT_DATA\MT_Morocco_Atlas_Mountains_Workspace\qc\lineB\B06\quiet_relaxed_20260930
+    (README.md); Approved by Ben on 30 Sep 2026 (19:19 WAST): "yes for the line B calls"'
   found_by: time
   scope: local
-- start: '2023-07-18T14:56:00Z'
-  end: '2023-07-18T15:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-18T15:56:00Z'
-  end: '2023-07-18T16:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-18T16:56:00Z'
-  end: '2023-07-18T17:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-18T17:56:00Z'
-  end: '2023-07-18T18:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-18T18:56:00Z'
-  end: '2023-07-18T19:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-18T19:56:00Z'
-  end: '2023-07-18T20:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-18T20:56:00Z'
-  end: '2023-07-18T21:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-18T21:56:00Z'
-  end: '2023-07-18T22:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-18T22:56:00Z'
-  end: '2023-07-18T23:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-18T23:56:00Z'
-  end: '2023-07-19T00:10:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-19T01:30:00Z'
-  end: '2023-07-19T02:50:00Z'
-  bands: all
-  reason: 'night mask: outside the north-end source''s quiet windows 00:10-01:30 and 02:50-03:51 UTC (01:10-02:30
-    and 03:50-04:51 local) on July nights, 03:10-04:52 UTC on Sunday 23 Jul (clock rule, northend group
-    26 Sep)'
-  found_by: night
-  scope: local
-- start: '2023-07-19T01:56:00Z'
-  end: '2023-07-19T02:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-19T03:51:00Z'
-  end: '2023-07-20T00:10:00Z'
-  bands: all
-  reason: 'night mask: outside the north-end source''s quiet windows 00:10-01:30 and 02:50-03:51 UTC (01:10-02:30
-    and 03:50-04:51 local) on July nights, 03:10-04:52 UTC on Sunday 23 Jul (clock rule, northend group
-    26 Sep)'
-  found_by: night
-  scope: local
-- start: '2023-07-19T03:56:00Z'
-  end: '2023-07-19T04:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-19T04:56:00Z'
-  end: '2023-07-19T05:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-19T05:56:00Z'
-  end: '2023-07-19T06:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-19T06:56:00Z'
-  end: '2023-07-19T07:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-19T07:56:00Z'
-  end: '2023-07-19T08:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-19T08:56:00Z'
-  end: '2023-07-19T09:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-19T09:56:00Z'
-  end: '2023-07-19T10:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-19T10:56:00Z'
-  end: '2023-07-19T11:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-19T11:56:00Z'
-  end: '2023-07-19T12:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-19T12:56:00Z'
-  end: '2023-07-19T13:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-19T13:56:00Z'
-  end: '2023-07-19T14:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-19T14:56:00Z'
-  end: '2023-07-19T15:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-19T15:56:00Z'
-  end: '2023-07-19T16:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-19T16:56:00Z'
-  end: '2023-07-19T17:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-19T17:56:00Z'
-  end: '2023-07-19T18:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-19T18:56:00Z'
-  end: '2023-07-19T19:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-19T19:56:00Z'
-  end: '2023-07-19T20:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-19T20:56:00Z'
-  end: '2023-07-19T21:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-19T21:56:00Z'
-  end: '2023-07-19T22:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-19T22:56:00Z'
-  end: '2023-07-19T23:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-19T23:56:00Z'
-  end: '2023-07-20T00:10:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-20T01:30:00Z'
-  end: '2023-07-20T02:50:00Z'
-  bands: all
-  reason: 'night mask: outside the north-end source''s quiet windows 00:10-01:30 and 02:50-03:51 UTC (01:10-02:30
-    and 03:50-04:51 local) on July nights, 03:10-04:52 UTC on Sunday 23 Jul (clock rule, northend group
-    26 Sep)'
-  found_by: night
-  scope: local
-- start: '2023-07-20T01:56:00Z'
-  end: '2023-07-20T02:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-20T03:51:00Z'
+- start: '2023-07-20T03:20:00Z'
   end: '2023-07-21T00:10:00Z'
   bands: all
-  reason: 'night mask: outside the north-end source''s quiet windows 00:10-01:30 and 02:50-03:51 UTC (01:10-02:30
-    and 03:50-04:51 local) on July nights, 03:10-04:52 UTC on Sunday 23 Jul (clock rule, northend group
-    26 Sep)'
-  found_by: night
-  scope: local
-- start: '2023-07-20T03:56:00Z'
-  end: '2023-07-20T04:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
+  reason: 'B06 QR keep-only entry: cuts 2023-07-20T03:20:00Z to 2023-07-21T00:10:00Z, outside the QR quiet
+    windows (E score under -1, runs of 30 min or more); B06 quiet-hours call: the 11-entry QR keep-only
+    block (B06 pass-2 quiet trial, set QR, 510 min kept) replaces B06''s 121 clock-rule entries; yx from
+    rr B03 on the quiet hours (0.226-0.718 s well determined, 0.905-1.14 s flagged); trial D:\MT_DATA\MT_Morocco_Atlas_Mountains_Workspace\qc\lineB\B06\quiet_relaxed_20260930
+    (README.md); Approved by Ben on 30 Sep 2026 (19:19 WAST): "yes for the line B calls"'
   found_by: time
   scope: local
-- start: '2023-07-20T04:56:00Z'
-  end: '2023-07-20T05:19:00Z'
+- start: '2023-07-21T01:20:00Z'
+  end: '2023-07-21T03:00:00Z'
   bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
+  reason: 'B06 QR keep-only entry: cuts 2023-07-21T01:20:00Z to 2023-07-21T03:00:00Z, outside the QR quiet
+    windows (E score under -1, runs of 30 min or more); B06 quiet-hours call: the 11-entry QR keep-only
+    block (B06 pass-2 quiet trial, set QR, 510 min kept) replaces B06''s 121 clock-rule entries; yx from
+    rr B03 on the quiet hours (0.226-0.718 s well determined, 0.905-1.14 s flagged); trial D:\MT_DATA\MT_Morocco_Atlas_Mountains_Workspace\qc\lineB\B06\quiet_relaxed_20260930
+    (README.md); Approved by Ben on 30 Sep 2026 (19:19 WAST): "yes for the line B calls"'
   found_by: time
   scope: local
-- start: '2023-07-20T05:56:00Z'
-  end: '2023-07-20T06:19:00Z'
+- start: '2023-07-21T03:50:00Z'
+  end: '2023-07-22T01:00:00Z'
   bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-20T06:56:00Z'
-  end: '2023-07-20T07:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-20T07:56:00Z'
-  end: '2023-07-20T08:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-20T08:56:00Z'
-  end: '2023-07-20T09:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-20T09:56:00Z'
-  end: '2023-07-20T10:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-20T10:56:00Z'
-  end: '2023-07-20T11:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-20T11:56:00Z'
-  end: '2023-07-20T12:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-20T12:56:00Z'
-  end: '2023-07-20T13:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-20T13:56:00Z'
-  end: '2023-07-20T14:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-20T14:56:00Z'
-  end: '2023-07-20T15:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-20T15:56:00Z'
-  end: '2023-07-20T16:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-20T16:56:00Z'
-  end: '2023-07-20T17:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-20T17:56:00Z'
-  end: '2023-07-20T18:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-20T18:56:00Z'
-  end: '2023-07-20T19:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-20T19:56:00Z'
-  end: '2023-07-20T20:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-20T20:56:00Z'
-  end: '2023-07-20T21:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-20T21:56:00Z'
-  end: '2023-07-20T22:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-20T22:56:00Z'
-  end: '2023-07-20T23:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-20T23:56:00Z'
-  end: '2023-07-21T00:10:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-21T01:30:00Z'
-  end: '2023-07-21T02:50:00Z'
-  bands: all
-  reason: 'night mask: outside the north-end source''s quiet windows 00:10-01:30 and 02:50-03:51 UTC (01:10-02:30
-    and 03:50-04:51 local) on July nights, 03:10-04:52 UTC on Sunday 23 Jul (clock rule, northend group
-    26 Sep)'
-  found_by: night
-  scope: local
-- start: '2023-07-21T01:56:00Z'
-  end: '2023-07-21T02:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-21T03:51:00Z'
-  end: '2023-07-22T00:10:00Z'
-  bands: all
-  reason: 'night mask: outside the north-end source''s quiet windows 00:10-01:30 and 02:50-03:51 UTC (01:10-02:30
-    and 03:50-04:51 local) on July nights, 03:10-04:52 UTC on Sunday 23 Jul (clock rule, northend group
-    26 Sep)'
-  found_by: night
-  scope: local
-- start: '2023-07-21T03:56:00Z'
-  end: '2023-07-21T04:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-21T04:56:00Z'
-  end: '2023-07-21T05:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-21T05:56:00Z'
-  end: '2023-07-21T06:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-21T06:56:00Z'
-  end: '2023-07-21T07:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-21T07:56:00Z'
-  end: '2023-07-21T08:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-21T08:56:00Z'
-  end: '2023-07-21T09:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-21T09:56:00Z'
-  end: '2023-07-21T10:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-21T10:56:00Z'
-  end: '2023-07-21T11:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-21T11:56:00Z'
-  end: '2023-07-21T12:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-21T12:56:00Z'
-  end: '2023-07-21T13:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-21T13:56:00Z'
-  end: '2023-07-21T14:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-21T14:56:00Z'
-  end: '2023-07-21T15:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-21T15:56:00Z'
-  end: '2023-07-21T16:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-21T16:56:00Z'
-  end: '2023-07-21T17:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-21T17:56:00Z'
-  end: '2023-07-21T18:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-21T18:56:00Z'
-  end: '2023-07-21T19:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-21T19:56:00Z'
-  end: '2023-07-21T20:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-21T20:56:00Z'
-  end: '2023-07-21T21:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-21T21:56:00Z'
-  end: '2023-07-21T22:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-21T22:56:00Z'
-  end: '2023-07-21T23:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-21T23:56:00Z'
-  end: '2023-07-22T00:10:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
+  reason: 'B06 QR keep-only entry: cuts 2023-07-21T03:50:00Z to 2023-07-22T01:00:00Z, outside the QR quiet
+    windows (E score under -1, runs of 30 min or more); B06 quiet-hours call: the 11-entry QR keep-only
+    block (B06 pass-2 quiet trial, set QR, 510 min kept) replaces B06''s 121 clock-rule entries; yx from
+    rr B03 on the quiet hours (0.226-0.718 s well determined, 0.905-1.14 s flagged); trial D:\MT_DATA\MT_Morocco_Atlas_Mountains_Workspace\qc\lineB\B06\quiet_relaxed_20260930
+    (README.md); Approved by Ben on 30 Sep 2026 (19:19 WAST): "yes for the line B calls"'
   found_by: time
   scope: local
 - start: '2023-07-22T01:30:00Z'
@@ -70520,89 +68264,14 @@ B06:
     26 Sep)'
   found_by: night
   scope: local
-- start: '2023-07-22T01:56:00Z'
-  end: '2023-07-22T02:19:00Z'
+- start: '2023-07-22T03:50:00Z'
+  end: '2023-07-23T00:20:00Z'
   bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-22T03:51:00Z'
-  end: '2023-07-23T03:10:00Z'
-  bands: all
-  reason: 'night mask: outside the north-end source''s quiet windows 00:10-01:30 and 02:50-03:51 UTC (01:10-02:30
-    and 03:50-04:51 local) on July nights, 03:10-04:52 UTC on Sunday 23 Jul (clock rule, northend group
-    26 Sep)'
-  found_by: night
-  scope: local
-- start: '2023-07-22T03:56:00Z'
-  end: '2023-07-22T04:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-22T04:56:00Z'
-  end: '2023-07-22T05:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-22T05:56:00Z'
-  end: '2023-07-22T06:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-22T06:56:00Z'
-  end: '2023-07-22T07:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-22T07:56:00Z'
-  end: '2023-07-22T08:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-22T08:56:00Z'
-  end: '2023-07-22T09:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-22T09:56:00Z'
-  end: '2023-07-22T10:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-22T10:56:00Z'
-  end: '2023-07-22T11:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-22T11:56:00Z'
-  end: '2023-07-22T12:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
-- start: '2023-07-22T12:56:00Z'
-  end: '2023-07-22T13:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
+  reason: 'B06 QR keep-only entry: cuts 2023-07-22T03:50:00Z to 2023-07-23T00:20:00Z, outside the QR quiet
+    windows (E score under -1, runs of 30 min or more); B06 quiet-hours call: the 11-entry QR keep-only
+    block (B06 pass-2 quiet trial, set QR, 510 min kept) replaces B06''s 121 clock-rule entries; yx from
+    rr B03 on the quiet hours (0.226-0.718 s well determined, 0.905-1.14 s flagged); trial D:\MT_DATA\MT_Morocco_Atlas_Mountains_Workspace\qc\lineB\B06\quiet_relaxed_20260930
+    (README.md); Approved by Ben on 30 Sep 2026 (19:19 WAST): "yes for the line B calls"'
   found_by: time
   scope: local
 - start: '2023-07-22T13:16:32Z'
@@ -70738,13 +68407,6 @@ B06:
     52.2 deg, 30/1206 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-07-22T13:56:00Z'
-  end: '2023-07-22T14:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-07-22T14:17:00Z'
   end: '2023-07-22T14:22:00Z'
   bands: [0.12699208415745594, 0.16]
@@ -70850,13 +68512,6 @@ B06:
     41.7 deg, 255/1167 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-07-22T14:56:00Z'
-  end: '2023-07-22T15:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-07-22T14:57:00Z'
   end: '2023-07-22T15:03:00Z'
   bands: [0.12699208415745594, 0.16]
@@ -70955,13 +68610,6 @@ B06:
     52.2 deg, 30/1206 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-07-22T15:56:00Z'
-  end: '2023-07-22T16:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-07-22T16:00:00Z'
   end: '2023-07-22T16:15:00Z'
   bands: [0.16, 0.20158736798317972]
@@ -71102,13 +68750,6 @@ B06:
     52.3 deg, 282/1079 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-07-22T16:56:00Z'
-  end: '2023-07-22T17:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-07-22T17:02:00Z'
   end: '2023-07-22T18:02:00Z'
   bands: [0.32, 0.40317473596635944]
@@ -71221,13 +68862,6 @@ B06:
     52.2 deg, 30/1206 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-07-22T17:56:00Z'
-  end: '2023-07-22T18:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-07-22T18:03:00Z'
   end: '2023-07-22T18:08:00Z'
   bands: [0.20158736798317972, 0.25398416831491194]
@@ -71319,13 +68953,6 @@ B06:
     52.2 deg, 30/1206 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-07-22T18:56:00Z'
-  end: '2023-07-22T19:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-07-22T19:06:00Z'
   end: '2023-07-22T19:11:00Z'
   bands: [0.25398416831491194, 0.32]
@@ -71417,13 +69044,6 @@ B06:
     52.2 deg, 30/1206 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-07-22T19:56:00Z'
-  end: '2023-07-22T20:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-07-22T20:06:00Z'
   end: '2023-07-22T20:11:00Z'
   bands: [0.20158736798317972, 0.25398416831491194]
@@ -71536,13 +69156,6 @@ B06:
     82.3 deg, 30/1211 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-07-22T20:56:00Z'
-  end: '2023-07-22T21:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-07-22T21:04:00Z'
   end: '2023-07-22T21:09:00Z'
   bands: [0.25398416831491194, 0.32]
@@ -71648,13 +69261,6 @@ B06:
     52.3 deg, 282/1079 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-07-22T21:56:00Z'
-  end: '2023-07-22T22:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-07-22T21:57:00Z'
   end: '2023-07-22T22:06:00Z'
   bands: [0.1007936839915898, 0.12699208415745594]
@@ -71788,13 +69394,6 @@ B06:
     52.2 deg, 30/1206 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-07-22T22:56:00Z'
-  end: '2023-07-22T23:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-07-22T23:03:00Z'
   end: '2023-07-22T23:08:00Z'
   bands: [0.16, 0.20158736798317972]
@@ -71907,13 +69506,6 @@ B06:
     41.7 deg, 255/1167 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-07-22T23:56:00Z'
-  end: '2023-07-23T00:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-07-23T00:00:00Z'
   end: '2023-07-23T00:09:00Z'
   bands: [0.25398416831491194, 0.32]
@@ -71970,11 +69562,14 @@ B06:
     47.2 deg, 336/509 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-07-23T00:56:00Z'
-  end: '2023-07-23T01:19:00Z'
+- start: '2023-07-23T00:50:00Z'
+  end: '2023-07-23T02:30:00Z'
   bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
+  reason: 'B06 QR keep-only entry: cuts 2023-07-23T00:50:00Z to 2023-07-23T02:30:00Z, outside the QR quiet
+    windows (E score under -1, runs of 30 min or more); B06 quiet-hours call: the 11-entry QR keep-only
+    block (B06 pass-2 quiet trial, set QR, 510 min kept) replaces B06''s 121 clock-rule entries; yx from
+    rr B03 on the quiet hours (0.226-0.718 s well determined, 0.905-1.14 s flagged); trial D:\MT_DATA\MT_Morocco_Atlas_Mountains_Workspace\qc\lineB\B06\quiet_relaxed_20260930
+    (README.md); Approved by Ben on 30 Sep 2026 (19:19 WAST): "yes for the line B calls"'
   found_by: time
   scope: local
 - start: '2023-07-23T00:58:00Z'
@@ -72089,13 +69684,6 @@ B06:
     47.4 deg, 219/471 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-07-23T01:56:00Z'
-  end: '2023-07-23T02:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-07-23T01:59:00Z'
   end: '2023-07-23T02:09:00Z'
   bands: [0.20158736798317972, 0.25398416831491194]
@@ -72222,11 +69810,14 @@ B06:
     48.1 deg, 287/481 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-07-23T02:56:00Z'
+- start: '2023-07-23T03:00:00Z'
   end: '2023-07-23T03:10:00Z'
   bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
+  reason: 'B06 QR keep-only entry: cuts 2023-07-23T03:00:00Z to 2023-07-23T03:10:00Z, outside the QR quiet
+    windows (E score under -1, runs of 30 min or more); B06 quiet-hours call: the 11-entry QR keep-only
+    block (B06 pass-2 quiet trial, set QR, 510 min kept) replaces B06''s 121 clock-rule entries; yx from
+    rr B03 on the quiet hours (0.226-0.718 s well determined, 0.905-1.14 s flagged); trial D:\MT_DATA\MT_Morocco_Atlas_Mountains_Workspace\qc\lineB\B06\quiet_relaxed_20260930
+    (README.md); Approved by Ben on 30 Sep 2026 (19:19 WAST): "yes for the line B calls"'
   found_by: time
   scope: local
 - start: '2023-07-23T03:02:00Z'
@@ -72271,6 +69862,16 @@ B06:
     47.2 deg, 336/509 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
+- start: '2023-07-23T04:50:00Z'
+  end: '2023-07-24T00:00:00Z'
+  bands: all
+  reason: 'B06 QR keep-only entry: cuts 2023-07-23T04:50:00Z to 2023-07-24T00:00:00Z, outside the QR quiet
+    windows (E score under -1, runs of 30 min or more); B06 quiet-hours call: the 11-entry QR keep-only
+    block (B06 pass-2 quiet trial, set QR, 510 min kept) replaces B06''s 121 clock-rule entries; yx from
+    rr B03 on the quiet hours (0.226-0.718 s well determined, 0.905-1.14 s flagged); trial D:\MT_DATA\MT_Morocco_Atlas_Mountains_Workspace\qc\lineB\B06\quiet_relaxed_20260930
+    (README.md); Approved by Ben on 30 Sep 2026 (19:19 WAST): "yes for the line B calls"'
+  found_by: time
+  scope: local
 - start: '2023-07-23T04:52:00Z'
   end: '2023-07-23T05:36:00Z'
   bands: [0.32, 0.40317473596635944]
@@ -72285,14 +69886,6 @@ B06:
     47.4 deg, 219/471 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-07-23T04:52:00Z'
-  end: '2023-07-23T11:20:18Z'
-  bands: all
-  reason: 'night mask: outside the north-end source''s quiet windows 00:10-01:30 and 02:50-03:51 UTC (01:10-02:30
-    and 03:50-04:51 local) on July nights, 03:10-04:52 UTC on Sunday 23 Jul (clock rule, northend group
-    26 Sep)'
-  found_by: night
-  scope: local
 - start: '2023-07-23T04:54:00Z'
   end: '2023-07-23T06:40:00Z'
   bands: [0.8063494719327189, 1.0159366732596478]
@@ -72300,13 +69893,6 @@ B06:
     48.1 deg, 287/481 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-07-23T04:56:00Z'
-  end: '2023-07-23T05:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-07-23T04:58:00Z'
   end: '2023-07-23T05:16:00Z'
   bands: [0.20158736798317972, 0.25398416831491194]
@@ -72426,13 +70012,6 @@ B06:
     47.4 deg, 219/471 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-07-23T05:56:00Z'
-  end: '2023-07-23T06:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-07-23T06:00:00Z'
   end: '2023-07-23T06:27:00Z'
   bands: [0.25398416831491194, 0.32]
@@ -72552,13 +70131,6 @@ B06:
     38.2 deg, 332/1137 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-07-23T06:56:00Z'
-  end: '2023-07-23T07:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-07-23T07:04:00Z'
   end: '2023-07-23T07:32:00Z'
   bands: [0.32, 0.40317473596635944]
@@ -72685,13 +70257,6 @@ B06:
     41.7 deg, 255/1167 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-07-23T07:56:00Z'
-  end: '2023-07-23T08:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-07-23T07:58:00Z'
   end: '2023-07-23T08:31:00Z'
   bands: [0.25398416831491194, 0.32]
@@ -72776,13 +70341,6 @@ B06:
     46.5 deg, 216/503 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-07-23T08:56:00Z'
-  end: '2023-07-23T09:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-07-23T09:03:00Z'
   end: '2023-07-23T09:31:00Z'
   bands: [0.20158736798317972, 0.25398416831491194]
@@ -72881,13 +70439,6 @@ B06:
     46.5 deg, 216/503 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-07-23T09:56:00Z'
-  end: '2023-07-23T10:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 - start: '2023-07-23T10:00:00Z'
   end: '2023-07-23T10:10:33.719000Z'
   bands: [0.25398416831491194, 0.32]
@@ -72909,13 +70460,6 @@ B06:
     38.2 deg, 332/1137 chunks, dilated by 2 group(s) (cluster_masks.py)'
   found_by: cluster
   scope: both
-- start: '2023-07-23T10:56:00Z'
-  end: '2023-07-23T11:19:00Z'
-  bands: all
-  reason: hourly pass of the north-end source (E envelope peak at :06-:09 at B05-B10), +-10 min (clock
-    rule, northend group 26 Sep)
-  found_by: time
-  scope: local
 B07:
 - start: '2023-07-18T13:21:50Z'
   end: '2023-07-19T00:10:00Z'
