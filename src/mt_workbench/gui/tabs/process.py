@@ -36,7 +36,9 @@ which adds `--no-filters` and processes both sites from their raw archives.
 "apply masks.yaml" is on by default; its label counts the `masks.yaml`
 entries process_rr applies for the pair and is refreshed when the pair
 changes, the survey is opened and the tab is shown, since masks are saved
-on the Cross-powers tab. process_rr applies the station's masks of scope
+on the Cross-powers tab; a changed masks.yaml is parsed off the GUI thread
+first (`State.masks_reader`), the label reading "(reading masks.yaml...)"
+meanwhile. process_rr applies the station's masks of scope
 local or both and the remote site's masks of scope both or remote (those
 naming hx, hy or every channel); switching it off adds `--no-masks`,
 which ignores both. A remote is
@@ -130,6 +132,7 @@ class ProcessTab(QWidget):
         self.runner.queue_changed.connect(self._refresh_status)
         self.options.engine_changed.connect(lambda _engine: self._refresh_status())
         self.state.site_changed.connect(self.select_station)
+        self.state.masks_reader.ready.connect(self._describe_masks)
 
     def _button(self, text: str, slot, tip: str) -> QPushButton:
         """Return a push button with a tooltip, connected to `slot`."""
@@ -250,12 +253,24 @@ class ProcessTab(QWidget):
         self.summary.refresh()
         self._update_enabled()
         self.options.describe_filters(station, remote)
-        self.options.describe_masks(station, remote)
+        self._describe_masks()
 
     def showEvent(self, event) -> None:
         """Recount the masks on show, since they are saved on the Cross-powers tab."""
         super().showEvent(event)
-        self.options.describe_masks(self.station_combo.currentData(), self.remote_combo.currentData())
+        self._describe_masks()
+
+    def _describe_masks(self) -> None:
+        """Count the pair's masks on the switch, at once when masks.yaml is parsed as it is now.
+
+        A changed file is parsed off the GUI thread (`State.masks_reader`);
+        the switch reads "(reading masks.yaml...)" until its `ready` calls
+        this again.
+        """
+        if self.state.masks_reader.request():
+            self.options.describe_masks(self.station_combo.currentData(), self.remote_combo.currentData())
+        else:
+            self.options.masks_reading()
 
     def _paint_map(self) -> None:
         """Colour the station, remote and stack members on the map."""

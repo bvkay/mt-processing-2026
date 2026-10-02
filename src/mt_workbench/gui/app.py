@@ -25,6 +25,9 @@ job. Opening a survey with no basemap fetches one through
   selected window and computes its QC off the GUI thread.
 * `archive_lock`: the `ArchiveLock` that keeps the store's worker and the
   tree's archive reads from opening a file at the same time.
+* `masks_reader`: the `mt_workbench.gui.masks_reader.MasksReader` that parses
+  masks.yaml off the GUI thread when it changed, for the Process and
+  Cross-powers tabs.
 * `goto_time`: emitted by any tab to put the Time Series view on a moment.
 
 `request_qc()` asks the store for the selection with the current remote and
@@ -57,6 +60,7 @@ from mt_workbench.ingest import variant_path, variant_ready
 from mt_workbench.survey import OBSERVATORY, Survey
 from mt_workbench.gui.console import ConsoleStrip, LoguruQtSink
 from mt_workbench.gui.jobs import JobRunner
+from mt_workbench.gui.masks_reader import MasksReader
 from mt_workbench.gui.reader import ArchiveLock
 from mt_workbench.gui.segment_store import SegmentStore
 from mt_workbench.gui.site_map import fetch_basemap_if_missing
@@ -104,6 +108,7 @@ class State(QObject):
         self.remote: str | None = None
         self.archive_lock = ArchiveLock(self)
         self.segment_store = SegmentStore(self, self)
+        self.masks_reader = MasksReader(self, self)
 
     # ------------------------------------------------------------ survey
 
@@ -498,4 +503,5 @@ class MainWindow(QMainWindow):
         self.state.segment_store.wait()
         self.filters_tab.wait()  # the filter preview's worker and its chooser's read
         self.crosspower_tab.wait()  # a chunk-impedance compute or a window read
+        self.state.masks_reader.wait()  # a masks.yaml parse
         super().closeEvent(event)

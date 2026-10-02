@@ -56,7 +56,9 @@ at a band shown per base chunk), else the band's [pmin, pmax]. "Unmask
 selected" cuts the chunks out of the masks
 applying to the band, the all-band ones only at a level shown per base
 chunk. Masks are declared per site, whatever the remote; Save masks writes
-the site's block of masks.yaml and a change of site reloads it. A new mask
+the site's block of masks.yaml and a change of site reloads it, once the
+file is parsed when it changed (`State.masks_reader`, off the GUI thread;
+the mask buttons do nothing until the list is filled). A new mask
 is written with scope local (`mt_workbench.masks`): it applies when the site is
 the local of a pair, and the pairs that use the site as a remote keep its
 windows, and with no `channels` (every channel); an entry set to scope both
@@ -322,6 +324,7 @@ class CrossPowerTab(QWidget):
         self.spare: tuple | None = None  # (store, key, info) of a pair not shown when its compute returned
         self.computes = 0  # computes started (a regroup starts none)
         self.masks: list[dict] = []
+        self._masks_wait = False  # True while the site's masks wait for masks.yaml's parse
         self.dirty = False
         self.selected: set[int] = set()  # chunk indices on the grid of level `selected_level`
         self.selected_on = "time"  # or "polar xy" / "polar yx"
@@ -444,6 +447,7 @@ class CrossPowerTab(QWidget):
         state.site_changed.connect(lambda site: self.select_site(site) if site else None)
         state.selection_changed.connect(lambda _selection: self._follow_selection())
         state.archive_lock.changed.connect(self._kick)
+        state.masks_reader.ready.connect(self._masks_ready)
         self._band_shown()  # no survey yet: no label, both arrows off
 
     # ------------------------------------------------------------- building
@@ -621,20 +625,52 @@ class CrossPowerTab(QWidget):
         The result is cleared and the store kept, so a window of its pair
         picked again is regrouped from it.
         """
-        site = self.site()
         dropped = len(self.masks) if self.dirty else 0
         self.result, self.selected, self.selected_level, self.dirty = None, set(), None, False
         note = f"unsaved mask edits dropped ({dropped} mask(s) in the list)" if dropped else ""
-        try:
-            self.masks = load_masks(self.state.survey_yaml, site) if site and self.state.survey_yaml else []
-        except ValueError as exc:  # a hand-edited masks.yaml that is not masks
-            self.masks, note = [], f"masks.yaml: {exc}"
+        note = self._load_masks() or note
         self._fill_table()
         self._fill_bands()  # no result: the band labels from the chunk length alone; draws
         self.status.setText(note or MASK_ROUTE)
         self.window_combo.clear()  # the new site starts on its whole overlap
         self._read_spans()
         self._fill_remotes()
+
+    def _load_masks(self) -> str:
+        """Load the site's masks into the list, or wait for masks.yaml's parse (`State.masks_reader`).
+
+        While the parse runs the list is empty and `_masks_unread` keeps the
+        mask buttons from editing or saving it.
+
+        Returns:
+            str: A status note: the file's error, the wait, or "".
+        """
+        site = self.site()
+        self._masks_wait = False
+        if not site or not self.state.survey_yaml:
+            self.masks = []
+            return ""
+        if not self.state.masks_reader.request():
+            self.masks, self._masks_wait = [], True
+            return "reading masks.yaml..."
+        try:
+            self.masks = load_masks(self.state.survey_yaml, site)
+        except ValueError as exc:  # a hand-edited masks.yaml that is not masks
+            self.masks = []
+            return f"masks.yaml: {exc}"
+        return ""
+
+    def _masks_ready(self) -> None:
+        """List the site's masks once masks.yaml's parse has ended, when they were waiting for it."""
+        if not self._masks_wait:
+            return
+        note = self._load_masks()
+        if self._masks_wait:
+            return  # the file changed again; another parse runs
+        self._fill_table()
+        if self.result is not None:
+            self.restyle()
+        self.status.setText(note or MASK_ROUTE)
 
     def _read_spans(self) -> None:
         """Read the site's span, then every archived site's (the remote list and its preset), while on screen."""
@@ -1195,10 +1231,16 @@ class CrossPowerTab(QWidget):
         self.selected, self.selected_on, self.selected_level = picked, panel, level
         self.restyle()
 
+    def _masks_unread(self) -> bool:
+        """Return True, saying so on the status line, while the site's masks wait for masks.yaml's parse."""
+        if self._masks_wait:
+            self.status.setText("masks.yaml is being read: the site's masks are not listed yet")
+        return self._masks_wait
+
     def mask_selected(self) -> None:
         """Add one mask per run of consecutive selected chunks, over their span on the band's grid."""
         r, j = self.result, self.band()
-        if r is None or j is None or not self.selected:
+        if r is None or j is None or not self.selected or self._masks_unread():
             return
         v = self.view(j)
         period, pmin, pmax = self.band_periods(j)
@@ -1233,7 +1275,7 @@ class CrossPowerTab(QWidget):
         line.
         """
         r, j = self.result, self.band()
-        if r is None or j is None or not self.selected:
+        if r is None or j is None or not self.selected or self._masks_unread():
             return
         v = self.view(j)
         grouped = v["multiple"] > 1
@@ -1297,14 +1339,14 @@ class CrossPowerTab(QWidget):
     def remove_rows(self) -> None:
         """Drop the masks of the rows picked."""
         rows = {index.row() for index in self.table.selectionModel().selectedRows()}
-        if rows:
+        if rows and not self._masks_unread():
             self.masks = [m for k, m in enumerate(self.masks) if k not in rows]
             self._edited()
 
     def save(self) -> None:
         """Write this site's masks to `<survey>/masks.yaml`."""
         site = self.site()
-        if not site or self.state.survey_yaml is None:
+        if not site or self.state.survey_yaml is None or self._masks_unread():
             return
         path = save_masks(self.state.survey_yaml, site, self.masks)
         self.dirty = False

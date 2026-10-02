@@ -19,6 +19,20 @@ write one site's block. Saving rewrites that site's block of the file's text
 and carries the other blocks and the leading comment over unchanged; the
 text goes to a temporary file in the same folder and `os.replace` moves it
 into place, so a reader never sees a part-written file.
+
+A survey's masks.yaml can hold tens of thousands of masks (8.1 MB, 30,802
+masks over 75 sites for the Atlas survey), and a site's block is read from
+the parsed whole. `read_document` parses a file once per change: the
+document is kept per path with the file's modification time and size, and
+a call that finds both unchanged reads nothing (a file read within
+`RACY_S` of its last write is read again and parsed if its text changed,
+since a same-size write within one clock tick keeps both). The parse uses libyaml
+(`yaml.CSafeLoader`, 2.9 s for that file against 10.2 s in pure Python)
+when PyYAML has it. `load_masks`, `load_history` and through them
+`remote_masks` read through it; `replace_text` drops the kept document of
+the file it writes. `is_current` says whether a read would parse, so the
+GUI can parse on a worker thread instead.
+
 `apply_time_masks(kd, masks)` cuts the masked intervals out of an aurora
 KernelDataset. `applies(mask, period_s)` decides which bands a mask covers;
 the Cross-powers tab, `mt_workbench.crosspower.masked_chunks` and
@@ -94,6 +108,7 @@ from __future__ import annotations
 
 import datetime as dt
 import os
+import threading
 import time
 from pathlib import Path
 
@@ -128,6 +143,14 @@ HISTORY_HEADER = (
     "# scripts/retire_masks.py --restore moves an entry back into masks.yaml.\n"
 )
 REPLACE_TRIES = 20  # os.replace attempts while a reader holds the file open (Windows)
+# libyaml's parser when PyYAML was built with it, else the pure-Python one; both build the same document
+_LOADER = getattr(yaml, "CSafeLoader", yaml.SafeLoader)
+# a file modified less than this before it was read is read again next time (FAT and SMB keep 2 s mtimes)
+RACY_S = 2.0
+# parsed files: absolute path -> ((st_mtime_ns, st_size), the text when read within RACY_S of a write
+# else None, the document or the error its parse raised)
+_PARSED: dict[str, tuple[tuple[int, int], str | None, object]] = {}
+_PARSE_LOCK = threading.Lock()  # one parse at a time; a caller arriving meanwhile takes its result
 
 
 class _Dumper(yaml.SafeDumper):
@@ -266,8 +289,79 @@ def _ordered(masks) -> list[dict]:
     return out
 
 
+def _stamp(path: Path) -> tuple[int, int]:
+    """Return a file's (st_mtime_ns, st_size), the key of its parsed document."""
+    status = path.stat()
+    return status.st_mtime_ns, status.st_size
+
+
+def read_document(path) -> dict:
+    """Return a masks file parsed, parsing it only when it changed since the last parse.
+
+    The document is kept per path with the file's modification time and
+    size, taken before the read; a call that finds both unchanged returns it
+    without opening the file. A file modified less than `RACY_S` before it
+    was read is kept with its text and read again by the next call, which
+    parses it only if the text differs: a second write within the same tick
+    of the file system's clock, at the same size, leaves time and size
+    unchanged (git's "racily clean" rule). A parse error is kept the same
+    way and raised again until the file changes. The parse uses `_LOADER`
+    (libyaml when PyYAML has it).
+
+    Args:
+        path (str or Path): masks.yaml or masks_history.yaml.
+
+    Returns:
+        dict: The document, {} for an empty file. It is shared: callers
+        read it and do not change it.
+
+    Raises:
+        OSError: If the file cannot be read.
+        yaml.YAMLError: If the file is not YAML.
+    """
+    path = Path(path)
+    key = os.path.abspath(path)
+    with _PARSE_LOCK:
+        now = time.time_ns()
+        stamp = _stamp(path)
+        kept = _PARSED.get(key)
+        if kept is None or kept[0] != stamp or kept[1] is not None:
+            text = path.read_text(encoding="utf-8")
+            if kept is not None and kept[0] == stamp and kept[1] == text:
+                document = kept[2]
+            else:
+                try:
+                    document = yaml.load(text, Loader=_LOADER) or {}
+                except yaml.YAMLError as exc:
+                    document = exc
+            racy = stamp[0] + int(RACY_S * 1e9) >= now  # modified too recently to trust the stamp alone
+            kept = _PARSED[key] = (stamp, text if racy else None, document)
+    if isinstance(kept[2], yaml.YAMLError):
+        raise kept[2]
+    return kept[2]
+
+
+def is_current(path) -> bool:
+    """Return whether `read_document` would answer `path` without parsing it.
+
+    True when the file is absent (the loaders read nothing then) or its
+    parsed document is kept for its present modification time and size
+    (a file read soon after a write is then read again, and parsed only if
+    its text changed).
+    """
+    path = Path(path)
+    try:
+        stamp = _stamp(path)
+    except OSError:
+        return True
+    kept = _PARSED.get(os.path.abspath(path))
+    return kept is not None and kept[0] == stamp
+
+
 def load_masks(survey, site: str) -> list[dict]:
     """Load the masks of one site from masks.yaml.
+
+    The file is parsed once per change (`read_document`).
 
     Args:
         survey (Survey or str or Path): Survey, survey.yaml path or folder.
@@ -280,8 +374,7 @@ def load_masks(survey, site: str) -> list[dict]:
     path = masks_path(survey)
     if not path.exists():
         return []
-    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    return _ordered(data.get(site) or [])
+    return _ordered(read_document(path).get(site) or [])
 
 
 def _blocks(text: str) -> tuple[str, list[tuple[str, str]]]:
@@ -338,6 +431,7 @@ def replace_text(path, text: str) -> Path:
     finally:
         if tmp.exists():
             tmp.unlink()
+        _PARSED.pop(os.path.abspath(path), None)  # the next read parses the new text
     return path
 
 
@@ -445,7 +539,7 @@ def load_history(survey, site: str) -> list[dict]:
     path = history_path(survey)
     if not path.exists():
         return []
-    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    data = read_document(path)
     out = []
     for m in data.get(site) or []:
         if "retired" not in m:

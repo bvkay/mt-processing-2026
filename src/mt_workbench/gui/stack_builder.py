@@ -315,6 +315,10 @@ class RunOptions(QGroupBox):
             text += f" | {remote} (remote) declares: {kinds(remote)}"
         self.filters_label.setText(text + " (edit on the Filter Data tab)")
 
+    def masks_reading(self) -> None:
+        """Label the masks switch '(reading masks.yaml...)' while the tab's parse runs; its state is left as it was."""
+        self.masks_check.setText(f"{self.MASKS_TEXT} (reading masks.yaml...)")
+
     def describe_masks(self, station, remote=None) -> None:
         """Label the masks switch with the mask count of each site of the pair.
 
