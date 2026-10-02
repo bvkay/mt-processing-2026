@@ -12,21 +12,46 @@ cite them; add the fix commit when one lands.
    -2699.999 s early (control: +0.001 s). `mt_workbench.ingest._group_contiguous`
    (LEMI-423): end a run at any file whose sample count disagrees with its
    span, and say so; a partial-record warning belongs in mt-io's reader too.
-   Robustness case 5c.
+   Robustness case 5c. Fixed in ae6d4bc (`_b423_run_ends`; the case 5c copies
+   now ingest as three runs, file 3 stamped +0.001 s; psd_qc.py's --before
+   read and profile_run.py's B423 read benchmark pass the site's rate too);
+   the mt-io warning is still to do.
 2. **A 10 min window writes an EDI with Z errors of exactly 0** at 45.976 s
    (rho 1030 / 1480 against 3.3 / 1.4 over 44.9 h); a 1 h window gives dZ/Z
    0.44 against 0.085 with only aurora's "Window is longer than the time
    series" errors. `mt_workbench.process.process_station` / `products`: never
    write a zero or non-finite error, and drop bands whose level has fewer than
-   a minimum number of STFT windows (policy: Ben). Cases 3a, 3b.
+   a minimum number of STFT windows (policy: Ben). Cases 3a, 3b. Fixed in
+   4a7cde0: `drop_short_bands` with `min_band_windows` (default 5, below the
+   7 of the 6 h identity run's deepest level; survey.yaml `processing:` key
+   and `--min-band-windows`), then `products.drop_bad_errors`. The 10 min
+   window writes 34 periods to 11.5 s, none with a zero error; the 1 h
+   window (case 3a) loses level 8 (3 windows), 57.9-183.9 s, and ends at
+   46 s. The default 5 stands until Ben sets the policy.
+   The guard works per row. As first written it removed a period from
+   every row when any row was bad there, and after `merge_rows` (a masked
+   pair run once per set of masks by row) a band one row's run did not
+   keep is NaN in that row, so the whole period went: in a synthetic merge
+   (ex from a run on 1, 2, 4, 8 s, ey and hz from one on 1, 2, 8, 16 s) it
+   wrote 1, 2 and 8 s and lost the good ex estimate at 4 s and the ey and
+   hz ones at 16 s. Now a row with a zero or non-finite error is written as
+   not estimated (EMPTY, 1e32, in the EDI) at that period, the other rows
+   keep their values, and a period goes only when no row is left; the
+   merge keeps all five periods, as before the guard. No masked pair has
+   been measured with the floor on. MANTLE applies no floor:
+   `--engine mantle` refuses `--min-band-windows` and its sidecar records
+   `min_band_windows` as null; its pooled EDI does not pass through the
+   error guard.
 3. **An unknown declination (absent in survey.yaml and in the archive) is
    written as `<Declination epoch="1995">0.000</Declination>` in the XML** and
    0.0 in the sidecar, while the EDI correctly says "no declination stored".
    `mt_workbench.products` `frame_record` and the XML writer: treat an archive
-   declination of 0.0 without a model or epoch as unknown. Case 8c.
+   declination of 0.0 without a model or epoch as unknown. Case 8c. Fixed in
+   896dc92 (no Declination element, null sidecar keys, a run-time warning).
 4. **A site not in survey.yaml passes `--dry-run`** ("no raw folder",
    "1000 Hz") and the real run ends in a bare KeyError. `scripts/process_rr.py`
-   `resolve`: exit 2 with the site name. Case 9b.
+   `resolve`: exit 2 with the site name. Case 9b. Fixed in 17f0a96
+   (`check_pair`; a stacked remote STK_..., built or not, passes).
 
 ## Unclear failures (a traceback or a silent wait where a message belongs)
 
@@ -36,14 +61,16 @@ cite them; add the fix commit when one lands.
    `ingest_site._remove_partial`. Case 1b.
 6. Dead remote (no time overlap): a 12-line mth5 traceback after a
    resolution block that says "window: full overlap". `process_rr.resolve`:
-   compare the spans in the dry run. Case 4.
+   compare the spans in the dry run. Case 4. Fixed in 17f0a96: exit 2 with
+   both spans (survey.yaml start/end, else the archive's runs), dry run too.
 7. Memory gate above the machine's RAM waits for ever with one log line every
    300 s. `campaign.py` `Runner.gate`: refuse at start (exit 2) when
    `min_available_gb` exceeds the machine. Case 7.
 8. `campaign.py --stage 0 --dry-run` lists a current variant as "to build"
    when the ledger has no done row for it. Case 2c.
 9. `process_rr --dry-run` words a missing raw archive the same as a present
-   one ("raw: <path>, variant: to build"). Case 9a.
+   one ("raw: <path>, variant: to build"). Case 9a. Fixed in 17f0a96
+   ("raw: <path> (missing: ingested from <raw folder> first)").
 10. A missing workspace folder opens the survey in the GUI with "0 with an
     MTH5 archive" and no workspace error (GUI bench control).
 
