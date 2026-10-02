@@ -25,7 +25,8 @@ mtime tick, just after a write, is not seen by the next load; a broken file is n
 load, or is read again while unchanged; `is_current` is not False before
 the first parse and True after it; or `MasksReader.request()` answers True
 before the parse, parses on the GUI thread, parses more than once for one
-change, or reads the file again on a request after `ready`.
+change, or reads the file again on a request after `ready`; or, on a file
+it cannot read, starts a second read as the tabs ask again on `ready`.
 """
 
 from __future__ import annotations
@@ -214,6 +215,34 @@ def test_g_gui_reader():
     assert READS == ["masks.yaml"], READS
     masks_reader.read_document = parse
     print(f"  MasksReader: parsed once on a worker thread, then a request and a load read nothing ({READS})")
+
+
+def test_i_gui_reader_unreadable_file():
+    from PySide6.QtWidgets import QApplication
+
+    from mt_workbench.gui import masks_reader
+
+    app = QApplication.instance() or QApplication([])
+    survey = fresh("i")
+    parse = masks_reader.read_document
+
+    def locked(path):
+        raise PermissionError(13, "the file is locked", str(path))
+
+    masks_reader.read_document = locked
+    try:
+        reader = masks_reader.MasksReader(types.SimpleNamespace(survey_yaml=survey / "survey.yaml"))
+        ready = []
+        reader.ready.connect(lambda: ready.append(reader.request()))  # as the tabs do on ready
+        assert reader.request() is False
+        end = time.time() + 5
+        while time.time() < end and len(ready) < 3:
+            app.processEvents()
+        assert reader.parses == 1 and ready[:1] == [True], (reader.parses, ready)
+    finally:
+        masks_reader.read_document = parse
+    print(f"  MasksReader on a file it cannot read: one attempt, then the tabs load it (and report the error); "
+          f"attempts {reader.parses}")
 
 
 if __name__ == "__main__":

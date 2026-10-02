@@ -44,6 +44,16 @@ class MasksReader(QObject):
         self.state = state
         self.parses = 0  # parses started
         self._thread: ReadThread | None = None
+        self._failed: tuple | None = None  # (path, mtime_ns, size) of a file whose read raised OSError
+
+    @staticmethod
+    def _stamp(path: Path) -> tuple | None:
+        """Return (path, st_mtime_ns, st_size), or None when the file cannot be stat'ed."""
+        try:
+            status = path.stat()
+        except OSError:
+            return None
+        return str(path), status.st_mtime_ns, status.st_size
 
     def path(self) -> Path | None:
         """Return the open survey's masks.yaml path, or None with no survey open."""
@@ -57,16 +67,21 @@ class MasksReader(QObject):
             it is now; False while a parse runs, `ready` following.
         """
         path = self.path()
-        if path is None or is_current(path):
-            return True
+        if path is None or is_current(path) or self._failed == self._stamp(path):
+            return True  # (after a failed read of the file as it is, the load reports the error)
         if self._thread is None:
             thread = ReadThread(read_document, str(path), path, parent=self)
+            thread.failed.connect(self._read_failed)
             thread.finished.connect(self._done)
             thread.finished.connect(thread.deleteLater)
             self._thread = thread
             self.parses += 1
             thread.start()
         return False
+
+    def _read_failed(self, tag, _message: str) -> None:
+        """Remember the file as it was when its read raised, so it is not read again until it changes."""
+        self._failed = self._stamp(Path(tag))
 
     def _done(self) -> None:
         """Forget the finished thread and tell the tabs."""
