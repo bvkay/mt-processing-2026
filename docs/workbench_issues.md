@@ -121,7 +121,20 @@ cite them; add the fix commit when one lands.
     pool; B10 alone 506 s at 37 GiB. Fix: time chunks over a pool sized to the
     cores (bounds memory too); a stacked SOS is 6.5x faster per channel but
     not identical within 60 s of run ends (Ben's call, with a variant-hash
-    salt).
+    salt). Fixed in 31f7402 for the mains fit only (the stacked SOS left for
+    Ben): its own chunks run over a pool of the cores, bit for bit (the
+    synthetic against a stored a937bc4 result; 2 h of B10's four channels
+    on 1, 8 and 20 threads). On those 2 h it went 5.41 -> 3.84-3.94 s on 8
+    threads (3.6 -> 6.2 cores, peak 0.67-0.71 -> 0.72 GiB) and 4.25-4.33 s
+    on 20 (1.07 GiB): its basis arithmetic is memory-bound, so 8 threads
+    beat 20. The notch keeps its single pass. In 600 s chunks with settling
+    margins it equalled the single pass only to rounding: up to 2.2e-12 of
+    the std on C19's declared q 60 x2 (3.3e-14 of the largest sample), and
+    with the mean removed C19 ex still differed by 5.2e-8 counts in 37,746
+    samples. That patch (B10's notch 2.31 -> 1.62 s, 1.07 -> 0.67 GiB) is
+    Ben's call: the Morocco workspace's
+    qc/survey/workbench_fixes_20261003/pipeline/followup. Not measured on a
+    whole variant build.
 15. Masks naming only output channels split a pair into two aurora runs
     (`process_rr.row_runs`): A20 rr A21 440 s = 135 + 279 s. One read and STFT
     with the extra masks applied at the regression; needs an identity check.
@@ -134,11 +147,26 @@ cite them; add the fix commit when one lands.
     load the whole overlap took 24.3 -> 19.8 s (two runs of each, 3 Oct).
 17. Imports per child process 2.6 s (`mt_metadata.transfer_functions` 1.5 s
     through `mt_workbench.compare`): about 70 s per bench-sized batch; reuse
-    worker processes in the campaign runner.
+    worker processes in the campaign runner. cc6203a makes compare import
+    mt_metadata and matplotlib only when used (`import mt_workbench.compare`
+    2.36 -> 0.075 s), and process_rr.py selects Agg itself before mth5 and
+    mt_io import pyplot, as compare did. process_rr.py's import is no
+    faster: 2.80 s before, 2.92 s with the lazy imports alone, 2.83 s with
+    Agg selected early (medians of five fresh processes, interleaved;
+    2.69-3.15 s over all fifteen). `mt_workbench.ingest` imports mth5 and
+    mt_io, which import mt_metadata.transfer_functions and
+    matplotlib.pyplot themselves: the 1.5 s was where `-X importtime`
+    charged a cost every child pays anyway. Worker reuse remains the lever.
 18. Campaign `--parallel` below what the memory gate allows: four jobs fit at
     the fork median peak of 22.4 GiB, three at the p90 34.6 GiB; lines A and D
-    ran two at a time.
+    ran two at a time. Fixed in 8cd6e21: the default is `runner.parallel`,
+    else as many jobs as the gate admits at start, logged with the rr peak
+    used (line C2's dry run: 4 at its p90 of 25.0 GB with 101.2 GB free).
 19. Sidecars record no fork SHAs for mth5, mt_timeseries, mt_io and
     mt_metadata (the version strings are the upstream numbers), so a ledger
     cannot attribute a gain to a fork. `products` / `process_rr`: record the
-    installed `direct_url` commit or a local tag per package.
+    installed `direct_url` commit or a local tag per package. Fixed in
+    955bc16: `versions.installed` per package (direct_url, editable, the
+    commit when pip recorded one, the RECORD and `__init__.py` hashes). The
+    forks were installed from their clone folders, so pip recorded no
+    commit; a reinstall from a `git+file://` URL would record one.
