@@ -155,7 +155,10 @@ window would otherwise overwrite each other's EDI. The window, and
 everything else about the run (archives and their mtimes, the band scheme
 and estimator tweaks used, both sites' declared filters, the full argv, the
 phase-quadrant verdict and the package versions), is in the `.json` sidecar
-next to the EDI. A short summary also goes into the EDI's INFO block
+next to the EDI. Its `versions.installed` says where each package of the
+stack (aurora, mth5, mt_timeseries, mt_metadata, mt_io) was installed from
+and fingerprints what is installed (`installed_origin`), since a fork and
+the stock release carry the same version number. A short summary also goes into the EDI's INFO block
 (`processing_parameters`). The sidecar's `edi`, `xml` and `h5` keys name the
 three products, and `frame` records the frame metadata written with them.
 
@@ -199,7 +202,9 @@ Usage:
 
 import argparse
 import datetime as dt
+import hashlib
 import importlib.metadata
+import importlib.util
 import inspect
 import json
 import math
@@ -1017,14 +1022,77 @@ def mt_workbench_version() -> str:
         return "unknown"
 
 
+STACK = ("aurora", "mth5", "mt_timeseries", "mt_metadata", "mt_io")
+
+
+def _sha256(data: bytes) -> str:
+    """Return the hex SHA-256 of some bytes."""
+    return hashlib.sha256(data).hexdigest()
+
+
+def installed_origin(name: str) -> dict:
+    """Return where an installed package came from and a fingerprint of what is installed.
+
+    A fork installed from its clone carries the upstream version number, so
+    the version alone cannot tell a fork row from a stock row in a ledger.
+    pip records the install source in the distribution's `direct_url.json`
+    (the clone's folder for an install from a local clone, and a commit only
+    for an install from a version-control URL) and every installed file
+    with its own hash in `RECORD`, so the hash of `RECORD` changes with any
+    installed file. The `__init__.py` hash is of the file this process
+    imports (a clone first on PYTHONPATH included), found without importing
+    it.
+
+    Args:
+        name (str): Distribution and import name.
+
+    Returns:
+        dict: ``version``; ``direct_url`` (None for an index install),
+        ``editable``, ``commit`` (the commit pip recorded, else None),
+        ``record_sha256`` (None without a RECORD), ``init_path`` and
+        ``init_sha256`` (None when the package is not found). Without a
+        distribution, ``version`` is "not installed" and only the last two
+        keys follow.
+    """
+    out = {"version": "not installed"}
+    try:
+        dist = importlib.metadata.distribution(name)
+    except importlib.metadata.PackageNotFoundError:
+        dist = None
+    if dist is not None:
+        out = {"version": dist.version, "direct_url": None, "editable": False, "commit": None,
+               "record_sha256": None}
+        direct = dist.read_text("direct_url.json")
+        if direct:
+            info = json.loads(direct)
+            out["direct_url"] = info.get("url")
+            out["editable"] = bool((info.get("dir_info") or {}).get("editable"))
+            out["commit"] = (info.get("vcs_info") or {}).get("commit_id")
+        record = dist.read_text("RECORD")
+        if record is not None:
+            out["record_sha256"] = _sha256(record.encode("utf-8"))
+    out["init_path"], out["init_sha256"] = None, None
+    try:
+        spec = importlib.util.find_spec(name)
+    except (ImportError, ValueError):
+        spec = None
+    if spec is not None and spec.origin and Path(spec.origin).is_file():
+        out["init_path"] = str(spec.origin)
+        out["init_sha256"] = _sha256(Path(spec.origin).read_bytes())
+    return out
+
+
 def versions() -> dict:
-    """Return the versions of mt-workbench and of aurora, mth5, mt_metadata and mt_io."""
+    """Return the versions of mt-workbench and of the stack, and where each package of the stack came from.
+
+    Returns:
+        dict: ``mt_workbench`` (`mt_workbench_version`), the version of each
+        package of `STACK`, and ``installed``: `installed_origin` of each.
+    """
     return {
         "mt_workbench": mt_workbench_version(),
-        "aurora": _package_version("aurora"),
-        "mth5": _package_version("mth5"),
-        "mt_metadata": _package_version("mt_metadata"),
-        "mt_io": _package_version("mt_io"),
+        **{name: _package_version(name) for name in STACK},
+        "installed": {name: installed_origin(name) for name in STACK},
     }
 
 
