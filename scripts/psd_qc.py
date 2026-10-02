@@ -317,11 +317,13 @@ def load_before(survey: Survey, site_name: str, channels: list[str], t0, t1):
     # `read_lemi423` call by default, comparable to `load_station`, which
     # concatenates every run. The longest contiguous group is read when the
     # estimated raw sample count is too large to hold as a second
-    # full-resolution copy in memory.
+    # full-resolution copy in memory. The site's rate goes to the grouping,
+    # so a file cut short of its span ends its group as it ends its run at
+    # ingest.
     epochs = np.array([int(f.stem) for f in files], dtype="int64")
     file_len_s = int(np.median(np.diff(epochs))) if epochs.size > 1 else 5400
     n_est = len(files) * file_len_s * survey.sample_rate
-    groups = _group_contiguous(files)
+    groups = _group_contiguous(files, None, "lemi423", rate=survey.sample_rate_of(site_name))
     if n_est > MAX_BEFORE_SAMPLES and len(groups) > 1:
         group = max(groups, key=len)
         read_files = group if len(group) > 1 else group[0]

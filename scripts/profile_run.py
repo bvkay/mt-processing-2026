@@ -755,6 +755,26 @@ def inprocess_rr(spec: dict, mode: str) -> None:
 
 # ------------------------------------------------------------- read benchmarks (child)
 
+def b423_longest_run(survey, site: str, max_run_files: int = 34) -> list[Path]:
+    """Return the longest run of a LEMI-423 site's B423 files, grouped as ingest groups them.
+
+    The site's rate goes to `mt_workbench.ingest._group_contiguous`, so a
+    file cut short of its span ends its run here as it does at ingest.
+
+    Args:
+        survey (Survey): The survey.
+        site (str): A LEMI-423 site with a raw folder.
+        max_run_files (int): Most files per run.
+
+    Returns:
+        list of Path: The files of the longest run, in start order.
+    """
+    from mt_workbench.ingest import _group_contiguous, select_files
+
+    files = select_files(survey.site_dirs()[site])
+    return max(_group_contiguous(files, max_run_files, "lemi423", rate=survey.sample_rate_of(site)), key=len)
+
+
 def bench_read(spec: dict) -> None:
     """Run the read benchmarks, each step a phase and a PROFRESULT line.
 
@@ -769,7 +789,7 @@ def bench_read(spec: dict) -> None:
     import h5py
     from mth5.mth5 import MTH5
 
-    from mt_workbench.ingest import _group_contiguous, processing_archive, select_files
+    from mt_workbench.ingest import processing_archive
     from mt_workbench.survey import Survey
     from mt_workbench.timefreq import _real_runs
 
@@ -907,8 +927,7 @@ def bench_read(spec: dict) -> None:
     if site and site in survey.site_dirs():
         from mt_io.lemi.lemi423 import Read_Lemi_Data
 
-        files = select_files(survey.site_dirs()[site])
-        biggest = max(_group_contiguous(files, 34), key=len)
+        biggest = b423_longest_run(survey, site)
         nbytes = sum(f.stat().st_size for f in biggest)
         with phase("B423 read into cache (numpy, 1st pass)") as p:
             for f in biggest:

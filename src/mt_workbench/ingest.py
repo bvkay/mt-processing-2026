@@ -924,6 +924,50 @@ def readable_b423(files: list[Path], sample_rate: float = 1000.0) -> tuple[list[
     return keep, skipped
 
 
+def _b423_run_ends(files: list[Path], diffs, nominal: int, rate: float) -> set[int]:
+    """Find the B423 files after which a run must end, from their record counts.
+
+    mt-io's reader joins a run's files end to end and stamps every sample
+    from the first file's start, so a file holding fewer records than the
+    span to the next file name (a copy cut short, a card fault) stamps every
+    later sample of the run early by the samples it lacks; a partial record
+    at the end of a file is dropped by the reader without a message. A file
+    at the nominal spacing whose record count, (size - 1024) // 30, is not
+    the span times `rate`, or whose data are not a whole number of records,
+    ends its run, with a WARNING naming it and the samples missing. A
+    partial record in a file that ends its run anyway (a gap follows, or it
+    is the last file) is reported too.
+
+    Args:
+        files (list of Path): B423 files in start order.
+        diffs (array of int): Spacing of the file names in s, one fewer
+            than `files`.
+        nominal (int): The nominal spacing in s (`_group_contiguous`).
+        rate (float): The site's sample rate in Hz.
+
+    Returns:
+        set of int: Indices into `files` of the files that end a run.
+    """
+    from mt_io.lemi.lemi423 import Read_Lemi_Data
+
+    record = int(Read_Lemi_Data.binary_format.itemsize)
+    ends: set[int] = set()
+    for k, f in enumerate(files):
+        n, partial = divmod(f.stat().st_size - B423_HEADER_BYTES, record)
+        tail = f" and a partial record of {partial} bytes" if partial else ""
+        if k < len(diffs) and int(diffs[k]) == nominal:
+            span = int(round(int(diffs[k]) * float(rate)))
+            if n != span or partial:
+                ends.add(k)
+                short = (f"{span - n} samples missing" if n < span else
+                         f"{n - span} samples more than the span" if n > span else "no sample missing")
+                logger.warning(f"{f.parent.name}/{f.name}: {n} records{tail} where the {int(diffs[k])} s to the "
+                               f"next file at {float(rate):g} Hz need {span} ({short}): the run ends after it")
+        elif partial:
+            logger.warning(f"{f.parent.name}/{f.name}: {n} records{tail} (the partial record is dropped)")
+    return ends
+
+
 def _group_contiguous(files: list[Path], max_run_files: int | None = None,
                       instrument: str = "lemi423", rate: float | None = None) -> list[list[Path]]:
     """Group data files into contiguous runs using the starts their names carry.
@@ -938,13 +982,18 @@ def _group_contiguous(files: list[Path], max_run_files: int | None = None,
     channels). An EDL stamp without exactly one file per channel is left
     out, ending the run there (`_incomplete_stamps`). Given the EDL `rate`,
     runs follow the files' sample counts instead of the spacing
-    (`_edl_runs_by_samples`).
+    (`_edl_runs_by_samples`). Given a LEMI-423 site's `rate`, a file whose
+    record count disagrees with the span to the next file, or whose data
+    are not a whole number of records, also ends its run
+    (`_b423_run_ends`): read on as one stretch, a file cut short would
+    stamp every later sample of the run early.
 
     Args:
         files (list of Path): Data files in start order.
         max_run_files (int, optional): Most files per LEMI-423 run.
         instrument (str): Key of `INSTRUMENTS`.
-        rate (float, optional): EDL sample rate in Hz.
+        rate (float, optional): Sample rate in Hz of an EDL or LEMI-423
+            site; without it a LEMI-423 run follows the spacing alone.
 
     Returns:
         list of list of Path: The runs.
@@ -972,11 +1021,12 @@ def _group_contiguous(files: list[Path], max_run_files: int | None = None,
     epochs = [int(f.stem) for f in files]
     diffs = np.diff(epochs)
     nominal = int(np.median(diffs)) if diffs.size else 0
+    ends = _b423_run_ends(files, diffs, nominal, rate) if rate else set()
 
     groups: list[list[Path]] = [[files[0]]]
-    for fn, diff in zip(files[1:], diffs):
+    for k, (fn, diff) in enumerate(zip(files[1:], diffs)):
         full = max_run_files is not None and len(groups[-1]) >= max_run_files
-        if diff == nominal and not full:
+        if diff == nominal and not full and k not in ends:
             groups[-1].append(fn)
         else:
             groups.append([fn])
@@ -1178,8 +1228,9 @@ def ingest_site(
             f"coil response and TFs will be wrong"
         )
 
-    groups = _group_contiguous(files, max_run_files, instrument,
-                               rate=edl_sample_rate(site_dir) if instrument == "edl" else None)
+    rate = (edl_sample_rate(site_dir) if instrument == "edl" else
+            survey.sample_rate_of(site_name) if instrument == "lemi423" else None)
+    groups = _group_contiguous(files, max_run_files, instrument, rate=rate)
     logger.info(
         f"{site_name}: ingesting {len(files)} {INSTRUMENTS[instrument]['label']} files as "
         f"{len(groups)} run(s) -> {out_path}"
