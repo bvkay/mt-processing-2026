@@ -478,3 +478,54 @@ samples staying the stored words.
 **Effect:** one bad file aborts the site's ingest.
 
 **Ask upstream:** raise a ValueError naming the file when the header block has no `%LEMI` line (the mt-io fork branch does). mtproc skips such files with a warning and refuses a site whose files hold under one percent of their nominal length.
+
+## 31. mt_metadata 1.0.10: the EDI writer loses channel azimuths, the declination and a separate TROT (2026-10-02)
+- **Found:** 2026-10-02, the declination audit (memory note declination-and-frames).
+- **Symptom:** HMEAS/EMEAS AZM is written from `translated_azimuth`, which defaults to
+  None and becomes 0.0, so every Hy and Ey line reads AZM=0.00
+  (`io/edi/metadata/define_measurement.py:527-531`); a non-zero declination is
+  written as `DECLINATION.VALUE=` but the reader parses only `DECLINATION=`, so it
+  does not round-trip, and a zero declination is dropped (`io/edi/metadata/header.py`
+  422-430, 505-528); TROT is written from ZROT and a differing TROT is discarded on
+  read (`io/edi/edi.py` 765-816).
+- **Fixed on the fork:** mt-metadata `mtproc-fixes` 405e7ff1 (AZM from
+  measurement_azimuth when translated_azimuth is None; both DECLINATION forms written
+  and read; a warning when TROT differs). Not pushed.
+
+## 32. mt_metadata 1.0.10: the EMTF XML writer mislabels the frame and fills zeros with EMPTY (2026-10-02)
+- **Symptom:** `station.orientation.angle_to_geographic_north` None is written as
+  `angle_to_geographic_north="0.000"`, which means "aligned with geographic north";
+  `_rotation_angle` (ZROT) is ignored and no reference frame is written, so a
+  geomagnetic EDI with ZROT 5 reads back from XML as geographic, angle 0
+  (`io/emtfxml/emtfxml.py` 1197-1201); the Declination element keeps the whole year
+  only and no model; every zero inside RESIDCOV/INVSIGCOV becomes the 1e32 EMPTY value.
+- **Workaround here:** `mt_workbench.products.xml_copy` sets the angle and the channel
+  `translated_azimuth` on a copy before writing, and `fill_residcov_cross` rewrites the
+  Ex-Ey cross term to 0 in the text.
+
+## 33. mt_metadata 1.0.10: `_assert_descending_frequency` flips the data but not a per-frequency ZROT (2026-10-02)
+- **Symptom:** `io/edi/edi.py:249-268` reverses z, z_err, t and t_err of an
+  ascending-frequency file before ZROT is assigned, and never reverses ZROT, so a
+  frequency-dependent ZROT would be misaligned. A constant ZROT is unaffected.
+
+## 34. mtpy-v2 2.1.4: the `MT.rotation_angle` setter adds the angle twice; `rotate` has no covariance (2026-10-02)
+- **Symptom:** `mt.rotation_angle = 10` calls `rotate(10)`, which already adds 10, then
+  adds 10 again (`mtpy/core/mt.py:337-339`): the data are rotated once, the stored
+  angle twice, and the EDI written afterwards carries the wrong ZROT. The plot classes
+  use this setter. `MT.rotate` propagates errors as independent standard deviations
+  (`mtpy/utils/calculator.py:447-492`); the residual covariance and inverse signal
+  power in the dataset are not rotated.
+- **Use `mt.rotate(theta)`**, not the setter, until fixed.
+
+## 35. aurora 0.6.2: no Ex-Ey residual cross term, so the output-side covariance is diagonal (2026-10-02)
+- **Symptom:** each output channel is regressed separately, so `residual_covariance`
+  has NaN off the diagonal. A rotation that uses the full covariance must assume zero
+  correlation between the Ex and Ey residuals; at the B03 sample that changes rotated
+  Zyx errors by up to 25 % for correlations of 0.5. A multivariate output regression
+  would give the term.
+
+## 36. mt-io 0.0.5: the LEMI-424 reader leaves `orientation.reference_frame` at the default (2026-10-02)
+- **Symptom:** the LEMI-423 and EDL readers set `geomagnetic`; the LEMI-424 reader sets
+  nothing, so its products are labelled geographic by the mt_metadata default.
+- **Workaround here:** survey.yaml `layout_north` (default magnetic) sets the frame at
+  ingest and at write time for every reader (`mt_workbench.products.apply_site_frame`).
