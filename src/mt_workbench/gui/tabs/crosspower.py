@@ -106,7 +106,7 @@ from mt_workbench.gui.windows import window_label, window_list
 
 XY_COLOUR, YX_COLOUR = theme.B_COLOUR, theme.E_COLOUR  # as mtpy draws xy and yx on View EDIs
 POLAR_PHASE = {"xy": "phase (deg)", "yx": "phase yx + 180 (deg)"}  # the polar panels' left labels (`mode_phase`)
-WORKERS = 4
+WORKERS = 8  # compute_windows threads: a whole-overlap compute 24.5 s with 4, 17.1 s with 8, the same store
 DEFAULT_PERIOD_S = 0.05
 SIZE, SELECTED_SIZE = 8, 12
 SMALL_SIZE, MANY = 5, 300  # the spot size past MANY spots
@@ -360,7 +360,7 @@ class CrossPowerTab(QWidget):
         for seconds in CHUNKS_S:
             self.chunk_combo.addItem(f"{seconds / 60:g} min", seconds)
         self.compute_button = QPushButton("Compute", self, toolTip=(
-            "compute_windows over the window, 4 threads: reads the two archives once and keeps every STFT "
+            f"compute_windows over the window, {WORKERS} threads: reads the two archives once and keeps every STFT "
             "window's band sums; chunk lengths and windows inside it are then regrouped without reading"))
         self.status = ElidedLabel(self, min_width=0, stretchy=True)
         self.site_combo.currentIndexChanged.connect(lambda _i: self._site_changed())

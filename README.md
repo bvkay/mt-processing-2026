@@ -410,6 +410,7 @@ python tests/masks_cache_unit.py     # masks.yaml parsed once per change: reads 
 QT_QPA_PLATFORM=offscreen python tests/crosspower_masks_wait_unit.py  # the Cross-powers mask buttons while masks.yaml is parsed: with the parse held, Mask selected, Remove rows and Save masks leave masks.yaml unchanged and the list empty; once it ends the list holds the file's masks and the same Remove rows and Save write (the control)
 python tests/gate_masks_unit.py      # gate_masks.py: night masks against hand-computed UTC windows, the burst detector on synthetic pulse trains, --write replacing one origin only, a mutation that must trip
 python tests/windows_unit.py
+python tests/crosspower_workers_unit.py  # the Cross-powers tab's compute asking compute_windows for 8 workers; 1 h of the bench C18 rr C19 with 8 workers identical to 4, array by array: the 92 arrays with data (levels 8-10 hold no window in 1 h; identity skipped without the archives)
 python tests/span_cache_unit.py      # the window bars' archive spans from h5py attributes: equal to load_grid's on the bench C18 and C19 and curnamona D02 and D02L, one h5py open and no MTH5 open; SpanCache's second read and its get open no file; a new mtime read again; a survey name the archive does not hold raising in read_span as in load_grid (skipped without the archives)
 python tests/segment_unit.py
 python tests/psd_ladder_unit.py
