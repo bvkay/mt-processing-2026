@@ -9,6 +9,9 @@ rule). A MANTLE run writes two more files the sidecar names,
 `mantle_report` (MANTLE's report JSON: per-frequency verdicts, error and
 degrees-of-freedom summaries, plain-language notes) and `mantle_fine_edi`
 (its fine-grid EDI, `<stem>_fine.edi`, which `describe` labels as such).
+`describe_all` labels a whole folder's EDIs from its index
+(`mt_workbench.tf_index`, `<tf_dir>/index.json`), reading only the sidecars
+the index does not hold as they are now.
 
 `report_of` returns the report of a MANTLE product and `word_ranges`
 regroups its verdicts for drawing: every verdict names a word and the
@@ -30,6 +33,7 @@ from pathlib import Path
 
 import numpy as np
 
+from mt_workbench import tf_index
 from mt_workbench.gui.theme import BAD_COLOUR, IDLE_COLOUR, OK_COLOUR, PAIR_REMOTE_COLOUR, WARN_COLOUR
 
 FINE_SUFFIX = "_fine"
@@ -87,13 +91,35 @@ def engine_of(edi_path: Path | str) -> str | None:
     return str(sidecar.get("engine") or "aurora")
 
 
-def describe(edi_path: Path | str) -> str:
-    """Return the label suffix of an EDI row: "[<engine>]", "[mantle fine grid]" for a fine-grid EDI, "" without a sidecar."""
-    engine = engine_of(edi_path)
+def _suffix(edi_path: Path | str, engine: str | None) -> str:
+    """Return the label suffix of an EDI row made by `engine` (None: no sidecar)."""
     if engine is None:
         return ""
     fine = Path(edi_path).stem.endswith(FINE_SUFFIX) and engine != "aurora"
     return f"[{engine} fine grid]" if fine else f"[{engine}]"
+
+
+def describe(edi_path: Path | str) -> str:
+    """Return the label suffix of an EDI row: "[<engine>]", "[mantle fine grid]" for a fine-grid EDI, "" without a sidecar."""
+    return _suffix(edi_path, engine_of(edi_path))
+
+
+def describe_all(tf_dir: Path | str, edi_paths, files: dict | None = None) -> dict[Path, str]:
+    """Return `describe`'s suffix for many EDIs of one folder, from its index (`mt_workbench.tf_index`).
+
+    Only the sidecars the index does not hold as they are now are read.
+
+    Args:
+        tf_dir (Path | str): The folder of the EDIs and their sidecars.
+        edi_paths (iterable of Path): The EDIs.
+        files (dict | None): The folder's `tf_index.listing`, when already taken.
+
+    Returns:
+        dict: EDI path to its suffix.
+    """
+    edi_paths = [Path(p) for p in edi_paths]
+    known = tf_index.facts(tf_dir, {product_stem(p) for p in edi_paths}, files)
+    return {p: _suffix(p, (known.get(product_stem(p)) or {}).get("engine")) for p in edi_paths}
 
 
 def report_of(edi_path: Path | str) -> dict | None:

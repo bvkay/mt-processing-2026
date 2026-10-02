@@ -8,8 +8,10 @@ first lists every `*.edi` in `<workspace>/tf` written by
 A stem in `run_stem`'s format is labelled by `_run_label`
 ("S01 rr S02, 23 Sep 21:15, hann"); any other EDI keeps its file name. A
 row with a sidecar ends with its engine in brackets, "[aurora]" or
-"[mantle]" (`mantle_products.describe`; a MANTLE run's fine-grid EDI reads
-"[mantle fine grid]"). The
+"[mantle]" (`mantle_products.describe_all`; a MANTLE run's fine-grid EDI reads
+"[mantle fine grid]"), taken from `<workspace>/tf/index.json`
+(`mt_workbench.tf_index`) so that a reload reads only the sidecars the
+index does not hold as they are now. The
 second group lists the lemimt reference EDIs declared in
 `<survey>/reference_edis.yaml` (site -> {edi, distance_km}), which are read
 from the field drive. Ticked rows are overlaid on one matplotlib canvas
@@ -86,6 +88,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from mt_workbench import tf_index
 from mt_workbench.gui import mantle_products, tf_plot
 
 # redraw delay, so holding an arrow key queues one mtpy draw
@@ -258,12 +261,17 @@ class EdiTab(QWidget):
         processed = QTreeWidgetItem(self.tree, [f"processed ({tf_dir})" if tf_dir else "processed"])
         processed.setFlags(Qt.ItemIsEnabled)
         if tf_dir is not None and tf_dir.exists():
+            # one listing gives the EDIs and the sidecars' times and sizes, which the
+            # index (mt_workbench.tf_index) checks before any sidecar is read
+            files = tf_index.listing(tf_dir)
             # ordered by stem, not path: a run_stem stamp sorts chronologically as a
             # string (zero-padded YYYYMMDD-HHMM), so the newest run of a pair is last
-            for path in sorted(tf_dir.glob("*.edi"), key=lambda p: p.stem):
+            paths = sorted((tf_dir / name for name in files if name.lower().endswith(".edi")), key=lambda p: p.stem)
+            suffixes = mantle_products.describe_all(tf_dir, paths, files)
+            for path in paths:
                 label = _run_label(mantle_products.product_stem(path)) or path.name
-                suffix = mantle_products.describe(path)
-                self._add_leaf(processed, f"{label} {suffix}" if suffix else label, path)
+                suffix = suffixes[path]
+                self._add_leaf(processed, f"{label} {suffix}" if suffix else label, path, listed=True)
         lemimt = QTreeWidgetItem(self.tree, ["lemimt reference"])
         lemimt.setFlags(Qt.ItemIsEnabled)
         for site, entry in self._references().items():
@@ -284,15 +292,15 @@ class EdiTab(QWidget):
         with open(path, encoding="utf-8") as handle:
             return yaml.safe_load(handle) or {}
 
-    def _add_leaf(self, parent: QTreeWidgetItem, label: str, path: Path) -> None:
-        """Add a checkable EDI row, greyed when the file is missing."""
+    def _add_leaf(self, parent: QTreeWidgetItem, label: str, path: Path, listed: bool = False) -> None:
+        """Add a checkable EDI row, greyed when the file is missing (not checked for a file just `listed`)."""
         item = QTreeWidgetItem(parent, [label])
         item.setData(0, Qt.UserRole, str(path))
         # selectable as well as checkable: the arrow keys move the current
         # row, which quick view draws
         item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsUserCheckable | Qt.ItemIsSelectable)
         item.setCheckState(0, Qt.Checked if str(path) in self._checked else Qt.Unchecked)
-        if not path.exists():
+        if not listed and not path.exists():
             item.setForeground(0, QBrush(QColor("#909090")))
             item.setToolTip(0, f"{path} is not there (external drive not mounted?)")
 

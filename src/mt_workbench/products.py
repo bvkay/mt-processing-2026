@@ -47,6 +47,10 @@ whose declination is unset, gives ZROT 0 and angle 0.
   station metadata and this TF (`mth5.mth5.MTH5.add_transfer_function`),
   which `mth5.mth5.MTH5.get_transfer_function` reads back.
 
+It then records the product in its folder's index from the sidecar beside
+the EDI, when there is one (`mt_workbench.tf_index.add`; the View EDIs list
+reads the index instead of every sidecar).
+
 `product_names` gives the three file names a sidecar records (keys edi,
 xml, h5). Each format is written from its own copy of the TF, since
 mt_metadata's EDI writer sets ``translated_azimuth`` on the electric
@@ -80,6 +84,8 @@ from pathlib import Path
 
 import numpy as np
 from loguru import logger
+
+from mt_workbench import tf_index
 
 # the product formats of a row, by sidecar key, and their suffixes
 PRODUCT_SUFFIXES = {"edi": ".edi", "xml": ".xml", "h5": ".h5"}
@@ -650,4 +656,5 @@ def write_products(tf, edi_path: str | Path, note: str | None = None) -> dict[st
     write_h5(tf, paths["h5"])
     for path in paths.values():
         logger.info(f"wrote {path}")
+    tf_index.add(paths["edi"])
     return paths
