@@ -26,3 +26,7 @@ surveys/MT_Morocco_Atlas_Mountains/north_recovery/
 surveys/MT_Morocco_Atlas_Mountains/notes/
 surveys/MT_Morocco_Atlas_Mountains/field_notes_report.md
 surveys/MT_Morocco_Atlas_Mountains/masks_history.yaml
+
+# Morocco survey: the tracked worked examples are lines A, C (round 2) and D (Ben, 2 Oct 2026)
+surveys/MT_Morocco_Atlas_Mountains/campaign_lineB.yaml
+surveys/MT_Morocco_Atlas_Mountains/campaign_lineC.yaml
