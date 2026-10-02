@@ -529,3 +529,50 @@ samples staying the stored words.
   nothing, so its products are labelled geographic by the mt_metadata default.
 - **Workaround here:** survey.yaml `layout_north` (default magnetic) sets the frame at
   ingest and at write time for every reader (`mt_workbench.products.apply_site_frame`).
+
+## 37. aurora 0.6.2 (+mtproc): the NaN path, the EDF weights and the decimation own 40 % of a run (2026-10-02)
+- **Found:** the profile of C18 rr C19 and the five-pair bench
+  (`qc/survey/fork_pr_readiness_20261002/profile/`, `qc/survey/pipeline_bench_20261002/pipeline/`).
+- **Symptom:** `transfer_function_helpers.drop_nans` and `xarray_helpers.handle_nan` run
+  xarray `isel`/`dropna` on every band and output channel even when nothing is NaN (21 s of
+  a 165 s whole-overlap run; 143 s over six bench runs); `edf_weights.effective_degrees_of_freedom`
+  and the X/RR stack are recomputed per output channel (17 s); `prototype_decimate` calls
+  `scipy.signal.decimate` serially per channel (20 s; 140 s over six runs).
+- **Trial patches** (NaN fast path, per-band EDF reuse, threaded decimate) gave a bit-identical
+  TF: 165 -> 125 s on the whole run. Not on any branch yet.
+
+## 38. aurora 0.6.2 (+mtproc): the level-0 time series are held through the level-0 regression (2026-10-03)
+- **Symptom:** at the B10 rr B09 peak (51.9 GiB) the kernel dataset still holds 19.45 GiB of
+  level-0 series while the merged complex128 level-0 STFTs (19.45 GiB) and about 11 GiB of
+  per-band regression copies exist (`pipeline/` tracemalloc composition). Decimating level 1
+  right after the level-0 STFTs and releasing the series would cut about 14.6 GiB; complex64
+  STFTs about 9.7 GiB more (a numerics change).
+
+## 39. mth5 0.6.9 (+mtproc): prewhitening through xarray `differentiate`; `has_data` scans phantom channels (2026-10-02)
+- **Symptom:** `processing/spectre/prewhitening.apply_prewhitening` costs 1.08 s per call
+  (127 s over six bench runs, holding up to 16.5 GiB) where `np.gradient` with the scalar step
+  gives an identical result in 0.55 s; `tables/channel_table.has_data` reads h5py chunks of
+  four 159.6 M-sample phantom channels (1.0 s) on every `close_mth5` summary, i.e. on every TF
+  h5 product write.
+
+## 40. mth5 0.6.9: `RunGroup.to_runts` reads every channel, so the remote's electrics are read to be dropped (2026-10-02)
+- **Symptom:** the level-0 read of a remote-reference run loads ex/ey of the remote (about
+  2.5 GB and 2.5 s at 44.9 h) that aurora never uses. A `channels=` argument on `to_runts`
+  and the kernel dataset passing each station's needed channels would avoid it.
+
+## 41. mt_metadata 1.0.11: metadata objects are rebuilt per run and `get_unit_from_df` is uncached (2026-10-02)
+- **Symptom:** 19,168 `Base.__init__` calls (1.1 s of pydantic construction) in a 6 h run;
+  `get_unit_from_df` 420 calls at 0.28 ms each where a cached row costs 0.001 ms. A fixed
+  per-run cost of about 4.5 s.
+
+## 42. mt_timeseries 0.0.3: `make_dt_coordinates` rounds to ms at 20/25/50/100 kHz; `compute_sample_rate` fails with scipy >= 1.11 (2026-10-02)
+- **Found:** the mt-timeseries fork review (mutant M1 survived the suite; both trees).
+- **Symptom:** from a whole-second start at those rates the index is rounded to milliseconds
+  on upstream and on the fork alike; the high-rate branch of `compute_sample_rate` raises
+  TypeError with scipy 1.11 or later. Neither is covered by a test.
+
+## 43. mt-io 0.0.5: a B423 file that ends mid-record raises nothing (2026-10-03)
+- **Found:** robustness case 5c (`qc/survey/pipeline_bench_20261002/robustness/cases.md`).
+- **Symptom:** the reader returns the whole-record count without a partial-record warning,
+  so a caller that joins back-to-back files (mt-workbench's `_group_contiguous`) stamps the
+  later samples 2699.999 s early. See `workbench_issues.md` 1 for our side.
