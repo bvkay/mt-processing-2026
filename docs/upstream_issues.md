@@ -588,12 +588,14 @@ samples staying the stored words.
   is at EOF). `read_segments(metadata_only=True)` does not skip the samples and walks 32-byte
   steps through the data (garbage stamps, no return in 200 s on one file).
 
-## 45. mt-io 0.0.5 / mth5 0.6.9: the Phoenix coil serial and dipole lengths are taken from empower_recmeta.json (2026-10-03)
+## 45. mt-io 0.0.5 / mth5 0.6.9: Phoenix metadata precedence is undocumented, and every stamp is shifted by 18 s (2026-10-03)
 - **Symptom:** at G5, `empower_recmeta.json` names coils 53508/53509 and an E2 dipole of 40 + 45 m
-  while `recmeta.json` names 54047/54048 and 50 + 50 m; the client applied the 53508/53509
-  response (a `.scal` owned by receiver 10141) and 85 m. Which file is right is a field question;
-  the readers should expose both and let a site table decide. The reader also subtracts 18 s
-  (GPS leap seconds) from every stamp although recmeta says `tm_utcset 1`.
+  while `recmeta.json` names 54047/54048 and 50 + 50 m; the client applied the empower values.
+  That is the right choice (Ben, 3 Oct: recmeta.json is written before deployment, empower_recmeta.json
+  after the field work with the corrections applied, so empower has priority when it exists), but the
+  reader does not say which file it used or that the two disagree: it should record the source and
+  warn on a conflict. Separately, the reader subtracts 18 s (GPS leap seconds) from every stamp at
+  both rates although recmeta says `tm_utcset 1`; whether the raw stamps are GPS or UTC is open.
 
 ## 46. mt_metadata 1.0.10 / mth5 0.6.9: per-run metadata work grows with the number of runs in a station (2026-10-03)
 - **Symptom:** `RunGroup.to_runts` costs 0.375 s per run at 11 runs, 1.31 s at 120 and 3.88 s at
