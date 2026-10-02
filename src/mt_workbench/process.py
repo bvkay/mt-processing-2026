@@ -36,7 +36,7 @@ from loguru import logger
 from mt_metadata.processing.aurora.decimation_level import DecimationLevel as _AuroraDecimationLevel
 
 from .masks import applies, apply_time_masks, split_by_bands, windows_in_mask
-from .products import apply_site_frame, write_products
+from .products import apply_site_frame, drop_bad_errors, keep_periods, write_products
 
 try:  # newer stacks host these in mth5
     from mth5.processing import KernelDataset, RunSummary
@@ -109,6 +109,13 @@ ESTIMATOR_DEFAULTS = {
     "tolerance": 0.005,
 }
 TAPERS = ("boxcar", "hamming", "hann", "dpss")
+# the fewest STFT windows a band may rest on for its period to be written
+# (`drop_short_bands`). A 10 min window of C18 rr C19 left level 7 one window
+# and wrote Z errors of exactly 0 at 46 s (robustness case 3b, 3 Oct 2026);
+# the 6 h C18 rr C19 identity run's fewest is 7 (level 9), so 5 leaves
+# full-length products unchanged. survey.yaml `processing: min_band_windows`
+# and process_rr.py --min-band-windows set another floor; 0 turns it off.
+MIN_BAND_WINDOWS = 5
 AURORA_TAPER = "boxcar"  # ConfigCreator's taper; a run uses ESTIMATOR_DEFAULTS["taper"] unless tweaked
 # ConfigCreator's window, whose overlap it sets to 32 samples (25 %); it keeps
 # those 32 samples when the band scheme asks for another window length
@@ -537,6 +544,75 @@ def build_config(kd, band_scheme: dict | None = None, tweaks: dict | None = None
     return config
 
 
+def band_windows(tf) -> dict[float, int]:
+    """Return the number of STFT windows behind each band of an aurora TF, by period.
+
+    aurora records, per band, its decimation level, its first and last
+    harmonic and ``npts``, the observations its regression used
+    (``TF.decimation_dict``, keyed by the period as text,
+    `TransferFunctionKernel.export_tf_collection`). Each window gives one
+    observation per harmonic. aurora 0.6.2 pairs each level's npts with its
+    bands in reverse order (a 10 min C18 rr C19 window: npts 10 on the
+    8-harmonic band and 40 on the 2-harmonic one, 5 windows each), so the
+    windows of a level are its npts summed over its harmonics summed, which
+    the pairing does not change, and every band of the level gets that
+    count. A band-limited mask can leave one band fewer windows than the
+    level's mean; an unestimated level has 0.
+
+    Args:
+        tf (TF): The transfer function aurora returned.
+
+    Returns:
+        dict: Period in s to its level's window count; empty for a TF
+        without the record (one read back from a file).
+    """
+    levels: dict[int, list] = {}
+    for key, band in (getattr(tf, "decimation_dict", None) or {}).items():
+        first, last = (int(i) for i in band["bands"])
+        levels.setdefault(int(band["level"]), []).append((float(key), int(band["npts"]), last - first + 1))
+    out = {}
+    for bands in levels.values():
+        windows = sum(n for _, n, _ in bands) // sum(h for _, _, h in bands)
+        out.update({period: windows for period, _, _ in bands})
+    return out
+
+
+def drop_short_bands(tf, min_windows: int, label: str) -> list[float]:
+    """Remove the periods whose band rests on fewer than `min_windows` STFT windows.
+
+    A short processing window leaves the deep decimation levels a window or
+    two, whose estimate and errors mean nothing (`MIN_BAND_WINDOWS`). The
+    periods removed are logged with their window counts.
+
+    Args:
+        tf (TF): The transfer function aurora returned, modified in place.
+        min_windows (int): The floor; 0 keeps every period.
+        label (str): Start of the log line, e.g. "C18 (2023-09-23 00:00 to 00:10)".
+
+    Returns:
+        list of float: The periods removed, in s.
+    """
+    windows = band_windows(tf)
+    if not min_windows or not windows:
+        return []
+    keys = np.array(sorted(windows))
+    periods = np.asarray(tf.period, dtype=float)
+    counts = np.full(periods.size, -1)
+    for i, p in enumerate(periods):
+        k = keys[np.argmin(np.abs(keys - p))]
+        if np.isclose(k, p, rtol=1e-6):
+            counts[i] = windows[k]
+    short = (counts >= 0) & (counts < int(min_windows))
+    if not short.any():
+        return []
+    dropped = [float(p) for p in periods[short]]
+    keep_periods(tf, ~short)
+    logger.warning(f"{label}: {len(dropped)} period(s) not written, {min(dropped):.4g} to {max(dropped):.4g} s: "
+                   f"their bands rest on {sorted({int(c) for c in counts[short]})} STFT window(s), fewer than "
+                   f"{int(min_windows)} (min_band_windows)")
+    return dropped
+
+
 def process_station(
     local_h5: Path,
     station: str,
@@ -551,9 +627,16 @@ def process_station(
     tweaks: dict | None = None,
     time_masks: list | None = None,
     site=None,
+    min_band_windows: int = MIN_BAND_WINDOWS,
     **config_kwargs,
 ):
     """Estimate a transfer function for a station, optionally remote-referenced.
+
+    A period whose band rests on fewer than `min_band_windows` STFT windows
+    (`drop_short_bands`) is removed from the TF returned, with a warning.
+    Then a Z or T row with a zero or non-finite error at a period is set to
+    NaN there (not estimated), and a period left with no row is removed
+    (`mt_workbench.products.drop_bad_errors`), with a warning.
 
     The all-band intervals of `time_masks` are cut out of the kernel
     dataset's run intervals before the config is built (`apply_time_masks`).
@@ -615,6 +698,8 @@ def process_station(
             set on the TF's station metadata, both over the archive's
             (`mt_workbench.products.apply_site_frame`). The TF is not
             rotated.
+        min_band_windows (int): Fewest STFT windows a band needs for its
+            period to be kept [`MIN_BAND_WINDOWS`, 5]; 0 keeps every period.
         **config_kwargs: Passed to aurora's
             ``ConfigCreator.create_from_kernel_dataset``.
 
@@ -640,6 +725,9 @@ def process_station(
         with _band_masks_applied(band_limited):
             tf = process_mth5(config, kd)
 
+    label = station + (f" ({start or 'start'} to {end or 'end'})" if start or end else "")
+    drop_short_bands(tf, min_band_windows, label)
+    drop_bad_errors(tf, label)
     apply_site_frame(tf.station_metadata, site)
     if out_dir is not None:
         out_dir = Path(out_dir)

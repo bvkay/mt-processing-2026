@@ -83,6 +83,20 @@ this run only (`mt_workbench.process.process_station(tweaks=...)`, whose docstri
 gives the default in use for each). The flags given become tweaks; with none
 the run uses the defaults, and the resolution prints "tweaks: none".
 
+An aurora period whose band rests on fewer than `min_band_windows` STFT
+windows is not written. A Z or T row with a zero or non-finite error at a
+period is written as not estimated there (the EDI's EMPTY value, 1e32),
+the other rows keeping theirs, and a period left with no row is not
+written (`mt_workbench.process.process_station`, and again after the rows
+of a masked run are merged, where a band one row's run did not keep stays
+EMPTY in that row alone); each is logged as a warning with the periods.
+The floor is `--min-band-windows N`, else survey.yaml's `processing:
+min_band_windows`, else `mt_workbench.process.MIN_BAND_WINDOWS` (5, below
+the 7 windows of the 6 h C18 rr C19 identity run's deepest level); 0 keeps
+every period. The resolution prints it and the sidecar records it as
+`min_band_windows`. MANTLE applies no such floor: `--engine mantle`
+refuses the flag, and its sidecar records `min_band_windows` as null.
+
 The band-layout flags are advanced options that keep every band's period
 and change the FFT harmonics it spans (`mt_workbench.bands.build_band_scheme`).
 `--window-samples N` sets the FFT window of every decimation level (128
@@ -173,7 +187,7 @@ Usage:
         [--tag SUFFIX] [--dry-run]
         [--window-samples N] [--min-bin N]
         [--taper {boxcar,hamming,hann,dpss}] [--overlap PCT] [--no-prewhiten]
-        [--min-windows N] [--max-iterations N] [--redescending-iterations N]
+        [--min-windows N] [--min-band-windows N] [--max-iterations N] [--redescending-iterations N]
         [--r0 X] [--u0 X] [--tolerance X]
         [--engine {aurora,mantle}] [--mantle-whiten {none,diff}] [--mantle-max-hours H]
         [--mantle-window {refuse,clip}]
@@ -208,9 +222,9 @@ from mt_workbench.masks import (
     FOUND_BY, OUTPUTS, SCOPE_RULES, is_stack, load_masks, masks_for_role, masks_for_row, remote_channel_split,
     remote_masks, stored, union_masks,
 )
-from mt_workbench.process import ESTIMATOR_DEFAULTS, TAPERS, process_station
-from mt_workbench.products import (apply_site_frame, frame_record, match_coordinate_system, product_names,
-                                   write_products)
+from mt_workbench.process import ESTIMATOR_DEFAULTS, MIN_BAND_WINDOWS, TAPERS, process_station
+from mt_workbench.products import (apply_site_frame, drop_bad_errors, frame_record, match_coordinate_system,
+                                   product_names, write_products)
 from mt_workbench.survey import Survey
 
 MAX_RUN_FILES = 34  # 34 x 90 min = 51 h per run
@@ -269,6 +283,9 @@ def build_parser() -> argparse.ArgumentParser:
                      help="skip the first-difference pre-whitening (and its recolouring)")
     adv.add_argument("--min-windows", type=int, default=None, metavar="N",
                      help="fewest STFT windows a level needs (in use: 0)")
+    adv.add_argument("--min-band-windows", type=int, default=None, metavar="N",
+                     help="aurora: a period whose band rests on fewer STFT windows is not written (in use: survey.yaml "
+                          f"processing: min_band_windows, else {MIN_BAND_WINDOWS}; 0 keeps every period)")
     adv.add_argument("--max-iterations", type=int, default=None, metavar="N",
                      help="robust regression iterations (in use: 10)")
     adv.add_argument("--redescending-iterations", type=int, default=None, metavar="N",
@@ -624,6 +641,10 @@ def resolve(args, started) -> dict:
     defaults = {n: p.default for n, p in inspect.signature(build_band_scheme).parameters.items()}
     for key in BAND_KEYS:
         scheme_kwargs.setdefault(key, defaults[key])
+    min_band_windows = next(v for v in (getattr(args, "min_band_windows", None), survey.min_band_windows,
+                                        MIN_BAND_WINDOWS) if v is not None)
+    if min_band_windows < 0:
+        raise SystemExit(f"--min-band-windows takes 0 or more windows; given {min_band_windows}")
     # the local's own rate (a derived <site>L at 1 Hz) or the survey's; the
     # remote's must match, since aurora pairs archives of one rate
     local_rate = survey.sample_rate_of(args.local)
@@ -677,6 +698,9 @@ def resolve(args, started) -> dict:
         # aurora's kernel dataset and regression, so both are refused rather than silently dropped
         if tweaks:
             raise SystemExit(f"--engine mantle takes none of the aurora estimator flags (given: {sorted(tweaks)})")
+        if getattr(args, "min_band_windows", None) is not None:
+            raise SystemExit(f"--min-band-windows {args.min_band_windows} is an aurora option: MANTLE applies no "
+                             "floor on STFT windows per band")
         if masks_local or masks_remote:
             raise SystemExit(f"--engine mantle applies no masks.yaml entries yet ({args.local} {len(masks_local)}, "
                              f"{args.remote} {len(masks_remote)} to apply): run it with --no-masks")
@@ -715,6 +739,9 @@ def resolve(args, started) -> dict:
         "stem": run_stem(args.local, args.remote, started, args.tag),
         "scheme_kwargs": scheme_kwargs,
         "lowest_harmonic": lowest_harmonic(local_rate, **scheme_kwargs),
+        # aurora: the fewest STFT windows a band needs for its period to be written;
+        # None under MANTLE, which applies no such floor (the sidecar records null)
+        "min_band_windows": None if engine == "mantle" else int(min_band_windows),
         # aurora estimates a TF row for every output channel it is asked for;
         # hz on a broadband site (no sensor, an open input) gives a meaningless
         # tipper, so the channels the survey declares are requested. A site
@@ -1090,6 +1117,7 @@ def build_sidecar(res: dict, args, started, finished, edi_path: Path, png_path: 
         "band_scheme": dict(res["scheme_kwargs"]),
         # the lowest band edge of the decimated levels, in FFT harmonics of the level
         "lowest_harmonic": res.get("lowest_harmonic"),
+        "min_band_windows": res.get("min_band_windows"),
         # the full effective set, defaults filled in, so the sidecar says
         # "taper: hann" on a run without --taper too
         "tweaks": {**ESTIMATOR_DEFAULTS, **res["tweaks"]},
@@ -1228,6 +1256,8 @@ def print_resolution(res: dict) -> None:
               f"{len(res['masks_remote'])} ({len(res['masks'])} applied"
               + (f"; origins {', '.join(res['mask_origins'])}" if res.get("mask_origins") else "") + scope + ")")
         print(f"mask runs: {runs_text(res.get('channel_runs') or [])}")
+    if res["engine"] != "mantle" and res.get("min_band_windows") is not None:
+        print(f"min_band_windows: {res['min_band_windows']}")
     for key, value in res["tweaks"].items():
         print(f"tweak.{key}: {value}")
     if not res["tweaks"]:
@@ -1359,6 +1389,7 @@ def main(args) -> None:
         runs = res["channel_runs"]
         station_kwargs = dict(
             band_scheme=scheme, start=args.start, end=args.end, tag=stem, tweaks=res["tweaks"] or None,
+            min_band_windows=res["min_band_windows"],
             **({"output_channels": res["output_channels"]} if res["output_channels"] else {}),
         )
         if len(runs) == 1:
@@ -1373,6 +1404,8 @@ def main(args) -> None:
                 tfs.append(process_station(local_h5, local, remote_h5, remote, out_dir=None,
                                            time_masks=run["masks"] or None, **station_kwargs))
             tf = merge_rows(tfs, runs)
+            # a band one row's run did not keep stays NaN in that row; the period goes only when no row is left
+            drop_bad_errors(tf, f"{stem} (rows merged)")
             apply_site_frame(tf.station_metadata, local_cfg)
             logger.info(f"{stem}: rows merged from {len(runs)} aurora runs (the masks' channels)")
 

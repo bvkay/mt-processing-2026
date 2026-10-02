@@ -383,6 +383,113 @@ def frame_gaps(tf) -> list[str]:
     return gaps
 
 
+def keep_periods(tf, keep) -> None:
+    """Keep only the periods of a TF where `keep` is True, in place.
+
+    Args:
+        tf (TF): The transfer function, modified in place.
+        keep (array of bool): One value per period of ``tf.period``.
+    """
+    tf._transfer_function = tf._transfer_function.isel(period=np.flatnonzero(np.asarray(keep, dtype=bool)))
+
+
+def bad_error_rows(tf) -> dict[str, np.ndarray]:
+    """Find, for each output row of Z and T, the periods where the row must not be written.
+
+    An element counts as estimated when its value is finite at some period;
+    a row is marked at a period where one of its estimated elements has a
+    non-finite value, or an error that is zero or not finite. An inversion
+    would take a zero error as an exact datum. A row that is NaN at every
+    period (an output aurora was not asked for) is never marked; a row
+    that is NaN at a period where it is estimated elsewhere (a band its
+    run did not keep, after `merge_rows` in process_rr.py) is marked there.
+
+    Args:
+        tf (TF): The transfer function.
+
+    Returns:
+        dict: Output channel name (the TF's nomenclature) to an array of
+        bool, one value per period, for each estimated row of Z and T.
+    """
+    rows: dict[str, np.ndarray] = {}
+    for values, errors in ((tf.impedance, tf.impedance_error), (tf.tipper, tf.tipper_error)):
+        if values is None or errors is None:
+            continue
+        for name in values.coords["output"].values:
+            v = np.asarray(values.sel(output=name).data)
+            e = np.asarray(errors.sel(output=name).data, dtype=float)
+            estimated = np.isfinite(v).any(axis=0)
+            if not estimated.any():
+                continue
+            flag = estimated & (~np.isfinite(v) | ~np.isfinite(e) | (e <= 0.0))
+            rows[str(name)] = flag.any(axis=1)
+    return rows
+
+
+def bad_error_periods(tf) -> np.ndarray:
+    """Find the periods where every estimated row of Z and T is marked by `bad_error_rows`.
+
+    Args:
+        tf (TF): The transfer function.
+
+    Returns:
+        array of bool: One value per period, True where no row is left to
+        write.
+    """
+    rows = bad_error_rows(tf)
+    if not rows:
+        return np.zeros(np.asarray(tf.period).size, dtype=bool)
+    return np.logical_and.reduce(list(rows.values()))
+
+
+def drop_bad_errors(tf, label: str) -> list[float]:
+    """Blank the rows `bad_error_rows` marks and remove the periods left with no row, with warnings.
+
+    A marked row is written as not estimated at that period: its value and
+    error, and its row and column of the residual covariance, become NaN;
+    the other rows keep their values. A period where every estimated row is
+    marked is removed. A single aurora run with a zero error on every row
+    (a band of one STFT window) therefore loses the period, while a merged
+    TF (`merge_rows`) keeps each row's own periods.
+
+    Args:
+        tf (TF): The transfer function, modified in place.
+        label (str): Start of the warning, e.g. the station name.
+
+    Returns:
+        list of float: The periods removed, in s.
+    """
+    rows = bad_error_rows(tf)
+    period = np.asarray(tf.period, dtype=float)
+    ds = tf._transfer_function
+    blanked = []
+    for name, flag in rows.items():
+        if not flag.any():
+            continue
+        at = period[flag]
+        sel = dict(period=ds["period"].values[flag], output=name)
+        # a row already NaN there (a band its run did not keep) is not reported
+        held = np.isfinite(np.asarray(ds["transfer_function"].loc[sel].data)).any(axis=-1)
+        blanked += [(name, p) for p in at[held]]
+        for var in ("transfer_function", "transfer_function_error"):
+            ds[var].loc[sel] = np.nan
+        ds["residual_covariance"].loc[sel] = np.nan
+        ds["residual_covariance"].loc[dict(period=sel["period"], input=name)] = np.nan
+    bad = bad_error_periods(tf)
+    periods = [float(p) for p in period[bad]]
+    if bad.any():
+        keep_periods(tf, ~bad)
+    # the rows blanked at a period that is kept (a removed period is reported below)
+    blanked = [(name, p) for name, p in blanked if p not in periods]
+    if blanked:
+        logger.warning(f"{label}: rows with a zero or non-finite Z or T error written as not estimated: "
+                       + ", ".join(f"{name} at {p:.4g} s" for name, p in blanked))
+    if periods:
+        logger.warning(f"{label}: {len(periods)} period(s) with no row left to write not written: "
+                       + ", ".join(f"{p:.4g}" for p in periods) + " s")
+    return periods
+
+
 def has_covariance(tf) -> bool:
     """Whether a TF carries the residual and inverse signal covariances the XML writer writes."""
     try:

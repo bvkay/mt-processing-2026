@@ -469,8 +469,24 @@ class Survey:
 
     @property
     def processing(self) -> dict:
-        """Band/period targets for aurora (kwargs for mt_workbench.bands schemes)."""
-        return self.config.get("processing") or {}
+        """Band/period targets for aurora (kwargs for mt_workbench.bands schemes).
+
+        The block's `min_band_windows` is left out (`min_band_windows`): it
+        is not a band-scheme keyword.
+        """
+        block = self.config.get("processing") or {}
+        return {k: v for k, v in block.items() if k != "min_band_windows"}
+
+    @property
+    def min_band_windows(self) -> int | None:
+        """The `processing:` block's floor on STFT windows per band, or None when unset.
+
+        A period whose band rests on fewer windows is not written
+        (`mt_workbench.process.drop_short_bands`); None means the default,
+        `mt_workbench.process.MIN_BAND_WINDOWS`.
+        """
+        value = (self.config.get("processing") or {}).get("min_band_windows")
+        return None if value is None else int(value)
 
     @property
     def workspace(self) -> Path:
