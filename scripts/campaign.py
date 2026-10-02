@@ -134,7 +134,13 @@ re-run. Ctrl+C kills the running children and marks them interrupted. A
 killed runner leaves "running" rows that the next start cleans up (orphaned
 children killed, partial stack archives removed). --report rebuilds scores,
 figures and summary from the ledger without running jobs; --dry-run prints
-the whole matrix with counts and hours.
+the whole matrix with counts and hours. A stage 0 variant with no done row
+in the ledger is listed "ready" when the site's raw archive exists and the
+file on disk is current (`mt_workbench.ingest.variant_ready`), the test
+`process_rr.resolve` makes, and is left out of the counts and hours, since
+the run reuses it. A site whose raw archive is missing is listed as such,
+and a file under the variant's name that cannot be opened as "unreadable"
+with the error's first line; the run stops on both, so both are counted.
 
 Usage:
     python scripts/campaign.py <survey.yaml> <plan.yaml> [--stage 0,1,2,3] [--sites S ...]
@@ -181,8 +187,9 @@ from mt_workbench.masks import is_stack, load_masks, masks_for_role, remote_mask
 try:  # optional: without the variant API the campaign runs and waits for it
     from mt_workbench.ingest import filters_hash as _api_filters_hash  # noqa: E402
     from mt_workbench.ingest import variant_path as _api_variant_path  # noqa: E402
+    from mt_workbench.ingest import variant_ready as _api_variant_ready  # noqa: E402
 except ImportError:
-    _api_filters_hash = _api_variant_path = None
+    _api_filters_hash = _api_variant_path = _api_variant_ready = None
 from mt_workbench.mantle_window import clip_text  # noqa: E402
 from mt_workbench.quality import MODES, PERIOD_RTOL, agreement, curves, flat_quality, pairwise_spread, tf_quality  # noqa: E402
 from mt_workbench.survey import Survey, distance_km  # noqa: E402
@@ -1463,6 +1470,36 @@ class Campaign:
                            3: lambda x: self.stage3_jobs(x, dry=dry)}[st]
                 yield f"stage {st} {STAGES[st]} group {g}", st, g, gs, builder(gs)
 
+    def variant_on_disk(self, site: str) -> tuple[str, str]:
+        """Return what the dry run says of a site's variant that the ledger does not have done.
+
+        The raw archive is looked for first, as `process_rr.resolve` does:
+        the run's `processing_archive` stops on a missing one. A file under
+        the variant's name that `variant_ready` cannot open (a copy cut short,
+        a 0-byte file) gives "unreadable" with the file name and the error's
+        first line instead of an OSError out of the dry run.
+
+        Args:
+            site (str): Site name.
+
+        Returns:
+            tuple of str: (state, text). The state is "ready" (the run reuses
+            the file, so it is not counted), "no raw", "unreadable" or
+            "to build".
+        """
+        raw = default_archive_path(self.survey, site)
+        if not raw.exists():
+            return "no raw", f"raw archive missing: {raw} (ingest it first; the run stops on it)"
+        if _api_variant_ready is None or _api_variant_path is None:
+            return "to build", "to build"
+        name = _api_variant_path(self.survey, site).name
+        try:
+            ready = _api_variant_ready(self.survey, site)
+        except OSError as exc:
+            first = next((line.strip() for line in str(exc).splitlines() if line.strip()), type(exc).__name__)
+            return "unreadable", f"unreadable: {name} ({first}); the run stops on it"
+        return ("ready", f"ready: {name} on disk and current") if ready else ("to build", "to build")
+
     def already_done(self, job: Job) -> bool:
         """Check whether the ledger has the job done, with the same inputs and its product present.
 
@@ -2160,6 +2197,11 @@ class Campaign:
                   + (f", {n_done} already done" if n_done else "") + wait)
             for j in jobs:
                 done = self.already_done(j)
+                # a variant the ledger does not have done may still be on disk and current (with
+                # its raw archive there): the run's processing_archive reuses it, so it is listed
+                # ready and not counted
+                state, said = self.variant_on_disk(j.local) if j.kind == "variant" and not done else ("", "")
+                ready = state == "ready"
                 if j.kind == "rr":
                     ov = overlap_hours(self.spans[j.local], self.spans[j.remote]) if j.remote in self.spans else None
                     km = _km(self.survey, j.local, j.remote) if j.remote in self.spans else None
@@ -2184,11 +2226,11 @@ class Campaign:
                     info = f"merge {j.local} rr {j.remote}: {j.note}"
                 else:
                     row = self.ledger.rows.get(j.run_id) or {}
-                    have = f"built: {Path(row['archive']).name}" if done else "to build"
+                    have = f"built: {Path(row['archive']).name}" if done else said
                     info = f"variant {j.local} (filters {j.config}, {j.note}): {have}"
                 print(f"  {'done ' if done else ''}{j.run_id:<34} {info}")
                 c = counts.setdefault(st, {k: 0 for k in KINDS})
-                if not done:
+                if not done and not ready:
                     c[j.kind] += 1
                     todo_min += self.plan.minutes.get(self.job_class(j.kind, j.config, self.plan.minutes), 8.0)
         print("\ntotals (still to run):")
