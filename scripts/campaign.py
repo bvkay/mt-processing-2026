@@ -111,7 +111,9 @@ plan's) and hours x `runner.mantle_gb_per_hour` (1.25 GB by default), the
 hours the smaller of its window (the pair's overlap from survey.yaml) and
 its config's --mantle-max-hours; a MANTLE job expected above the machine's
 total memory less `min_available_gb` is not started but marked skipped,
-with a note of what it needs and what the machine has.
+with a note of what it needs and what the machine has. A plan whose
+`min_available_gb` is not below the machine's total memory is refused at
+start, a dry run included (exit 2): no job could ever pass the gate.
 `runner.minutes_per_job` may name a config likewise for the dry run's
 hours. Children run at below-normal priority, each with its own log in
 <campaign>/logs/<run_id>.log; RSS (with children) is polled every 2 s.
@@ -493,6 +495,27 @@ def load_plan(path) -> Plan:
 
 
 # ------------------------------------------------------- records and remotes
+
+
+def memory_refusal(plan: Plan) -> str:
+    """Return why no job of a plan could ever pass the memory gate on this machine, "" when one could.
+
+    `Campaign.gate` starts a job only with `runner.min_available_gb`
+    available, and psutil's available memory stays below the machine's
+    total, so a figure at or above the total keeps every slot waiting for
+    ever.
+
+    Args:
+        plan (Plan): The plan.
+
+    Returns:
+        str: One line naming both figures, or "".
+    """
+    total = getattr(psutil.virtual_memory(), "total", None)
+    if not total or plan.min_available_gb * GB < total:
+        return ""
+    return (f"runner.min_available_gb {plan.min_available_gb:g} GB is not below this machine's {total / GB:.1f} GB "
+            f"of memory, so no job could ever start: lower it in the plan")
 
 
 def site_spans(survey: Survey, sites) -> dict[str, tuple[pd.Timestamp, pd.Timestamp]]:
@@ -2842,8 +2865,9 @@ def main(argv=None) -> int:
         argv (list[str] | None): Command-line arguments; sys.argv when None.
 
     Returns:
-        int: 0 on success, 2 for sites not in the plan, 3 when another
-        runner holds the lock, 130 when interrupted.
+        int: 0 on success, 2 for sites not in the plan or a memory gate the
+        machine can never meet (`memory_refusal`), 3 when another runner
+        holds the lock, 130 when interrupted.
     """
     try:
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -2866,6 +2890,10 @@ def main(argv=None) -> int:
             print(f"ERROR --configs {args.configs!r}: stage 3 configs of the plan are {', '.join(plan.configs)}",
                   file=sys.stderr)
             return 2
+    refusal = "" if args.report else memory_refusal(plan)
+    if refusal:
+        print(f"ERROR {args.plan_yaml}: {refusal}", file=sys.stderr)
+        return 2
     c = Campaign(args.survey_yaml, plan, parallel=args.parallel, max_runs=args.max_runs, allow_raw=args.allow_raw,
                  create=not args.dry_run, configs=configs)
     if args.report:
