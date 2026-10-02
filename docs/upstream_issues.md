@@ -576,3 +576,28 @@ samples staying the stored words.
 - **Symptom:** the reader returns the whole-record count without a partial-record warning,
   so a caller that joins back-to-back files (mt-workbench's `_group_contiguous`) stamps the
   later samples 2699.999 s early. See `workbench_issues.md` 1 for our side.
+
+## 44. mt-io 0.0.5: the Phoenix segmented reader returns the first burst of a td_24k file only (2026-10-03)
+- **Found:** the Kalkaroo MTU-8A reconnaissance (`D:\MT_DATA\MT_Kalkaroo_Phoenix_TEST\qc_recon_20261003\`).
+- **Symptom:** a td_24k file holds 12 bursts of 48,000 samples (2 s at 24 kHz, one every 30 s);
+  `read_phoenix(<td_24k>)` and `DecimatedSegmentedReader.to_channel_ts` return one ChannelTS with
+  the first burst only, and `PhoenixCollection.get_runs` makes one run per file from that first
+  burst, so an MTH5 built by mth5's `PhoenixClient` keeps 1 burst in 12 (verified on a built
+  archive: 110 of 120 bursts dropped). `DecimatedSegmentCollection.read_segments()` does return
+  all 12, but `to_channel_ts()` works on a fresh object only (a second call returns 0, the stream
+  is at EOF). `read_segments(metadata_only=True)` does not skip the samples and walks 32-byte
+  steps through the data (garbage stamps, no return in 200 s on one file).
+
+## 45. mt-io 0.0.5 / mth5 0.6.9: the Phoenix coil serial and dipole lengths are taken from empower_recmeta.json (2026-10-03)
+- **Symptom:** at G5, `empower_recmeta.json` names coils 53508/53509 and an E2 dipole of 40 + 45 m
+  while `recmeta.json` names 54047/54048 and 50 + 50 m; the client applied the 53508/53509
+  response (a `.scal` owned by receiver 10141) and 85 m. Which file is right is a field question;
+  the readers should expose both and let a site table decide. The reader also subtracts 18 s
+  (GPS leap seconds) from every stamp although recmeta says `tm_utcset 1`.
+
+## 46. mt_metadata 1.0.10 / mth5 0.6.9: per-run metadata work grows with the number of runs in a station (2026-10-03)
+- **Symptom:** `RunGroup.to_runts` costs 0.375 s per run at 11 runs, 1.31 s at 120 and 3.88 s at
+  360 (unprofiled): `Station.validate_runs_and_channels_recorded` walks every run on every
+  assignment (`validate_assignment=True`) and `Metadata.copy` is called per run, so a burst-mode
+  station of 2,880 runs a day pays hours of metadata work for 147 s of STFT and regression.
+  `aurora.check_if_fcs_already_exist` grows the same way (0.15 s at 10 runs, 11.7 s at 120).
