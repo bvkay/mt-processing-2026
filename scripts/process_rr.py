@@ -150,7 +150,10 @@ default, or geographic) gives `orientation.reference_frame` (geomagnetic
 or geographic), and `declination`, `declination_model` and
 `declination_epoch` (scripts/declination.py) are set when the site carries
 them, so an archive ingested before the keys existed needs no rebuild; the
-sidecar's `frame.declination_source` says "survey.yaml" or "archive". The
+sidecar's `frame.declination_source` says "survey.yaml" or "archive". A
+site with neither (the archive's 0.0 with no epoch is mt_metadata's
+default) gets a WARNING, null declination keys in the sidecar and no
+Declination element in the XML, as its EDI has no DECLINATION line. The
 EDI's HEAD then carries DECLINATION lines, its INFO block's
 `transfer_function.coordinate_system` equals the HEAD's COORDINATE_SYSTEM,
 and for a geomagnetic frame with a declination its ZROT and TROT are the
@@ -1278,6 +1281,9 @@ def main(args) -> None:
     edi_path = survey.workspace / "tf" / f"{stem}.edi"
     match_coordinate_system(tf)
     frame = frame_record(tf, "survey.yaml" if local_cfg.declination is not None else "archive")
+    if frame["declination"] is None:
+        logger.warning(f"{local}: no declination in survey.yaml or the archive: the products state none "
+                       f"(scripts/declination.py {args.survey_yaml} {local} --write stores it)")
     sidecar = build_sidecar(res, args, started, finished, edi_path, out_png, q, flipped, frame)
     sidecar.update(extras)  # the mantle engine's keys; an aurora run adds none
     sidecar_path = edi_path.with_suffix(".json")

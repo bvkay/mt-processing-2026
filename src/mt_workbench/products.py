@@ -66,7 +66,9 @@ statement in the station comments.
 
 mt_metadata's EMTF XML writer has a limit the Notes record: its Site
 Location Declination element keeps the value and the whole year only (no
-model; 0 at 1995 when none is stored). `write_xml` keeps in its copy only
+model). It writes 0 at 1995 when none is stored; `write_xml` removes the
+element then, and `frame_record` gives the sidecar null declination keys,
+as the EDI writes no DECLINATION line. `write_xml` keeps in its copy only
 the channels the TF holds data for, since the writer fails on an aurora TF
 whose runs disagree on hz.
 
@@ -106,6 +108,8 @@ CROSS_NOTE = ("Residual cross term Ex-Ey not estimated (aurora regresses each ou
 # a Z.RESIDCOV block of the written XML, and an Ex-Ey or Ey-Ex value in it holding the EMPTY fill
 _RESIDCOV = re.compile(r"<Z\.RESIDCOV\b.*?</Z\.RESIDCOV>", re.S)
 _EMPTY_CROSS = re.compile(r'(<value output="(E[xy])" input="(E[xy])">)\s*1(?:\.0*)?e\+32\s+1(?:\.0*)?e\+32\s*(</value>)')
+# the Declination element of the written XML's Site Location, with the line break before it
+_DECLINATION = re.compile(r"\r?\n[ \t]*<Declination\b[^>]*>[^<]*</Declination>")
 
 
 def product_paths(edi_path: str | Path) -> dict[str, Path]:
@@ -340,14 +344,19 @@ def frame_record(tf, source: str | None = None) -> dict:
         dict: ``reference_frame``, ``coordinate_system``, ``declination``,
         ``declination_model``, ``declination_epoch``, ``declination_source``,
         ``zrot`` (the EDI's ZROT and TROT and the XML's angle, `x_azimuth`)
-        and ``rotated`` (always False: products are never rotated).
+        and ``rotated`` (always False: products are never rotated). The four
+        declination keys are None when no declination is stored
+        (`has_declination`): mt_metadata's defaults, 0.0 and "IGRF" with no
+        epoch, are not a measured value.
     """
     sm = tf.station_metadata
     d = sm.location.declination
+    stored = has_declination(sm)
     return {"reference_frame": _text(sm.orientation.reference_frame),
             "coordinate_system": _text(sm.transfer_function.coordinate_system),
-            "declination": None if d.value is None else float(d.value), "declination_model": d.model,
-            "declination_epoch": d.epoch, "declination_source": source, "zrot": x_azimuth(tf), "rotated": False}
+            "declination": float(d.value) if stored else None, "declination_model": d.model if stored else None,
+            "declination_epoch": d.epoch if stored else None, "declination_source": source if stored else None,
+            "zrot": x_azimuth(tf), "rotated": False}
 
 
 def frame_gaps(tf) -> list[str]:
@@ -548,12 +557,36 @@ def xml_copy(tf):
     return tfc
 
 
+def drop_declination_element(path: str | Path) -> int:
+    """Remove the Site Location Declination element from a written EMTF XML.
+
+    mt_metadata's writer (`Location.to_xml` of its emtfxml metadata) always
+    writes the element, with the value and the epoch "1995" when none is
+    set; it has no form for an unknown declination, and its reader takes a
+    Location without the element as the default (0.0, no epoch).
+
+    Args:
+        path (str or Path): The .xml, rewritten in place.
+
+    Returns:
+        int: The number of elements removed.
+    """
+    path = Path(path)
+    text = path.read_text(encoding="utf-8")
+    new, n = _DECLINATION.subn("", text)
+    if n:
+        path.write_text(new, encoding="utf-8", newline="")
+    return n
+
+
 def write_xml(tf, path: str | Path, note: str | None = None) -> Path:
     """Write a TF as EMTF XML with a Notes paragraph.
 
     Written from `xml_copy`. Where the residual Ex-Ey cross term is not
     estimated (`unestimated_cross`), the written values are 0, not the
-    writer's EMPTY fill (`fill_residcov_cross`).
+    writer's EMPTY fill (`fill_residcov_cross`). A TF with no declination
+    stored (`has_declination`) is written with no Declination element
+    (`drop_declination_element`), where the writer would put 0 at 1995.
 
     Args:
         tf (TF): The transfer function; a copy is written.
@@ -569,6 +602,8 @@ def write_xml(tf, path: str | Path, note: str | None = None) -> Path:
     xml = tfc.write(fn=path, file_type="xml")
     xml.notes = note
     xml.write(path)
+    if not has_declination(tfc.station_metadata):
+        drop_declination_element(path)
     if unestimated_cross(tfc):
         n = fill_residcov_cross(path)
         logger.info(f"{path.name}: residual Ex-Ey cross term not estimated, written as 0 ({n} values)")
