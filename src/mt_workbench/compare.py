@@ -8,6 +8,12 @@ phases sit in their physical quadrants, which flags a reversed dipole or
 coil. `plot_comparison` overlays one main TF on reference, baseline and
 other curves and optionally saves a PNG.
 
+mt_metadata (about 1.5 s to import) is imported by `rho_phi` when it is
+first called, and matplotlib (the Agg backend) by `plot_comparison`, so
+importing this module costs neither: `phase_quadrants` and the quadrant
+constants are needed by process_rr.py and the quality scores in every
+child process, the figure only at the end of a run.
+
 @author: ben kay (ben@auscope.org.au)
 
 :license: MIT
@@ -17,12 +23,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import matplotlib
-
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
 import numpy as np
-from mt_metadata.transfer_functions.core import TF
 
 
 def rho_phi(tf_or_path):
@@ -38,6 +39,8 @@ def rho_phi(tf_or_path):
         in degrees. Errors are 1-sigma, propagated from the impedance
         errors, and are zero when the file carries no variances.
     """
+    from mt_metadata.transfer_functions.core import TF
+
     tf = tf_or_path
     if not isinstance(tf, TF):
         tf = TF(fn=str(tf_or_path))
@@ -170,6 +173,11 @@ def plot_comparison(
         matplotlib.figure.Figure: The figure. The yx phase is plotted plus
         180 deg so both modes share the 0-90 deg axis.
     """
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
     fig, (ax_r, ax_p) = plt.subplots(
         2, 1, figsize=(8, 9), sharex=True, height_ratios=[2, 1], layout="constrained"
     )

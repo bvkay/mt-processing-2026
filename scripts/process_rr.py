@@ -215,10 +215,13 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "src"))
 
+import matplotlib
 import numpy as np
 import pandas as pd
 import yaml
 from loguru import logger
+
+matplotlib.use("Agg")  # before mth5 and mt_io import pyplot, as compare did: the figures are PNGs
 
 from mt_workbench.bands import build_band_scheme, lowest_harmonic
 from mt_workbench.compare import phase_quadrants, plot_comparison
