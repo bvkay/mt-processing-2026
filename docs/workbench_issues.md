@@ -58,17 +58,32 @@ cite them; add the fix commit when one lands.
     keyed on (path, mtime, size) with `yaml.CSafeLoader` (2.9 s), off the GUI
     thread; longer term, masks per site. The same parse costs 19.4 s per
     masked `process_rr` run (77.75 s over the six bench pairs).
+    Fixed: 557b4fe (`masks.read_document`: one libyaml parse per change of
+    (path, mtime, size), 2.8-3.0 s, a file read within 2 s of a write read
+    again; `State.masks_reader` parses off the GUI thread; all 75 Atlas sites
+    load equal to the pure-Python parse; the Cross-powers mask buttons
+    inert until the list is filled, `tests/crosspower_masks_wait_unit.py`)
+    and 7df4a33 (no read loop on an unreadable file). Masks per site
+    still open.
 12. **View EDIs `reload()` json-loads every sidecar** (4,398 files, 588 MB)
     to read the `engine` key; its `lru_cache(256)` is smaller than the file
     count. 5.1-6.2 s at survey open, on Refresh and after every landed job;
     0.014 s with 100 products. `mantle_products.describe`, `gui/tabs/edis.py`:
     a `tf/index.json` written with each product, an unbounded mtime-keyed
     cache, a lazy tree.
+    Fixed: dcfb686 (`mt_workbench.tf_index`: the index written by
+    `write_products`, per-stem entries kept in-process without bound, one
+    `os.scandir` per reload). The lazy tree is not done (see
+    `qc/survey/workbench_fixes_20261003/gui/README.md` for the reload left).
 13. **Every WindowBar reads the span of every archive** with `load_grid`
     (96-104 calls, 13.2-15.0 s, pydantic metadata construction) under the
     archive lock; 1.4 s with 10 archives. `window_bar.site_span`,
     `archive.load_grid`: spans from h5py attributes, one persisted cache shared
     by the Process and Cross-powers bars.
+    Fixed: 5d428a4 (`archive.read_span`: the 103 live archives in 0.53 s
+    against 14.59 s, every span equal to `load_grid`'s; `State.spans` keyed
+    on path, mtime and size, shared by both bars and kept across survey
+    reloads in the process, not written to disk).
 14. **Variant filtering is 52 % of the end-to-end pipeline** (1,635 of
     3,500 s over 13 builds) on 3.4-3.8 of 20 cores: `noise.mains_subtract`
     (one-second block fit) and `noise.mains_notch` (one `sosfiltfilt` per line
@@ -82,6 +97,11 @@ cite them; add the fix commit when one lands.
     with the extra masks applied at the regression; needs an identity check.
 16. Cross-powers `WORKERS` 4 -> 8: whole-overlap compute 24.5 -> 17.1 s
     (identity checked on a 6 h window only).
+    Fixed: 1eb7941 (identity re-checked on 1 h of the bench C18 rr C19:
+    the 92 store arrays with data equal; levels 8-10 hold no window in
+    1 h, so the deepest levels rest on the 6 h check).
+    The 24.5 -> 17.1 s is an idle-machine figure; under 34-65 % machine
+    load the whole overlap took 24.3 -> 19.8 s (two runs of each, 3 Oct).
 17. Imports per child process 2.6 s (`mt_metadata.transfer_functions` 1.5 s
     through `mt_workbench.compare`): about 70 s per bench-sized batch; reuse
     worker processes in the campaign runner.
