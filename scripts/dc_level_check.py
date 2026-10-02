@@ -6,12 +6,12 @@ An electric input that is open, or of very high impedance, sits at a rail
 or bias level of the logger's input stage: C05 ey and C13 ey of the Morocco
 survey sit at about 1.60e9 counts, while the healthy electric channels of
 line C sit at 0.6e7 to 9.9e7 counts in magnitude. This script reads each
-site's raw archive (`crust.ingest.default_archive_path`,
+site's raw archive (`mt_workbench.ingest.default_archive_path`,
 ``<workspace>/mth5/<site>.h5``) and reports, per run and channel, the median
 level in counts, its spread and a verdict.
 
-The measure and the verdict are those of `crust.dclevel`, which
-`crust.ingest.ingest_site` also records in the run comments of each archive
+The measure and the verdict are those of `mt_workbench.dclevel`, which
+`mt_workbench.ingest.ingest_site` also records in the run comments of each archive
 it builds, over that site's channel runs alone; this script classifies the
 channel runs of every site it checks together. Each archive is opened
 read-only with h5py, without an HDF5 file lock, so the jobs of a running
@@ -21,7 +21,7 @@ electric, h or b magnetic) of every run at --rate (default: the site's
 sample rate, `Survey.sample_rate_of`) is read as a subsample: every k-th
 sample, k the smallest step that keeps the read within --sample-seconds of
 samples (default 3600 s, 3.6e6 samples at 1000 Hz), by a stepped slice of
-the dataset (`crust.dclevel.channel_stats`). Per channel and run:
+the dataset (`mt_workbench.dclevel.channel_stats`). Per channel and run:
 
     median   the subsample's median, counts
     MAD      the median absolute deviation from it, counts (unscaled)
@@ -74,12 +74,12 @@ sys.path.insert(0, str(REPO / "src"))
 
 import h5py  # noqa: E402
 
-from crust.dclevel import (  # noqa: E402
+from mt_workbench.dclevel import (  # noqa: E402
     OK, OPEN, RAIL_LIMIT, RATIO_LIMIT, RUN_RE, SAMPLE_SECONDS, SATURATED, THRESHOLD_COUNTS, VERDICT_ORDER,
     channel_stats, channel_type, classify, station_group,
 )
-from crust.ingest import default_archive_path  # noqa: E402
-from crust.survey import OBSERVATORY, Survey  # noqa: E402
+from mt_workbench.ingest import default_archive_path  # noqa: E402
+from mt_workbench.survey import OBSERVATORY, Survey  # noqa: E402
 
 CSV_COLUMNS = ("site", "run", "channel", "type", "sample_rate", "n_samples", "step", "n_read", "median_counts",
                "mad_counts", "rail_fraction", "typical_counts", "ratio", "verdict")

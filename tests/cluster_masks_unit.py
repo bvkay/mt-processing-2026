@@ -43,10 +43,10 @@ Usage:
 4. (d) the masks of a band are not one per run of consecutive masked groups
    over the run's span (groups 1-3 and 5 of 7 masked give exactly two masks,
    [start 1, end 3] and [start 5, end 5]), any record fails
-   `crust.masks.normalise` or differs from its normalised form, found_by is
+   `mt_workbench.masks.normalise` or differs from its normalised form, found_by is
    not "cluster", bands is not the band's [pmin, pmax], the reason does not
    carry the component, both phases, the separation and the chunk count,
-   or `crust.masks.applies` takes the mask for a neighbouring band's centre;
+   or `mt_workbench.masks.applies` takes the mask for a neighbouring band's centre;
    or --dilate 1 (`dilate`) on groups 1 and 5 of 10 does not mask groups
    0-2 and 4-6 (one either side, none past the band's first group), or
    merges them other than into two masks whose reason says "dilated by
@@ -84,7 +84,7 @@ sys.path.insert(0, str(REPO / "src"))
 sys.path.insert(0, str(REPO / "scripts"))
 
 import cluster_masks as cm  # noqa: E402
-from crust.masks import HEADER, applies, load_masks, masks_path, normalise, save_masks  # noqa: E402
+from mt_workbench.masks import HEADER, applies, load_masks, masks_path, normalise, save_masks  # noqa: E402
 
 T0 = pd.Timestamp("2023-07-22T00:00:00", tz="UTC")
 CHUNK_S = 600.0

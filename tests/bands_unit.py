@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Unit test for the band widths of crust.bands.build_band_scheme
+Unit test for the band widths of mt_workbench.bands.build_band_scheme
 
 Checks that `build_band_scheme` refuses a band layout with a band narrower
 than one FFT harmonic spacing and leaves working layouts unchanged. Runs on
@@ -59,7 +59,7 @@ import numpy as np
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "src"))
 
-from crust.bands import build_band_scheme, lowest_harmonic  # noqa: E402
+from mt_workbench.bands import build_band_scheme, lowest_harmonic  # noqa: E402
 
 BROADBAND = dict(min_period=0.005, max_period=5000.0, notch_frequencies=(50.0, 150.0))
 

@@ -2,12 +2,12 @@
 """
 Unit test for the window a clipped MANTLE run takes
 
-Checks `crust.mantle_window` (`covered_spans`, `choose_window`,
+Checks `mt_workbench.mantle_window` (`covered_spans`, `choose_window`,
 `clip_text`) on synthetic run intervals, and the way scripts/process_rr.py
 uses it: `--mantle-window clip` in the resolution, the window and
 `window_clipped` in the sidecar, the option refused with aurora, and the
 default `refuse` leaving the resolution and the sidecar as they were. No
-archive is read and no engine runs: `crust.engine_mantle.archive_spans` is
+archive is read and no engine runs: `mt_workbench.engine_mantle.archive_spans` is
 replaced by the synthetic spans where process_rr would read them.
 
 Usage:
@@ -55,7 +55,7 @@ Usage:
    used", or the sidecar does not record the window used (6 h from the
    later record start, UTC ISO) and `window_clipped` {64.7, 6.0, "cap"};
    `--engine aurora --mantle-window clip` is not refused naming
-   --mantle-window; or `crust.engine_mantle.check_window`'s refusal (when
+   --mantle-window; or `mt_workbench.engine_mantle.check_window`'s refusal (when
    MANTLE is installed) no longer reads "the window is 42.0 h; ... at most
    24 h apart".
 """
@@ -76,7 +76,7 @@ import yaml
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "src"))
 
-from crust.mantle_window import choose_window, clip_text, covered_spans  # noqa: E402
+from mt_workbench.mantle_window import choose_window, clip_text, covered_spans  # noqa: E402
 
 H = 3600.0
 T0 = pd.Timestamp("2023-02-27T00:00:00", tz="UTC").timestamp()
@@ -228,23 +228,23 @@ def test_process_rr_refuse_unchanged_and_clip() -> None:
     res = pr.resolve(clip, started)
     assert "mantle.window: clip" in _lines(pr, res)
     spans = {"a.h5": hours((0, 64.7)), "b.h5": hours((0, 70))}
-    fake = types.ModuleType("crust.engine_mantle")
+    fake = types.ModuleType("mt_workbench.engine_mantle")
     fake.archive_spans = lambda path: spans[Path(path).name]
-    import crust
+    import mt_workbench
 
-    saved = (sys.modules.get("crust.engine_mantle"), getattr(crust, "engine_mantle", None))
-    sys.modules["crust.engine_mantle"], crust.engine_mantle = fake, fake
+    saved = (sys.modules.get("mt_workbench.engine_mantle"), getattr(mt_workbench, "engine_mantle", None))
+    sys.modules["mt_workbench.engine_mantle"], mt_workbench.engine_mantle = fake, fake
     try:
         choice = pr.choose_mantle_window(res, Path("a.h5"), Path("b.h5"), None, None)
     finally:
         if saved[0] is None:
-            sys.modules.pop("crust.engine_mantle", None)
+            sys.modules.pop("mt_workbench.engine_mantle", None)
         else:
-            sys.modules["crust.engine_mantle"] = saved[0]
+            sys.modules["mt_workbench.engine_mantle"] = saved[0]
         if saved[1] is None:
-            del crust.engine_mantle
+            del mt_workbench.engine_mantle
         else:
-            crust.engine_mantle = saved[1]
+            mt_workbench.engine_mantle = saved[1]
     line = pr.mantle_window_line(res)
     assert line.startswith("mantle.window_used: 2023-02-27 00:00:00 to 2023-02-27 06:00:00 UTC (6.00 h;"), line
     assert "clipped (cap): 64.7 h requested, 6.0 h used" in line, line
@@ -256,7 +256,7 @@ def test_process_rr_refuse_unchanged_and_clip() -> None:
           f"only under clip; aurora refused; {line}")
 
     try:
-        from crust import engine_mantle
+        from mt_workbench import engine_mantle
     except ImportError as exc:  # MANTLE is installed separately
         print(f"  (MANTLE not installed, check_window not checked: {exc})")
         return

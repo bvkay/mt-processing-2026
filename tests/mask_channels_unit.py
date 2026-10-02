@@ -2,12 +2,12 @@
 """
 Unit test for the channels of masks.yaml entries and the mask history
 
-Checks the optional `channels` key of a mask (`crust.masks`: `normalise`,
+Checks the optional `channels` key of a mask (`mt_workbench.masks`: `normalise`,
 `save_masks`, `load_masks`, `masks_for_row`, `remote_channel_split`), the
 per-row runs scripts/process_rr.py builds from it (`resolve`, `row_runs`,
 the sidecar and the resolution lines) and the row merge of their transfer
 functions (`merge_rows`, on synthetic mt_metadata TF objects), the per-row
-stack of `crust.crosspower.stack_impedance` and `masked_chunks` on a
+stack of `mt_workbench.crosspower.stack_impedance` and `masked_chunks` on a
 hand-made window store, and the mask history (`retire_masks`,
 `restore_masks`, `load_history`, the atomic file replacement, and
 scripts/retire_masks.py), on synthetic surveys in temporary folders. Runs
@@ -101,9 +101,9 @@ sys.path.insert(0, str(REPO / "scripts"))
 
 from loguru import logger  # noqa: E402
 
-import crust.masks as cmasks  # noqa: E402
-from crust.crosspower import SUMS, WindowStore, bin_windows, masked_chunks, stack_impedance  # noqa: E402
-from crust.masks import (  # noqa: E402
+import mt_workbench.masks as cmasks  # noqa: E402
+from mt_workbench.crosspower import SUMS, WindowStore, bin_windows, masked_chunks, stack_impedance  # noqa: E402
+from mt_workbench.masks import (  # noqa: E402
     HEADER, HISTORY_HEADER, history_path, load_history, load_masks, masks_path, normalise, remote_channel_split,
     replace_text, restore_masks, retire_masks, save_masks,
 )

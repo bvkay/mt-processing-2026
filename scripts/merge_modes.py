@@ -9,7 +9,7 @@ from the two products: the x row (Zxx, Zxy and their errors) and the tipper
 from the --xy product, the y row (Zyx, Zyy and their errors) from the --yx
 product, on the --xy product's periods. The --xy product's station
 metadata, location, runs and header are kept; its INFO block's processing
-parameters are replaced by ``crust.*`` lines naming the two sources and the
+parameters are replaced by ``mt_workbench.*`` lines naming the two sources and the
 sidecar.
 
 The y row is placed on the xy periods as follows. A --yx period whose y row
@@ -55,7 +55,7 @@ sys.path.insert(0, str(REPO / "src"))
 import numpy as np  # noqa: E402
 from mt_metadata.transfer_functions.core import TF  # noqa: E402
 
-import crust  # noqa: E402
+import mt_workbench  # noqa: E402
 
 X_ROW, Y_ROW = 0, 1  # impedance output index of ex and ey
 LOG_TOL = 1e-5  # log10-period distance within which two periods are the same
@@ -288,7 +288,7 @@ def build_sidecar(out: Path, tag: str | None, force: bool, argv: list[str], tf_x
         "forced": bool(force),
         "mismatches": found,
         "argv": list(argv),
-        "versions": {"crust": crust.__version__, "mt_metadata": importlib.metadata.version("mt_metadata")},
+        "versions": {"mt_workbench": mt_workbench.__version__, "mt_metadata": importlib.metadata.version("mt_metadata")},
     }
     if engine is not None:
         side["engine"] = engine
@@ -296,11 +296,11 @@ def build_sidecar(out: Path, tag: str | None, force: bool, argv: list[str], tf_x
 
 
 def info_lines(side: dict) -> list[str]:
-    """Build the ``crust.*`` lines of the merged EDI's INFO block."""
-    return [f"crust.version={side['versions']['crust']}", f"crust.merged={side['created']}",
-            f"crust.tag={side['tag'] or ''}", f"crust.merge_xy={Path(side['sources']['xy']['edi']).name}",
-            f"crust.merge_yx={Path(side['sources']['yx']['edi']).name}",
-            f"crust.sidecar={Path(side['edi']).with_suffix('.json').name}"]
+    """Build the ``mt_workbench.*`` lines of the merged EDI's INFO block."""
+    return [f"mt_workbench.version={side['versions']['mt_workbench']}", f"mt_workbench.merged={side['created']}",
+            f"mt_workbench.tag={side['tag'] or ''}", f"mt_workbench.merge_xy={Path(side['sources']['xy']['edi']).name}",
+            f"mt_workbench.merge_yx={Path(side['sources']['yx']['edi']).name}",
+            f"mt_workbench.sidecar={Path(side['edi']).with_suffix('.json').name}"]
 
 
 def merge_files(out, xy, yx, tag: str | None = None, force: bool = False, argv: list[str] | None = None) -> int:

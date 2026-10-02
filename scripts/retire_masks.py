@@ -7,9 +7,9 @@ is kept rather than deleted: this script moves the entries of one site that
 match every selector given from the site's block of `<survey>/masks.yaml`
 to the end of its block of `<survey>/masks_history.yaml`, each keeping its
 keys and gaining ``retired: {on: <today>, why: <--why>}``
-(`crust.masks.retire_masks`). With `--restore` it moves the matching
+(`mt_workbench.masks.retire_masks`). With `--restore` it moves the matching
 entries of the history back into masks.yaml without the `retired` record
-(`crust.masks.restore_masks`). Both files are replaced atomically, so a
+(`mt_workbench.masks.restore_masks`). Both files are replaced atomically, so a
 campaign runner reading masks.yaml at a job start sees the old file or the
 new one.
 
@@ -53,7 +53,7 @@ sys.path.insert(0, str(REPO / "src"))
 
 from loguru import logger  # noqa: E402
 
-from crust.masks import (  # noqa: E402
+from mt_workbench.masks import (  # noqa: E402
     FOUND_BY, SCOPES, history_path, load_history, load_masks, masks_path, restore_masks, retire_masks, utc,
 )
 

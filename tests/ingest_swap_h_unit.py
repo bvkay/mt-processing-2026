@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Unit test for the hx/hy exchange of crust.ingest (`swap_h`)
+Unit test for the hx/hy exchange of mt_workbench.ingest (`swap_h`)
 
 A LEMI-423 site is written as one synthetic B423 file of 4 s at 1000 Hz
 whose Bx and By columns are distinct series (+4.3e7 and -3.1e7 counts
@@ -65,9 +65,9 @@ REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "src"))
 sys.path.insert(0, str(REPO / "tests"))
 
-import crust.ingest as ingest  # noqa: E402
-from crust.ingest import build_variant, filters_hash, ingest_site, variant_path  # noqa: E402
-from crust.survey import Survey  # noqa: E402
+import mt_workbench.ingest as ingest  # noqa: E402
+from mt_workbench.ingest import build_variant, filters_hash, ingest_site, variant_path  # noqa: E402
+from mt_workbench.survey import Survey  # noqa: E402
 from _scratch import scratch_dir  # noqa: E402
 from mtio_fork_unit import _write_b423, _write_rsp  # noqa: E402
 

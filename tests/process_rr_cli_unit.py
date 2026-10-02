@@ -45,7 +45,7 @@ hamming`, `tweak.overlap_pct: 50.0`, `tweak.prewhiten: False` and `tweak.r0:
 2.0` -- no other tweak, no "tweaks: none" -- with every other line as in the
 plain run (`started`/`stem` excepted); or, building aurora's real config for
 D02 against E08 with the survey's lemimt band scheme (in-process, through
-`crust.process.kernel_dataset` with nothing patched, while this process
+`mt_workbench.process.kernel_dataset` with nothing patched, while this process
 holds both archives open read-only with h5py, as the GUI holds one: HDF5
 refuses a read-write open of a file already open read-only, so the build
 fails unless mth5 itself opens them read-only), without tweaks any decimation level is not
@@ -55,7 +55,7 @@ level whose window lasts over 600 s, of which there must be at least one, so
 the boost is really exercised -- prewhitening_type "first difference" with
 recoloring True, min_num_stft_windows 0, and regression max_iterations 10,
 max_redescending_iterations 2, r0 1.5, u0 2.8, tolerance 0.005 (and
-`crust.process.ESTIMATOR_DEFAULTS`, which the GUI compares against, does not
+`mt_workbench.process.ESTIMATOR_DEFAULTS`, which the GUI compares against, does not
 say the same); with the tweaks `resolve()` makes of those four flags, any
 level is not window.type hamming with overlap round(num_samples * 0.5) --
 the long-window boost replaced -- prewhitening_type "" (which mth5's
@@ -74,7 +74,7 @@ value; `build_sidecar`, fed a fake TF's own `phase_quadrants` result, does
 not carry `local`/`remote`, `started`/`finished` as the exact ISO strings
 passed in, `seconds` matching their difference, the band scheme and the full
 effective tweaks (taper "hann" included even though no `--taper` was given),
-the argv, the tag, the edi/figure names and a `versions` dict naming crust,
+the argv, the tag, the edi/figure names and a `versions` dict naming mt_workbench,
 aurora, mth5, mt_metadata and mt_io -- or is not JSON-serialisable as it
 stands; a phase-quadrant verdict built from a mode 180 deg out of quadrant is
 not "flipped: ..." and one built from too few usable periods is not "not
@@ -110,7 +110,7 @@ three in start order, `masks_remote` E08's three, and `masks` the union in
 start order -- exactly the starts listed in MASK_UNION_STARTS, the shared
 interval once (D02's entry), E08's own entries carrying E08's reasons; the
 sidecar `build_sidecar` makes does not carry the same three lists in the
-form masks.yaml holds them (`crust.masks.stored`: `channels` left out of an
+form masks.yaml holds them (`mt_workbench.masks.stored`: `channels` left out of an
 entry on every channel) with
 `masks_ignored` False; the dry run does not print "masks: D02 3, E08 3 (5
 applied)"; with `--no-masks` all three lists are not empty with
@@ -311,7 +311,7 @@ def test_tweaks_print_only_what_was_given() -> None:
 
 
 # the in-use estimator values, stated here from aurora 0.6.2's ConfigCreator
-# output (not taken from crust.process), and what the four flags must make
+# output (not taken from mt_workbench.process), and what the four flags must make
 IN_USE = {"type": "hann", "prewhitening_type": "first difference", "recoloring": True,
           "min_num_stft_windows": 0, "max_iterations": 10, "max_redescending_iterations": 2,
           "r0": 1.5, "u0": 2.8, "tolerance": 0.005}
@@ -336,8 +336,8 @@ def test_tweaks_reach_every_decimation_level() -> None:
     from mth5.processing.spectre.prewhitening import apply_prewhitening
 
     sys.path.insert(0, str(REPO / "src"))
-    from crust.bands import build_band_scheme
-    from crust.process import ESTIMATOR_DEFAULTS, apply_tweaks, build_config, kernel_dataset
+    from mt_workbench.bands import build_band_scheme
+    from mt_workbench.process import ESTIMATOR_DEFAULTS, apply_tweaks, build_config, kernel_dataset
 
     process_rr = _load_process_rr()
     started = dt.datetime.now().astimezone()
@@ -400,8 +400,8 @@ def test_tweaks_reach_every_decimation_level() -> None:
 
 def test_band_layout_reaches_every_decimation_level() -> None:
     sys.path.insert(0, str(REPO / "src"))
-    from crust.bands import build_band_scheme
-    from crust.process import build_config, kernel_dataset
+    from mt_workbench.bands import build_band_scheme
+    from mt_workbench.process import build_config, kernel_dataset
 
     process_rr = _load_process_rr()
     started = dt.datetime.now().astimezone()
@@ -512,7 +512,7 @@ MASK_UNION_REASONS = ["D02 band", "E08 fence", "D02 spike", "E08 band", "D02 nig
 
 
 def test_masks_from_both_sites() -> None:
-    from crust.masks import stored
+    from mt_workbench.masks import stored
     import numpy as np
 
     process_rr = _load_process_rr()
@@ -635,7 +635,7 @@ def test_build_sidecar_with_a_fake_tf() -> None:
     assert sidecar["tag"] == "sidecar-test", sidecar["tag"]
     assert sidecar["edi"] == edi_path.name and sidecar["figure"] == png_path.name, sidecar
     assert sidecar["quadrant"]["verdict"] == "physical quadrants", sidecar["quadrant"]
-    for lib in ("crust", "aurora", "mth5", "mt_metadata", "mt_io"):
+    for lib in ("mt_workbench", "aurora", "mth5", "mt_metadata", "mt_io"):
         assert sidecar["versions"].get(lib), sidecar["versions"]
     json.loads(json.dumps(sidecar, default=str))  # must round-trip as JSON
     print(f"  build_sidecar (physical): seconds {sidecar['seconds']}, tweaks.taper "
@@ -656,8 +656,8 @@ def test_build_sidecar_with_a_fake_tf() -> None:
           f"{flipped_sidecar['quadrant']['verdict']!r}, sparse {sparse_sidecar['quadrant']['verdict']!r}")
 
     lines = process_rr.edi_info_lines(sidecar)
-    assert any(line == "crust.taper=hann" for line in lines), lines
-    assert any(line.startswith("crust.sidecar=") and line.endswith(".json") for line in lines), lines
+    assert any(line == "mt_workbench.taper=hann" for line in lines), lines
+    assert any(line.startswith("mt_workbench.sidecar=") and line.endswith(".json") for line in lines), lines
     print(f"  edi_info_lines: {lines}")
 
 

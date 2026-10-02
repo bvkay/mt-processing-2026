@@ -86,8 +86,8 @@ from loguru import logger
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "src"))
 
-from crust.survey import Survey
-from crust.timefreq import (
+from mt_workbench.survey import Survey
+from mt_workbench.timefreq import (
     BANDS_S,
     CHANNELS,
     COLOUR,

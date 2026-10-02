@@ -68,7 +68,7 @@ proposal merged with `merge_files` does not give B's, A's and C's x rows at
 local, remote, created (UTC, ending in Z), tag, edi, site, recipe, merge,
 sources, forced, mismatches, argv or versions, does not survive json.dumps
 and json.loads unchanged, or its sources do not carry their sidecars' tags,
-remotes and masks, or the EDI's INFO block lacks the crust.best_xy lines;
+remotes and masks, or the EDI's INFO block lacks the mt_workbench.best_xy lines;
 (8) with xy from A_hole then B over 0.01-1000 s, the x row at 3.16 s is not
 B's, the x row at A_hole's other 40 periods is not A's, or the sidecar's xy
 counts are not 40 copied from A_hole and 1 from B, none interpolated; with
@@ -142,10 +142,10 @@ under the site name S01, the merge does not return 0 with one WARNING line
 naming L.edi, station S01L and the site, or the sidecar's lattice does not
 record first_station S01L; or the same merge under the site name S01L
 prints that WARNING or writes other bytes from >FREQ on; (22) the INFO
-block's crust keys of the union product of (10) are not version, merged,
+block's mt_workbench keys of the union product of (10) are not version, merged,
 tag, site, recipe, the four best lines and sidecar in that order, or those
-of the grid-first product of (11) are not the same with crust.grid after
-crust.recipe, its value first,A.edi,49,25, or with xy from A then L and yx
+of the grid-first product of (11) are not the same with mt_workbench.grid after
+mt_workbench.recipe, its value first,A.edi,49,25, or with xy from A then L and yx
 from L2 over 3-100000 s then A (L left out at 25 periods, L2 at 21 of the
 same) that line does not count the 25 distinct periods; (23) with both modes
 from A over 0.01-3 s, L_hole over 3-300 s and A over 300-100000 s and grid:
@@ -170,7 +170,7 @@ lattice not extended, each union period's neighbour, a left-out period
 short, the valid grid union refused, the grid without the added periods and
 the grid without L's 233.4 s, the grid with L's 1.313 s, the grid with M's
 off periods, the grid with F's 1000.03 s, the WARNING looked for in the S01L
-merge, the union's keys with crust.grid, the grid line with 24 periods left
+merge, the union's keys with mt_workbench.grid, the grid line with 24 periods left
 out and with the per-source counts summed (46), round two's grid with 10
 and 13.34 s and without 9.843 s, the lattice test on M19 (19 of 40 on), and
 738.2 s looked for as lost in the same merge with A behind M20 in yx), which
@@ -577,7 +577,7 @@ def test_merge_files(module, a: Path, b: Path) -> None:
         got = {k: src["sidecar"][k] for k in ("tag", "remote", "masks")}
         assert got == {k: PRODUCTS[name][k] for k in got}, (name, got)
     info = out.read_text(encoding="utf-8")
-    assert "crust.best_xy_1=A.edi,0.01,1" in info and "crust.best_xy_2=B.edi,3,100" in info, "INFO lines"
+    assert "mt_workbench.best_xy_1=A.edi,0.01,1" in info and "mt_workbench.best_xy_2=B.edi,3,100" in info, "INFO lines"
     print(f"  (7) merge_files exit 0; sidecar {len(raw)} bytes round-trips; remote {side['remote']}; "
           f"sources {[(Path(s['edi']).name, s['sidecar']['tag']) for s in side['sources']]}")
 
@@ -1052,28 +1052,28 @@ def test_grid(module, a: Path, b: Path) -> None:
           f"S01L; under site S01L no WARNING, {len(data_section(m_q))} bytes from >FREQ identical")
     must_fail("the WARNING looked for in the S01L merge", warned(text_q, "S01L"))
 
-    # (22) the INFO block's crust lines: crust.grid under grid first only
-    def crust_lines(path: Path) -> list[tuple[str, str]]:
-        # written as transfer_function.processing_parameters.crust.<key>=<value>, the = dropped for an empty value
-        return re.findall(r"^\s*\S*?(crust\.[A-Za-z0-9_]+)=?(.*?)\s*$", path.read_text(encoding="utf-8"), flags=re.M)
+    # (22) the INFO block's mt_workbench lines: mt_workbench.grid under grid first only
+    def mt_workbench_lines(path: Path) -> list[tuple[str, str]]:
+        # written as transfer_function.processing_parameters.mt_workbench.<key>=<value>, the = dropped for an empty value
+        return re.findall(r"^\s*\S*?(mt_workbench\.[A-Za-z0-9_]+)=?(.*?)\s*$", path.read_text(encoding="utf-8"), flags=re.M)
 
     def keys_fail(path: Path, want: list[str], grid_value: str | None) -> list[str]:
-        got = crust_lines(path)
+        got = mt_workbench_lines(path)
         fails = [] if [k for k, _v in got] == want else [f"{path.name} keys {[k for k, _v in got]}"]
-        value = dict(got).get("crust.grid")
+        value = dict(got).get("mt_workbench.grid")
         if value != grid_value:
-            fails.append(f"{path.name} crust.grid {value!r}, not {grid_value!r}")
+            fails.append(f"{path.name} mt_workbench.grid {value!r}, not {grid_value!r}")
         return fails
 
-    best = ["crust.best_xy_1", "crust.best_xy_2", "crust.best_yx_1", "crust.best_yx_2"]
-    head = ["crust.version", "crust.merged", "crust.tag", "crust.site", "crust.recipe"]
-    want_u, want_f = head + best + ["crust.sidecar"], head + ["crust.grid"] + best + ["crust.sidecar"]
+    best = ["mt_workbench.best_xy_1", "mt_workbench.best_xy_2", "mt_workbench.best_yx_1", "mt_workbench.best_yx_2"]
+    head = ["mt_workbench.version", "mt_workbench.merged", "mt_workbench.tag", "mt_workbench.site", "mt_workbench.recipe"]
+    want_u, want_f = head + best + ["mt_workbench.sidecar"], head + ["mt_workbench.grid"] + best + ["mt_workbench.sidecar"]
     grid_value = f"first,A.edi,{P8.size + beyond.size},{inside.size}"
     fails = keys_fail(m_u, want_u, None) + keys_fail(m_f, want_f, grid_value)
     assert not fails, fails
-    print(f"  (22) INFO crust lines: union {len(want_u)} without crust.grid; grid first crust.grid={grid_value} after "
-          f"crust.recipe")
-    must_fail("the union's keys with crust.grid", keys_fail(m_u, want_f, grid_value))
+    print(f"  (22) INFO mt_workbench lines: union {len(want_u)} without mt_workbench.grid; grid first mt_workbench.grid={grid_value} after "
+          f"mt_workbench.recipe")
+    must_fail("the union's keys with mt_workbench.grid", keys_fail(m_u, want_f, grid_value))
     must_fail("the grid line with 24 periods left out", keys_fail(m_f, want_f, grid_value.rsplit(",", 1)[0] + ",24"))
 
     # (22) two off-lattice sources left out at the same periods: the count is of distinct periods
@@ -1089,7 +1089,7 @@ def test_grid(module, a: Path, b: Path) -> None:
     fails = keys_fail(m_d, want_f, grid_value)
     assert not fails, fails
     print(f"      L and L2 left out at {counts['L.edi']} and {counts['L2.edi']} periods, {inside.size} distinct: "
-          f"crust.grid={grid_value}")
+          f"mt_workbench.grid={grid_value}")
     summed = f"{grid_value.rsplit(',', 1)[0]},{sum(counts.values())}"
     must_fail(f"the per-source counts summed ({sum(counts.values())})", keys_fail(m_d, want_f, summed))
 

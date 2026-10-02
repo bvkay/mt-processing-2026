@@ -10,7 +10,7 @@ found_by "night", so that a run with `process_rr.py --mask-origins night`
 processes the nights alone. `--gate` masks the spans where the local
 electric field carries bursts, found_by "gate". The record is the site's
 `start` to `end` in survey.yaml. Both kinds are scope local
-(`crust.masks`): they apply when the site is the local of a pair, and the
+(`mt_workbench.masks`): they apply when the site is the local of a pair, and the
 pairs that use it as a remote, where its magnetics alone are used, keep
 those windows.
 
@@ -25,7 +25,7 @@ seconds either side (60 by default). The burst seconds are merged into
 [start, end) intervals.
 
 `--out` writes the masks to a YAML file laid out as masks.yaml; `--write`
-saves them into the survey's masks.yaml (`crust.masks.save_masks`) in place
+saves them into the survey's masks.yaml (`mt_workbench.masks.save_masks`) in place
 of the site's earlier masks of the same origin, every other entry kept.
 `--figure` draws s against time with the threshold and both mask sets, as
 `<workspace>/qc/cluster_masks/<site>_night_gate.png`.
@@ -61,10 +61,10 @@ sys.path.insert(0, str(REPO / "src"))
 sys.path.insert(0, str(REPO / "scripts"))
 
 from cluster_masks import write_mask_file, write_site_masks  # noqa: E402
-from crust.crosspower import _layout, _read  # noqa: E402
-from crust.ingest import default_archive_path  # noqa: E402
-from crust.masks import normalise, utc  # noqa: E402
-from crust.survey import Survey  # noqa: E402
+from mt_workbench.crosspower import _layout, _read  # noqa: E402
+from mt_workbench.ingest import default_archive_path  # noqa: E402
+from mt_workbench.masks import normalise, utc  # noqa: E402
+from mt_workbench.survey import Survey  # noqa: E402
 
 NIGHT = "01:00-05:00"
 K = 3.0

@@ -4,33 +4,33 @@ Ingest sites into their MTH5 archives and filtered variants
 
 Ingests a site's raw files into its MTH5 archive and builds its filtered
 variant, in the same way as process_rr.py. The raw archive is
-``<workspace>/mth5/<site>.h5`` (`crust.ingest.ingest_site`). It uses the run
+``<workspace>/mth5/<site>.h5`` (`mt_workbench.ingest.ingest_site`). It uses the run
 length of process_rr.py's MAX_RUN_FILES, imported from it (34 files of 90
 min, 51 h per run, unless --max-run-files), and the naming of
-`crust.ingest.default_archive_path`, so process_rr.py reuses an archive
+`mt_workbench.ingest.default_archive_path`, so process_rr.py reuses an archive
 built here. The whole deployment goes into the raw archive; the processing
 window is chosen in process_rr.py. The site's recorder is
 `Survey.instrument_of(site)` (LEMI-423, LEMI-424 or Earth Data PR6-24,
-`crust.instruments`). --max-run-files counts B423 files, caps LEMI-423 runs
+`mt_workbench.instruments`). --max-run-files counts B423 files, caps LEMI-423 runs
 only and applies to the raw archive alone.
 
 With no flag, and when the site declares filters in <survey>/filters.yaml,
 the script also builds the filtered variant ``<site>_f<hash>.h5``
-(`crust.ingest.build_variant`) on top of the raw archive. `--raw` builds the
+(`mt_workbench.ingest.build_variant`) on top of the raw archive. `--raw` builds the
 raw archive only; filters are applied to the variant alone. `--variant`
 builds the variant only, from an existing raw archive.
 
 For one site the script prints "archive: <path>" for the raw step and
 "variant: <path>" for the variant step (or "variant: none (no declared
 filters)"). The raw step records the DC level of each channel and run in
-the run comments (`crust.ingest.ingest_site`, `crust.dclevel`); after the
-"archive:" line the script reads them back (`crust.dclevel.recorded_levels`)
+the run comments (`mt_workbench.ingest.ingest_site`, `mt_workbench.dclevel`); after the
+"archive:" line the script reads them back (`mt_workbench.dclevel.recorded_levels`)
 and prints one line per flagged channel run, "<site> <run> <channel>:
 median 1.60e9 counts, open input?" (or the share at the rail and
 "saturated?"). An existing raw archive is rebuilt only with --force, since
 every transfer function of the site may have been made from it. A variant
 already current for the site's declared filters
-(`crust.ingest.variant_ready`) is likewise kept unless --force is given. A
+(`mt_workbench.ingest.variant_ready`) is likewise kept unless --force is given. A
 run that fails part-way removes the partial file it was writing. The Time
 Series tab of the GUI runs this script (no flags) from its "Build MTH5"
 button for a site without an archive.
@@ -77,9 +77,9 @@ REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "src"))
 sys.path.insert(0, str(REPO / "scripts"))
 
-from crust.dclevel import OK, flag_line, recorded_levels  # noqa: E402
-from crust.ingest import build_variant, default_archive_path, ingest_site, variant_path, variant_ready  # noqa: E402
-from crust.survey import Survey  # noqa: E402
+from mt_workbench.dclevel import OK, flag_line, recorded_levels  # noqa: E402
+from mt_workbench.ingest import build_variant, default_archive_path, ingest_site, variant_path, variant_ready  # noqa: E402
+from mt_workbench.survey import Survey  # noqa: E402
 from process_rr import MAX_RUN_FILES  # noqa: E402  (shared with process_rr.py)
 
 POLL_S = 0.25  # how often a batch checks its running processes

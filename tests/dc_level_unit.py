@@ -39,7 +39,7 @@ not listed as having no archive, or sr100_0002 is checked at 1000 Hz; the
 exit status is not 0 for the report, 2 for S03 named and 2 for a missing
 survey file; or the CSV does not hold the table's rows.
 
-The mutation: with the rail share (`crust.dclevel.rail_fraction`, which
+The mutation: with the rail share (`mt_workbench.dclevel.rail_fraction`, which
 the script's measure calls) taken as the literal share of samples whose
 |counts| are at least 90 % of the largest |counts|, the healthy
 channels, whose DC level is many times their noise, come back "saturated?";
@@ -66,7 +66,7 @@ sys.path.insert(0, str(REPO / "src"))
 sys.path.insert(0, str(REPO / "tests"))
 
 from _scratch import scratch_dir  # noqa: E402
-from crust import dclevel  # noqa: E402
+from mt_workbench import dclevel  # noqa: E402
 
 SCRIPT = REPO / "scripts" / "dc_level_check.py"
 SCRATCH = scratch_dir("dc_level_unit")

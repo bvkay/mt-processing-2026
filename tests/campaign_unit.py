@@ -63,7 +63,7 @@ Usage:
     interrupted;
 
 (7) the filter check is wrong against the real producer: comments built the
-    way ingest builds them (crust.noise.apply_filters_arrays' own provenance
+    way ingest builds them (mt_workbench.noise.apply_filters_arrays' own provenance
     lines joined by "; then ") for C04's declared list (mains then notch) and
     C22's (notch with extra lines) must match, bare and behind build_variant's
     "filters hash <h>; " prefix; a changed q, a swapped order, a missing
@@ -129,7 +129,7 @@ Usage:
      others, or the mantle child does not receive `--mantle-max-hours 72`
      and `--no-masks`; the mantle product (the default's curve up to
      1000 s, which is where it stops) is not scored over its own periods:
-     its score must equal crust.quality's score of the default's product
+     its score must equal mt_workbench.quality's score of the default's product
      over 0.005-1000 s, its `period_max` 1000 s and its `n_periods` the
      periods up to 1000 s, while the default's score over 0.005-5000 s,
      with a scattered tail above 1000 s, is lower; summary.md does not list
@@ -235,7 +235,7 @@ sys.path.insert(0, str(REPO / "scripts"))
 import campaign as cp  # noqa: E402
 from mt_metadata.transfer_functions.core import TF  # noqa: E402
 
-from crust.noise import apply_filters_arrays  # noqa: E402
+from mt_workbench.noise import apply_filters_arrays  # noqa: E402
 
 PY = sys.executable
 ROOT = Path(tempfile.mkdtemp(prefix="campaign_unit_"))
@@ -542,7 +542,7 @@ def _fake_job(c, run_id: str, local: str, remote: str, edi_src: Path, seconds: f
         "open(trace, 'a').write(f'end {time.time()}\\n')\n"
         "if fail: raise SystemExit('ValueError: made to fail')\n"
         "shutil.copy(src, dest)\n"
-        "print(f'2026-09-23 23:00:00.000 | INFO | crust.process:process_station:255 - wrote {dest}', flush=True)\n"
+        "print(f'2026-09-23 23:00:00.000 | INFO | mt_workbench.process:process_station:255 - wrote {dest}', flush=True)\n"
     )
     return cp.Job(run_id=run_id, stage=1, kind="rr", group=c.plan.group_of(local), local=local, remote=remote,
                   config="default", tag=tag, deps=list(deps), input_sites=[local, remote],
@@ -687,7 +687,7 @@ def test_parse_products() -> None:
     esc = "\x1b"
     log = "\n".join([  # the exact shape of scripts/process_rr.py's log (loguru colours it)
         "stem: C18_rr-C19_20260923-2300_lineC-default",
-        f"{esc}[1m2026-09-23T22:56:54.847749+0800 | INFO | crust.process | process_station | line: 255 | "
+        f"{esc}[1m2026-09-23T22:56:54.847749+0800 | INFO | mt_workbench.process | process_station | line: 255 | "
         f"wrote D:\\W\\tf\\C18_rr-C19_x.edi{esc}[0m",
         f"{esc}[1m2026-09-23T22:56:55.217105+0800 | INFO | __main__ | main | line: 530 | "
         f"wrote D:\\W\\tf\\C18_rr-C19_x_vs_lemimt.png{esc}[0m",

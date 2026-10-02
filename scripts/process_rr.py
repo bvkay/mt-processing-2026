@@ -19,7 +19,7 @@ only, so two band layouts can be compared without editing the YAML.
 `--notch` is a comma-separated list of Hz (`--notch ""` clears the
 survey's). Each site's raw archive (`<site>.h5`, unfiltered) is ingested if
 it is missing. The archive processed from is chosen by
-`crust.ingest.processing_archive`: the filtered variant
+`mt_workbench.ingest.processing_archive`: the filtered variant
 (`<site>_f<hash>.h5`, built from the raw archive when it is missing or its
 recorded hash does not match the current `filters.yaml`), or the raw archive
 with `--no-filters`, which shows whether a filter was worth declaring.
@@ -32,13 +32,13 @@ Time masks (`<survey>/masks.yaml`, declared per site on the GUI's
 Cross-powers tab or by scripts/cluster_masks.py and scripts/gate_masks.py)
 are applied by role: the entries of the local site whose `scope` is `local`
 or `both`, and the entries of the remote site whose `scope` is `both` or
-`remote`, joined with `crust.masks.union_masks`. An entry of scope
+`remote`, joined with `mt_workbench.masks.union_masks`. An entry of scope
 `local`, the default, applies only when its site is the local, so a mask
 of a site's electric channels keeps its windows in the pairs that use the
 site as a remote, where its magnetics alone are used; an entry of scope
 `remote` applies only when its site is the remote. A stacked remote
 (`STK_...`) has no entry of its own; the remote is looked up by its name
-(`crust.masks.remote_masks`), so its masks apply whether or not data_root
+(`mt_workbench.masks.remote_masks`), so its masks apply whether or not data_root
 is mounted. `--mask-scope union` applies every entry of both sites,
 whatever its scope, for comparison.
 
@@ -76,12 +76,12 @@ is compared with its parent's. The sidecar records the rates
 
 The estimator flags (--taper ... --tolerance) are advanced options: each
 changes aurora's STFT or robust regression on every decimation level for
-this run only (`crust.process.process_station(tweaks=...)`, whose docstring
+this run only (`mt_workbench.process.process_station(tweaks=...)`, whose docstring
 gives the default in use for each). The flags given become tweaks; with none
 the run uses the defaults, and the resolution prints "tweaks: none".
 
 The band-layout flags are advanced options that keep every band's period
-and change the FFT harmonics it spans (`crust.bands.build_band_scheme`).
+and change the FFT harmonics it spans (`mt_workbench.bands.build_band_scheme`).
 `--window-samples N` sets the FFT window of every decimation level (128
 samples unless the survey's `processing:` block gives `window:`), so each
 band spans N/128 times as many harmonics; the overlap stays 25 % of the
@@ -96,7 +96,7 @@ two in `band_scheme` (as `window` and `min_bin`) and the third as
 `lowest_harmonic`.
 
 `--engine mantle` estimates with MANTLE instead of aurora
-(`crust.engine_mantle`): the same processing archives and window, read
+(`mt_workbench.engine_mantle`): the same processing archives and window, read
 through MANTLE's own MTH5 reader, its robust remote-reference cascade with
 block-jackknife error bars, and the EDI pooled onto the same band scheme, so
 the figure, the sidecar, the GUI's EDI list and the campaign's scores read
@@ -112,10 +112,10 @@ MANTLE holds the whole window in memory and refuses one longer than
 memory the window is expected to need, about 1.35 GB per hour of window at
 1000 Hz with six channels. The sidecar records the limit as
 `engine_config.options.max_hours`. `--mantle-window clip` chooses a window
-that fits in place of refusing (`crust.mantle_window.choose_window`): inside
+that fits in place of refusing (`mt_workbench.mantle_window.choose_window`): inside
 the window requested (the start and end given, else the pair's overlap) the
 longest span both archives' runs cover without a gap
-(`crust.engine_mantle.archive_spans`), its first `--mantle-max-hours` hours
+(`mt_workbench.engine_mantle.archive_spans`), its first `--mantle-max-hours` hours
 when it is longer. The resolution prints it as `mantle.window_used` (a dry
 run reads the runs of the archives it would process, metadata only, and
 runs nothing), and the sidecar records it as `window` with `window_clipped`:
@@ -173,20 +173,20 @@ import pandas as pd
 import yaml
 from loguru import logger
 
-from crust.bands import build_band_scheme, lowest_harmonic
-from crust.compare import phase_quadrants, plot_comparison
-from crust.ingest import default_archive_path, filters_hash, ingest_site, processing_archive, variant_path, variant_ready
-from crust.masks import (
+from mt_workbench.bands import build_band_scheme, lowest_harmonic
+from mt_workbench.compare import phase_quadrants, plot_comparison
+from mt_workbench.ingest import default_archive_path, filters_hash, ingest_site, processing_archive, variant_path, variant_ready
+from mt_workbench.masks import (
     FOUND_BY, OUTPUTS, SCOPE_RULES, load_masks, masks_for_role, masks_for_row, remote_channel_split, remote_masks,
     stored, union_masks,
 )
-from crust.process import ESTIMATOR_DEFAULTS, TAPERS, process_station
-from crust.survey import Survey
+from mt_workbench.process import ESTIMATOR_DEFAULTS, TAPERS, process_station
+from mt_workbench.survey import Survey
 
 MAX_RUN_FILES = 34  # 34 x 90 min = 51 h per run
 ENGINES = ("aurora", "mantle")
-MANTLE_WHITEN = ("none", "diff")  # crust.engine_mantle.WHITEN, spelt here so the parser builds without MANTLE
-MANTLE_MAX_HOURS = 24.0  # crust.engine_mantle.MAX_HOURS, likewise
+MANTLE_WHITEN = ("none", "diff")  # mt_workbench.engine_mantle.WHITEN, spelt here so the parser builds without MANTLE
+MANTLE_MAX_HOURS = 24.0  # mt_workbench.engine_mantle.MAX_HOURS, likewise
 MANTLE_WINDOW = ("refuse", "clip")
 # the band-scheme keys this CLI can override; anything else in the survey's
 # `processing:` block (factor, notch_fraction) is passed through
@@ -395,7 +395,7 @@ def mask_origins(text: str | None) -> set[str] | None:
         text (str | None): The comma list given on the command line.
 
     Returns:
-        set[str] | None: The origins, each one of `crust.masks.FOUND_BY`.
+        set[str] | None: The origins, each one of `mt_workbench.masks.FOUND_BY`.
 
     Raises:
         SystemExit: If a name is not a known origin or the list is empty.
@@ -424,7 +424,7 @@ def resolve(args, started) -> dict:
     `local_status`/`remote_status` (`archive_status`) say whether a filtered
     variant is ready, needs building, or is not used. After the `--dry-run`
     return, `main` resolves the archive processed from
-    (`crust.ingest.processing_archive`, which builds a missing variant) and
+    (`mt_workbench.ingest.processing_archive`, which builds a missing variant) and
     overwrites these two entries before the sidecar is written.
 
     `masks_local`/`masks_remote` are the `masks.yaml` entries applied from
@@ -433,7 +433,7 @@ def resolve(args, started) -> dict:
     or all of them under `--mask-scope union`; `remote_masks` gives [] for a
     stack named `STK_...`), each narrowed to `--mask-origins` when given;
     of the remote's, those naming neither hx nor hy are left out
-    (`crust.masks.remote_channel_split`). `masks` is their union in start
+    (`mt_workbench.masks.remote_channel_split`). `masks` is their union in start
     order, and `channel_runs` (`row_runs`) groups it by output row: one
     entry per aurora run, its rows, its masks as passed to
     `process_station`, and whether it is the base run. `mask_counts` holds
@@ -449,7 +449,7 @@ def resolve(args, started) -> dict:
     `sample_rate`. A local at its own rate (a derived site) starts at
     `rate_min_period` unless --min-period is given. `lowest_harmonic` is
     the lowest band edge of the decimated levels in FFT harmonics
-    (`crust.bands.lowest_harmonic` of the band kwargs at `sample_rate`).
+    (`mt_workbench.bands.lowest_harmonic` of the band kwargs at `sample_rate`).
 
     Args:
         args (argparse.Namespace): Parsed arguments.
@@ -622,13 +622,13 @@ def choose_mantle_window(res: dict, local_h5, remote_h5, start, end):
         end: End requested (UTC), or None.
 
     Returns:
-        WindowChoice: The window chosen (`crust.mantle_window.choose_window`).
+        WindowChoice: The window chosen (`mt_workbench.mantle_window.choose_window`).
 
     Raises:
         SystemExit: When the runs share no covered span of an hour inside the window.
     """
-    from crust import engine_mantle
-    from crust.mantle_window import choose_window
+    from mt_workbench import engine_mantle
+    from mt_workbench.mantle_window import choose_window
 
     def epoch(t):
         return None if t is None else pd.Timestamp(t, tz="UTC").timestamp()
@@ -650,7 +650,7 @@ def _epoch_text(t: float) -> str:
 
 def mantle_window_line(res: dict) -> str:
     """Return the `mantle.window_used` line of a clip run: the window, its hours and what was clipped."""
-    from crust.mantle_window import clip_text
+    from mt_workbench.mantle_window import clip_text
 
     choice = res["window_choice"]
     return (f"mantle.window_used: {_epoch_text(choice.start)} to {_epoch_text(choice.end)} UTC "
@@ -680,7 +680,7 @@ def row_runs(masks, rows) -> tuple[list[dict], list[dict]]:
     """Group the applied masks by output row into the aurora runs they need.
 
     Row r takes the masks that leave out whole windows (naming hx, hy or
-    every channel) and the masks naming r (`crust.masks.masks_for_row`),
+    every channel) and the masks naming r (`mt_workbench.masks.masks_for_row`),
     in the order of `masks`. Rows with the same set share one run. The base
     run is the one with the fewest masks, ties going to the run of the
     earliest row in `rows`; its inverse signal power and everything else
@@ -688,7 +688,7 @@ def row_runs(masks, rows) -> tuple[list[dict], list[dict]]:
 
     Args:
         masks (list of dict): The masks applied, both sites' joined
-            (`crust.masks.union_masks`), normalised.
+            (`mt_workbench.masks.union_masks`), normalised.
         rows (list of str): The output channels estimated, in order.
 
     Returns:
@@ -813,7 +813,7 @@ def _package_version(name: str) -> str:
         return "not installed"
 
 
-def crust_version() -> str:
+def mt_workbench_version() -> str:
     """Return this checkout's `git describe`.
 
     Returns:
@@ -836,9 +836,9 @@ def crust_version() -> str:
 
 
 def versions() -> dict:
-    """Return the versions of CRUST and of aurora, mth5, mt_metadata and mt_io."""
+    """Return the versions of mt-workbench and of aurora, mth5, mt_metadata and mt_io."""
     return {
-        "crust": crust_version(),
+        "mt_workbench": mt_workbench_version(),
         "aurora": _package_version("aurora"),
         "mth5": _package_version("mth5"),
         "mt_metadata": _package_version("mt_metadata"),
@@ -896,7 +896,7 @@ def build_sidecar(res: dict, args, started, finished, edi_path: Path, png_path: 
         finished (datetime.datetime): End of the run.
         edi_path (Path): EDI written.
         png_path (Path): Comparison figure written.
-        quadrant (dict): Return of `crust.compare.phase_quadrants`.
+        quadrant (dict): Return of `mt_workbench.compare.phase_quadrants`.
         flipped (list[str]): Modes judged out of quadrant.
 
     Returns:
@@ -991,17 +991,17 @@ def edi_info_lines(sidecar: dict) -> list[str]:
         list[str]: The INFO lines.
     """
     lines = [
-        f"crust.version={sidecar['versions']['crust']}",
-        f"crust.started={sidecar['started']}",
-        f"crust.tag={sidecar['tag'] or ''}",
+        f"mt_workbench.version={sidecar['versions']['mt_workbench']}",
+        f"mt_workbench.started={sidecar['started']}",
+        f"mt_workbench.tag={sidecar['tag'] or ''}",
     ]
     if sidecar.get("engine", "aurora") == "aurora":
-        lines.append(f"crust.taper={sidecar['tweaks']['taper']}")
+        lines.append(f"mt_workbench.taper={sidecar['tweaks']['taper']}")
     else:
-        lines += [f"crust.engine={sidecar['engine']}", f"crust.engine_version={sidecar['engine_version']}"]
+        lines += [f"mt_workbench.engine={sidecar['engine']}", f"mt_workbench.engine_version={sidecar['engine_version']}"]
     lines += [
-        f"crust.quadrant_verdict={sidecar['quadrant']['verdict']}",
-        f"crust.sidecar={sidecar['edi'].rsplit('.', 1)[0]}.json",
+        f"mt_workbench.quadrant_verdict={sidecar['quadrant']['verdict']}",
+        f"mt_workbench.sidecar={sidecar['edi'].rsplit('.', 1)[0]}.json",
     ]
     return lines
 
@@ -1169,7 +1169,7 @@ def main(args) -> None:
     if res["engine"] == "mantle":
         # the second engine: the same archives and window, MANTLE's cascade, the EDI on the same
         # band grid; imported here so an aurora run needs no MANTLE install
-        from crust import engine_mantle
+        from mt_workbench import engine_mantle
 
         site_cfg = survey.site(local)
         start, end = args.start, args.end

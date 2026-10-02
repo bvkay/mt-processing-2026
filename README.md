@@ -1,4 +1,4 @@
-# CRUST
+# mt-workbench
 
 Magnetotelluric (MT) processing for Adelaide Uni surveys recorded on
 LEMI-423, LEMI-424 and Earth Data PR6-24 loggers (see "Instruments" below),
@@ -9,9 +9,9 @@ built on the IAGA-DVI stack
 
 Design rules, in order:
 
-1. **Thin.** CRUST wraps the community packages; it does not re-implement them.
+1. **Thin.** mt-workbench wraps the community packages; it does not re-implement them.
 2. **Headless first.** Everything runs from a script or the command line; the
-   desktop GUI (`src/crust/gui`, see "The GUI" below) calls the same scripts
+   desktop GUI (`src/mt_workbench/gui`, see "The GUI" below) calls the same scripts
    and computes no product of its own.
 3. **Decisions are data.** Noise masks, band choices and remote-reference pairs
    live in per-survey YAML/JSON files, never buried in code or notebooks.
@@ -24,17 +24,18 @@ conda activate bbmt-2026
 ```
 
 `environment.yml` creates `bbmt-2026` (Python 3.11) and installs this package
-(`crust-mt`, import name `crust`) editable; every dependency, the GUI's
+(`mt-workbench`, import name `mt_workbench`) editable; every dependency, the GUI's
 included, is listed once, in `pyproject.toml`.
 
 ### The stack: the mtproc-fixes forks
 
-CRUST runs on the `mtproc-fixes` branches of five forks, `github.com/bvkay/`
+mt-workbench runs on the `mtproc-fixes` branches of five forks, `github.com/bvkay/`
 aurora, mth5, mt-io, mt-metadata and mt-timeseries, which carry the fixes
 logged in `docs/upstream_issues.md`. `pyproject.toml` names them by git URL
 (`mth5 @ git+https://github.com/bvkay/mth5@mtproc-fixes`, ...); all five branches are on
 GitHub, so a plain install resolves them. The forks keep the names they had
-before the rename to CRUST: branch `mtproc-fixes`, aurora version
+before the workflow was renamed from mtproc to CRUST (25 Sep 2026) and from
+CRUST to mt-workbench (2 Oct 2026): branch `mtproc-fixes`, aurora version
 `0.6.2+mtproc`. A local clone (a sibling of this repo) installs over the
 package from GitHub, leaving every other dependency as it is:
 
@@ -43,18 +44,18 @@ pip install --no-deps ../mt-metadata ../mt-timeseries ../mt-io ../mth5 ../aurora
 ```
 
 The `*_fork_unit.py` tests below check each fork (the clones, and whatever is
-installed, reported side by side). CRUST no longer patches the stock
+installed, reported side by side). mt-workbench no longer patches the stock
 packages at runtime; the shims it used to install are retired, the forks fix
 the same bugs at the source:
 
 - mt-io (issues 1, 2, 6): the LEMI-120 coil chain of a LEMI-423 read with a
   `calibration_fn` (valid unit names, coil stage ahead of the linear stage)
   and four-digit LEMI-423 altitudes (`%Alt1060.0,m`), both once patched in
-  `crust.ingest`;
+  `mt_workbench.ingest`;
 - mth5 (issue 5): run summaries and kernel datasets open archives read-only,
-  once forced in `crust.process`;
+  once forced in `mt_workbench.process`;
 - mt-timeseries (issue 17): a RunTS station lists its channels, with no
-  phantom `auxiliary_default`, once overridden in `crust.observatory`.
+  phantom `auxiliary_default`, once overridden in `mt_workbench.observatory`.
 
 On stock packages these are bugs again: a LEMI-423 site with a
 `calibration_fn` does not ingest (stock mt-io's coil response carries a unit
@@ -66,29 +67,29 @@ observatory archive's station lists `auxiliary_default`.
 ## Layout
 
 ```
-src/crust/         the package: survey.py, instruments.py, ingest.py, process.py,
-                   compare.py, bands.py, qc.py, timefreq.py, virtual.py
-src/crust/gui/     the desktop GUI: a launcher and viewer over scripts/ and
-                   survey.yaml, no processing code of its own (see below and
-                   src/crust/gui/README.md)
-surveys/<name>/    one folder per survey: survey.yaml (config), reference_edis.yaml,
-                   qc_notes.md (what was learned about each site) + work/ (outputs, gitignored)
-scripts/           the student-facing command line, one job each (see below)
-tests/             unit tests (no Qt) plus the GUI smoke test
+src/mt_workbench/      the package: survey.py, instruments.py, ingest.py, process.py,
+                       compare.py, bands.py, qc.py, timefreq.py, virtual.py
+src/mt_workbench/gui/  the desktop GUI: a launcher and viewer over scripts/ and
+                       survey.yaml, no processing code of its own (see below and
+                       src/mt_workbench/gui/README.md)
+surveys/<name>/        one folder per survey: survey.yaml (config), reference_edis.yaml,
+                       qc_notes.md (what was learned about each site) + work/ (outputs, gitignored)
+scripts/               the student-facing command line, one job each (see below)
+tests/                 unit tests (no Qt) plus the GUI smoke test
 ```
 
 ## Command line (no notebooks, no LLM: plain scripts a student runs)
 
 | step | script |
 |---|---|
-| new survey: a folder of site folders -> `survey.yaml` (each site's instrument detected from its files, the most common written as `instrument:` unless `--instrument` names one, a site on another recorder given its own `instrument:` and that recorder's default `channels:`; each LEMI-423 site's first B423 header via mt-io: position, serial, firmware, sample rate; a LEMI-424's `.inf` and first line, an EDL's `recorder.ini`; span from the file names; dipoles left to `defaults:`; `--site-table` merges a CSV/XLSX, template `docs/site_table_template.csv`; `workspace:` is `<data_root>/work` unless `--workspace` says otherwise; `--channels` names the columns that had a sensor, a preset from `crust.survey.CHANNEL_PRESETS`, "Ex Ey Bx By" by default, "Ex Ey Bx By Bz", "Bx By (magnetics only)", "Bx By Bz", or a list such as `hx,hy`, written as `defaults: channels:`, and the summary prints each site's file columns beside it; also the GUI's Metadata tab "New survey...", whose channels column sets a site that differs) | `scripts/new_survey.py <data_root> --name NAME [--instrument auto\|lemi423\|lemi424\|edl] [--channels SET] [--timezone TZ] [--site-table CSV] [--out PATH] [--workspace DIR]` |
+| new survey: a folder of site folders -> `survey.yaml` (each site's instrument detected from its files, the most common written as `instrument:` unless `--instrument` names one, a site on another recorder given its own `instrument:` and that recorder's default `channels:`; each LEMI-423 site's first B423 header via mt-io: position, serial, firmware, sample rate; a LEMI-424's `.inf` and first line, an EDL's `recorder.ini`; span from the file names; dipoles left to `defaults:`; `--site-table` merges a CSV/XLSX, template `docs/site_table_template.csv`; `workspace:` is `<data_root>/work` unless `--workspace` says otherwise; `--channels` names the columns that had a sensor, a preset from `mt_workbench.survey.CHANNEL_PRESETS`, "Ex Ey Bx By" by default, "Ex Ey Bx By Bz", "Bx By (magnetics only)", "Bx By Bz", or a list such as `hx,hy`, written as `defaults: channels:`, and the summary prints each site's file columns beside it; also the GUI's Metadata tab "New survey...", whose channels column sets a site that differs) | `scripts/new_survey.py <data_root> --name NAME [--instrument auto\|lemi423\|lemi424\|edl] [--channels SET] [--timezone TZ] [--site-table CSV] [--out PATH] [--workspace DIR]` |
 | field sheet -> `sites:` block | `scripts/site_table_to_yaml.py`, `scripts/burra_notes_to_yaml.py` |
 | UoA field-notes CSV (Stuart Shelf 2009 layout: header rows, then `Station`, `Latitude_dd`, `X_dip_length` = Ex, `Y_dip_length` = Ey, orientations, local deploy/recover times ...) -> the site table `new_survey.py --site-table` reads (position, dipoles, azimuths, `timezone`, and notes carrying serials, sensor, rate, gain, the times in local and UTC and the field remarks; a typed UTC that disagrees with the local time, and a blank dipole length, are named); `--data-root` lists stations with no folder and folders with no station | `scripts/site_table_from_notes.py <notes.csv> <site_table.csv> [--timezone TZ] [--data-root DIR]` |
 | legacy EDIs -> `reference_edis.yaml` | `scripts/match_reference_edis.py <edi_dir> <survey.yaml>` |
 | before ingest: file-boundary slips, clock offset vs remote, GPS status | `scripts/timing_qc.py <survey.yaml> <local> <remote>` |
 | quick look at raw noise (Welch PSD, mains zoom) | `scripts/noise_psd.py <survey.yaml> <site>` |
-| ingest a site's RAW archive into `<workspace>/mth5/<site>.h5` (its run length as `process_rr.py`'s), then build its filtered variant too if it declares any (`--raw` for the archive alone, `--variant` for the variant alone); refuses to rebuild an existing raw archive or an already-current variant without `--force`; the raw step records the raw DC level of each channel and run in the run comments (`crust.dclevel`: the median in counts and the share of samples at a rail on a subsample of at most an hour, and a verdict over the site's channel runs, `open input?` above 1e9 counts or 30 times the typical level of the channel type, `saturated?` above 1 % at a rail, else `ok`) and prints one line per flagged channel run after `archive:`, e.g. `C05 sr1000_0001 ey: median 1.60e9 counts, open input?`; several sites, or `--all` (every site of survey.yaml with a raw data folder, the others listed as skipped), make a batch that keeps existing archives and current variants, builds `--parallel N` sites at once, each in its own process logged to `<workspace>/logs/ingest_<site>.log` (default 1: one after another on the console), goes on past a failed site and ends with a table of each site's archive, variant, seconds and status (built, kept, failed with its error), exit 1 when a site failed; a site whose survey.yaml entry sets `swap_h: true` has hx and hy exchanged in its raw archive (see "Ingest." under "Instruments"); also the GUI's Time Series tab "Build MTH5" | `scripts/ingest_site.py <survey.yaml> <site> [<site> ...] [--raw \| --variant] [--max-run-files N] [--force] [--parallel N]`, `scripts/ingest_site.py <survey.yaml> --all [...]` |
-| ingest both sites, remote-reference TF, overlay on lemimt (advanced: `--taper`, `--overlap`, `--no-prewhiten`, `--r0` ... on every decimation level; the band layout: `--window-samples N` sets the FFT window of every level, `--min-bin N` moves the level boundaries so every decimated level starts at the first band edge at or above harmonic N, both keeping every band's period, recorded as `window`, `min_bin` and `lowest_harmonic` in the sidecar); writes `<local>_rr-<remote>_<YYYYMMDD-HHMM>[_<tag>].edi` (the stamp is when the run started, local time, so re-running the same pair and window never overwrites an earlier EDI) plus the matching `_vs_lemimt.png` and a `.json` sidecar of everything about the run (timing, archives, band scheme, tweaks, declared filters, argv, the phase-quadrant verdict, package versions); `--engine mantle` estimates with MANTLE (`crust.engine_mantle`: the same archives and window through MANTLE's MTH5 reader, its robust remote-reference cascade with jackknife error bars, the EDI pooled onto the same band scheme, plus MANTLE's fine-grid EDI and report JSON beside it; the sidecar gains `engine`, `engine_version`, `engine_config`, `mantle_report`, `mantle_fine_edi`; the aurora estimator flags and masks are refused with it; MANTLE holds the window in memory and refuses one longer than `--mantle-max-hours` (24 h by default, recorded in `engine_config.options.max_hours`), and a limit above 24 h logs the window's expected peak, about 1.35 GB per hour at 1000 Hz; `--mantle-window clip` takes instead the longest span both archives' runs cover inside the window, its first `--mantle-max-hours` hours when longer, printed as `mantle.window_used` (a dry run too) and recorded in the sidecar's `window` and `window_clipped`: null, or `{requested_hours, used_hours, reason}` with reason `cap`, `gap` or `cap and gap`; aurora refuses the option). Masks are applied by role: the local's masks.yaml entries of `scope: local` or `both` (an entry without the key is `scope: local`) and the remote's of `scope: both` or `remote`, `--mask-scope union` applies every entry of both sites; an entry's optional `channels` narrows it: of the remote, an entry naming neither hx nor hy is left out, and of the local, an entry naming only ex, ey or hz leaves out those TF rows alone, aurora running once per distinct set of entries by row and the rows merged into one TF before the EDI (the base run, with the fewest entries, gives the rest); the sidecar records the rule, the counts applied from each site and left out (`mask_scope`, `mask_counts`) and the runs (`channel_runs`) | `scripts/process_rr.py <survey.yaml> <local> <remote> [start] [end] [--window-samples N] [--min-bin N] [--engine aurora\|mantle] [--mantle-max-hours H] [--masks\|--no-masks] [--mask-origins LIST] [--mask-scope role\|union]` |
+| ingest a site's RAW archive into `<workspace>/mth5/<site>.h5` (its run length as `process_rr.py`'s), then build its filtered variant too if it declares any (`--raw` for the archive alone, `--variant` for the variant alone); refuses to rebuild an existing raw archive or an already-current variant without `--force`; the raw step records the raw DC level of each channel and run in the run comments (`mt_workbench.dclevel`: the median in counts and the share of samples at a rail on a subsample of at most an hour, and a verdict over the site's channel runs, `open input?` above 1e9 counts or 30 times the typical level of the channel type, `saturated?` above 1 % at a rail, else `ok`) and prints one line per flagged channel run after `archive:`, e.g. `C05 sr1000_0001 ey: median 1.60e9 counts, open input?`; several sites, or `--all` (every site of survey.yaml with a raw data folder, the others listed as skipped), make a batch that keeps existing archives and current variants, builds `--parallel N` sites at once, each in its own process logged to `<workspace>/logs/ingest_<site>.log` (default 1: one after another on the console), goes on past a failed site and ends with a table of each site's archive, variant, seconds and status (built, kept, failed with its error), exit 1 when a site failed; a site whose survey.yaml entry sets `swap_h: true` has hx and hy exchanged in its raw archive (see "Ingest." under "Instruments"); also the GUI's Time Series tab "Build MTH5" | `scripts/ingest_site.py <survey.yaml> <site> [<site> ...] [--raw \| --variant] [--max-run-files N] [--force] [--parallel N]`, `scripts/ingest_site.py <survey.yaml> --all [...]` |
+| ingest both sites, remote-reference TF, overlay on lemimt (advanced: `--taper`, `--overlap`, `--no-prewhiten`, `--r0` ... on every decimation level; the band layout: `--window-samples N` sets the FFT window of every level, `--min-bin N` moves the level boundaries so every decimated level starts at the first band edge at or above harmonic N, both keeping every band's period, recorded as `window`, `min_bin` and `lowest_harmonic` in the sidecar); writes `<local>_rr-<remote>_<YYYYMMDD-HHMM>[_<tag>].edi` (the stamp is when the run started, local time, so re-running the same pair and window never overwrites an earlier EDI) plus the matching `_vs_lemimt.png` and a `.json` sidecar of everything about the run (timing, archives, band scheme, tweaks, declared filters, argv, the phase-quadrant verdict, package versions); `--engine mantle` estimates with MANTLE (`mt_workbench.engine_mantle`: the same archives and window through MANTLE's MTH5 reader, its robust remote-reference cascade with jackknife error bars, the EDI pooled onto the same band scheme, plus MANTLE's fine-grid EDI and report JSON beside it; the sidecar gains `engine`, `engine_version`, `engine_config`, `mantle_report`, `mantle_fine_edi`; the aurora estimator flags and masks are refused with it; MANTLE holds the window in memory and refuses one longer than `--mantle-max-hours` (24 h by default, recorded in `engine_config.options.max_hours`), and a limit above 24 h logs the window's expected peak, about 1.35 GB per hour at 1000 Hz; `--mantle-window clip` takes instead the longest span both archives' runs cover inside the window, its first `--mantle-max-hours` hours when longer, printed as `mantle.window_used` (a dry run too) and recorded in the sidecar's `window` and `window_clipped`: null, or `{requested_hours, used_hours, reason}` with reason `cap`, `gap` or `cap and gap`; aurora refuses the option). Masks are applied by role: the local's masks.yaml entries of `scope: local` or `both` (an entry without the key is `scope: local`) and the remote's of `scope: both` or `remote`, `--mask-scope union` applies every entry of both sites; an entry's optional `channels` narrows it: of the remote, an entry naming neither hx nor hy is left out, and of the local, an entry naming only ex, ey or hz leaves out those TF rows alone, aurora running once per distinct set of entries by row and the rows merged into one TF before the EDI (the base run, with the fewest entries, gives the rest); the sidecar records the rule, the counts applied from each site and left out (`mask_scope`, `mask_counts`) and the runs (`channel_runs`) | `scripts/process_rr.py <survey.yaml> <local> <remote> [start] [end] [--window-samples N] [--min-bin N] [--engine aurora\|mantle] [--mantle-max-hours H] [--masks\|--no-masks] [--mask-origins LIST] [--mask-scope role\|union]` |
 | aurora EDI vs every one of lemimt's unmerged per-rate/per-chunk EDIs for a site (e.g. Morocco Atlas Line D): rho/phase overlay by rate plus a per-rate median-difference table | `scripts/compare_unmerged.py <aurora.edi> <unmerged_dir> <site> [--remote NAME] [--out PNG] [--title TEXT]` |
 | per-site QC set: overview, band coherence vs time, coherogram, spectrogram | `scripts/site_qc.py <survey.yaml> <site> [--remote R]` |
 | whole-record PSD per channel from the archive, remote overlaid, lines marked, before/after filters | `scripts/psd_qc.py <survey.yaml> <site> [--remote R] [--before]` |
@@ -97,17 +98,17 @@ tests/             unit tests (no Qt) plus the GUI smoke test
 | stacked synthetic remote from concurrent sites (each member read via `processing_archive`, its filtered variant if it declares any, else its raw archive, exactly as `process_rr.py` would read it; streamed in 10-minute chunks) | `scripts/build_stack.py <survey.yaml> <name> <start> <end> <member>... [--weighting none|coherence] [--check]` |
 | band-averaged coherence on the processing bands | `scripts/coherence_qc.py <survey.yaml> <local> <remote> [--stack S]` |
 | band masks of a coherent near-field source from the Cross-powers tab's chunk impedances: per band, the groups of the pair's store (the overlap, or [start, end); `--chunk-s`, 600 s by default, 60 s recommended) with enough windows and a coherence of at least `--min-coherence` (0.5) are split by 2-means in the (log10 \|Z\|, phase) plane (yx plus 180 deg); a split is accepted when the cluster farther from 0 deg sits at a physical phase (the Earth's), the other lies within `--max-source-phase` (30 deg) of 0 deg, the median phases differ by at least `--min-separation` (20 deg) and by more than twice the pooled MAD, and the Earth holds at least `--min-earth-fraction` (0.2) of at least 30 groups; the source cluster's groups, widened by `--dilate N` groups either side (2 recommended), get one band mask per run, found_by `cluster`, scope `local`; prints the per-band table and the usable yx/xy range of the stacked impedance with no masks, the cluster masks and the site's other masks; `--out` writes a masks.yaml-style file, `--write` replaces the site's earlier cluster masks in masks.yaml and keeps every other entry, `--figures` writes a scatter per band, a summary figure and a JSON under `<workspace>/qc/cluster_masks/<local>_rr-<remote>/` | `scripts/cluster_masks.py <survey.yaml> <local> <remote> [start] [end] [--component yx\|xy\|both] [--chunk-s S] [--min-separation DEG] [--min-earth-fraction F] [--min-coherence C] [--max-source-phase DEG] [--dilate N] [--out FILE.yaml] [--write] [--figures]` |
-| move a site's masks.yaml entries into `masks_history.yaml` beside it (each keeping its keys, with `retired: {on, why}`) or back with `--restore`, so no declaration is lost: the selectors are AND-ed (`--found-by`, `--scope`, `--bands all\|limited`, `--reason-contains`, `--before`, `--after`, `--overlapping a..b`), each selected entry is printed on one line with the counts before and after, `--dry-run` moves nothing, exit 2 when nothing matches; both files are replaced atomically (`crust.masks.retire_masks`, `restore_masks`) | `scripts/retire_masks.py <survey.yaml> <site> [--found-by LIST] [--scope LIST] [--bands all\|limited] [--reason-contains TEXT] [--before ISO] [--after ISO] [--overlapping ISO..ISO] [--restore] --why TEXT [--dry-run]` |
+| move a site's masks.yaml entries into `masks_history.yaml` beside it (each keeping its keys, with `retired: {on, why}`) or back with `--restore`, so no declaration is lost: the selectors are AND-ed (`--found-by`, `--scope`, `--bands all\|limited`, `--reason-contains`, `--before`, `--after`, `--overlapping a..b`), each selected entry is printed on one line with the counts before and after, `--dry-run` moves nothing, exit 2 when nothing matches; both files are replaced atomically (`mt_workbench.masks.retire_masks`, `restore_masks`) | `scripts/retire_masks.py <survey.yaml> <site> [--found-by LIST] [--scope LIST] [--bands all\|limited] [--reason-contains TEXT] [--before ISO] [--after ISO] [--overlapping ISO..ISO] [--restore] --why TEXT [--dry-run]` |
 | all-band masks by time of night and by bursts of the local E: `--night [HH:MM-HH:MM]` masks everything outside that local window (survey.yaml `timezone:`, 01:00-05:00 by default) on every day of the site's record, found_by `night`; `--gate` masks the bursts of the site's 1 Hz E (its derived `<site>L` archive: \|first difference\| of ex and ey over its record median, the 30 s running mean of the larger above `--k` (3) times its record median, widened by `--m` (60) s either side), found_by `gate`; both scope `local`; `--write` replaces only the site's entries of that origin; `process_rr.py --mask-origins night` or `night,gate` then processes those selections | `scripts/gate_masks.py <survey.yaml> <site> [--night [HH:MM-HH:MM]] [--gate] [--k K] [--m S] [--out FILE.yaml] [--write] [--figure]` |
-| processing campaign over a line (plan YAML, e.g. `surveys/MT_Morocco_Atlas_Mountains/campaign_lineC.yaml`): stage 0 filtered variants, 1 every site rr every concurrent remote, 2 leave-one-out stacks (plain and coherence-weighted), 3 estimator/band options on each site's best remote, MANTLE among them (`mantle: [--engine, mantle, --mantle-max-hours, "72"]`, run with `--mantle-window clip`, its expected peak by window length; see [Campaigns](#campaigns)); per-site plan keys: `remotes: {SITE: REMOTE}` sets a site's stage 3 remote (reported as the best, ledger note "remote override"), `modes: {SITE: [xy]}` scores the site on those modes (summary "xy-only"), `windows: {SITE: {yx: [start, end], merge: true}}` adds a default run over the window (`<name>-default-yxwin`) and a merged product (`<name>-default-merged`, scripts/merge_modes.py's `merge_files`: xy from the full-record default, yx from the window) shown as the site's default in `summary.md`; resumable (`ledger.csv`, with each product's engine from its sidecar), `--parallel` jobs behind a memory gate, products scored by `crust.quality` over their own periods (scores.csv gives each product's engine and period range: a MANTLE product stops near 1000 s) and plotted per site and line-wide into `<workspace>/campaign/<name>/`, `summary.md`; `--report` redraws from the ledger | `scripts/campaign.py <survey.yaml> <plan.yaml> [--stage 0,1,2,3] [--sites S ...] [--configs NAME[,NAME]] [--parallel N] [--max-runs N] [--dry-run] [--report]` |
+| processing campaign over a line (plan YAML, e.g. `surveys/MT_Morocco_Atlas_Mountains/campaign_lineC.yaml`): stage 0 filtered variants, 1 every site rr every concurrent remote, 2 leave-one-out stacks (plain and coherence-weighted), 3 estimator/band options on each site's best remote, MANTLE among them (`mantle: [--engine, mantle, --mantle-max-hours, "72"]`, run with `--mantle-window clip`, its expected peak by window length; see [Campaigns](#campaigns)); per-site plan keys: `remotes: {SITE: REMOTE}` sets a site's stage 3 remote (reported as the best, ledger note "remote override"), `modes: {SITE: [xy]}` scores the site on those modes (summary "xy-only"), `windows: {SITE: {yx: [start, end], merge: true}}` adds a default run over the window (`<name>-default-yxwin`) and a merged product (`<name>-default-merged`, scripts/merge_modes.py's `merge_files`: xy from the full-record default, yx from the window) shown as the site's default in `summary.md`; resumable (`ledger.csv`, with each product's engine from its sidecar), `--parallel` jobs behind a memory gate, products scored by `mt_workbench.quality` over their own periods (scores.csv gives each product's engine and period range: a MANTLE product stops near 1000 s) and plotted per site and line-wide into `<workspace>/campaign/<name>/`, `summary.md`; `--report` redraws from the ledger | `scripts/campaign.py <survey.yaml> <plan.yaml> [--stage 0,1,2,3] [--sites S ...] [--configs NAME[,NAME]] [--parallel N] [--max-runs N] [--dry-run] [--report]` |
 | map background for the GUI's site map, fetched once while online (Esri.WorldImagery by default: imagery, no place names; contextily's zoom + 3, longer side at most 8000 px; warped to lon/lat; `<workspace>/basemap.png` + `.json`); the GUI runs it itself when a survey is opened without `basemap.json` | `scripts/fetch_basemap.py <survey.yaml> [--provider NAME] [--margin F] [--zoom N\|auto]` |
-| INTERMAGNET observatory as a 1 Hz remote for long periods (`crust.observatory`, ported from the AusLAMP processing): one-second X Y Z from the BGS GIN, best available, one request per UTC day into a day cache (`<workspace>/observatory/<CODE>/<year>/<CODE>_<date>.sec.gz`, the served IAGA-2002 text; a re-run fetches nothing cached), then `<workspace>/mth5/<CODE>.h5` (hx = X north, hy = Y east, hz = Z down, nT, no filters; gaps up to `--max-gap` s filled, one run per longer gap) and a `<CODE>: {instrument: intermagnet, ...}` site entry in survey.yaml; start/end default to the survey's site span; exit 1 when offline. Aurora pairs it only with a 1 Hz local archive (no mixed sample rates) | `scripts/fetch_observatory.py <survey.yaml> <IAGA code> [start] [end] [--cache DIR] [--max-gap S] [--dry-run]` |
-| a broadband site at 1 Hz for an observatory remote: the site's processing archive (its filtered variant when it declares filters) decimated run by run, one channel at a time, through zero-phase FIR stages of at most 10 (scipy.signal.decimate, the filter of `crust.timefreq`; 11.1 s dropped at each run end, samples on whole UTC seconds) into `<workspace>/mth5/<site>L.h5`, station `<site>L` with the source's runs, channel metadata and calibration chains, and a derived-site entry `<site>L: {derived_from: <site>, sample_rate: 1.0, ...}` in survey.yaml; an existing archive is kept without `--force`. `process_rr.py <survey.yaml> <site>L <CODE>` then processes it at 1 Hz (bands from 4 s; a remote at another rate is refused) | `scripts/decimate_site.py <survey.yaml> <site> [--rate 1] [--force] [--min-free-gb G]` |
-| the raw DC level of every channel of a survey's archives, per run: subsampled median and MAD in counts, the share of samples at a rail, the ratio to the typical level of its channel type, and a verdict (`open input?` when the level exceeds `--threshold-counts`, 1e9, or `--ratio`, 30, times the typical; `saturated?` above 1 % at a rail; else `ok`); an electric input that is open or of very high impedance sits at the logger's bias level (C05 ey and C13 ey of the Morocco survey at 1.60e9 counts); derived and observatory sites are skipped; archives opened read-only without a lock; the measure and verdict are `crust.dclevel`'s, which the ingest also records per site in each archive's run comments (the GUI's Metadata tab shows that record), and the script classifies every site it checks together | `scripts/dc_level_check.py <survey.yaml> [SITE ...] [--rate HZ] [--threshold-counts N] [--ratio R] [--sample-seconds S] [--csv OUT.csv]` |
+| INTERMAGNET observatory as a 1 Hz remote for long periods (`mt_workbench.observatory`, ported from the AusLAMP processing): one-second X Y Z from the BGS GIN, best available, one request per UTC day into a day cache (`<workspace>/observatory/<CODE>/<year>/<CODE>_<date>.sec.gz`, the served IAGA-2002 text; a re-run fetches nothing cached), then `<workspace>/mth5/<CODE>.h5` (hx = X north, hy = Y east, hz = Z down, nT, no filters; gaps up to `--max-gap` s filled, one run per longer gap) and a `<CODE>: {instrument: intermagnet, ...}` site entry in survey.yaml; start/end default to the survey's site span; exit 1 when offline. Aurora pairs it only with a 1 Hz local archive (no mixed sample rates) | `scripts/fetch_observatory.py <survey.yaml> <IAGA code> [start] [end] [--cache DIR] [--max-gap S] [--dry-run]` |
+| a broadband site at 1 Hz for an observatory remote: the site's processing archive (its filtered variant when it declares filters) decimated run by run, one channel at a time, through zero-phase FIR stages of at most 10 (scipy.signal.decimate, the filter of `mt_workbench.timefreq`; 11.1 s dropped at each run end, samples on whole UTC seconds) into `<workspace>/mth5/<site>L.h5`, station `<site>L` with the source's runs, channel metadata and calibration chains, and a derived-site entry `<site>L: {derived_from: <site>, sample_rate: 1.0, ...}` in survey.yaml; an existing archive is kept without `--force`. `process_rr.py <survey.yaml> <site>L <CODE>` then processes it at 1 Hz (bands from 4 s; a remote at another rate is refused) | `scripts/decimate_site.py <survey.yaml> <site> [--rate 1] [--force] [--min-free-gb G]` |
+| the raw DC level of every channel of a survey's archives, per run: subsampled median and MAD in counts, the share of samples at a rail, the ratio to the typical level of its channel type, and a verdict (`open input?` when the level exceeds `--threshold-counts`, 1e9, or `--ratio`, 30, times the typical; `saturated?` above 1 % at a rail; else `ok`); an electric input that is open or of very high impedance sits at the logger's bias level (C05 ey and C13 ey of the Morocco survey at 1.60e9 counts); derived and observatory sites are skipped; archives opened read-only without a lock; the measure and verdict are `mt_workbench.dclevel`'s, which the ingest also records per site in each archive's run comments (the GUI's Metadata tab shows that record), and the script classifies every site it checks together | `scripts/dc_level_check.py <survey.yaml> [SITE ...] [--rate HZ] [--threshold-counts N] [--ratio R] [--sample-seconds S] [--csv OUT.csv]` |
 | one EDI from two products of the same pair when one electric channel is usable over the whole record and the other only over a window: the x row (Zxx, Zxy, errors) and the tipper from `--xy`, the y row (Zyx, Zyy, errors) from `--yx` interpolated in log period onto the `--xy` periods (NaN outside `--yx`'s range, stored as EMPTY and read back as 0), `--xy`'s station metadata, and a sidecar naming both sources; exit 2 when the stations or the sidecars' remotes differ unless `--force`; `merge_files` does the same from Python (campaign.py's `windows:` merges) | `scripts/merge_modes.py OUT.edi --xy A.edi --yx B.edi [--tag TAG] [--force]` |
 
 Every product is remote-referenced: an adjacent site, a dedicated remote, or a
-stacked synthetic remote (`crust.virtual`). There is no single-station product.
+stacked synthetic remote (`mt_workbench.virtual`). There is no single-station product.
 
 `start`/`end` on the processing scripts are a *processing window* (UTC): the
 MTH5 archive always holds the whole deployment, the window only trims what
@@ -132,13 +133,13 @@ Per-site noise decisions live in `<survey>/filters.yaml` (see
 `survey.yaml`. Every archive `ingest_site` writes, `<site>.h5`, is the RAW
 recording — filters are never baked into it. A site with a declared list is
 processed from a filtered **variant** instead, `<site>_f<hash>.h5`
-(`crust.ingest.processing_archive`/`build_variant`), built on demand from
+(`mt_workbench.ingest.processing_archive`/`build_variant`), built on demand from
 the raw archive and rebuilt whenever the hash of the declared list changes (a
 `filters.yaml` edit); one variant is kept per site at a time. `process_rr.py`
-and `build_stack.py` (through `crust.virtual`) always read
+and `build_stack.py` (through `mt_workbench.virtual`) always read
 `processing_archive`'s result; `--no-filters` reads the raw archive outright.
 Try the list on a loaded window on the GUI's Filter Data tab first. The
-kinds, documented in `src/crust/noise.py`'s module docstring: `notch` (50 Hz
+kinds, documented in `src/mt_workbench/noise.py`'s module docstring: `notch` (50 Hz
 + harmonics), `hp` / `lp` (zero-phase Butterworth high- / low-pass,
 `cutoff_hz` required, order 4; a high-pass goes first and removes every
 period longer than 1 / cutoff_hz, a low-pass goes last), `cp` (cathodic
@@ -218,9 +219,9 @@ unless a site needs overrides (dipole lengths/azimuths come from the field
 spreadsheet via `scripts/site_table_to_yaml.py`).
 
 ```python
-from crust.survey import Survey
-from crust.ingest import ingest_site
-from crust.process import process_station
+from mt_workbench.survey import Survey
+from mt_workbench.ingest import ingest_site
+from mt_workbench.process import process_station
 
 survey = Survey.from_yaml("surveys/curnamona_cube/survey.yaml")
 local  = ingest_site(survey, "D02", start="2021-06-29 12:00", end="2021-06-29 18:00")
@@ -231,7 +232,7 @@ tf = process_station(local, "D02", remote, "E08", out_dir=survey.workspace / "tf
 
 ## Instruments
 
-`crust.instruments` knows three recorders, each read by its own mt-io reader
+`mt_workbench.instruments` knows three recorders, each read by its own mt-io reader
 and archived under that reader's channel names:
 
 | `instrument:` | recorder | files a site folder holds | reader, archive channels |
@@ -256,12 +257,12 @@ survey's. `channels:` and `filters.yaml` lists use the reader's names
 **Ingest.** `ingest_site` reads LEMI-423 exactly as before (archives
 byte-identical; `calibration_fn`, `h_scale`, the reversed-dipole flip and
 `replace` are LEMI-423 keys) and the others through
-`crust.instruments.read_run` (EDL: the site's dipole lengths and, with
+`mt_workbench.instruments.read_run` (EDL: the site's dipole lengths and, with
 `flip_reversed_dipoles`, its azimuths go to the reader, whose dipole filter
 carries the sign). `max_run_files` caps LEMI-423 runs only. Each run's
 comment records the raw DC level of its electric and magnetic channels
 ("dc level (median counts, rail %): ex +2.000e+07 0.00 ok, ey +1.600e+09
-0.00 open input?", `crust.dclevel`), classified over the site's channel
+0.00 open input?", `mt_workbench.dclevel`), classified over the site's channel
 runs. A site whose two horizontal coils were plugged into each other's
 inputs sets `swap_h: true` in its survey.yaml entry (default false): ingest
 exchanges hx and hy (LEMI-423 and EDL), so the archive's hx holds the
@@ -278,7 +279,7 @@ again every job that reads the site, as local, remote or stack member.
 One hour ingests
 in about 1.4 s (LEMI-424) and 1.1 s (EDL). **Processing** a LEMI-424 site
 needs aurora's electric-channel nomenclature (LEMI12/LEMI34) in
-`crust.process`, not added yet; `timing_qc.py`, `psd_qc.py --before` and
+`mt_workbench.process`, not added yet; `timing_qc.py`, `psd_qc.py --before` and
 `noise_psd.py` still read B423 files only. `build_stack.py` reads each
 member's MTH5 archive (its `hx`/`hy`, so LEMI-423 and EDL archives, not a
 LEMI-424's `bx`/`by`); a member without an archive has to be built first.
@@ -295,7 +296,7 @@ channel, every run in the tooltip, and "-" for an archive built before the
 ingest recorded it (scripts/dc_level_check.py reads those),
 a site/window tree on the Time Series tab (2 h windows at 1000 Hz,
 4 h at 500 Hz), live Spectra,
-Spectrogram and Coherence views that compute only through `crust.timefreq` on
+Spectrogram and Coherence views that compute only through `mt_workbench.timefreq` on
 the loaded window, a Filter Data tab that previews the site's filter list on
 a loaded window (raw behind filtered, time series and PSD) and drives
 `<survey>/filters.yaml`, a
@@ -312,15 +313,15 @@ by its sidecar's engine ("[aurora]", "[mantle]", "[mantle fine grid]") and,
 for a MANTLE product, draws its verdict strip under the resistivity panels
 from `<stem>.mantle_report.json` (one row per verdict word over the periods
 it covers), shows the sidecar's verdict word counts and opens the report's
-notes as plain text (`src/crust/gui/mantle_products.py`). **No product** (archive, transfer
+notes as plain text (`src/mt_workbench/gui/mantle_products.py`). **No product** (archive, transfer
 function, EDI, report figure) is computed in the GUI, and no PNG is ever
-displayed in it. Full detail: `src/crust/gui/README.md`.
+displayed in it. Full detail: `src/mt_workbench/gui/README.md`.
 
 ```bash
-python -m crust surveys/<survey>/survey.yaml
+python -m mt_workbench surveys/<survey>/survey.yaml
 ```
 
-The installed console script `crust surveys/<survey>/survey.yaml` does the same.
+The installed console script `mt-workbench surveys/<survey>/survey.yaml` does the same.
 
 Tests, each run on its own (no pytest runner wired up yet); the smoke test
 needs an offscreen Qt platform and writes its screenshots to
@@ -350,7 +351,7 @@ python tests/process_rr_cli_unit.py  # process_rr.py --dry-run, the estimator tw
 python tests/bands_unit.py           # build_band_scheme: bands narrower than a harmonic refused, the survey layouts unchanged, min_bin and a 256-point window keeping every period while moving the harmonics (mt_metadata's Band indices)
 python tests/engine_mantle_unit.py   # the MANTLE engine: options -> ProcessingConfig, levels_for, band pooling with the jackknife variance, to_tf round trip, the sidecar keys, --engine and --mantle-max-hours on the command line, the window limit (check_window and process_pair on a stub reader) (skips when MANTLE is not installed)
 python tests/decimate_unit.py        # decimate_site.py on a synthetic two-run LEMI-423 site: 100 s and 20 s sines within 0.5 % and 0.5 deg at 1 Hz, a 0.7 Hz sine gone, the calibration chain copied, starts on whole seconds, the run groups typed `Run` as ingest's are (MANTLE's reader needs it), --force, the survey entry; process_rr.py at 1 Hz
-python tests/dc_level_unit.py        # dc_level_check.py (crust.dclevel's measure) on a synthetic archive: a channel at 1.6e9 counts flagged as an open input, healthy channels not, the rail rule, derived and observatory sites skipped, exit 2 for a missing archive
+python tests/dc_level_unit.py        # dc_level_check.py (mt_workbench.dclevel's measure) on a synthetic archive: a channel at 1.6e9 counts flagged as an open input, healthy channels not, the rail rule, derived and observatory sites skipped, exit 2 for a missing archive
 python tests/merge_modes_unit.py     # merge_modes.py on two synthetic EDIs: x row from A, y row from B copied and interpolated in log period, NaN outside B's range, the tipper kept, the sidecar keys, exit 2 on a station or remote mismatch
 python tests/basemap_unit.py         # fetch_basemap.py: warp, provider, zoom rule; network mocked
 python tests/new_survey_unit.py      # new_survey.py on synthetic B423s, a mixed LEMI-423/424/EDL root, Curnamona
@@ -386,7 +387,7 @@ fetch), `geopandas`, `rasterio`, `pyproj`, `simpeg`, `bokeh` and `panel`.
       (`surveys/burra/qc_notes.md`)
 - [x] Timing QC before ingest (`scripts/timing_qc.py`): no clock errors found
       at the Burra "Behind" sites; the one 1 s event is a remote file-boundary slip
-- [x] Noise toolbox, first steps (`crust.noise`, `crust.ingest`; declared per
+- [x] Noise toolbox, first steps (`mt_workbench.noise`, `mt_workbench.ingest`; declared per
       site in `<survey>/filters.yaml`, applied at ingest in the listed order,
       provenance written into the archive): `replace` (borrow a magnetic
       channel from another site, with that site's coil calibration — the field
@@ -396,7 +397,7 @@ fetch), `geopandas`, `rasterio`, `pyproj`, `simpeg`, `bokeh` and `panel`.
       every channel — no detection, no cutting). Never auto-detected —
       declared after looking at the QC figures.
 - [x] Noise toolbox: `hp` and `lp` (zero-phase Butterworth), a
-      `channels` list on `notch`, `crust.noise.apply_filters_arrays` (the one
+      `channels` list on `notch`, `mt_workbench.noise.apply_filters_arrays` (the one
       implementation; ingest delegates to it) and the Filter Data tab's
       live preview of the list on a loaded window.
 - [ ] Noise toolbox, next: per-channel time masks, band schemes
@@ -416,7 +417,7 @@ fetch), `geopandas`, `rasterio`, `pyproj`, `simpeg`, `bokeh` and `panel`.
       headers -> `survey.yaml` via mt-io, `--site-table` merge, also reachable
       from the GUI's Metadata tab ("New survey...")
 - [x] Channels recorded, per survey and per site: the presets in
-      `crust.survey.CHANNEL_PRESETS` (LEMI-423: Ex Ey Bx By, + Bz,
+      `mt_workbench.survey.CHANNEL_PRESETS` (LEMI-423: Ex Ey Bx By, + Bz,
       magnetics only, Bx By Bz; LEMI-424: E1-E4 Bx By Bz, E1 E2 Bx By Bz,
       Bx By Bz), `new_survey.py --channels` for the survey default, the
       Metadata tab's channels column for a site that differs
@@ -432,20 +433,20 @@ fetch), `geopandas`, `rasterio`, `pyproj`, `simpeg`, `bokeh` and `panel`.
       10.0), `new_survey.py --electric-gain` for the survey default, the
       Metadata tab's `electric_gain` column for a site that differs
 - [ ] An `electric_pair` setting saying which two of a LEMI-424's e1-e4 are
-      Ex and Ey (aurora's LEMI12/LEMI34 nomenclature in `crust.process`); the
+      Ex and Ey (aurora's LEMI12/LEMI34 nomenclature in `mt_workbench.process`); the
       GUI meanwhile pairs the first two electrics, E1 and E2
-- [x] Desktop GUI (`src/crust/gui`): PySide6 + pyqtgraph
+- [x] Desktop GUI (`src/mt_workbench/gui`): PySide6 + pyqtgraph
       launcher-and-viewer over the scripts and per-survey YAML, with QC,
       filter, processing and EDI tabs — see "The GUI" above
 - [ ] Cross-power editor: the GUI's Cross-powers tab. Every STFT window's
-      cross-powers are computed once (`crust.crosspower.compute_windows`), then per base
+      cross-powers are computed once (`mt_workbench.crosspower.compute_windows`), then per base
       chunk (10, 5, 2 or 1 min) and per decimation level on groups of base
       chunks long enough for 4 windows and 32 degrees of freedom, regrouped
       instantly without reading the archives, a window inside a larger store
       rounded out to whole minutes; |Z|, phase, coherence, |H| and |E|
       against time and the polar plane (log10 |Z| against phase per mode,
       the yx phase plus 180 deg wrapped to (-180, 180] as `cluster_masks.py`
-      draws it, `crust.crosspower.mode_phase`, so a near-field source's yx
+      draws it, `mt_workbench.crosspower.mode_phase`, so a near-field source's yx
       cluster sits near 0 deg rather than across the +/-180 deg edges);
       masks per window and band saved per
       site as UTC intervals in `<survey>/masks.yaml`, `process_rr.py`

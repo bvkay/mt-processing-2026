@@ -10,14 +10,14 @@ the stack weightings, the stage 3 configs and the runner's limits.
 
 Archives: <workspace>/mth5/<site>.h5 is the raw recording, which the
 campaign leaves in place unchanged. Processing reads a filtered variant
-<site>_f<hash>.h5 that `crust.ingest.processing_archive(survey, site)` (or
+<site>_f<hash>.h5 that `mt_workbench.ingest.processing_archive(survey, site)` (or
 `build_variant`) builds on demand from the raw archive and filters.yaml;
 process_rr.py calls it before every run. Stages:
 
 0 variants: per site, a child process calls processing_archive (else
   build_variant), so every variant exists before two parallel runs could
   both try to build the same one. The variant's recorded filters (its runs'
-  "ingest filters (in order): ..." comments, in crust.ingest's wording) are
+  "ingest filters (in order): ..." comments, in mt_workbench.ingest's wording) are
   then compared with filters.yaml and the verdict goes into the ledger's
   `check` column; a `mains` filter's step_fraction is not recorded and is
   not compared. The check is informational and does not block a run.
@@ -31,7 +31,7 @@ process_rr.py calls it before every run. Stages:
   STK_<site>w: coherence) with scripts/build_stack.py; then the site rr each
   stack. A group with fewer than two such members borrows the other
   group whose eligible members share the longest common span with the site.
-3 options: per site, on its best stage 1 remote (highest crust.quality
+3 options: per site, on its best stage 1 remote (highest mt_workbench.quality
   score over the scoring window; among remotes within `tie_tolerance` of the
   top, the one agreeing best with the others, lowest median |dlog10 rho|),
   one process_rr.py run per plan config. The choice is kept in
@@ -49,7 +49,7 @@ process_rr.py calls it before every run. Stages:
   out of stage 3 unless --configs names it; --configs NAME[,NAME] runs only
   the configs named (the `windows:` runs and merges are then left out). A
   MANTLE product stops where its cascade does (about 1000 s on a
-  day's window); crust.quality scores it over its own periods inside the
+  day's window); mt_workbench.quality scores it over its own periods inside the
   scoring window, so the long-period tail it lacks neither counts for nor
   against it, and scores.csv's `period_max` shows how far each product
   reaches. A config that
@@ -65,7 +65,7 @@ plan site or a stack) the site's stage 3 remote in place of the best stage
 choice stays the campaign's own, and its stage 3 rows carry the note
 "remote override (the campaign's pick: <remote>)". `modes: {SITE: [xy]}`
 scores the site over the listed modes only: each product's score is the
-mean of those modes' crust.quality scores (the tie-break agreement is that
+mean of those modes' mt_workbench.quality scores (the tie-break agreement is that
 mode's), and summary.md marks the site "xy-only". `windows: {SITE: {yx:
 [start, end], merge: true}}` adds to stage 3 one default run of the site
 on its stage 3 remote over each mode's window (UTC, config
@@ -79,9 +79,9 @@ score as the site's default, with a note, and compares the stacks and the
 options with the full-record default.
 
 Readiness: before each stage the runner checks, in a fresh child process,
-that crust.ingest has processing_archive or build_variant (stage 0), that
+that mt_workbench.ingest has processing_archive or build_variant (stage 0), that
 scripts/process_rr.py calls it (stages 1 and 3) and that the stack builder
-(crust/virtual.py or scripts/build_stack.py) does (stage 2). Stages 0, 1 and
+(mt_workbench/virtual.py or scripts/build_stack.py) does (stage 2). Stages 0, 1 and
 3 wait for it, polling every 5 minutes; a stage 2 whose builder is not ready
 is deferred to the end of the campaign and waits there. --allow-raw (for
 smoke checks) runs anyway: its rows are marked `provisional` and redone by
@@ -121,7 +121,7 @@ stage, kind, local, remote, config, tag, engine (the sidecar's `engine`,
 aurora when the sidecar names none), status, exit code, start, seconds, peak RSS MB,
 EDI/sidecar/figure paths, the variant or stack archive and its size, the
 inputs' signature, error text; rewritten atomically at every start and
-finish), runs.log (not written by a dry run), scores.csv (crust.quality of
+finish), runs.log (not written by a dry run), scores.csv (mt_workbench.quality of
 every product with its engine and period range, after every block), figures/<site>_remotes.png,
 <site>_stacks.png,
 <site>_options.png, <name>_best_pseudosection.png, <name>_scores.png, and
@@ -173,17 +173,17 @@ import yaml
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "src"))
 
-from crust.ingest import default_archive_path  # noqa: E402
-from crust.masks import is_stack, load_masks, masks_for_role, remote_masks  # noqa: E402
+from mt_workbench.ingest import default_archive_path  # noqa: E402
+from mt_workbench.masks import is_stack, load_masks, masks_for_role, remote_masks  # noqa: E402
 
 try:  # optional: without the variant API the campaign runs and waits for it
-    from crust.ingest import filters_hash as _api_filters_hash  # noqa: E402
-    from crust.ingest import variant_path as _api_variant_path  # noqa: E402
+    from mt_workbench.ingest import filters_hash as _api_filters_hash  # noqa: E402
+    from mt_workbench.ingest import variant_path as _api_variant_path  # noqa: E402
 except ImportError:
     _api_filters_hash = _api_variant_path = None
-from crust.mantle_window import clip_text  # noqa: E402
-from crust.quality import MODES, PERIOD_RTOL, agreement, curves, flat_quality, pairwise_spread, tf_quality  # noqa: E402
-from crust.survey import Survey, distance_km  # noqa: E402
+from mt_workbench.mantle_window import clip_text  # noqa: E402
+from mt_workbench.quality import MODES, PERIOD_RTOL, agreement, curves, flat_quality, pairwise_spread, tf_quality  # noqa: E402
+from mt_workbench.survey import Survey, distance_km  # noqa: E402
 
 PY = sys.executable
 SCRIPTS = REPO / "scripts"
@@ -209,7 +209,7 @@ VARIANT_HASH_PREFIX = "filters hash "
 VARIANT_FUNCS = ("processing_archive", "build_variant")
 # what a child runs for stage 0: the variant API's call, printing the archive it returns
 VARIANT_CODE = (
-    "import sys; sys.path.insert(0, sys.argv[1]); from crust.survey import Survey; import crust.ingest as m; "
+    "import sys; sys.path.insert(0, sys.argv[1]); from mt_workbench.survey import Survey; import mt_workbench.ingest as m; "
     "out = getattr(m, sys.argv[4])(Survey.from_yaml(sys.argv[2]), sys.argv[3]); print(f'variant: {out}', flush=True)"
 )
 API_PROBE = """
@@ -217,11 +217,11 @@ import importlib, json, sys
 sys.path[:0] = [sys.argv[1], sys.argv[2]]
 names, out = sys.argv[3:], {}
 try:
-    m = importlib.import_module("crust.ingest")
+    m = importlib.import_module("mt_workbench.ingest")
     out["funcs"] = {n: callable(getattr(m, n, None)) for n in names}
 except Exception as exc:
     out["funcs"], out["ingest_error"] = {}, repr(exc)[:200]
-for mod in ("process_rr", "crust.virtual"):
+for mod in ("process_rr", "mt_workbench.virtual"):
     try:
         mm = importlib.import_module(mod)
         out[mod] = any(callable(getattr(mm, n, None)) for n in names)
@@ -586,7 +586,7 @@ def stack_plan(plan: Plan, spans: dict, local: str) -> dict | None:
 def filters_hash(filters) -> str:
     """Hash a site's filters.yaml entry to 8 hex digits.
 
-    Uses crust.ingest.filters_hash (the variant's ``_f<hash>``) when the API
+    Uses mt_workbench.ingest.filters_hash (the variant's ``_f<hash>``) when the API
     is present, else the same sha1 of the canonical JSON.
     """
     if _api_filters_hash is not None:
@@ -642,7 +642,7 @@ def _num(a, b) -> bool:
 def filter_line_matches(spec: dict, line: str, run_channels, fs: float) -> tuple[bool, str]:
     """Check whether one recorded provenance line says `spec` was applied.
 
-    The line is in the wording of crust.noise / crust.ingest.
+    The line is in the wording of mt_workbench.noise / mt_workbench.ingest.
 
     Args:
         spec (dict): One declared filter, {kind: options}.
@@ -953,10 +953,10 @@ def last_error(text: str) -> str:
 def api_state() -> dict:
     """Probe the variant API as a fresh process sees it.
 
-    This process imported crust.ingest when it started, so the probe runs
+    This process imported mt_workbench.ingest when it started, so the probe runs
     in a child and imports the modules. Stage 0 needs processing_archive (or
-    build_variant) in crust.ingest, stages 1 and 3 need scripts/process_rr.py
-    to import one, and stage 2 needs crust.virtual (the stack builder) to. A
+    build_variant) in mt_workbench.ingest, stages 1 and 3 need scripts/process_rr.py
+    to import one, and stage 2 needs mt_workbench.virtual (the stack builder) to. A
     module that fails to import counts as not ready.
 
     Returns:
@@ -973,17 +973,17 @@ def api_state() -> dict:
     funcs = have.get("funcs") or {}
     func = next((n for n in VARIANT_FUNCS if funcs.get(n)), "")
     rr = bool(func) and bool(have.get("process_rr"))
-    stack = rr and bool(have.get("crust.virtual"))
+    stack = rr and bool(have.get("mt_workbench.virtual"))
     why = []
     if not func:
-        why.append(f"crust.ingest has neither {' nor '.join(VARIANT_FUNCS)}" +
+        why.append(f"mt_workbench.ingest has neither {' nor '.join(VARIANT_FUNCS)}" +
                    (f" ({have['ingest_error']})" if have.get("ingest_error") else ""))
     if not have.get("process_rr"):
         why.append("scripts/process_rr.py does not use it" +
                    (f" ({have['process_rr_error']})" if have.get("process_rr_error") else ""))
-    if not have.get("crust.virtual"):
-        why.append("the stack builder (crust.virtual) does not use it" +
-                   (f" ({have['crust.virtual_error']})" if have.get("crust.virtual_error") else ""))
+    if not have.get("mt_workbench.virtual"):
+        why.append("the stack builder (mt_workbench.virtual) does not use it" +
+                   (f" ({have['mt_workbench.virtual_error']})" if have.get("mt_workbench.virtual_error") else ""))
     if have.get("error"):
         why.append(f"probe failed: {have['error']}")
     return {"func": func, "variant": bool(func), "rr": rr, "stack": stack, "why": "; ".join(why)}
@@ -1076,7 +1076,7 @@ class Campaign:
             # process_rr applies the local's masks.yaml entries of scope local or both and
             # the remote's of scope both or remote that name hx, hy or every channel, or all
             # of them under --mask-scope union (a stack has none of its own, by the name rule
-            # of crust.masks.is_stack). The hash covers the entries a run applies, each
+            # of mt_workbench.masks.is_stack). The hash covers the entries a run applies, each
             # without its scope key and without `channels` when it is every channel (an
             # entry written before the key existed hashes as it did), so an edit that
             # changes them makes the product stale; a local entry's channels decide the rows
@@ -1360,8 +1360,8 @@ class Campaign:
         Of the local, the entries of scope local or both apply; of the
         remote, the entries of scope both or remote that name hx, hy or every
         channel; under the rule union every entry of each, the remote's
-        channels still applying (`crust.masks.masks_for_role`,
-        `crust.masks.remote_masks`; a stack has none).
+        channels still applying (`mt_workbench.masks.masks_for_role`,
+        `mt_workbench.masks.remote_masks`; a stack has none).
 
         Args:
             local (str): The local site.
@@ -1985,7 +1985,7 @@ class Campaign:
         """Delete the variant a killed stage 0 job was writing.
 
         build_variant writes in place, and a partial file whose first run is
-        complete would pass crust.ingest.variant_ready.
+        complete would pass mt_workbench.ingest.variant_ready.
         """
         if _api_variant_path is None:
             self.log(f"{rid}: the variant build of {site} was killed; no variant API to locate its file")
@@ -2018,7 +2018,7 @@ class Campaign:
                 except psutil.Error:
                     cmd = ""
                 if row["local"] in cmd and any(s in cmd for s in ("process_rr.py", "build_stack.py", VARIANT_FUNCS[0],
-                                                                   "crust.ingest")):
+                                                                   "mt_workbench.ingest")):
                     self.log(f"{rid}: killing the orphaned child {cp} of a dead runner")
                     kill_tree(cp)
             if row["kind"] == "stack":
@@ -2038,7 +2038,7 @@ class Campaign:
 
         Each row carries the product's engine (the ledger's, else the
         config's) and `period_min`/`period_max`, the range of its periods
-        inside the scoring window. crust.quality scores a product over the
+        inside the scoring window. mt_workbench.quality scores a product over the
         periods it holds, so a product that stops short of `pmax` (MANTLE's
         at about 1000 s) is scored over its own range. `score` and
         `score_full` are over the site's scored modes (`modes`: "xy,yx",
@@ -2118,7 +2118,7 @@ class Campaign:
             dict: {"counts", "total", "hours"}.
         """
         api = self.check_api()
-        print(f"variant API: {api['func'] or 'not in crust.ingest yet'}; process_rr.py uses it: {api['rr']}; "
+        print(f"variant API: {api['func'] or 'not in mt_workbench.ingest yet'}; process_rr.py uses it: {api['rr']}; "
               f"stack builder uses it: {api['stack']}" + (f"  ({api['why']})" if api["why"] else ""))
         if 3 in stages:
             left = [k for k in self.plan.configs if k not in self.stage3_configs()]
@@ -2366,7 +2366,7 @@ def fig_remotes(c: "Campaign", df: pd.DataFrame, site: str, best: str | None, ou
                 h2, l2 = b.get_legend_handles_labels()
                 a.legend(h1 + h2, l1 + l2, fontsize=7, loc="upper left")
         _legend(fig, ax[0][0], "remote   score")
-        fig.suptitle(f"{site}: every remote, stage 1 defaults ({len(s1)} runs). score: crust.quality over "
+        fig.suptitle(f"{site}: every remote, stage 1 defaults ({len(s1)} runs). score: mt_workbench.quality over "
                      f"{_window_text(c)}; bottom row: where the remotes agree", fontsize=11)
         fig.savefig(out, dpi=110)
         plt.close(fig)
@@ -2590,7 +2590,7 @@ def fig_scores(c: "Campaign", df: pd.DataFrame, bests: dict, out: Path) -> bool:
         ax[0].set_xlabel("remote")
         ax[0].set_ylabel("local site (along the line)")
         ax[1].set_xlabel("config")
-        fig.suptitle(f"{c.plan.name}: crust.quality score of every product ({_window_text(c)})", fontsize=11)
+        fig.suptitle(f"{c.plan.name}: mt_workbench.quality score of every product ({_window_text(c)})", fontsize=11)
         fig.savefig(out, dpi=100)
         plt.close(fig)
     return True
@@ -2639,7 +2639,7 @@ def write_summary(c: "Campaign", df: pd.DataFrame, bests: dict, out: Path) -> No
         L += [plan.description, ""]
     L += [f"Written {now().isoformat(timespec='seconds')} from `ledger.csv` ({len(rows)} rows: "
           + (", ".join(f"{v} {k}" for k, v in sorted(by_status.items())) or "none") + ").",
-          f"Scores: `crust.quality.tf_quality` over {_window_text(c)}: score = Q x S x exp(-5 B / N) "
+          f"Scores: `mt_workbench.quality.tf_quality` over {_window_text(c)}: score = Q x S x exp(-5 B / N) "
           "(Q the fraction of periods in the physical phase quadrant, S the mean per-step smoothness "
           "exp(-(|dlog10 rho| / 0.25)^2), B blow-ups out of N periods), mean of xy and yx (of the listed "
           "modes for a site under the plan's `modes:`, marked xy-only or yx-only); higher is better. "
@@ -2648,7 +2648,7 @@ def write_summary(c: "Campaign", df: pd.DataFrame, bests: dict, out: Path) -> No
 
     L += ["## Stage 0: filtered variants", "",
           "Raw archives (`<workspace>/mth5/<site>.h5`) are never rebuilt; each site's filtered variant is built "
-          "from it by `crust.ingest` and its recorded filters compared with filters.yaml (`check`).", "",
+          "from it by `mt_workbench.ingest` and its recorded filters compared with filters.yaml (`check`).", "",
           "| site | status | variant | started | minutes | size MB | peak RSS GB | check / error |",
           "|---|---|---|---|---|---|---|---|"]
     for s in plan.ordered(plan.sites):

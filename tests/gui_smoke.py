@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Smoke test for the crust.gui desktop GUI (run headless)
+Smoke test for the mt_workbench.gui desktop GUI (run headless)
 
 Drives the main window over the survey in surveys/curnamona_cube and checks
 every tab against values computed here. The flow under test: a tree of
@@ -86,7 +86,7 @@ Usage:
      `time_period` attrs and its `ex` dataset sliced by sample offset from
      that run's start, divided by the Segment's gain. The attrs and h5py
      alone place these samples in time, independently of
-     `crust.gui.segment` and `crust.gui.archive`. This catches an
+     `mt_workbench.gui.segment` and `mt_workbench.gui.archive`. This catches an
      off-by-one, wrong-run or wrong-t0 bug (the window starts 16,200,999
      samples into the second run);
 (6)  the archive lock does not serialise: A07 expanded right after the click,
@@ -322,7 +322,7 @@ Usage:
 (19) once the segment QC of (7) is ready, the console strip does not also
      carry a line starting "[segment] " (the store's `qc_started`, for the
      window clicked in (4)) and at least one line containing
-     "crust.timefreq" (the ladder: `cascade` and `psd_ladder` both call
+     "mt_workbench.timefreq" (the ladder: `cascade` and `psd_ladder` both call
      `logger.info`), a line logged from the segment store's worker thread
      as well as the GUI thread's;
 (20) "Add to queue", or any other button that queues a job, starts the job
@@ -410,7 +410,7 @@ Usage:
      harmonics) must bring, after the debounce, a preview whose filtered
      arrays differ from the raw on every channel while the store's raw
      arrays keep their SHA-1; whose Ex `line_excess` at 50 Hz on the 1000 Hz
-     stage (computed here with `crust.timefreq.line_excess` from the
+     stage (computed here with `mt_workbench.timefreq.line_excess` from the
      result's raw and filtered ladders) drops by more than 15 dB; whose
      time-series view has 4 panels each holding a visible light grey curve
      (`theme.RAW_COLOUR`) and a visible curve in its channel colour, both
@@ -765,12 +765,12 @@ from PySide6.QtWidgets import (  # noqa: E402
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "src"))
 
-from crust.survey import Survey  # noqa: E402
-from crust.timefreq import BANDS_S, line_excess  # noqa: E402
-from crust.gui import channels_column, metadata_edit, tf_plot, theme  # noqa: E402
-from crust.gui.tabs import metadata as metadata_module  # noqa: E402
-from crust.gui.app import MainWindow  # noqa: E402
-from crust.gui.jobs import JobRunner  # noqa: E402
+from mt_workbench.survey import Survey  # noqa: E402
+from mt_workbench.timefreq import BANDS_S, line_excess  # noqa: E402
+from mt_workbench.gui import channels_column, metadata_edit, tf_plot, theme  # noqa: E402
+from mt_workbench.gui.tabs import metadata as metadata_module  # noqa: E402
+from mt_workbench.gui.app import MainWindow  # noqa: E402
+from mt_workbench.gui.jobs import JobRunner  # noqa: E402
 
 sys.path.insert(0, str(REPO / "tests"))
 import instrument_samples  # noqa: E402  (the mixed survey of (28)-(31))
@@ -976,7 +976,7 @@ def independent_ex(site: str, start: pd.Timestamp, seconds: float) -> np.ndarray
     The run whose `time_period` attrs cover `start` is sliced by sample
     offset from that run's own start at the dataset's `sample_rate` attr.
     The read uses h5py and the attrs alone, independent of
-    `crust.gui.segment` and `crust.gui.archive`, so a wrong grid there
+    `mt_workbench.gui.segment` and `mt_workbench.gui.archive`, so a wrong grid there
     shows as a mismatch.
 
     Raises:
@@ -1292,10 +1292,10 @@ def crosspower_check(app, window) -> None:
 
     import pyqtgraph as pg
     from mt_metadata.transfer_functions.core import TF
-    from crust.crosspower import band_table, band_view, level_multiples, masked_chunks
-    from crust.masks import iso
+    from mt_workbench.crosspower import band_table, band_view, level_multiples, masked_chunks
+    from mt_workbench.masks import iso
     from PySide6.QtGui import QColor, QFontMetrics
-    from crust.gui.tabs.crosspower import OVERLAP, QC
+    from mt_workbench.gui.tabs.crosspower import OVERLAP, QC
 
     print("(34) the Cross-powers tab, on a copy of the survey folder:")
     real_masks = SURVEY_DIR / "masks.yaml"
@@ -1954,7 +1954,7 @@ def main() -> int:
     window.show()
     pump(app, 0.3)
     startup_fetches = fetches()  # (24): the real workspace has its basemap.json
-    assert window.windowTitle() == "MT processing", window.windowTitle()
+    assert window.windowTitle() == "mt-workbench", window.windowTitle()
     tabs = [window.tabs.tabText(i) for i in range(window.tabs.count())]
     assert tabs == EXPECTED_TABS, f"tab order {tabs}, expected {EXPECTED_TABS}"
     print(f"(1) window built from {SURVEY_YAML}: {tabs}")
@@ -2264,11 +2264,11 @@ def main() -> int:
     # -------------------------------- (19) the console strip: segment + ladder
     console_text = console.toPlainText()
     segment_lines = [line for line in console_text.splitlines() if line.startswith("[segment] ")]
-    ladder_lines = [line for line in console_text.splitlines() if "crust.timefreq" in line]
+    ladder_lines = [line for line in console_text.splitlines() if "mt_workbench.timefreq" in line]
     assert segment_lines, f"no '[segment] ' line in the console strip:\n{console_text}"
-    assert ladder_lines, f"no 'crust.timefreq' line (the ladder, off the GUI thread) in the console:\n{console_text}"
+    assert ladder_lines, f"no 'mt_workbench.timefreq' line (the ladder, off the GUI thread) in the console:\n{console_text}"
     print(f"(19) console strip: {len(segment_lines)} '[segment] ' line(s), last {segment_lines[-1]!r}; "
-          f"{len(ladder_lines)} 'crust.timefreq' line(s), e.g. {ladder_lines[0]!r}")
+          f"{len(ladder_lines)} 'mt_workbench.timefreq' line(s), e.g. {ladder_lines[0]!r}")
 
     shoot(app, window, "timeseries", ts)
     ts.plots[0].setXRange(3000.0, 3003.0, padding=0)
@@ -3505,7 +3505,7 @@ def main() -> int:
     runner.reset()
     assert not (WORK / "mth5" / f"{UNARCHIVED}.h5").exists(), f"{UNARCHIVED}.h5 was written"
 
-    # a filtered variant's own stem (`<site>_f<hash>.h5`, crust.ingest.variant_path) is
+    # a filtered variant's own stem (`<site>_f<hash>.h5`, mt_workbench.ingest.variant_path) is
     # another archive of its site, listed neither as a site nor as a stacked remote
     fake_variant = WORK / "mth5" / f"{SITE}_fdeadbeef.h5"
     fake_variant.write_bytes(b"")
@@ -3693,7 +3693,7 @@ def main() -> int:
     assert burst_view.provenance[-1].startswith("burst:"), burst_view.provenance
     print(f"  burst added: {burst_view.provenance[-1][:70]!r} ({burst_view.elapsed_s:.2f} s)")
 
-    from crust.gui.filter_forms import LABELS  # (26) only: the list row's words for the kind
+    from mt_workbench.gui.filter_forms import LABELS  # (26) only: the list row's words for the kind
     ft.add_filter("mains")
     mains_view = latest_preview(ft.entries, 60, "the notch + cp + burst + mains preview")
     assert mains_view.provenance[-1].startswith("mains:"), mains_view.provenance
@@ -3764,7 +3764,7 @@ def main() -> int:
     # This test fails if the copy does not write the ticked sites' lists as
     # the source's, or touches an unticked site, or Append replaces.
     print('  "Copy to sites...":')
-    from crust.gui.copy_filters import CopyFiltersDialog  # (33) only
+    from mt_workbench.gui.copy_filters import CopyFiltersDialog  # (33) only
 
     if not ft.entries:  # (26) may have emptied it: (33) needs a non-empty source list
         ft.add_filter("notch")

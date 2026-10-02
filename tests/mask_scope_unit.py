@@ -2,7 +2,7 @@
 """
 Unit test for the scope of masks.yaml entries
 
-Checks the `scope` key of a mask, local, both or remote (`crust.masks`:
+Checks the `scope` key of a mask, local, both or remote (`mt_workbench.masks`:
 `normalise`, `load_masks`, `save_masks`, `masks_for_role`, `remote_masks`),
 the masks
 scripts/process_rr.py takes from each site of a pair (`resolve`, the
@@ -20,7 +20,7 @@ Usage:
 
 **This test fails if**
 
-1. `crust.masks.SCOPES` is not (local, both, remote); a mask without
+1. `mt_workbench.masks.SCOPES` is not (local, both, remote); a mask without
    `scope` does not normalise to scope "local", one with scope "both" or
    "remote" does not keep it, or scope "reference" (not one of `SCOPES`) is
    not refused with ValueError, directly and when masks.yaml holds it; or a
@@ -79,7 +79,7 @@ from loguru import logger  # noqa: E402
 
 import cluster_masks as cm  # noqa: E402
 import gate_masks as gm  # noqa: E402
-from crust.masks import (  # noqa: E402
+from mt_workbench.masks import (  # noqa: E402
     SCOPES, load_masks, masks_for_role, masks_path, normalise, remote_masks, save_masks,
 )
 

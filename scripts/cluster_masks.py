@@ -4,12 +4,12 @@ Band masks of a coherent near-field source, found from the clusters of a site's 
 
 A coherent source near a site replaces the Earth's impedance over a range of
 periods for part of the record. In the per-chunk remote-reference impedances
-of the Cross-powers tab (`crust.crosspower`) such a band splits into two
+of the Cross-powers tab (`mt_workbench.crosspower`) such a band splits into two
 clusters in the (log10 |Z|, phase) plane: the Earth's, at a physical phase,
 and the source's, near zero phase. The script finds the two clusters band by
 band and writes a band mask over every chunk of the source cluster, the mask
 a selection on the tab's polar panel records, with found_by "cluster" and
-scope local (`crust.masks`): the masks apply when the site is the local of
+scope local (`mt_workbench.masks`): the masks apply when the site is the local of
 a pair, and the pairs that use it as a remote keep those windows.
 
 The pair's window store is computed over the overlap of the two stations, or
@@ -41,7 +41,7 @@ The console prints the per-band table and, for the stacked impedance
 (`stack_impedance`) with no masks, with the cluster masks and with the
 site's other masks, the usable range of each mode (`USABLE_RULE`). `--out`
 writes the masks to a YAML file laid out as masks.yaml; `--write` saves them
-into the survey's masks.yaml (`crust.masks.save_masks`), in place of the
+into the survey's masks.yaml (`mt_workbench.masks.save_masks`), in place of the
 site's earlier found_by "cluster" masks, keeping its other masks.
 `--figures` writes, under `<workspace>/qc/cluster_masks/<local>_rr-<remote>/`,
 one scatter per band, a summary figure (the fraction of groups masked, both
@@ -87,13 +87,13 @@ from matplotlib.patches import Polygon
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "src"))
 
-from crust.bands import build_band_scheme  # noqa: E402
-from crust.crosspower import (  # noqa: E402
+from mt_workbench.bands import build_band_scheme  # noqa: E402
+from mt_workbench.crosspower import (  # noqa: E402
     CHUNKS_S, band_view, bin_windows, compute_windows, masked_chunks, stack_impedance,
 )
-from crust.ingest import default_archive_path, variant_path, variant_ready  # noqa: E402
-from crust.masks import HEADER, _Dumper, load_masks, normalise, save_masks, stored  # noqa: E402
-from crust.survey import Survey  # noqa: E402
+from mt_workbench.ingest import default_archive_path, variant_path, variant_ready  # noqa: E402
+from mt_workbench.masks import HEADER, _Dumper, load_masks, normalise, save_masks, stored  # noqa: E402
+from mt_workbench.survey import Survey  # noqa: E402
 
 WORKERS = 4
 CHUNK_S = CHUNKS_S[0]  # the Cross-powers tab's default chunk

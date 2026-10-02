@@ -57,7 +57,7 @@ sys.path.insert(0, str(REPO / "src"))
 sys.path.insert(0, str(REPO / "scripts"))
 
 import gate_masks as gm  # noqa: E402
-from crust.masks import load_masks, normalise, save_masks  # noqa: E402
+from mt_workbench.masks import load_masks, normalise, save_masks  # noqa: E402
 
 T0 = pd.Timestamp("2023-07-22T00:00:00", tz="UTC")
 BURSTS = [(3600, 600, (False, True)), (10800, 300, (True, False)), (16200, 900, (True, True))]  # start s, length s, (ex, ey)

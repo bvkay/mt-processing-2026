@@ -69,8 +69,8 @@ sys.path.insert(0, str(REPO / "src"))
 sys.path.insert(0, str(REPO / "tests"))
 
 from _scratch import scratch_dir  # noqa: E402
-from crust.gui.app import MainWindow  # noqa: E402
-from crust.gui.jobs import JobRunner  # noqa: E402
+from mt_workbench.gui.app import MainWindow  # noqa: E402
+from mt_workbench.gui.jobs import JobRunner  # noqa: E402
 
 SURVEY_DIR = REPO / "surveys" / "curnamona_cube"
 WORK = SURVEY_DIR / "work"
@@ -306,8 +306,8 @@ def main() -> int:
           f"of scope both: {box.text()!r}")
 
     # the Cross-powers tab lists a mask's channels and scope
-    from crust.gui.tabs.crosspower import COLUMNS
-    from crust.masks import load_masks
+    from mt_workbench.gui.tabs.crosspower import COLUMNS
+    from mt_workbench.masks import load_masks
 
     write_masks({**MASKS, "E08": MASKS["E08"] + [REMOTE_E08, EY_E08]})
     cross = window.crosspower_tab

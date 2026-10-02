@@ -9,12 +9,12 @@ decimated copy of a broadband site's archive as the derived site
 1 Hz remote.
 
 The source is the site's processing archive
-(`crust.ingest.processing_archive`): its filtered variant when filters.yaml
+(`mt_workbench.ingest.processing_archive`): its filtered variant when filters.yaml
 declares filters for it (built first when missing or stale), else its raw
 archive. Every run is read one channel at a time and decimated from the
 archive rate to --rate (default 1 Hz).
 
-The filter is the one of `crust.timefreq.decimation_levels`,
+The filter is the one of `mt_workbench.timefreq.decimation_levels`,
 scipy.signal.decimate with ftype "fir" and zero_phase, in stages of at most
 10 (1000 Hz to 1 Hz: 10, 10, 10), computed in float64. Each stage of factor
 q is a Hamming-window FIR of 20q + 1 taps with its cutoff at the stage's
@@ -34,10 +34,10 @@ the source's MTH5 survey, one run per source run (sr1_0002 from
 sr1000_0002), each channel in float64 digital counts under the source
 channel's metadata and filter chain: dipole length, coil response table,
 linear and `lemi423_b_scale` coefficients, azimuth, units. Aurora and
-`crust.timefreq.load_station` calibrate it as they do the source. Each run
+`mt_workbench.timefreq.load_station` calibrate it as they do the source. Each run
 comment names the source archive and run, the stages and the source run's
 own comment. Each run group's `mth5_type` is "Run", as in an archive
-`crust.ingest` writes, so a reader matching that attribute exactly (MANTLE's
+`mt_workbench.ingest` writes, so a reader matching that attribute exactly (MANTLE's
 MTH5 reader) finds the runs. An existing archive is kept unless --force.
 
 survey.yaml gains, or has refreshed, the entry
@@ -45,7 +45,7 @@ survey.yaml gains, or has refreshed, the entry
 latitude, longitude, elevation, start, end, notes}`` (the parent's
 position, dipoles and azimuths; the derived record's span), through the
 sites-block rewrite of the GUI's Metadata tab
-(`crust.gui.metadata_edit.rewrite_sites_block`), which rewrites the
+(`mt_workbench.gui.metadata_edit.rewrite_sites_block`), which rewrites the
 `sites:` block alone.
 
 --min-free-gb G waits, before each source channel is read, until psutil
@@ -79,9 +79,9 @@ import pandas as pd  # noqa: E402
 from loguru import logger  # noqa: E402
 from scipy.signal import decimate  # noqa: E402
 
-from crust.ingest import default_archive_path, processing_archive  # noqa: E402
-from crust.survey import Survey  # noqa: E402
-from crust.timefreq import _real_runs  # noqa: E402
+from mt_workbench.ingest import default_archive_path, processing_archive  # noqa: E402
+from mt_workbench.survey import Survey  # noqa: E402
+from mt_workbench.timefreq import _real_runs  # noqa: E402
 
 SUFFIX = "L"  # <site>L, the long-period derived site
 MAX_STAGE = 10  # largest decimation factor of one FIR stage
@@ -458,7 +458,7 @@ def main(argv=None) -> int:
         made = dt.datetime.now(dt.timezone.utc).strftime(ISO)
         notes = f"{site} decimated to {rate:g} Hz from {source.name} by scripts/decimate_site.py, {made}"
 
-    from crust.gui.metadata_edit import rewrite_sites_block  # the sites-block rewrite of the Metadata tab
+    from mt_workbench.gui.metadata_edit import rewrite_sites_block  # the sites-block rewrite of the Metadata tab
 
     new = survey_entry(survey, site, rate, runs, notes)
     rewrite_sites_block(yaml_path, {name: new})

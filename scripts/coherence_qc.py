@@ -42,9 +42,9 @@ from loguru import logger
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "src"))
 
-from crust.bands import build_band_scheme
-from crust.qc import align, band_coherence, best_overlap_runs, load_channel, run_periods
-from crust.survey import Survey
+from mt_workbench.bands import build_band_scheme
+from mt_workbench.qc import align, band_coherence, best_overlap_runs, load_channel, run_periods
+from mt_workbench.survey import Survey
 
 
 def parse_args(argv=None) -> argparse.Namespace:

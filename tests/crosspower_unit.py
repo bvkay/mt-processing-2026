@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Unit test for crust.crosspower
+Unit test for mt_workbench.crosspower
 
 Tests compute_windows, bin_windows, band_view, masked_chunks,
 stack_impedance and chunk_impedances on synthetic MTH5 archives. A local
@@ -231,12 +231,12 @@ sys.path.insert(0, str(REPO / "src"))
 
 from loguru import logger  # noqa: E402
 
-from crust.bands import build_band_scheme  # noqa: E402
-from crust.crosspower import (  # noqa: E402
+from mt_workbench.bands import build_band_scheme  # noqa: E402
+from mt_workbench.crosspower import (  # noqa: E402
     MARGIN_S, MIN_GROUPS, SUMS, WindowStore, _margin_n, _plan_levels, band_view, bin_windows, chunk_impedances,
     compute_windows, level_multiples, masked_chunks, mode_phase, stack_impedance,
 )
-from crust.timefreq import MIN_WINDOWS  # noqa: E402
+from mt_workbench.timefreq import MIN_WINDOWS  # noqa: E402
 
 logger.remove()  # after mth5's import, which adds its own sink
 logger.add(sys.stderr, level="WARNING")
@@ -286,7 +286,7 @@ def field_and_channels(seed: int = 5):
 
 
 def write_archive(path: Path, site: str, runs) -> None:
-    """Write a site's runs as an MTH5 archive, laid out as `crust.ingest.ingest_site` lays a site out.
+    """Write a site's runs as an MTH5 archive, laid out as `mt_workbench.ingest.ingest_site` lays a site out.
 
     Args:
         path (Path): The archive to write.
@@ -374,7 +374,7 @@ def runs_of(starts: np.ndarray, hop: int) -> list[tuple[int, int]]:
 
 
 def dilate(gaps):
-    """Return the gaps one level down, dilated as `crust.timefreq.decimation_levels` dilates a gap."""
+    """Return the gaps one level down, dilated as `mt_workbench.timefreq.decimation_levels` dilates a gap."""
     out = []
     for a, b in sorted((a // 4 - 32, b // 4 + 1 + 32) for a, b in gaps):
         if out and a <= out[-1][1]:

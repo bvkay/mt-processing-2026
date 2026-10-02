@@ -51,9 +51,9 @@ closer than CLOSE_DEX in log10 period are reported as close pairs (a WARNING
 line, when there is one, and the sidecar); the report changes no value.
 
 The station metadata, location and header come from the first xy source; its
-INFO block's processing parameters are replaced by ``crust.*`` lines naming
+INFO block's processing parameters are replaced by ``mt_workbench.*`` lines naming
 the recipe, each source and its range, and under ``grid: first`` a
-``crust.grid`` line (first, the lattice's first source, the number of grid
+``mt_workbench.grid`` line (first, the lattice's first source, the number of grid
 periods and the number of distinct periods left out of any source). The
 station ids of all sources must agree (--force merges them regardless);
 their remotes may differ.
@@ -90,7 +90,7 @@ and writes it to --propose. Per quarter-decade band and mode, a candidate is
 dropped when it has no error bars there, when fewer than half of its phases
 lie in the mode's quadrant, or when its median rho differs by more than
 JUMP_DEX from that of each of its neighbouring bands; the rest are ranked by
-the median relative rho error (crust.quality.curves). The lowest wins,
+the median relative rho error (mt_workbench.quality.curves). The lowest wins,
 unless the candidate holding the band below is within PREFER of it. Runs of
 bands with one winner become one recipe entry spanning the winner's periods
 there, and a comment per band names the runner-up and the margin.
@@ -123,8 +123,8 @@ import numpy as np  # noqa: E402
 import yaml  # noqa: E402
 from mt_metadata.transfer_functions.core import TF  # noqa: E402
 
-import crust  # noqa: E402
-from crust.quality import MODES as QUALITY_MODES, curves, in_quadrant  # noqa: E402
+import mt_workbench  # noqa: E402
+from mt_workbench.quality import MODES as QUALITY_MODES, curves, in_quadrant  # noqa: E402
 from merge_modes import (ISO, LOG_TOL, X_ROW, Y_ROW, read_sidecar, read_tf, row_of, row_on_grid,  # noqa: E402
                          source_entry, usable)
 
@@ -638,9 +638,9 @@ def _write_atomic(path: Path, text: str) -> None:
 
 
 def info_lines(side: dict) -> list[str]:
-    """Build the ``crust.*`` lines of the merged EDI's INFO block.
+    """Build the ``mt_workbench.*`` lines of the merged EDI's INFO block.
 
-    Under ``grid: first`` a ``crust.grid`` line follows ``crust.recipe``:
+    Under ``grid: first`` a ``mt_workbench.grid`` line follows ``mt_workbench.recipe``:
     first, the file name of the lattice's first source, the number of grid
     periods and the number of distinct periods left out of any source (a
     period two sources leave out counts once); under union there is none.
@@ -650,18 +650,18 @@ def info_lines(side: dict) -> list[str]:
     union holds while no grid period within CLOSE_DEX holds one.
     """
     recipe = side["recipe"]["path"]
-    lines = [f"crust.version={side['versions']['crust']}", f"crust.merged={side['created']}",
-             f"crust.tag={side['tag'] or ''}", f"crust.site={side['site']}",
-             f"crust.recipe={Path(recipe).name if recipe else ''}"]
+    lines = [f"mt_workbench.version={side['versions']['mt_workbench']}", f"mt_workbench.merged={side['created']}",
+             f"mt_workbench.tag={side['tag'] or ''}", f"mt_workbench.site={side['site']}",
+             f"mt_workbench.recipe={Path(recipe).name if recipe else ''}"]
     merge = side["merge"]
     if merge.get("lattice") is not None:
         n_left = merged_periods([np.asarray(v, dtype=float) for v in merge["left_out"].values()]).size
-        lines.append(f"crust.grid={merge['grid']},{Path(merge['lattice']['first']).name},{merge['n_periods']},"
+        lines.append(f"mt_workbench.grid={merge['grid']},{Path(merge['lattice']['first']).name},{merge['n_periods']},"
                      f"{n_left}")
     for mode, block in side["merge"]["modes"].items():
         for k, entry in enumerate(block["entries"], start=1):
-            lines.append(f"crust.best_{mode}_{k}={Path(entry['edi']).name},{entry['pmin']:g},{entry['pmax']:g}")
-    lines.append(f"crust.sidecar={Path(side['edi']).with_suffix('.json').name}")
+            lines.append(f"mt_workbench.best_{mode}_{k}={Path(entry['edi']).name},{entry['pmin']:g},{entry['pmax']:g}")
+    lines.append(f"mt_workbench.sidecar={Path(side['edi']).with_suffix('.json').name}")
     return lines
 
 
@@ -853,7 +853,7 @@ def merge_files(out, recipe_for_site: dict, tag: str | None = None, force: bool 
         "forced": bool(force),
         "mismatches": found,
         "argv": list(sys.argv if argv is None else argv),
-        "versions": {"crust": crust.__version__, "mt_metadata": importlib.metadata.version("mt_metadata")},
+        "versions": {"mt_workbench": mt_workbench.__version__, "mt_metadata": importlib.metadata.version("mt_metadata")},
     }
     if found_sides:
         side["engine"] = _joined([s.get("engine") or "aurora" for s in found_sides])
