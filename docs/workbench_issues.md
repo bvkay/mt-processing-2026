@@ -58,21 +58,24 @@ cite them; add the fix commit when one lands.
 5. Variant build while the variant is held open: two tracebacks
    (PermissionError on `os.replace(.h5.part -> .h5)`) and a 5.3 GB `.part`
    left behind; the cleanup targets the good variant. `ingest.build_variant`,
-   `ingest_site._remove_partial`. Case 1b.
+   `ingest_site._remove_partial`. Case 1b. Fixed in 9c0ba47.
 6. Dead remote (no time overlap): a 12-line mth5 traceback after a
    resolution block that says "window: full overlap". `process_rr.resolve`:
    compare the spans in the dry run. Case 4. Fixed in 17f0a96: exit 2 with
    both spans (survey.yaml start/end, else the archive's runs), dry run too.
 7. Memory gate above the machine's RAM waits for ever with one log line every
    300 s. `campaign.py` `Runner.gate`: refuse at start (exit 2) when
-   `min_available_gb` exceeds the machine. Case 7.
+   `min_available_gb` exceeds the machine. Case 7. Fixed in ba4944a.
 8. `campaign.py --stage 0 --dry-run` lists a current variant as "to build"
-   when the ledger has no done row for it. Case 2c.
+   when the ledger has no done row for it. Case 2c. Fixed in 93cc600, which
+   also names a missing raw archive and lists an unreadable variant file.
 9. `process_rr --dry-run` words a missing raw archive the same as a present
    one ("raw: <path>, variant: to build"). Case 9a. Fixed in 17f0a96
    ("raw: <path> (missing: ingested from <raw folder> first)").
 10. A missing workspace folder opens the survey in the GUI with "0 with an
-    MTH5 archive" and no workspace error (GUI bench control).
+    MTH5 archive" and no workspace error (GUI bench control). Fixed in
+    71901d6: a non-modal warning when the workspace and its parent folder
+    are both missing; a workspace not made yet opens and fetches as before.
 
 ## Slow paths, measured
 
