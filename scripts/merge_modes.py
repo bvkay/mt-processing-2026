@@ -8,9 +8,18 @@ over the full record and once over the window. This script writes one EDI
 from the two products: the x row (Zxx, Zxy and their errors) and the tipper
 from the --xy product, the y row (Zyx, Zyy and their errors) from the --yx
 product, on the --xy product's periods. The --xy product's station
-metadata, location, runs and header are kept; its INFO block's processing
-parameters are replaced by ``mt_workbench.*`` lines naming the two sources and the
-sidecar.
+metadata, location, runs and header are kept, and with them its frame as
+mt_metadata reads it back from the EDI (declination value, model and
+epoch, reference frame, coordinate system, channel azimuths; nothing is
+rotated; a WARNING line names a source written before mt_metadata's frame
+fix of 2 Oct 2026); its INFO block's processing parameters are replaced by
+``mt_workbench.*`` lines naming the two sources and the sidecar, a
+``mt_workbench.covariance=none ...`` line and the frame lines, and ZROT
+and TROT follow the frame (`mt_workbench.products.write_edi`: the
+declination for a geomagnetic frame with one, else 0). Beside ``OUT.edi`` the merge
+writes ``OUT.xml`` (EMTF XML, whose Notes state the frame and that no
+residual or inverse signal covariance is carried) and ``OUT.h5`` (a
+standalone MTH5 file holding the merged TF; `mt_workbench.products`).
 
 The y row is placed on the xy periods as follows. A --yx period whose y row
 is finite and nonzero is usable (mt_metadata reads the EDI's EMPTY value,
@@ -56,10 +65,15 @@ import numpy as np  # noqa: E402
 from mt_metadata.transfer_functions.core import TF  # noqa: E402
 
 import mt_workbench  # noqa: E402
+from mt_workbench.products import (frame_gaps, frame_note, frame_record, match_coordinate_system,  # noqa: E402
+                                   product_names, product_paths, write_edi, write_h5, write_xml)
 
 X_ROW, Y_ROW = 0, 1  # impedance output index of ex and ey
 LOG_TOL = 1e-5  # log10-period distance within which two periods are the same
 ISO = "%Y-%m-%dT%H:%M:%SZ"
+# the merged products carry the sources' per-component variances only, not their covariances
+COVARIANCE_LINE = ("mt_workbench.covariance=none (merged from EDIs: per-component variances only, "
+                   "no RESIDCOV or INVSIGCOV)")
 SOURCE_KEYS = ("local", "remote", "tag", "window", "masks", "mask_origins", "masks_ignored", "engine", "started",
                "edi")
 RULE = ("x row (Zxx, Zxy and errors) and tipper from the xy source; y row (Zyx, Zyy and errors) from the yx "
@@ -280,7 +294,7 @@ def build_sidecar(out: Path, tag: str | None, force: bool, argv: list[str], tf_x
         "remote": remote,
         "created": created,
         "tag": tag,
-        "edi": out.name,
+        **product_names(out),
         "merge": {"rule": RULE, "log10_period_tolerance": LOG_TOL,
                   **{k: v for k, v in counts.items() if k != "kind"},
                   "tipper": "xy" if tf_xy.has_tipper() else None},
@@ -299,7 +313,7 @@ def info_lines(side: dict) -> list[str]:
     """Build the ``mt_workbench.*`` lines of the merged EDI's INFO block."""
     return [f"mt_workbench.version={side['versions']['mt_workbench']}", f"mt_workbench.merged={side['created']}",
             f"mt_workbench.tag={side['tag'] or ''}", f"mt_workbench.merge_xy={Path(side['sources']['xy']['edi']).name}",
-            f"mt_workbench.merge_yx={Path(side['sources']['yx']['edi']).name}",
+            f"mt_workbench.merge_yx={Path(side['sources']['yx']['edi']).name}", COVARIANCE_LINE,
             f"mt_workbench.sidecar={Path(side['edi']).with_suffix('.json').name}"]
 
 
@@ -343,6 +357,10 @@ def merge_files(out, xy, yx, tag: str | None = None, force: bool = False, argv: 
         missing = " and ".join(p.name for p, s in ((a_path, side_a), (b_path, side_b)) if s is None)
         print(f"remote: unchecked, no sidecar beside {missing}")
 
+    gaps = frame_gaps(tf_xy)
+    if gaps:
+        print(f"WARNING frame: the xy source {a_path.name} has {' and '.join(gaps)} (an EDI written before "
+              f"mt_metadata's frame fix of 2 Oct 2026); the merged products repeat its frame metadata")
     sources = {"xy": source_entry(a_path, tf_xy, side_a_path, side_a),
                "yx": source_entry(b_path, tf_yx, side_b_path, side_b)}
     try:
@@ -366,12 +384,19 @@ def merge_files(out, xy, yx, tag: str | None = None, force: bool = False, argv: 
     remote = (side_a or {}).get("remote", (side_b or {}).get("remote"))
     side = build_sidecar(out, tag, force, sys.argv if argv is None else argv, tf, sources, counts, found, created,
                          remote, _engine(side_a, side_b))
+    match_coordinate_system(tf)
+    side["frame"] = frame_record(tf, f"xy source {a_path.name}")
     tf.station_metadata.transfer_function.processing_parameters = info_lines(side)
     out.parent.mkdir(parents=True, exist_ok=True)
-    tf.write(fn=str(out), file_type="edi")
+    paths = product_paths(out)
+    write_edi(tf, out)
+    write_xml(tf, paths["xml"], frame_note(tf, covariance=False))
+    write_h5(tf, paths["h5"])
     side_path = out.with_suffix(".json")
     side_path.write_text(json.dumps(side, indent=2, default=str) + "\n", encoding="utf-8")
     print(f"edi: {out}")
+    print(f"xml: {paths['xml']}")
+    print(f"h5: {paths['h5']}")
     print(f"sidecar: {side_path}")
     return 0
 

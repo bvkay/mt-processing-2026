@@ -123,6 +123,56 @@ SYN01's entry; or, with data_root pointed at a folder that does not exist
 (the data drive unplugged, so resolve sees no raw sites and classes E08 as
 virtual), `masks_remote` in `resolve` and the sidecar is not E08's three
 and `masks` not the same union.
+
+The products and the frame. **This test also fails if** the sidecar's
+`xml` and `h5` are not the EDI's stem with .xml and .h5, or `frame` is not
+what was passed (None when nothing is); or `test_products_written` fails:
+for an aurora-shaped TF with the survey.yaml declination applied, the
+EDI's raw text has no DECLINATION, DECLINATION.MODEL and DECLINATION.EPOCH
+lines with -1.07, IGRF-14 and 2023.55, HEAD COORDINATE_SYSTEM and INFO
+transfer_function.coordinate_system differ, or ey and hy are not at AZM 90;
+the XML lacks the declination, RESIDCOV, INVSIGCOV or the orientations
+Hy and Ey at 88.930 (90 + D); the h5 does not read back as one TF with the
+declination and the same impedance. Its controls: mt_metadata's own XML
+write of that TF must fail, and a site without a declination must give an
+EDI with no DECLINATION line.
+
+The rotation convention (Geotools': ZROT is the clockwise azimuth of the
+data's x-axis from geographic north, the data unrotated). **This test also
+fails if** `test_edi_zrot_is_declination` finds, for that TF with
+declination -1.07 and the default layout_north (magnetic): ZROT not -1.07
+at every period, or (with a tipper) TROT not -1.07 at every period; the
+impedance and tipper of the EDI read back not equal at difference 0 to
+those of the same TF written with ZROT 0 (no declination), or the TF's own
+impedance changed by the write; the INFO lines mt_workbench.frame (azimuth
+-1.07 deg clockwise from geographic north), mt_workbench.rotation (data
+not rotated) and mt_workbench.declination=-1.07, declination_model=IGRF-14,
+declination_epoch=2023.55 missing, any INFO line 160 characters or longer
+or holding "|"; or the sidecar frame record's zrot not -1.07. Controls that
+must fail the ZROT criterion: mt_metadata's unmodified EDI write of the
+same TF (ZROT 0), the TF without a declination (ZROT 0, no declination
+line) and layout_north geographic (ZROT 0, COORDINATE_SYSTEM geographic,
+the declination still in HEAD).
+
+`test_xml_frame_fields` fails if the XML of that TF, read back with
+mt_metadata, does not give angle_to_geographic_north -1.07 and channel
+orientations hx -1.07, hy 88.93, ex -1.07, ey 88.93; its impedance read back
+differs at all from that of the control; or its Notes do not state the
+convention (east of geographic north, positive clockwise, Geotools' ZROT,
+the EDI's ZROT). The control, mt_metadata's unmodified XML write of the
+same TF (hz trimmed by hand), must fail the angle criterion (angle 0,
+orientations 0 and 90).
+
+`test_residcov_cross_written_as_zero` fails if, for that TF with the
+Ex-Ey residual cross term NaN (as aurora leaves it), the XML holds 1e32
+inside a Z.RESIDCOV block or a zero on its diagonal, the Notes lack the
+statement that the cross term is written as 0, or the h5 does not read
+back the cross term as 0 with the same statement in the station comments.
+Its control, mt_metadata's unmodified XML write, must hold 1e32 there.
+The same text check runs on the Morocco sample XML of process_rr
+(B03_rr-B04_*_declination-sample2.xml) when the workspace is mounted, and
+the earlier sample (B03_rr-B04_20261002-1458_declination-sample.xml,
+written before the fix) must fail it.
 """
 
 from __future__ import annotations
@@ -634,6 +684,12 @@ def test_build_sidecar_with_a_fake_tf() -> None:
     assert sidecar["argv"] == list(sys.argv), sidecar["argv"]
     assert sidecar["tag"] == "sidecar-test", sidecar["tag"]
     assert sidecar["edi"] == edi_path.name and sidecar["figure"] == png_path.name, sidecar
+    assert sidecar["xml"] == edi_path.with_suffix(".xml").name, sidecar["xml"]
+    assert sidecar["h5"] == edi_path.with_suffix(".h5").name, sidecar["h5"]
+    assert sidecar["frame"] is None, sidecar["frame"]  # none passed
+    framed = process_rr.build_sidecar(res, args, started, finished, edi_path, png_path, physical, [],
+                                      {"reference_frame": "geomagnetic", "declination": -1.07})
+    assert framed["frame"] == {"reference_frame": "geomagnetic", "declination": -1.07}, framed["frame"]
     assert sidecar["quadrant"]["verdict"] == "physical quadrants", sidecar["quadrant"]
     for lib in ("mt_workbench", "aurora", "mth5", "mt_metadata", "mt_io"):
         assert sidecar["versions"].get(lib), sidecar["versions"]
@@ -659,6 +715,366 @@ def test_build_sidecar_with_a_fake_tf() -> None:
     assert any(line == "mt_workbench.taper=hann" for line in lines), lines
     assert any(line.startswith("mt_workbench.sidecar=") and line.endswith(".json") for line in lines), lines
     print(f"  edi_info_lines: {lines}")
+
+
+def _aurora_like_tf():
+    """Build a TF shaped as aurora returns one for a site without hz.
+
+    Two runs at 1000 Hz, the first listing hz and the second not, no
+    tipper, residual and inverse signal covariances, the sensor frame
+    (geomagnetic, ey and hy at 90 deg), an empty tf_id and the archive's
+    unset declination (0.0, no epoch).
+    """
+    import numpy as np
+    from mt_metadata.timeseries import Electric, Magnetic, Run
+    from mt_metadata.transfer_functions.core import TF
+
+    period = np.geomspace(0.01, 100.0, 6)
+    tf = TF()
+    tf.station = "FAKE"
+    tf.survey_metadata.id = "test"
+    tf.station_metadata.orientation.reference_frame = "geomagnetic"
+    for run_id, comps in (("sr1000_0002", ("ex", "ey", "hx", "hy", "hz")), ("sr1000_0003", ("ex", "ey", "hx", "hy"))):
+        run = Run(id=run_id, sample_rate=1000.0)
+        for comp in comps:
+            ch = Electric(component=comp) if comp.startswith("e") else Magnetic(component=comp)
+            ch.measurement_azimuth = 90.0 if comp in ("ey", "hy") else 0.0
+            run.add_channel(ch)
+        tf.station_metadata.add_run(run)
+    tf.period = period
+    z = np.zeros((period.size, 2, 2), dtype=complex)
+    z[:, 0, 1], z[:, 1, 0] = 1.0 + 1.0j, -1.0 - 1.0j
+    tf.impedance = z
+    tf.impedance_error = np.full((period.size, 2, 2), 0.1)
+    tf.residual_covariance = np.tile(np.eye(3, dtype=complex) * 0.01, (period.size, 1, 1))
+    tf.inverse_signal_power = np.tile(np.eye(2, dtype=complex) * 2.0, (period.size, 1, 1))
+    return tf
+
+
+def _edi_head(path: Path) -> tuple[dict, str | None, dict]:
+    """Read an EDI's raw text: HEAD key=value pairs, the INFO coordinate_system, and AZM per channel."""
+    text = path.read_text(encoding="latin-1")
+    head = dict(re.findall(r"^\s*([A-Z_.]+)=(.*?)\s*$", text.split(">INFO")[0], re.M))
+    info = re.search(r"transfer_function\.coordinate_system=(\S+)", text)
+    azm = {m.group(1): float(m.group(2)) for m in re.finditer(r"CHTYPE=(\w+) .*?AZM=([-\d.]+)", text)}
+    return head, info.group(1) if info else None, azm
+
+
+def test_products_written() -> None:
+    """Check the three products `mt_workbench.products.write_products` writes for a row.
+
+    Fails if, for an aurora-shaped TF with a survey.yaml declination applied
+    (`apply_site_declination` from a SiteConfig: -1.07, IGRF-14, 2023.55),
+    the EDI's raw text lacks DECLINATION=-1.07, DECLINATION.MODEL=IGRF-14 or
+    DECLINATION.EPOCH=2023.55, its HEAD COORDINATE_SYSTEM and INFO
+    transfer_function.coordinate_system are not both geomagnetic, or ey and
+    hy are not at AZM=90; the XML lacks Declination -1.070, the RESIDCOV
+    and INVSIGCOV estimates, Hy and Ey at orientation 88.930 (90 + D) or the
+    frame note;
+    the h5 does not open as one TF that reads back with the declination and
+    the same impedance; or the TF's channels were changed by the writes
+    (translated_azimuth set on ex or ey). Controls: mt_metadata's own XML
+    write of the same TF must fail (a run listing hz beside one without:
+    the reason `write_xml` keeps only the channels with data), and a
+    SiteConfig with no declination must leave the TF as it was, so its EDI
+    has no DECLINATION line.
+    """
+    import copy
+
+    import numpy as np
+    from mth5.mth5 import MTH5
+
+    sys.path.insert(0, str(REPO / "src"))
+    from mt_workbench.products import apply_site_declination, write_products
+    from mt_workbench.survey import SiteConfig
+
+    try:
+        copy.deepcopy(_aurora_like_tf()).write(fn=str(Path(tempfile.gettempdir()) / "control.xml"), file_type="xml")
+    except AttributeError:
+        pass
+    else:
+        raise AssertionError("control: mt_metadata's XML writer took the aurora-shaped TF; the trim is untested")
+    with tempfile.TemporaryDirectory() as tmp:
+        tf = _aurora_like_tf()
+        assert apply_site_declination(tf.station_metadata, SiteConfig(name="FAKE", declination=-1.07,
+                                      declination_model="IGRF-14", declination_epoch=2023.55))
+        paths = write_products(tf, Path(tmp) / "FAKE_rr-REM_20261002-1200_t.edi")
+        assert sorted(p.name for p in Path(tmp).iterdir()) == sorted(p.name for p in paths.values()), \
+            list(Path(tmp).iterdir())
+        head, info, azm = _edi_head(paths["edi"])
+        assert (head.get("DECLINATION"), head.get("DECLINATION.MODEL"), head.get("DECLINATION.EPOCH")) == \
+            ("-1.07", "IGRF-14", "2023.55"), head
+        assert head.get("COORDINATE_SYSTEM") == info == "geomagnetic", (head.get("COORDINATE_SYSTEM"), info)
+        assert azm.get("ey") == 90.0 and azm.get("hy") == 90.0, azm
+        xml = paths["xml"].read_text(encoding="utf-8")
+        for needle in ('<Declination epoch="2023">-1.070</Declination>', '<Estimate name="RESIDCOV"',
+                       '<Estimate name="INVSIGCOV"', '<Magnetic name="Hy" orientation="88.930"',
+                       '<Electric name="Ey" orientation="88.930"', "Frame: geomagnetic"):
+            assert needle in xml, needle
+        m = MTH5()
+        m.open_mth5(paths["h5"], "r")
+        try:
+            df = m.tf_summary.to_dataframe()
+            assert len(df) == 1, df
+            row = df.iloc[0]
+            back = m.get_transfer_function(row.station, row.tf_id, survey=row.survey)
+            d = back.station_metadata.location.declination
+            assert (d.value, d.model, d.epoch) == (-1.07, "IGRF-14", "2023.55"), d
+            assert np.allclose(back.impedance.data, tf.impedance.data), "h5 impedance differs"
+        finally:
+            m.close_mth5()
+        assert all(ch.translated_azimuth is None for run in tf.station_metadata.runs for ch in run.channels)
+
+        plain = _aurora_like_tf()
+        assert not apply_site_declination(plain.station_metadata, SiteConfig(name="FAKE"))
+        control = write_products(plain, Path(tmp) / "control.edi")
+        chead, cinfo, _ = _edi_head(control["edi"])
+        assert "DECLINATION" not in chead and chead.get("COORDINATE_SYSTEM") == cinfo, chead
+    print(f"  products: {', '.join(p.name for p in paths.values())}; DECLINATION {head['DECLINATION']} "
+          f"{head['DECLINATION.MODEL']} {head['DECLINATION.EPOCH']}; HEAD/INFO {info}; AZM {azm}; XML with RESIDCOV, "
+          f"INVSIGCOV; h5 tf_id {row.tf_id}; controls: raw XML write fails, no declination -> no line")
+
+
+DECL = {"declination": -1.07, "declination_model": "IGRF-14", "declination_epoch": 2023.55}
+# the Morocco sample of process_rr (B03 rr B04 --masks), written before and after the fix
+SAMPLE_TF = Path(r"D:\MT_DATA\MT_Morocco_Atlas_Mountains_Workspace\qc\survey\declination_xml_h5_20261002\sample\tf")
+SAMPLE_BEFORE = SAMPLE_TF / "B03_rr-B04_20261002-1458_declination-sample.xml"
+
+
+def _framed_tf(tipper: bool = False, **site):
+    """Return `_aurora_like_tf` with the frame of a SiteConfig(name="FAKE", **site) applied.
+
+    With `tipper` the TF carries a tipper (TROT is then written).
+    """
+    import numpy as np
+
+    sys.path.insert(0, str(REPO / "src"))
+    from mt_workbench.products import apply_site_frame
+    from mt_workbench.survey import SiteConfig
+
+    tf = _aurora_like_tf()
+    if tipper:
+        n = tf.period.size
+        tf.tipper = np.tile(np.array([[[0.1 + 0.05j, -0.2 + 0.02j]]]), (n, 1, 1))
+        tf.tipper_error = np.full((n, 1, 2), 0.01)
+    apply_site_frame(tf.station_metadata, SiteConfig(name="FAKE", **site))
+    return tf
+
+
+def _rot_block(text: str, key: str):
+    """Return the values of an EDI's >ZROT or >TROT block, or None when there is none."""
+    import numpy as np
+
+    m = re.search(rf"^>{key}\b[^\n]*\n(.*?)(?:\n\s*\n|\n>)", text, re.S | re.M)
+    return None if m is None else np.array([float(v) for v in m.group(1).split()])
+
+
+def _hand_trimmed(tf):
+    """Return a copy of an `_aurora_like_tf` without hz, for mt_metadata's unmodified XML write."""
+    import copy
+
+    tfc = copy.deepcopy(tf)
+    for run in tfc.station_metadata.runs:
+        if "hz" in [ch.component for ch in run.channels]:
+            run.remove_channel("hz")
+    return tfc
+
+
+def _residcov_problems(text: str) -> list[str]:
+    """List what is wrong in an EMTF XML's Z.RESIDCOV blocks: an EMPTY 1e32 anywhere, a zero on the diagonal."""
+    blocks = re.findall(r"<Z\.RESIDCOV\b.*?</Z\.RESIDCOV>", text, re.S)
+    if not blocks:
+        return ["no Z.RESIDCOV block"]
+    problems = []
+    for k, block in enumerate(blocks):
+        values = re.findall(r'<value output="(\w+)" input="(\w+)">\s*(\S+)\s+(\S+)\s*</value>', block)
+        if len(values) != 4:
+            problems.append(f"period {k}: {len(values)} values")
+        for out, inp, re_text, im_text in values:
+            v = complex(float(re_text), float(im_text))
+            if abs(v.real) >= 1e31 or abs(v.imag) >= 1e31:
+                problems.append(f"period {k}: {out}-{inp} {re_text} {im_text} (EMPTY)")
+            if out == inp and v == 0:
+                problems.append(f"period {k}: {out}-{inp} zero on the diagonal")
+    return problems
+
+
+def test_edi_zrot_is_declination() -> None:
+    """Check that the EDI carries ZROT = TROT = the declination with the data unrotated.
+
+    Criteria in the module docstring (the rotation convention); each
+    control must fail the ZROT criterion.
+    """
+    import copy
+
+    import numpy as np
+    from mt_metadata.transfer_functions.core import TF
+
+    sys.path.insert(0, str(REPO / "src"))
+    from mt_workbench.products import INFO_MAX, frame_record, match_coordinate_system, write_edi
+
+    d = DECL["declination"]
+
+    def zrot_is_d(values) -> bool:
+        return values is not None and values.size == 6 and bool(np.all(values == d))
+
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp = Path(tmp)
+        tf = _framed_tf(tipper=True, **DECL)
+        z0, t0 = tf.impedance.data.copy(), tf.tipper.data.copy()
+        match_coordinate_system(tf)
+        edi = write_edi(tf, tmp / "decl.edi")
+        assert np.array_equal(tf.impedance.data, z0) and np.array_equal(tf.tipper.data, t0), "the write changed the TF"
+        text = edi.read_text(encoding="latin-1")
+        zrot, trot = _rot_block(text, "ZROT"), _rot_block(text, "TROT")
+        assert zrot_is_d(zrot), f"ZROT {zrot}"
+        assert zrot_is_d(trot), f"TROT {trot}"
+
+        plain = _framed_tf(tipper=True)
+        match_coordinate_system(plain)
+        ptext = write_edi(plain, tmp / "plain.edi").read_text(encoding="latin-1")
+        pz = _rot_block(ptext, "ZROT")
+        assert not zrot_is_d(pz) and np.all(pz == 0) and "DECLINATION=" not in ptext, f"control: no declination, {pz}"
+        back, pback = TF(edi), TF(tmp / "plain.edi")
+        back.read()
+        pback.read()
+        dz = np.abs(back.impedance.data - pback.impedance.data).max()
+        dt_ = np.abs(back.tipper.data - pback.tipper.data).max()
+        assert dz == 0 and dt_ == 0, f"read back with ZROT {d} differs from ZROT 0: Z {dz}, T {dt_}"
+        assert np.allclose(back.impedance.data, z0, rtol=1e-6), "read back differs from the TF beyond the text precision"
+        assert np.all(np.asarray(back._rotation_angle) == d), back._rotation_angle
+
+        info = [line for line in text.split(">INFO")[1].split(">=DEFINEMEAS")[0].splitlines() if "mt_workbench." in line]
+        bad = [line for line in info if len(line) >= INFO_MAX or "|" in line]
+        assert not bad, bad
+        lines = dict(re.findall(r"processing_parameters\.(mt_workbench\.[a-z_]+)=(.*?)\s*$", text, re.M))
+        assert lines.get("mt_workbench.frame") == ("sensor frame, x-axis at azimuth -1.07 deg clockwise from "
+                                                   "geographic north"), lines
+        assert lines.get("mt_workbench.rotation", "").startswith("data not rotated; ZROT and TROT state this azimuth")
+        assert (lines.get("mt_workbench.declination"), lines.get("mt_workbench.declination_model"),
+                lines.get("mt_workbench.declination_epoch")) == ("-1.07", "IGRF-14", "2023.55"), lines
+        assert frame_record(tf)["zrot"] == d, frame_record(tf)
+
+        raw = tmp / "raw.edi"
+        copy.deepcopy(tf).write(fn=str(raw), file_type="edi")
+        rz = _rot_block(raw.read_text(encoding="latin-1"), "ZROT")
+        assert not zrot_is_d(rz), f"control: mt_metadata's unmodified write gave ZROT {rz}"
+
+        geo = _framed_tf(tipper=True, layout_north="geographic", **DECL)
+        match_coordinate_system(geo)
+        gtext = write_edi(geo, tmp / "geo.edi").read_text(encoding="latin-1")
+        gz = _rot_block(gtext, "ZROT")
+        head = dict(re.findall(r"^\s*([A-Z_.]+)=(.*?)\s*$", gtext.split(">INFO")[0], re.M))
+        assert not zrot_is_d(gz) and np.all(gz == 0), f"control: geographic layout gave ZROT {gz}"
+        assert head.get("COORDINATE_SYSTEM") == "geographic" and head.get("DECLINATION") == "-1.07", head
+        assert frame_record(geo)["zrot"] == 0.0
+    print(f"  ZROT {zrot[:3]}..., TROT {trot[:3]}... ({zrot.size} periods); Z and T read back equal to the ZROT 0 "
+          f"write at difference {dz:g}/{dt_:g}; INFO {len(info)} mt_workbench lines, longest "
+          f"{max(len(line) for line in info)} characters; controls: unmodified write ZROT {rz[0]:g}, no declination "
+          f"ZROT {pz[0]:g}, geographic layout ZROT {gz[0]:g} with DECLINATION {head['DECLINATION']}")
+
+
+def test_xml_frame_fields() -> None:
+    """Check the XML's Orientation and channel orientations against the declination, read back with mt_metadata.
+
+    Criteria in the module docstring; the unmodified write must fail.
+    """
+    import numpy as np
+    from mt_metadata.transfer_functions.core import TF
+
+    sys.path.insert(0, str(REPO / "src"))
+    from mt_workbench.products import write_xml
+
+    d = DECL["declination"]
+    want = {"ex": d, "ey": 90.0 + d, "hx": d, "hy": 90.0 + d}
+
+    def read_frame(path: Path):
+        back = TF(path)
+        back.read()
+        az = {ch.component: float(ch.measurement_azimuth) for ch in back.station_metadata.runs[0].channels}
+        return back.station_metadata.orientation.angle_to_geographic_north, az, back.impedance.data
+
+    def frame_ok(angle, az) -> bool:
+        return angle is not None and abs(angle - d) < 1e-9 and set(az) == set(want) and \
+            all(abs(az[c] - want[c]) < 1e-9 for c in want)
+
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp = Path(tmp)
+        tf = _framed_tf(**DECL)
+        path = write_xml(tf, tmp / "decl.xml")
+        angle, az, z = read_frame(path)
+        assert frame_ok(angle, az), (angle, az)
+        notes = re.search(r"<Notes>(.*?)</Notes>", path.read_text(encoding="utf-8"), re.S).group(1)
+        for needle in ("azimuth -1.07 deg east of geographic north (positive clockwise)", "Geotools writes for ZROT",
+                       "the EDI's ZROT and TROT carry the same number"):
+            assert needle in notes, needle
+        raw = tmp / "raw.xml"
+        _hand_trimmed(tf).write(fn=str(raw), file_type="xml")
+        c_angle, c_az, c_z = read_frame(raw)
+        assert not frame_ok(c_angle, c_az), f"control: the unmodified write passed ({c_angle}, {c_az})"
+        dz = np.abs(z - c_z).max()
+        assert dz == 0, f"XML impedance differs from the unmodified write's by {dz}"
+    print(f"  XML read back: angle {angle}, orientations {az}; Z equal to the unmodified write's at difference "
+          f"{dz:g}; control (unmodified write): angle {c_angle}, orientations {c_az}")
+
+
+def test_residcov_cross_written_as_zero() -> None:
+    """Check that an unestimated Ex-Ey residual cross term is written as 0, not 1e32.
+
+    Criteria in the module docstring; the unmodified write and the sample
+    written before the fix must fail.
+    """
+    import numpy as np
+    from mth5.mth5 import MTH5
+
+    sys.path.insert(0, str(REPO / "src"))
+    from mt_workbench.products import CROSS_NOTE, write_products
+
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp = Path(tmp)
+        tf = _framed_tf(**DECL)
+        rc = tf.residual_covariance.copy()
+        for out, inp in (("ex", "ey"), ("ey", "ex")):
+            rc.loc[dict(output=out, input=inp)] = np.nan
+        tf.residual_covariance = rc
+        assert np.isnan(tf.residual_covariance.loc[dict(output="ex", input="ey")].data).all(), "setup: no NaN"
+        paths = write_products(tf, tmp / "cross.edi")
+        text = paths["xml"].read_text(encoding="utf-8")
+        problems = _residcov_problems(text)
+        assert not problems, problems[:4]
+        assert CROSS_NOTE in text, "Notes lack the cross-term statement"
+        m = MTH5()
+        m.open_mth5(paths["h5"], "r")
+        try:
+            row = m.tf_summary.to_dataframe().iloc[0]
+            back = m.get_transfer_function(row.station, row.tf_id, survey=row.survey)
+            cross = back.residual_covariance.loc[dict(output="ex", input="ey")].data
+            comment = back.station_metadata.comments.value or ""
+        finally:
+            m.close_mth5()
+        assert np.all(cross == 0), cross
+        assert CROSS_NOTE in comment, comment
+        raw = tmp / "raw.xml"
+        _hand_trimmed(tf).write(fn=str(raw), file_type="xml")
+        control = _residcov_problems(raw.read_text(encoding="utf-8"))
+        assert any("EMPTY" in p for p in control), f"control: the unmodified write has no 1e32 ({control})"
+    sample = sorted(SAMPLE_TF.glob("B03_rr-B04_*_declination-sample2.xml")) if SAMPLE_TF.is_dir() else []
+    if sample:
+        got = _residcov_problems(sample[-1].read_text(encoding="utf-8"))
+        assert not got, (sample[-1].name, got[:4])
+        before = _residcov_problems(SAMPLE_BEFORE.read_text(encoding="utf-8"))
+        assert any("EMPTY" in p for p in before), f"control: {SAMPLE_BEFORE.name} passed"
+        on_sample = (f"; sample {sample[-1].name}: {text_count(sample[-1])} RESIDCOV blocks clean; control "
+                     f"{SAMPLE_BEFORE.name}: {len(before)} EMPTY values")
+    else:
+        on_sample = f"; no sample2 XML under {SAMPLE_TF} (workspace not mounted or not yet written): skipped"
+    print(f"  cross term NaN -> XML 0, diagonal non-zero, Notes and h5 comments state it, h5 cross {cross[0]}; "
+          f"control (unmodified write): {len(control)} EMPTY values{on_sample}")
+
+
+def text_count(path: Path) -> int:
+    """Count the Z.RESIDCOV blocks of an XML."""
+    return path.read_text(encoding="utf-8").count("<Z.RESIDCOV")
 
 
 if __name__ == "__main__":

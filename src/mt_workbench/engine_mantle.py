@@ -56,6 +56,8 @@ WHITEN = ("none", "diff")
 MAX_LEVELS = 8
 MAX_HOURS = 24.0  # the default window limit (MantleOptions.max_hours, process_rr.py --mantle-max-hours)
 GB_PER_HOUR = 1.35  # peak memory per hour of window at 1000 Hz with six channels (31.8 GB at 23.5 h)
+# channel azimuths in the sensor frame, degrees from the sensors' north, written into the TF (`to_tf`)
+SENSOR_AZIMUTHS = {"ex": 0.0, "ey": 90.0, "hx": 0.0, "hy": 90.0, "hz": 0.0}
 
 
 @dataclass(frozen=True)
@@ -300,7 +302,10 @@ def to_tf(periods: np.ndarray, z: np.ndarray, var: np.ndarray | None, *, station
 
     The EDI's Z.VAR is the single-component variance, half the total complex
     variance `var` carries, so the error handed to the TF is
-    ``sqrt(0.5 * var)``.
+    ``sqrt(0.5 * var)``. The TF is in the sensor frame (reference_frame
+    geomagnetic, channel azimuths `SENSOR_AZIMUTHS`); process_rr.py sets the
+    site's declination on it before writing. MANTLE gives no residual or
+    inverse signal covariance, so the XML carries the variances only.
 
     Args:
         periods (np.ndarray): (nb,) periods in s.
@@ -332,6 +337,10 @@ def to_tf(periods: np.ndarray, z: np.ndarray, var: np.ndarray | None, *, station
         run.sample_rate = float(sample_rate)
         run.channels_recorded_electric = ["ex", "ey"]
         run.channels_recorded_magnetic = ["hx", "hy"]
+        # the archives' sensor-frame layout (ingest standardises dipoles to 0/90 deg), so
+        # the EDI's AZM and the XML's orientations are not the bare TF's 0 for ey and hy
+        for ch in run.channels:
+            ch.measurement_azimuth = SENSOR_AZIMUTHS.get(ch.component, ch.measurement_azimuth)
     except Exception as exc:  # the run block is descriptive only
         logger.debug(f"run metadata left at defaults: {exc}")
     tf.period = np.asarray(periods, dtype=float)

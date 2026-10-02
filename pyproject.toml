@@ -22,6 +22,8 @@ dependencies = [
     "matplotlib",
     "pyyaml",
     "openpyxl",
+    # IGRF declination for survey.yaml (scripts/declination.py); pure Python on numpy and pandas
+    "ppigrf",
     # desktop GUI (src/mt_workbench/gui): PySide6 widgets, pyqtgraph time series
     "PySide6",
     "pyqtgraph",

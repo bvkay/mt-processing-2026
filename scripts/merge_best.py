@@ -50,7 +50,16 @@ WARNING says whose lattice is used. Whatever the grid, adjacent grid periods
 closer than CLOSE_DEX in log10 period are reported as close pairs (a WARNING
 line, when there is one, and the sidecar); the report changes no value.
 
-The station metadata, location and header come from the first xy source; its
+The station metadata, location and header come from the first xy source,
+and with them its frame: the declination (value, model, epoch), the
+reference frame, the coordinate system and every channel's measurement
+azimuth, as mt_metadata reads them back from its EDI. Nothing is rotated.
+The merged EDI's ZROT and TROT and its ``mt_workbench.frame``,
+``mt_workbench.rotation`` and ``mt_workbench.declination*`` INFO lines
+follow that frame (`mt_workbench.products.edi_copy`: the declination for a
+geomagnetic frame with one, else 0). When that source lacks a declination or has hy at hx's azimuth (an EDI
+written before mt_metadata's frame fix of 2 Oct 2026), a WARNING line says
+so and the merged products repeat it. Its
 INFO block's processing parameters are replaced by ``mt_workbench.*`` lines naming
 the recipe, each source and its range, and under ``grid: first`` a
 ``mt_workbench.grid`` line (first, the lattice's first source, the number of grid
@@ -72,6 +81,14 @@ line ``transfer_function.processed_by.author`` (the name mt_metadata reads
 the processor from) is set to it, as is a ``provenance.submitter.author``
 line where the writer wrote one. Without the block ACQBY and FILEBY are as
 the first xy source had them.
+
+Beside ``OUT.edi`` the merge writes ``OUT.xml`` (EMTF XML) and ``OUT.h5``
+(a standalone MTH5 file holding the merged TF), from the same TF
+(`mt_workbench.products`), with the header block's acqby and prosby as the
+acquirer and processor. They carry no residual or inverse signal
+covariance, since the sources are read from EDIs: the EDI's INFO block has
+the line ``mt_workbench.covariance=none ...`` and the XML's Notes say the
+same.
 
 ``OUT.json`` beside the output records the recipe, the header block, each
 source (path, station, and the remote, tag, window and masks of its
@@ -124,6 +141,8 @@ import yaml  # noqa: E402
 from mt_metadata.transfer_functions.core import TF  # noqa: E402
 
 import mt_workbench  # noqa: E402
+from mt_workbench.products import (edi_copy, frame_gaps, frame_note, frame_record,  # noqa: E402
+                                   match_coordinate_system, product_names, product_paths, write_h5, write_xml)
 from mt_workbench.quality import MODES as QUALITY_MODES, curves, in_quadrant  # noqa: E402
 from merge_modes import (ISO, LOG_TOL, X_ROW, Y_ROW, read_sidecar, read_tf, row_of, row_on_grid,  # noqa: E402
                          source_entry, usable)
@@ -143,6 +162,9 @@ LONGITUDE_KEYS = {">HEAD": ("LON", "LONG"), ">=DEFINEMEAS": ("REFLON", "REFLONG"
 # transfer_function.processed_by=<text> line fails validation when the file is read.
 PROCESSED_BY = "transfer_function.processed_by.author"
 SUBMITTER = "provenance.submitter.author"
+# the merged products carry the sources' per-component variances only, not their covariances
+COVARIANCE_LINE = ("mt_workbench.covariance=none (merged from EDIs: per-component variances only, "
+                   "no RESIDCOV or INVSIGCOV)")
 RULE = ("per mode, at each period of the grid (the union of the sources' usable periods inside their ranges, "
         "merged within LOG_TOL in log10 period), the first listed source whose range covers the period and which "
         "gives a value there: copied at a period it holds within LOG_TOL where its row is usable, interpolated "
@@ -450,6 +472,10 @@ def runs_of(flags: np.ndarray, grid: np.ndarray) -> list[list[float]]:
 def build_tf(first: TF, grid: np.ndarray, taken: dict) -> TF:
     """Build the merged TF on the grid with the first xy source's survey and station metadata.
 
+    The station metadata is a copy of the first source's, so the frame
+    (declination, reference frame, coordinate system, channel azimuths) is
+    that source's as read back from its EDI.
+
     Args:
         first (TF): The first xy source.
         grid (np.ndarray): (n,) periods in s.
@@ -661,6 +687,7 @@ def info_lines(side: dict) -> list[str]:
     for mode, block in side["merge"]["modes"].items():
         for k, entry in enumerate(block["entries"], start=1):
             lines.append(f"mt_workbench.best_{mode}_{k}={Path(entry['edi']).name},{entry['pmin']:g},{entry['pmax']:g}")
+    lines.append(COVARIANCE_LINE)
     lines.append(f"mt_workbench.sidecar={Path(side['edi']).with_suffix('.json').name}")
     return lines
 
@@ -832,6 +859,11 @@ def merge_files(out, recipe_for_site: dict, tag: str | None = None, force: bool 
         print(f"WARNING grid first: mode {mode}: {len(periods)} left-out period(s) with no grid period within "
               f"{CLOSE_DEX} in log10 period holding a value: {', '.join(f'{p:.4g}' for p in periods)} s")
 
+    gaps = frame_gaps(tfs[first_path])
+    if gaps:
+        print(f"WARNING frame: the first xy source {first_path.name} has {' and '.join(gaps)} (an EDI written before "
+              f"mt_metadata's frame fix of 2 Oct 2026); the merged products repeat its frame metadata")
+
     sidecars = {path: read_sidecar(path) for path in paths}
     modes = {mode: mode_block(mode, entries, taken[mode], grid, paths) for mode, entries in plan.items()}
     created = dt.datetime.now(dt.timezone.utc).strftime(ISO)
@@ -841,7 +873,7 @@ def merge_files(out, recipe_for_site: dict, tag: str | None = None, force: bool 
         "remote": _joined([s.get("remote") for s in found_sides]),
         "created": created,
         "tag": tag,
-        "edi": out.name,
+        **product_names(out),
         "site": site or station,
         "recipe": {"path": None if recipe_path is None else str(recipe_path), "site": recipe_for_site},
         "header": dict(header or {}),
@@ -858,19 +890,32 @@ def merge_files(out, recipe_for_site: dict, tag: str | None = None, force: bool 
     if found_sides:
         side["engine"] = _joined([s.get("engine") or "aurora" for s in found_sides])
     tf = build_tf(tfs[first_path], grid, taken)
+    match_coordinate_system(tf)
+    side["frame"] = frame_record(tf, f"first xy source {first_path.name}")
     tf.station_metadata.transfer_function.processing_parameters = info_lines(side)
     out.parent.mkdir(parents=True, exist_ok=True)
     tmp = out.with_name(out.stem + "_part.edi")
-    tf.write(fn=str(tmp), file_type="edi")
+    edi_copy(tf).write(fn=str(tmp), file_type="edi")
     # mt_metadata's writer opens its file with the locale's encoding: read and write it back the same way
     with open(tmp, encoding="locale", newline="") as handle:
         text = handle.read()
     with open(tmp, "w", encoding="locale", newline="") as handle:
         handle.write(patch_edi_text(text, header))
     os.replace(tmp, out)
+    # the XML and h5 from the same TF, with the header block's names (the EDI gets them by the text patch)
+    named = copy.deepcopy(tf)
+    if (header or {}).get("acqby"):
+        named.station_metadata.acquired_by.author = header["acqby"]
+    if (header or {}).get("prosby"):
+        named.station_metadata.transfer_function.processed_by.author = header["prosby"]
+    paths = product_paths(out)
+    write_xml(named, paths["xml"], frame_note(named, covariance=False))
+    write_h5(named, paths["h5"])
     side_path = out.with_suffix(".json")
     _write_atomic(side_path, json.dumps(side, indent=2, default=str) + "\n")
     print(f"edi: {out}")
+    print(f"xml: {paths['xml']}")
+    print(f"h5: {paths['h5']}")
     print(f"sidecar: {side_path}")
     return 0
 

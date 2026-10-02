@@ -71,6 +71,29 @@ give 1.0 for S01L and EBR, the survey's 1000.0 for S01 and for a name with
 no entry (a stacked remote); `Survey.site("S01L")` does not carry
 `derived_from` and `sample_rate`; or a site derived from itself does not
 raise ValueError.
+
+And the declination keys: `SiteConfig` does not default `declination`,
+`declination_model` and `declination_epoch` to None (unset, not 0.0); a
+site's own 0.0 does not stay 0.0, distinct from unset; a `defaults:`
+declination does not reach a site without its own, or a site's own does
+not win; `SITE_TABLE_COLUMNS` does not type them float, str, float; a site
+table CSV does not read them; or the GUI Metadata table does not round trip
+them: the tab's `COLUMNS` lacks one, `format_cell` then `parse_cell` does not
+give each value back ("-" for None back to None), or
+`metadata_edit.rewrite_sites_block` on a scratch survey.yaml does not write
+-1.07, IGRF-14 and 2023.53 that `Survey.site` reads back while the other
+site's entry is unchanged. The GUI functions import PySide6 and make no
+widget. Control: the same round trip with the epoch cell typed "2023.5x"
+must raise ValueError.
+
+And `layout_north`: `SiteConfig` does not default it to "magnetic"; a
+`defaults:` "geographic" does not reach a site without its own, or a
+site's own "magnetic" does not win; `mt_workbench.products.apply_site_frame`
+does not set ``orientation.reference_frame`` geomagnetic for magnetic and
+geographic for geographic on an mt_metadata Station whose default is
+geographic; the Morocco survey.yaml does not give "magnetic" for B03 (from
+its `defaults:`). Control: a site with `layout_north: north` must raise
+ValueError when built.
 """
 
 from __future__ import annotations
@@ -301,6 +324,94 @@ def test_electric_gain_resolve() -> None:
     plain = Survey({"name": "t", "instrument": "edl", "data_root": ".", "sites": {"A": {}}}, Path("."))
     assert plain.site("A").electric_gain == 1.0
     print(f"  electric_gain: default 10.0; {got}; no key -> 1.0 (no filter)")
+
+
+def test_declination_keys() -> None:
+    import tempfile
+
+    import yaml
+
+    from mt_workbench.survey import SITE_TABLE_COLUMNS, SiteConfig, read_site_table
+
+    cfg = SiteConfig(name="X")
+    assert (cfg.declination, cfg.declination_model, cfg.declination_epoch) == (None, None, None), cfg
+    config = {"name": "t", "instrument": "lemi423", "data_root": ".",
+              "sites": {"A": {}, "Z": {"declination": 0.0, "declination_model": "IGRF-14",
+                                       "declination_epoch": 2023.53}}}
+    survey = Survey(config, Path("."))
+    assert survey.site("A").declination is None and survey.site("Z").declination == 0.0
+    assert survey.site("Z").declination is not None  # 0.0 is a value, not unset
+    with_default = Survey({**config, "defaults": {"declination": -1.5, "declination_model": "IGRF-14"}}, Path("."))
+    assert with_default.site("A").declination == -1.5 and with_default.site("Z").declination == 0.0
+    assert {k: SITE_TABLE_COLUMNS[k] for k in ("declination", "declination_model", "declination_epoch")} == \
+        {"declination": float, "declination_model": str, "declination_epoch": float}
+    with tempfile.TemporaryDirectory() as tmp:
+        csv = Path(tmp) / "table.csv"
+        csv.write_text("site,declination,declination_model,declination_epoch\nA,-1.07,IGRF-14,2023.53\n",
+                       encoding="utf-8")
+        rows, ignored = read_site_table(csv)
+        assert rows == {"A": {"declination": -1.07, "declination_model": "IGRF-14", "declination_epoch": 2023.53}}, rows
+        assert ignored == [], ignored
+
+        from mt_workbench.gui import metadata_edit
+        from mt_workbench.gui.tabs.metadata import COLUMNS, NUMBERS
+
+        keys = ("declination", "declination_model", "declination_epoch")
+        assert all(k in COLUMNS for k in keys) and {"declination", "declination_epoch"} <= NUMBERS
+        assert all(k in metadata_edit.EDITABLE for k in keys)
+        values = {"declination": -1.07, "declination_model": "IGRF-14", "declination_epoch": 2023.53}
+        for key, value in values.items():
+            text = metadata_edit.format_cell(key, value)
+            assert metadata_edit.parse_cell(key, text) == value, (key, text)
+            assert metadata_edit.parse_cell(key, metadata_edit.format_cell(key, None)) is None
+        try:
+            metadata_edit.parse_cell("declination_epoch", "2023.5x")
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("control: a typed '2023.5x' epoch must raise")
+        path = Path(tmp) / "survey.yaml"
+        path.write_text("name: t\ninstrument: lemi423\ndata_root: .\nsites:\n  A:\n    latitude: 31.9\n"
+                        "  B:\n    latitude: 32.0\n", encoding="utf-8")
+        cells = {k: metadata_edit.parse_cell(k, metadata_edit.format_cell(k, v)) for k, v in values.items()}
+        metadata_edit.rewrite_sites_block(path, {"A": cells})
+        back = Survey.from_yaml(path)
+        got = {k: getattr(back.site("A"), k) for k in keys}
+        assert got == values, got
+        assert yaml.safe_load(path.read_text(encoding="utf-8"))["sites"]["B"] == {"latitude": 32.0}
+    print(f"  declination keys: None by default, 0.0 kept, defaults and own value; table CSV; GUI cells and "
+          f"save round trip {got}; a bad epoch cell raises")
+
+
+def test_layout_north() -> None:
+    from mt_metadata.timeseries import Station
+
+    from mt_workbench.products import apply_site_frame
+    from mt_workbench.survey import SiteConfig
+
+    assert SiteConfig(name="X").layout_north == "magnetic"
+    config = {"name": "t", "instrument": "lemi423", "data_root": ".", "defaults": {"layout_north": "geographic"},
+              "sites": {"A": {}, "M": {"layout_north": "magnetic"}}}
+    survey = Survey(config, Path("."))
+    assert survey.site("A").layout_north == "geographic" and survey.site("M").layout_north == "magnetic"
+    frames = {}
+    for name in ("A", "M"):
+        station = Station()
+        assert str(getattr(station.orientation.reference_frame, "value", "")) == "geographic"  # mt_metadata's default
+        apply_site_frame(station, survey.site(name))
+        frames[name] = str(getattr(station.orientation.reference_frame, "value", station.orientation.reference_frame))
+    assert frames == {"A": "geographic", "M": "geomagnetic"}, frames
+    morocco = Survey.from_yaml(REPO / "surveys" / "MT_Morocco_Atlas_Mountains" / "survey.yaml")
+    assert morocco.defaults.get("layout_north") == "magnetic" and morocco.site("B03").layout_north == "magnetic"
+    bad = Survey({**config, "sites": {"N": {"layout_north": "north"}}}, Path("."))
+    try:
+        bad.site("N")
+    except ValueError as exc:
+        refused = str(exc)
+    else:
+        raise AssertionError("control: layout_north north was accepted")
+    print(f"  layout_north: default magnetic; defaults geographic -> A {frames['A']}, own magnetic -> M "
+          f"{frames['M']}; Morocco B03 magnetic; control: {refused}")
 
 
 if __name__ == "__main__":

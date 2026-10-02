@@ -42,8 +42,9 @@ MTH5 reader) finds the runs. An existing archive is kept unless --force.
 
 survey.yaml gains, or has refreshed, the entry
 ``<site>L: {derived_from, sample_rate, dipole_length_ex/ey, azimuth_ex/ey,
-latitude, longitude, elevation, start, end, notes}`` (the parent's
-position, dipoles and azimuths; the derived record's span), through the
+latitude, longitude, elevation, declination, declination_model,
+declination_epoch, start, end, notes}`` (the parent's position, dipoles,
+azimuths and declination; the derived record's span), through the
 sites-block rewrite of the GUI's Metadata tab
 (`mt_workbench.gui.metadata_edit.rewrite_sites_block`), which rewrites the
 `sites:` block alone.
@@ -391,8 +392,9 @@ def survey_entry(survey: Survey, site: str, rate: float, runs: list[dict], notes
         notes (str): The entry's notes.
 
     Returns:
-        dict: derived_from, sample_rate, the parent's dipoles, azimuths and
-        position, the record's start and end (end: the last sample plus one
+        dict: derived_from, sample_rate, the parent's dipoles, azimuths,
+        position and declination (value, model, epoch; left out when the
+        parent has none), the record's start and end (end: the last sample plus one
         sample interval, as new_survey.py writes a span) and notes.
     """
     parent = survey.site(site)
@@ -401,6 +403,8 @@ def survey_entry(survey: Survey, site: str, rate: float, runs: list[dict], notes
                  dipole_length_ex=parent.dipole_length_ex, dipole_length_ey=parent.dipole_length_ey,
                  azimuth_ex=parent.azimuth_ex, azimuth_ey=parent.azimuth_ey,
                  latitude=parent.latitude, longitude=parent.longitude, elevation=parent.elevation,
+                 declination=parent.declination, declination_model=parent.declination_model,
+                 declination_epoch=parent.declination_epoch,
                  start=runs[0]["start"], end=end.strftime(ISO), notes=notes)
     return {k: v for k, v in entry.items() if v is not None}
 

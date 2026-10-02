@@ -7,6 +7,10 @@ declares, through `mt_workbench.survey.Survey`. The table has one row per site
 with:
 
 * the field-sheet numbers as declared;
+* the site's magnetic declination in degrees east of geographic north, its
+  model and its epoch (decimal year), "-" when unset
+  (scripts/declination.py fills them from the IGRF); stored with every
+  product, never applied;
 * the recorder, read-only (`Survey.instrument_of`: the site's own
   `instrument:` or what its folder holds), with the parent and rate of a
   derived site ("lemi423 (B01 at 1 Hz)") and an observatory's rate
@@ -68,11 +72,12 @@ DC_LEVEL = "dc level"
 NO_RECORD = len(VERDICT_ORDER)  # the dc level cell's sort key without a record: after ok
 NO_RECORD_TIP = ("no dc level recorded: the archive was built before the ingest recorded it; "
                  "scripts/dc_level_check.py reads its samples, and a rebuild records it")
-COLUMNS = ["site", "instrument", "latitude", "longitude", "elevation", "dipole_length_ex", "dipole_length_ey",
+COLUMNS = ["site", "instrument", "latitude", "longitude", "elevation", "declination", "declination_model",
+           "declination_epoch", "dipole_length_ex", "dipole_length_ey",
            "azimuth_ex", "azimuth_ey", "timing", "remote", "channels", metadata_edit.ELECTRIC_GAIN, "serial",
            "firmware", "start", "end", "raw folder", "archive", DC_LEVEL, "filters", "notes"]
-NUMBERS = {"latitude", "longitude", "elevation", "dipole_length_ex", "dipole_length_ey",
-           "azimuth_ex", "azimuth_ey"}
+NUMBERS = {"latitude", "longitude", "elevation", "declination", "declination_epoch", "dipole_length_ex",
+           "dipole_length_ey", "azimuth_ex", "azimuth_ey"}
 
 
 class SortableItem(QTableWidgetItem):

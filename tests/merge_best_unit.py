@@ -143,7 +143,8 @@ naming L.edi, station S01L and the site, or the sidecar's lattice does not
 record first_station S01L; or the same merge under the site name S01L
 prints that WARNING or writes other bytes from >FREQ on; (22) the INFO
 block's mt_workbench keys of the union product of (10) are not version, merged,
-tag, site, recipe, the four best lines and sidecar in that order, or those
+tag, site, recipe, the four best lines, covariance, sidecar, frame and rotation (the
+frame lines of `mt_workbench.products.edi_copy`; A carries no declination) in that order, or those
 of the grid-first product of (11) are not the same with mt_workbench.grid after
 mt_workbench.recipe, its value first,A.edi,49,25, or with xy from A then L and yx
 from L2 over 3-100000 s then A (L left out at 25 periods, L2 at 21 of the
@@ -175,6 +176,26 @@ out and with the per-source counts summed (46), round two's grid with 10
 and 13.34 s and without 9.843 s, the lattice test on M19 (19 of 40 on), and
 738.2 s looked for as lost in the same merge with A behind M20 in yx), which
 must fail.
+
+(25) The frame and the three products: A_frame (A with declination -1.07,
+IGRF-14, 2023.55, the geomagnetic frame and ey, hy at 90 deg) first in xy
+and B_frame (B with declination +5.00, model WMM, epoch 1999.00 and
+ey, hy at 45 deg) behind it and in yx: the merged EDI's raw text does not
+carry DECLINATION=-1.07, DECLINATION.MODEL=IGRF-14, DECLINATION.EPOCH=2023.55,
+hy and ey at AZM=90, HEAD COORDINATE_SYSTEM and INFO
+transfer_function.coordinate_system both geomagnetic, and the INFO line
+mt_workbench.covariance=none; OUT.xml does not exist with Declination
+-1.070, no RESIDCOV or INVSIGCOV estimate and the note saying so; OUT.h5
+does not read back as one TF with declination -1.07 and the EDI's
+impedance; the sidecar's xml, h5 and frame (declination_source naming
+A_frame.edi) are not as written; or the merge with A (no declination, hy at
+0) first does not print the WARNING frame line; the merged EDI's ZROT is
+not -1.07 at every period or its INFO lacks mt_workbench.frame (azimuth
+-1.07 deg clockwise from geographic north) and mt_workbench.declination=-1.07
+(the sources were written by mt_metadata with ZROT 0: the merge sets it
+from the frame). Control: the same merge with B_frame first must not carry
+-1.07 (it carries B_frame's +5.00, and ZROT 5), and the merge with A
+first must give ZROT 0 (no declination).
 
 The mutations: with the script's PREFER set to 0 the band 3.16-5.62 s goes
 to C and with JUMP_DEX set to 10 the band 31.6-56.2 s goes to C, so the
@@ -233,8 +254,8 @@ TIPPER = np.array([0.12 + 0.05j, -0.08 + 0.03j])
 HEADER = {"acqby": "UM6P, AU", "prosby": "Ben Kay, AuScope"}
 SOURCE_CREDITS = {"ACQBY": "Field crew", "FILEBY": "Source filer"}
 TIPPER_ERR = np.array([0.011, 0.023])
-SIDECAR_KEYS = {"local", "remote", "created", "tag", "edi", "site", "recipe", "merge", "sources", "forced",
-                "mismatches", "argv", "versions"}
+SIDECAR_KEYS = {"local", "remote", "created", "tag", "edi", "xml", "h5", "frame", "site", "recipe", "merge",
+                "sources", "forced", "mismatches", "argv", "versions"}
 
 
 def auto_errors(name: str, periods: np.ndarray) -> np.ndarray:
@@ -260,14 +281,16 @@ def load_script():
 
 def write_product(name: str, periods: np.ndarray, station: str = "S01", tipper: bool = False,
                   auto: bool = False, hole: float | None = None, credits: bool = False,
-                  hole_rows: tuple[int, ...] = (0,)) -> Path:
+                  hole_rows: tuple[int, ...] = (0,), frame: tuple | None = None) -> Path:
     """Write one product's EDI and sidecar under SCRATCH; return the EDI path.
 
     With `auto` the errors follow `auto_errors`, B's yx phase is flipped in
     0.1-0.178 s and C's rho is ten times higher in 31.6-56.2 s. With `hole`
     the rows `hole_rows` (the x row by default) and their errors are NaN at
     that period, written as EMPTY. With `credits` the header's ACQBY and
-    FILEBY are SOURCE_CREDITS'.
+    FILEBY are SOURCE_CREDITS'. With `frame`, ``(declination, model, epoch,
+    azimuth)``, the station carries that declination, the geomagnetic frame
+    and ey and hy at that azimuth.
     """
     spec = PRODUCTS[name[0]]
     zh = np.sqrt(spec["rho"] / (0.2 * periods)) * np.exp(0.25j * np.pi)
@@ -293,6 +316,13 @@ def write_product(name: str, periods: np.ndarray, station: str = "S01", tipper: 
     if credits:
         tf.station_metadata.acquired_by.author = SOURCE_CREDITS["ACQBY"]
         tf.station_metadata.provenance.submitter.author = SOURCE_CREDITS["FILEBY"]
+    if frame is not None:
+        from mt_workbench.products import set_declination
+        set_declination(tf.station_metadata, *frame[:3])
+        tf.station_metadata.orientation.reference_frame = "geomagnetic"
+        for ch in tf.station_metadata.runs[0].channels:
+            if ch.component in ("ey", "hy"):
+                ch.measurement_azimuth = frame[3]
     tf.period = periods
     tf.impedance = z
     tf.impedance_error = err
@@ -1067,7 +1097,9 @@ def test_grid(module, a: Path, b: Path) -> None:
 
     best = ["mt_workbench.best_xy_1", "mt_workbench.best_xy_2", "mt_workbench.best_yx_1", "mt_workbench.best_yx_2"]
     head = ["mt_workbench.version", "mt_workbench.merged", "mt_workbench.tag", "mt_workbench.site", "mt_workbench.recipe"]
-    want_u, want_f = head + best + ["mt_workbench.sidecar"], head + ["mt_workbench.grid"] + best + ["mt_workbench.sidecar"]
+    # covariance=none: the merge carries variances only; the frame lines follow (no declination in A)
+    tail = ["mt_workbench.covariance", "mt_workbench.sidecar", "mt_workbench.frame", "mt_workbench.rotation"]
+    want_u, want_f = head + best + tail, head + ["mt_workbench.grid"] + best + tail
     grid_value = f"first,A.edi,{P8.size + beyond.size},{inside.size}"
     fails = keys_fail(m_u, want_u, None) + keys_fail(m_f, want_f, grid_value)
     assert not fails, fails
@@ -1185,6 +1217,84 @@ def test_grid(module, a: Path, b: Path) -> None:
     must_fail("the lattice test on M19 (19 of 40 on)", on_lattice_fail(m_e419, "M19.edi"))
 
 
+def frame_of(path: Path) -> dict:
+    """Read the frame lines of an EDI's raw text: HEAD keys, INFO coordinate_system, AZM per channel."""
+    text = path.read_text(encoding="latin-1")
+    head = dict(re.findall(r"^\s*([A-Z_.]+)=(.*?)\s*$", text.split(">INFO")[0], re.M))
+    info = re.search(r"transfer_function\.coordinate_system=(\S+)", text)
+    azm = {m.group(1): float(m.group(2)) for m in re.finditer(r"CHTYPE=(\w+) .*?AZM=([-\d.]+)", text)}
+    return {"declination": head.get("DECLINATION"), "model": head.get("DECLINATION.MODEL"),
+            "epoch": head.get("DECLINATION.EPOCH"), "head_cs": head.get("COORDINATE_SYSTEM"),
+            "info_cs": info.group(1) if info else None, "azm": azm,
+            "covariance_line": "mt_workbench.covariance=none" in text}
+
+
+def test_frame(module, a: Path) -> None:
+    """Test (25): the frame comes from the first xy source; the XML and h5 are written."""
+    from mth5.mth5 import MTH5
+
+    af = write_product("A_frame", P8, frame=(-1.07, "IGRF-14", 2023.55, 90.0))
+    bf = write_product("B_frame", P8, frame=(5.0, "WMM", 1999.0, 45.0))
+    out = SCRATCH / "out" / "S01_frame.edi"
+    rec = {"xy": [entry(str(af), 0.01, 1.0), entry(str(bf), 1.0, 1000.0)], "yx": [entry(str(bf), 0.01, 1000.0)]}
+    status, text, err = quiet(module.merge_files, out, rec, tag="frame", site="S01", argv=["merge_best.py", "frame"])
+    assert status == 0, err
+    assert "WARNING frame" not in text, text
+    got = frame_of(out)
+    want = {"declination": "-1.07", "model": "IGRF-14", "epoch": "2023.55", "head_cs": "geomagnetic",
+            "info_cs": "geomagnetic", "covariance_line": True}
+    assert {k: got[k] for k in want} == want, got
+    assert got["azm"].get("hy") == 90.0 and got["azm"].get("ey") == 90.0, got["azm"]
+    out_text = out.read_text(encoding="latin-1")
+    assert set(zrot_of(out_text)) == {-1.07} and zrot_of(af.read_text(encoding="latin-1")) == [0.0], "ZROT"
+    assert ("mt_workbench.frame=sensor frame, x-axis at azimuth -1.07 deg clockwise from geographic north" in out_text
+            and "mt_workbench.declination=-1.07" in out_text), "INFO frame lines"
+    xml = out.with_suffix(".xml").read_text(encoding="utf-8")
+    assert '<Declination epoch="2023">-1.070</Declination>' in xml, "XML declination"
+    assert '<Estimate name="RESIDCOV"' not in xml and '<Estimate name="INVSIGCOV"' not in xml, "XML covariance"
+    assert "No RESIDCOV or INVSIGCOV" in xml, "XML note"
+    m = MTH5()
+    m.open_mth5(out.with_suffix(".h5"), "r")
+    try:
+        df = m.tf_summary.to_dataframe()
+        assert len(df) == 1, df
+        row = df.iloc[0]
+        back = m.get_transfer_function(row.station, row.tf_id, survey=row.survey)
+        assert back.station_metadata.location.declination.value == -1.07
+        z_edi = read(out).impedance.data
+        assert np.allclose(back.impedance.data, z_edi, rtol=RTOL, equal_nan=True), "h5 impedance"
+    finally:
+        m.close_mth5()
+    side = sidecar(out)
+    assert (side["edi"], side["xml"], side["h5"]) == ("S01_frame.edi", "S01_frame.xml", "S01_frame.h5"), side
+    assert side["frame"]["declination"] == -1.07 and "A_frame.edi" in side["frame"]["declination_source"], side
+
+    swapped = SCRATCH / "out" / "S01_frame_swapped.edi"
+    rec_b = {"xy": [entry(str(bf), 0.01, 1000.0)], "yx": [entry(str(af), 0.01, 1000.0)]}
+    assert quiet(module.merge_files, swapped, rec_b, tag="frame", site="S01", argv=["x"])[0] == 0
+    control = frame_of(swapped)
+    assert control["declination"] != "-1.07" and control["declination"] in ("5.0", "5"), control
+    assert control["azm"].get("hy") == 45.0, control["azm"]
+    assert zrot_of(swapped.read_text(encoding="latin-1")) == [5.0], "control: B_frame first, ZROT"
+
+    old = SCRATCH / "out" / "S01_frame_old.edi"
+    rec_old = {"xy": [entry(str(a), 0.01, 1000.0)], "yx": [entry(str(af), 0.01, 1000.0)]}
+    status, text, err = quiet(module.merge_files, old, rec_old, tag="frame", site="S01", argv=["x"])
+    assert status == 0 and "WARNING frame: the first xy source A.edi has no declination" in text, text
+    assert zrot_of(old.read_text(encoding="latin-1")) == [0.0], "control: A first (no declination), ZROT"
+    print(f"  (25) frame from A_frame: DECLINATION {got['declination']} {got['model']} {got['epoch']}, AZM {got['azm']}, "
+          f"HEAD/INFO {got['head_cs']}/{got['info_cs']}; XML and h5 written, no covariance; control with B_frame "
+          f"first carries {control['declination']} at hy {control['azm'].get('hy')}; A first warns; ZROT "
+          f"{zrot_of(out_text)} (sources {zrot_of(af.read_text(encoding='latin-1'))}), B_frame first "
+          f"{zrot_of(swapped.read_text(encoding='latin-1'))}, A first {zrot_of(old.read_text(encoding='latin-1'))}")
+
+
+def zrot_of(text: str) -> list[float]:
+    """Return the distinct values of an EDI's >ZROT block, sorted."""
+    m = re.search(r"^>ZROT\b[^\n]*\n(.*?)(?:\n\s*\n|\n>)", text, re.S | re.M)
+    return sorted({float(v) for v in m.group(1).split()}) if m else []
+
+
 def on_periods_count(periods) -> int:
     """Count the periods that equal one of P8's within 1e-6 in log10 period, computed here."""
     x = np.log10(np.asarray(periods, dtype=float))
@@ -1205,6 +1315,7 @@ def main() -> None:
     test_empty_period(module, b, c)
     test_header(module, b)
     test_grid(module, a, b)
+    test_frame(module, a)
 
 
 if __name__ == "__main__":

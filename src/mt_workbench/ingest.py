@@ -18,6 +18,17 @@ recorded, [LEMI-120 coil table nT -> nT (normalized), linear nT -> counts],
 with units mt_metadata accepts (docs/upstream_issues.md 1, 2 and 6).
 `_apply_h_scale` appends one stage to that chain.
 
+The site's declared declination (`SiteConfig.declination`, its model and
+epoch, from scripts/declination.py) is copied into the station metadata
+(``location.declination``) on every reader path, and the station's
+``orientation.reference_frame`` is set from the site's `layout_north`
+(geomagnetic for "magnetic", the default; geographic for "geographic"),
+so a LEMI-424 site is no longer labelled with its reader's geographic
+default (`mt_workbench.products.apply_site_frame`). The declination is
+stored, never applied: no ``translated_azimuth`` is set and nothing is
+rotated. An archive built before the key existed carries 0.0, and
+process_rr.py sets the survey.yaml frame and value on the TF at write time.
+
 `ingest_site` also measures the raw DC level of each electric and magnetic
 channel of each run it writes (`mt_workbench.dclevel`: the median, MAD and rail
 share of a subsample of the samples in memory), classifies the site's
@@ -63,6 +74,7 @@ from .instruments import (  # noqa: F401
     record_files, recorder_ini_high_gain,
 )
 from .noise import apply_filters_arrays
+from .products import apply_site_frame
 from .survey import SiteConfig, Survey
 from .timefreq import _real_runs
 
@@ -1185,6 +1197,9 @@ def ingest_site(
             else:
                 run = read_run(instrument, group, site, site_dir, calibration=coil)
             _keep_channels(run, site)
+            # the frame from the site's layout_north and the declared declination, stored, never
+            # applied: no azimuth is translated and nothing is rotated
+            apply_site_frame(run.station_metadata, site)
             swapped = _swap_h(run, site)
             if skipped and i == 1:
                 prior = run.run_metadata.comments.value

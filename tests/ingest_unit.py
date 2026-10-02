@@ -58,6 +58,22 @@ arguments exactly {station_id, dipole_length_ex, dipole_length_ey} -- and the
 LEMI-424/EDL reader (`read_run`) must never be called; any call fails the
 test.
 
+**The declination is stored, not applied** (`test_lemi423_declination_stored`):
+a synthetic LEMI-423 site declaring declination -1.07, IGRF-14, 2023.55 must
+be archived with that value, model and epoch in the station's
+``location.declination``, the reader's geomagnetic frame, no
+``translated_azimuth`` on any channel and hy at 90; the control without the
+keys must be archived with 0.0 and no epoch. The same site with
+`layout_north: geographic` must be archived with the reference frame
+geographic and the declination still stored (the frame follows the key, not
+the reader's geomagnetic).
+
+**The frame follows layout_north for every reader**: the LEMI-424 (MBJ21)
+and EDL (EGFLP02) archives of the one-hour test must carry the reference
+frame geomagnetic (the default layout_north, magnetic). Control: the
+LEMI-424 reader's own run, read from the same file without
+`apply_site_frame`, must carry mt_metadata's geographic default.
+
 **One real hour per new instrument** (`tests/instrument_samples.py` cuts
 them from MBJ21, LEMI-424, and EGFLP02, EDL, into the scratch folder and
 `scripts/new_survey.py` writes the mixed survey over them): `ingest_site`
@@ -186,6 +202,13 @@ class _RunMeta:
         self.comments = _Comments()
 
 
+class _StationMeta:
+    """Stand-in for station metadata: the orientation `apply_site_frame` sets."""
+
+    def __init__(self):
+        self.orientation = type("Orientation", (), {"reference_frame": None})()
+
+
 class _Run:
     """Stand-in for the parts of a RunTS that `ingest_site` touches once the helpers are recorders."""
 
@@ -194,7 +217,7 @@ class _Run:
         self.filters = {}
         self.sample_rate = 1000.0
         self.run_metadata = _RunMeta()
-        self.station_metadata = object()
+        self.station_metadata = _StationMeta()
 
 
 class _RunGroup:
@@ -662,12 +685,25 @@ def test_new_instruments_one_hour() -> None:
         ("EGFLP02", "edl", "sr10_0001", ["ex", "ey", "hx", "hy", "hz"], 10.0, 36000,
          "2019-01-10T00:00:00", "ex", f"{instrument_samples.EDL_DAY}/{instrument_samples.EDL_STAMP}.EX", None),
     )
+    from mth5.mth5 import MTH5
+    from mt_workbench.ingest import select_files
+    from mt_workbench.instruments import read_run
+
+    frames = {}
     for site, instrument, run_id, comps, rate, n, start, check, source, column in cases:
         assert survey.instrument_of(site) == instrument, (site, survey.instrument_of(site))
         t = time.perf_counter()
         path = ingest_site(survey, site, overwrite=True)
         took = time.perf_counter() - t
         data, chains = _check_archive(path, site, run_id, comps, rate, n, start)
+        m = MTH5()
+        m.open_mth5(path, mode="r")
+        try:
+            ref = m.get_station(site, survey="mixed").metadata.orientation.reference_frame
+            frames[site] = str(getattr(ref, "value", ref))
+        finally:
+            m.close_mth5()
+        assert frames[site] == "geomagnetic", (site, frames[site])
         truth = _independent_column(survey.data_root / site / source, column)
         assert np.array_equal(data[check], truth), (site, check, data[check][:3], truth[:3])
         if instrument == "edl":
@@ -675,7 +711,14 @@ def test_new_instruments_one_hour() -> None:
         else:
             assert chains["e1"] == [], chains["e1"]
         print(f"  {site} ({instrument}): {path.name} in {took:.2f} s, run {run_id}, {comps} at {rate:g} Hz, "
-              f"{n} samples from {start}; {check} == the file's own values; chain {chains[check if instrument == 'lemi424' else 'hx']}")
+              f"{n} samples from {start}; {check} == the file's own values; chain {chains[check if instrument == 'lemi424' else 'hx']}; "
+              f"frame {frames[site]}")
+    site_dir = survey.site_dirs()["MBJ21"]
+    own = read_run("lemi424", select_files(site_dir, None, None, "lemi424"), survey.site("MBJ21"), site_dir)
+    own_frame = str(getattr(own.station_metadata.orientation.reference_frame, "value",
+                            own.station_metadata.orientation.reference_frame))
+    assert own_frame == "geographic", f"control: the LEMI-424 reader's own frame is {own_frame}, not geographic"
+    print(f"  control: the LEMI-424 reader's own run carries {own_frame}; the archive carries {frames['MBJ21']}")
 
 
 def test_edl_lemi120_sensor_chain() -> None:
@@ -1052,6 +1095,60 @@ def test_lemi423_coil_chain() -> None:
         m.close_mth5()
     print(f"  LEMI-423 with {rsp.name}, h_scale -1000: hx, hy = {[f.name for f in chains['hx']]} "
           f"(nT -> nT -> counts -> counts, table == numpy); ex {ex_names}")
+
+
+def test_lemi423_declination_stored() -> None:
+    """Check that a LEMI-423 site's declared declination reaches the archive's station metadata.
+
+    Fails if a LEMI-423 site with `declination: -1.07`, `declination_model:
+    IGRF-14` and `declination_epoch: 2023.55`, ingested from one synthetic
+    B423 file, is not archived with ``location.declination`` value -1.07,
+    model IGRF-14 and epoch "2023.55"; if the station's reference frame is
+    not the reader's geomagnetic; if any channel gains a
+    ``translated_azimuth`` or hy's measurement azimuth is not 90 (nothing
+    is rotated); or if the control, the same site with no declination keys,
+    is not archived with value 0.0 and no epoch (unset, which the EDI writer
+    leaves out).
+    """
+    import shutil
+    from mth5.mth5 import MTH5
+    import new_survey_unit as nsu
+    rsp = REPO / "surveys" / "burra" / "sensors" / "l120n.rsp"
+    root = SCRATCH / "lemi423_declination"
+    shutil.rmtree(root, ignore_errors=True)
+    epoch = 1624510579
+    nsu.write_b423(root / "raw" / "S01" / f"{epoch}.B423", 36, "2.1", -31.5, 138.5, 123.4, epoch)
+    got = {}
+    declared = {"declination": -1.07, "declination_model": "IGRF-14", "declination_epoch": 2023.55}
+    for label, keys in (("declared", declared), ("control", {}), ("geographic", {**declared,
+                                                                               "layout_north": "geographic"})):
+        survey = Survey({"name": "t", "instrument": "lemi423", "sample_rate": 1000, "data_root": str(root / "raw"),
+                         "workspace": str(root / "work"),
+                         "defaults": {"calibration_fn": str(rsp), "h_scale": -1000.0,
+                                      "channels": ["ex", "ey", "hx", "hy"]},
+                         "sites": {"S01": dict(keys)}}, root)
+        path = ingest_site(survey, "S01", out_path=root / "work" / f"{label}.h5", overwrite=True)
+        m = MTH5()
+        m.open_mth5(path, mode="r")
+        try:
+            station = m.get_station("S01", survey="t")
+            d = station.metadata.location.declination
+            frame = str(getattr(station.metadata.orientation.reference_frame, "value",
+                                station.metadata.orientation.reference_frame))
+            run = station.get_run("sr1000_0001")
+            azimuths = {c: (run.get_channel(c).metadata.measurement_azimuth,
+                            run.get_channel(c).metadata.translated_azimuth) for c in ("ex", "ey", "hx", "hy")}
+        finally:
+            m.close_mth5()
+        got[label] = (d.value, d.model, d.epoch, frame)
+        assert frame == ("geographic" if label == "geographic" else "geomagnetic"), (label, frame)
+        assert all(t is None for _a, t in azimuths.values()), (label, azimuths)
+        assert azimuths["hy"][0] == 90.0 and azimuths["ey"][0] == 90.0, (label, azimuths)
+    assert got["declared"][:3] == (-1.07, "IGRF-14", "2023.55"), got["declared"]
+    assert got["control"][0] == 0.0 and got["control"][2] is None, got["control"]
+    assert got["geographic"] == (-1.07, "IGRF-14", "2023.55", "geographic"), got["geographic"]
+    print(f"  LEMI-423 declination: declared -> {got['declared']}; control (no keys) -> {got['control']}; "
+          f"layout_north geographic -> {got['geographic']}; no translated_azimuth, hy 90")
 
 
 def test_dc_level_recorded_at_ingest() -> None:

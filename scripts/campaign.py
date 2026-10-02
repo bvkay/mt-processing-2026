@@ -1861,8 +1861,9 @@ class Campaign:
     def move_products(self, job: Job, prod: dict) -> dict:
         """Move an rr run's EDI, sidecar and figure into <campaign>/tf/.
 
-        A MANTLE run's report JSON and fine-grid EDI, named in its sidecar
-        (`mantle_report`, `mantle_fine_edi`), move with them.
+        The row's EMTF XML and TF h5, named in its sidecar (`xml`, `h5`), and
+        a MANTLE run's report JSON and fine-grid EDI (`mantle_report`,
+        `mantle_fine_edi`) move with them.
 
         Returns:
             dict: The product paths after the move.
@@ -1872,7 +1873,7 @@ class Campaign:
         out = dict(prod)
         extras: dict[str, str] = {}
         sidecar = read_sidecar(prod.get("sidecar"))
-        for key in ("mantle_report", "mantle_fine_edi"):
+        for key in ("xml", "h5", "mantle_report", "mantle_fine_edi"):
             if sidecar.get(key):
                 extras[key] = str(Path(prod["sidecar"]).with_name(str(sidecar[key])))
         for key, value in extras.items():

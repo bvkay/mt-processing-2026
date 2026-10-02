@@ -403,8 +403,9 @@ def read_run(instrument: str, files: list[Path], site, site_dir: Path, calibrati
     EDL: the reader is given the rate from `edl_sample_rate`, the site's
     dipole lengths, its azimuths when `flip_reversed_dipoles` treats a
     180/270 deg azimuth as a reversed pair (the reader's dipole filter then
-    carries the sign; nominal 0/90 otherwise), and the position when
-    declared. The x10 terminal box is the reader's default. The magnetic
+    carries the sign; nominal 0/90 otherwise), and the position and
+    declination when declared (the reader stores the declination's value;
+    `mt_workbench.ingest.ingest_site` adds its model and epoch). The x10 terminal box is the reader's default. The magnetic
     sensors are the site's `sensor_type` (`EDL_SENSORS`): "bartington"
     (Mag-03 fluxgates, the long-period setup and the reader's default) or
     "lemi120" (induction coils, the broadband setup), whose response file
@@ -451,8 +452,8 @@ def read_run(instrument: str, files: list[Path], site, site_dir: Path, calibrati
         kwargs = dict(sample_rate=rate, station_id=site.name,
                       dipole_length_ex=site.dipole_length_ex, dipole_length_ey=site.dipole_length_ey,
                       ex_azimuth=site.azimuth_ex if flip else 0.0, ey_azimuth=site.azimuth_ey if flip else 90.0)
-        kwargs.update({k: getattr(site, k) for k in ("latitude", "longitude", "elevation")
-                       if getattr(site, k) is not None})
+        kwargs.update({k: getattr(site, k) for k in ("latitude", "longitude", "elevation", "declination")
+                       if getattr(site, k, None) is not None})
         sensor = edl_sensor(site)
         if sensor == "lemi120":
             if calibration is None or not Path(calibration).is_file():

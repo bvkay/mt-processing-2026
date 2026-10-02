@@ -33,7 +33,10 @@ any site that differs), data_root, workspace, timezone and `generated_by:
 scripts/new_survey.py`; a `defaults:` block and a `processing:` block; and a
 `sites:` block with one entry per folder: latitude, longitude, elevation,
 serial, firmware, start and end (UTC), and a note that the dipole lengths and
-azimuths are the defaults. Dipole lengths and azimuths are left out of the
+azimuths are the defaults. The declination keys (declination,
+declination_model, declination_epoch) are left unset unless the site table
+gives them; scripts/declination.py fills them from the IGRF, and the
+summary's last line says so. Dipole lengths and azimuths are left out of the
 site entries, so the defaults apply until they are set from the field sheet,
 on the GUI's Metadata tab or with --site-table. The site table is a CSV or
 XLSX with a `site` column plus any of `mt_workbench.survey.SITE_TABLE_COLUMNS`;
@@ -130,7 +133,7 @@ DIPOLE_KEYS = ("dipole_length_ex", "dipole_length_ey", "azimuth_ex", "azimuth_ey
 # the order a site entry's keys are written in (instrument and channels only
 # for a site whose recorder is not the survey's)
 KEY_ORDER = ("instrument", "channels", "sensor_type", "electric_gain", *DIPOLE_KEYS, "latitude", "longitude",
-             "elevation", "remote", "timing", "serial", "firmware", "start", "end", "notes")
+             "elevation", "declination", "declination_model", "declination_epoch", "remote", "timing", "serial", "firmware", "start", "end", "notes")
 # an EDL site's magnetic sensors from its rate (`sensor_type`, mt_workbench.instruments.EDL_SENSORS): the
 # UoA practice is induction coils at 500 or 1000 Hz and Bartington fluxgates at 10 Hz (the field
 # notes "Usual settings when we deploy Induction coils using the Earth Data Recorder")
@@ -579,6 +582,7 @@ def main(argv=None) -> int:
     print("next: set dipole lengths and azimuths from the field sheet (the GUI's Metadata tab, or "
           "--site-table); with legacy EDIs, run scripts/match_reference_edis.py <edi_dir> "
           f"{out}")
+    print(f"next: fill each site's declination from the IGRF: scripts/declination.py {out} --write")
     return 0
 
 

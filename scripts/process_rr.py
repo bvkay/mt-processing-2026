@@ -126,6 +126,9 @@ and adds neither the line nor the key; aurora refuses the option, since it
 reads the window a piece at a time and needs no clip.
 
 Outputs: <workspace>/mth5/<site>.h5, <workspace>/tf/<stem>.edi,
+<workspace>/tf/<stem>.xml (EMTF XML, carrying aurora's residual and inverse
+signal covariances), <workspace>/tf/<stem>.h5 (a standalone MTH5 file holding
+the TF; `mt_workbench.products.write_products`),
 <workspace>/tf/<stem>_vs_lemimt.png and <workspace>/tf/<stem>.json, where
 <stem> is <local>_rr-<remote>_<YYYYMMDD-HHMM> (the local time this run
 started, taken from the machine clock at the top of `main` and formatted
@@ -136,7 +139,26 @@ everything else about the run (archives and their mtimes, the band scheme
 and estimator tweaks used, both sites' declared filters, the full argv, the
 phase-quadrant verdict and the package versions), is in the `.json` sidecar
 next to the EDI. A short summary also goes into the EDI's INFO block
-(`processing_parameters`).
+(`processing_parameters`). The sidecar's `edi`, `xml` and `h5` keys name the
+three products, and `frame` records the frame metadata written with them.
+
+The products stay in the sensor frame and are never rotated. Before they
+are written, the local site's survey.yaml frame and declination are set on
+the TF's station metadata, over the archive's
+(`mt_workbench.products.apply_site_frame`): `layout_north` (magnetic, the
+default, or geographic) gives `orientation.reference_frame` (geomagnetic
+or geographic), and `declination`, `declination_model` and
+`declination_epoch` (scripts/declination.py) are set when the site carries
+them, so an archive ingested before the keys existed needs no rebuild; the
+sidecar's `frame.declination_source` says "survey.yaml" or "archive". The
+EDI's HEAD then carries DECLINATION lines, its INFO block's
+`transfer_function.coordinate_system` equals the HEAD's COORDINATE_SYSTEM,
+and for a geomagnetic frame with a declination its ZROT and TROT are the
+declination at every period (the x-axis azimuth east of geographic north,
+Geotools' convention; the data unrotated) and `mt_workbench.frame`,
+`mt_workbench.rotation` and `mt_workbench.declination*` INFO lines state
+it in words; the sidecar's `frame.zrot` records it. The three products
+are written once, after the INFO lines are added.
 
 Usage:
     python scripts/process_rr.py <survey.yaml> <local> <remote> [start] [end]
@@ -181,6 +203,8 @@ from mt_workbench.masks import (
     stored, union_masks,
 )
 from mt_workbench.process import ESTIMATOR_DEFAULTS, TAPERS, process_station
+from mt_workbench.products import (apply_site_frame, frame_record, match_coordinate_system, product_names,
+                                   write_products)
 from mt_workbench.survey import Survey
 
 MAX_RUN_FILES = 34  # 34 x 90 min = 51 h per run
@@ -882,7 +906,7 @@ def _quadrant_verdict(quadrant: dict, flipped: list[str]) -> str:
 
 
 def build_sidecar(res: dict, args, started, finished, edi_path: Path, png_path: Path,
-                   quadrant: dict, flipped: list[str]) -> dict:
+                   quadrant: dict, flipped: list[str], frame: dict | None = None) -> dict:
     """Build the `.json` sidecar describing this run.
 
     `quadrant` and `flipped` are computed by the caller, so the function is a
@@ -898,9 +922,12 @@ def build_sidecar(res: dict, args, started, finished, edi_path: Path, png_path: 
         png_path (Path): Comparison figure written.
         quadrant (dict): Return of `mt_workbench.compare.phase_quadrants`.
         flipped (list[str]): Modes judged out of quadrant.
+        frame (dict, optional): The TF's frame metadata
+            (`mt_workbench.products.frame_record`), stored as ``frame``.
 
     Returns:
-        dict: The sidecar content.
+        dict: The sidecar content. ``edi``, ``xml`` and ``h5`` name the
+        row's three products (`mt_workbench.products.product_names`).
     """
     survey = res["survey"]
     raw_sites = res["raw_sites"]
@@ -958,7 +985,8 @@ def build_sidecar(res: dict, args, started, finished, edi_path: Path, png_path: 
         "masks_ignored": bool(res.get("masks_ignored")),
         "argv": list(sys.argv),
         "tag": res["tag"],
-        "edi": edi_path.name,
+        **product_names(edi_path),
+        "frame": frame,
         "figure": png_path.name,
         "quadrant": {
             "pmin": quadrant.get("pmin"), "pmax": quadrant.get("pmax"),
@@ -1166,6 +1194,10 @@ def main(args) -> None:
             logger.info(f"{local} rr {remote}: masks by output row, one aurora run each: "
                         f"{runs_text(res['channel_runs'])}")
     extras: dict = {}
+    # the frame and declination are read from survey.yaml here and set on the TF before the write,
+    # so an archive ingested before the keys existed (declination 0.0) needs no rebuild; nothing is
+    # rotated. The products are written once, at the end, with the INFO lines
+    local_cfg = survey.site(local)
     if res["engine"] == "mantle":
         # the second engine: the same archives and window, MANTLE's cascade, the EDI on the same
         # band grid; imported here so an aurora run needs no MANTLE install
@@ -1185,9 +1217,7 @@ def main(args) -> None:
             out_dir=survey.workspace / "tf", stem=stem, scheme=scheme, start=start, end=end,
             options=engine_mantle.MantleOptions(whiten=res["mantle_whiten"], max_hours=res["mantle_max_hours"]),
         )
-        edi_path = survey.workspace / "tf" / f"{stem}.edi"
-        tf.write(fn=edi_path, file_type="edi")
-        logger.info(f"wrote {edi_path}")
+        apply_site_frame(tf.station_metadata, local_cfg)
     else:
         runs = res["channel_runs"]
         station_kwargs = dict(
@@ -1195,8 +1225,8 @@ def main(args) -> None:
             **({"output_channels": res["output_channels"]} if res["output_channels"] else {}),
         )
         if len(runs) == 1:
-            tf = process_station(local_h5, local, remote_h5, remote, out_dir=survey.workspace / "tf",
-                                 time_masks=runs[0]["masks"] or None, **station_kwargs)
+            tf = process_station(local_h5, local, remote_h5, remote, out_dir=None,
+                                 time_masks=runs[0]["masks"] or None, site=local_cfg, **station_kwargs)
         else:
             # one run per distinct set of masks by output row, merged row by row (`merge_rows`)
             tfs = []
@@ -1206,10 +1236,7 @@ def main(args) -> None:
                 tfs.append(process_station(local_h5, local, remote_h5, remote, out_dir=None,
                                            time_masks=run["masks"] or None, **station_kwargs))
             tf = merge_rows(tfs, runs)
-            edi_path = survey.workspace / "tf" / f"{stem}.edi"
-            edi_path.parent.mkdir(parents=True, exist_ok=True)
-            tf.write(fn=edi_path, file_type="edi")
-            logger.info(f"wrote {edi_path}")
+            apply_site_frame(tf.station_metadata, local_cfg)
             logger.info(f"{stem}: rows merged from {len(runs)} aurora runs (the masks' channels)")
 
     pmin, pmax = quadrant_window(res["sample_rate"])
@@ -1249,7 +1276,9 @@ def main(args) -> None:
 
     finished = dt.datetime.now().astimezone()
     edi_path = survey.workspace / "tf" / f"{stem}.edi"
-    sidecar = build_sidecar(res, args, started, finished, edi_path, out_png, q, flipped)
+    match_coordinate_system(tf)
+    frame = frame_record(tf, "survey.yaml" if local_cfg.declination is not None else "archive")
+    sidecar = build_sidecar(res, args, started, finished, edi_path, out_png, q, flipped, frame)
     sidecar.update(extras)  # the mantle engine's keys; an aurora run adds none
     sidecar_path = edi_path.with_suffix(".json")
     write_sidecar(sidecar_path, sidecar)
@@ -1257,12 +1286,14 @@ def main(args) -> None:
     print(f"sidecar: {sidecar_path}")
 
     # a short pointer to the sidecar in the EDI's INFO block; the docstring of
-    # edi_info_lines explains the use of `processing_parameters`
+    # edi_info_lines explains the use of `processing_parameters`. The three
+    # products are then written, once (the EDI's frame lines are added by
+    # mt_workbench.products.edi_copy)
     try:
         tf.station_metadata.transfer_function.processing_parameters.extend(edi_info_lines(sidecar))
-        tf.write(fn=edi_path, file_type="edi")
     except Exception as exc:
         logger.warning(f"{edi_path.name}: could not add the run's facts to the EDI's INFO block: {exc}")
+    write_products(tf, edi_path)
 
 
 if __name__ == "__main__":

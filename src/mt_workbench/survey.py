@@ -9,7 +9,7 @@ Earth Data PR6-24) is a site, and its instrument is detected from those
 files (`detect_instrument`). The top-level `instrument:` of the YAML is the
 survey default, and a site's own `instrument:` overrides both
 (`Survey.instrument_of`). Per-site settings (dipole lengths, azimuths,
-positions) are optional overrides in the YAML, usually generated once from
+positions, declination) are optional overrides in the YAML, usually generated once from
 the field spreadsheet (see ``scripts/site_table_to_yaml.py``).
 
 `Survey.from_yaml` loads a survey and `Survey.site` returns the merged
@@ -70,10 +70,16 @@ def distance_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
 # site, a `site` column and any of these columns.
 # The GUI Metadata tab edits the same keys and imports the same tables;
 # scripts/new_survey.py --site-table merges one before writing.
+# the values of survey.yaml's layout_north (`SiteConfig.layout_north`), as in mt_workbench.products.LAYOUT_FRAMES
+LAYOUT_NORTH = ("magnetic", "geographic")
+
 SITE_TABLE_COLUMNS = {
     "latitude": float,
     "longitude": float,
     "elevation": float,
+    "declination": float,
+    "declination_model": str,
+    "declination_epoch": float,
     "dipole_length_ex": float,
     "dipole_length_ey": float,
     "azimuth_ex": float,
@@ -258,6 +264,30 @@ class SiteConfig:
         latitude (float or None): Latitude in degrees.
         longitude (float or None): Longitude in degrees.
         elevation (float or None): Elevation in m.
+        declination (float or None): Magnetic declination at the site in
+            degrees east of geographic north (east positive), stored with
+            every product and never applied: the products stay in the
+            sensor (geomagnetic) frame and a modeller rotates once.
+            None means unset, which is not the same as 0.0.
+            scripts/declination.py fills it from the IGRF at the site's
+            position and the midpoint of its record. Ingest copies it into
+            the archive's station metadata (``location.declination``), and
+            process_rr.py sets it on each TF before writing, so an archive
+            built before the key existed needs no rebuild.
+        declination_model (str or None): The field model of `declination`,
+            e.g. "IGRF-14".
+        declination_epoch (float or None): The decimal year `declination`
+            is for, e.g. 2023.53.
+        layout_north (str): The north the sensors were laid out to,
+            "magnetic" (the default) or "geographic"; usually a `defaults:`
+            key, overridable per site. It sets the station's
+            ``orientation.reference_frame`` (geomagnetic or geographic) at
+            ingest for every reader and on each TF at write time
+            (`mt_workbench.products.apply_site_frame`), and with it the
+            EDI's COORDINATE_SYSTEM. Under "magnetic" with a declination
+            the EDI's ZROT and TROT and the XML's
+            angle_to_geographic_north are the declination; under
+            "geographic" the declination is still stored and they are 0.
         calibration_fn (str or None): Coil response file, for example a
             LEMI-120 .rsp. Relative paths resolve against the survey folder,
             then data_root. Used by LEMI-423 sites and by EDL sites whose
@@ -344,6 +374,10 @@ class SiteConfig:
     latitude: float | None = None
     longitude: float | None = None
     elevation: float | None = None
+    declination: float | None = None
+    declination_model: str | None = None
+    declination_epoch: float | None = None
+    layout_north: str = "magnetic"
     calibration_fn: str | None = None
     sensor_type: str | None = None
     electric_gain: float = 1.0
@@ -361,6 +395,12 @@ class SiteConfig:
     end: str | None = None
     derived_from: str | None = None
     sample_rate: float | None = None
+
+    def __post_init__(self) -> None:
+        """Check `layout_north`."""
+        if self.layout_north not in LAYOUT_NORTH:
+            raise ValueError(f"site {self.name!r}: layout_north {self.layout_north!r}, expected one of "
+                             f"{', '.join(LAYOUT_NORTH)}")
 
 
 class Survey:

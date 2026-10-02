@@ -3,8 +3,10 @@
 Aurora transfer-function estimation wrappers
 
 `process_station` estimates a single-site or remote-referenced transfer
-function from MTH5 archives and optionally writes an EDI. It builds an aurora
-KernelDataset (`kernel_dataset`, `clip_to_window`), cuts the all-band time
+function from MTH5 archives and optionally writes the row's products (EDI,
+EMTF XML and a standalone TF h5, `mt_workbench.products.write_products`).
+It builds an aurora KernelDataset (`kernel_dataset`, `clip_to_window`),
+cuts the all-band time
 masks out of it, builds the processing config (`build_config`,
 `apply_tweaks`) and runs `aurora.pipelines.process_mth5.process_mth5`.
 
@@ -34,6 +36,7 @@ from loguru import logger
 from mt_metadata.processing.aurora.decimation_level import DecimationLevel as _AuroraDecimationLevel
 
 from .masks import applies, apply_time_masks, split_by_bands, windows_in_mask
+from .products import apply_site_frame, write_products
 
 try:  # newer stacks host these in mth5
     from mth5.processing import KernelDataset, RunSummary
@@ -547,6 +550,7 @@ def process_station(
     tag: str | None = None,
     tweaks: dict | None = None,
     time_masks: list | None = None,
+    site=None,
     **config_kwargs,
 ):
     """Estimate a transfer function for a station, optionally remote-referenced.
@@ -591,8 +595,9 @@ def process_station(
         remote_h5 (Path, optional): MTH5 file of the remote station.
         remote_station (str, optional): Remote station id; single-station
             processing when None.
-        out_dir (Path, optional): Folder for the EDI; nothing is written
-            when None.
+        out_dir (Path, optional): Folder for the products; nothing is
+            written when None. The row's EDI, EMTF XML and standalone TF h5
+            are written under one stem (`mt_workbench.products.write_products`).
         min_run_seconds (float): Runs shorter than this are dropped.
         band_scheme (dict, optional): Dict from `mt_workbench.bands` (band_edges,
             decimation_factors, num_samples_window).
@@ -604,6 +609,12 @@ def process_station(
         time_masks (list of dict, optional): The masks applied from the
             local and remote sites (`mt_workbench.masks.masks_for_role`,
             `mt_workbench.masks.union_masks`).
+        site (SiteConfig, optional): The local site's survey.yaml settings:
+            its `layout_north` sets the TF's reference frame, and when its
+            `declination` is set the declination (value, model, epoch) is
+            set on the TF's station metadata, both over the archive's
+            (`mt_workbench.products.apply_site_frame`). The TF is not
+            rotated.
         **config_kwargs: Passed to aurora's
             ``ConfigCreator.create_from_kernel_dataset``.
 
@@ -629,12 +640,11 @@ def process_station(
         with _band_masks_applied(band_limited):
             tf = process_mth5(config, kd)
 
+    apply_site_frame(tf.station_metadata, site)
     if out_dir is not None:
         out_dir = Path(out_dir)
         out_dir.mkdir(parents=True, exist_ok=True)
         if tag is None:
             tag = f"{station}_rr-{remote_station}" if remote_station else f"{station}_ss"
-        edi_path = out_dir / f"{tag}.edi"
-        tf.write(fn=edi_path, file_type="edi")
-        logger.info(f"wrote {edi_path}")
+        write_products(tf, out_dir / f"{tag}.edi")
     return tf

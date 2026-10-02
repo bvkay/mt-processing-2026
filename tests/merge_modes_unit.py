@@ -37,8 +37,13 @@ which ends at 158 s because B's 631 s row is empty), the ZYXR and ZYYR
 blocks of the file do not hold the EDI's EMPTY value 1e+32 or mt_metadata
 does not read the y row back as 0 with a zero error; the tipper or its
 errors differ from A's, or the location differs from A's; the sidecar lacks
-local, remote, created (UTC, ending in Z), tag, edi, merge, sources,
-forced, mismatches, argv or versions, its merge counts are other than 4
+local, remote, created (UTC, ending in Z), tag, edi, xml, h5, frame,
+merge, sources, forced, mismatches, argv or versions, the .xml and .h5
+it names are not written beside the EDI, the EDI's INFO lacks the line
+mt_workbench.covariance=none or the frame lines mt_workbench.frame and
+mt_workbench.rotation (`mt_workbench.products.write_edi`; control: A, written
+by mt_metadata alone, must lack them), its ZROT is not 0 at every period
+(A carries no declination), its merge counts are other than 4
 copied, 2 interpolated, 4 NaN and 1 yx period left out, or its sources do
 not give A's and B's paths with their sidecars' tags and windows; the
 printed lines do not name A for the xy row and B for the yx row; `main`
@@ -100,8 +105,8 @@ SIDECARS = {
               window={"start": "2023-09-27T05:10:00+00:00", "end": "2023-09-27T09:16:00+00:00"},
               masks=[], mask_origins=None, masks_ignored=False),
 }
-SIDECAR_KEYS = {"local", "remote", "created", "tag", "edi", "merge", "sources", "forced", "mismatches", "argv",
-                "versions"}
+SIDECAR_KEYS = {"local", "remote", "created", "tag", "edi", "xml", "h5", "frame", "merge", "sources", "forced",
+                "mismatches", "argv", "versions"}
 
 
 def load_script():
@@ -257,6 +262,15 @@ def main() -> None:
     assert counts == dict(n_periods=10, n_copied=4, n_interpolated=2, n_nan=4, yx_left_out=1), counts
     assert side["merge"]["tipper"] == "xy" and side["tag"] == "xy-full_yx-window", (side["merge"], side["tag"])
     assert (side["local"], side["remote"], side["edi"]) == ("S01", "R01", merged.name), side
+    assert (side["xml"], side["h5"]) == (merged.with_suffix(".xml").name, merged.with_suffix(".h5").name), side
+    assert merged.with_suffix(".xml").is_file() and merged.with_suffix(".h5").is_file(), "xml or h5 not written"
+    merged_text = merged.read_text(encoding="utf-8")
+    assert "mt_workbench.covariance=none" in merged_text, "INFO covariance line"
+    assert "mt_workbench.frame=" in merged_text and "mt_workbench.rotation=data not rotated" in merged_text, \
+        "INFO frame lines"
+    assert "mt_workbench.frame=" not in a.read_text(encoding="utf-8"), "control: A carries a frame line"
+    zrot = re.search(r"^>ZROT[^\n]*\n(.*?)(?:\n\s*\n|\n>)", merged_text, re.S | re.M).group(1).split()
+    assert zrot and {float(v) for v in zrot} == {0.0}, zrot
     for role, src, name in (("xy", a, "A"), ("yx", b, "B")):
         entry = side["sources"][role]
         assert entry["edi"] == str(src) and entry["sidecar"]["path"] == str(src.with_suffix(".json")), entry

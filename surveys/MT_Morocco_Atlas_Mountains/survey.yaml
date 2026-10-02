@@ -15,6 +15,7 @@ defaults:
   dipole_length_ey: 50.0
   azimuth_ex: 0.0
   azimuth_ey: 90.0
+  layout_north: magnetic
   # LEMI-120 coil response; a relative path resolves against this folder first
   calibration_fn: sensors/l120n.rsp
   # empirical magnetics correction vs the lemimt convention: pT -> nT + polarity
@@ -53,6 +54,9 @@ sites:
     start: '2023-07-11T09:05:08Z'
     end: '2023-07-13T07:35:12Z'
     notes: Sorrounded by houses :-(
+    declination: -1.62
+    declination_model: IGRF-14
+    declination_epoch: 2023.53
   A02:
     dipole_length_ex: 42.0
     dipole_length_ey: 48.0
@@ -65,6 +69,9 @@ sites:
     firmware: '2.1'
     start: '2023-07-11T12:42:38Z'
     end: '2023-07-13T08:12:42Z'
+    declination: -1.65
+    declination_model: IGRF-14
+    declination_epoch: 2023.53
   A03:
     dipole_length_ex: 54.0
     dipole_length_ey: 53.0
@@ -78,6 +85,9 @@ sites:
     start: '2023-07-13T13:29:31Z'
     end: '2023-07-15T10:29:35Z'
     notes: road and electrc cable to the south; owners house to the SW
+    declination: -1.62
+    declination_model: IGRF-14
+    declination_epoch: 2023.53
   A04:
     dipole_length_ex: 53.0
     dipole_length_ey: 52.0
@@ -91,6 +101,9 @@ sites:
     start: '2023-07-12T10:02:04Z'
     end: '2023-07-14T08:32:08Z'
     notes: Powerline to the north; road to the west
+    declination: -1.63
+    declination_model: IGRF-14
+    declination_epoch: 2023.53
   A05:
     dipole_length_ex: 55.0
     dipole_length_ey: 56.0
@@ -104,6 +117,9 @@ sites:
     start: '2023-07-14T15:23:50Z'
     end: '2023-07-16T13:53:54Z'
     notes: powerline 200 m to the south; owners house 200 m to the east
+    declination: -1.61
+    declination_model: IGRF-14
+    declination_epoch: 2023.54
   A06:
     dipole_length_ex: 54.0
     dipole_length_ey: 54.0
@@ -117,6 +133,9 @@ sites:
     start: '2023-07-11T14:43:37Z'
     end: '2023-07-13T11:43:41Z'
     notes: powerline and road 300 m north; valley to the east; something to the south
+    declination: -1.64
+    declination_model: IGRF-14
+    declination_epoch: 2023.53
   A07:
     dipole_length_ex: 52.0
     dipole_length_ey: 52.0
@@ -130,6 +149,9 @@ sites:
     start: '2023-07-12T12:32:11Z'
     end: '2023-07-14T09:32:15Z'
     notes: something to the west
+    declination: -1.64
+    declination_model: IGRF-14
+    declination_epoch: 2023.53
   A08:
     dipole_length_ex: 45.0
     dipole_length_ey: 52.0
@@ -143,6 +165,9 @@ sites:
     start: '2023-07-12T12:07:25Z'
     end: '2023-07-14T09:07:29Z'
     notes: powerline 100 m to thenorth; houses 50 m to the east; valley to the south
+    declination: -1.63
+    declination_model: IGRF-14
+    declination_epoch: 2023.53
   A09:
     dipole_length_ex: 48.5
     dipole_length_ey: 45.0
@@ -156,6 +181,9 @@ sites:
     start: '2023-07-12T14:43:12Z'
     end: '2023-07-14T10:13:16Z'
     notes: powerline to the south
+    declination: -1.62
+    declination_model: IGRF-14
+    declination_epoch: 2023.53
   A10:
     dipole_length_ex: 54.0
     dipole_length_ey: 54.0
@@ -168,6 +196,9 @@ sites:
     firmware: '2.1'
     start: '2023-07-13T11:25:51Z'
     end: '2023-07-15T12:55:55Z'
+    declination: -1.62
+    declination_model: IGRF-14
+    declination_epoch: 2023.53
   A11:
     dipole_length_ex: 43.0
     dipole_length_ey: 54.0
@@ -180,6 +211,9 @@ sites:
     firmware: '2.1'
     start: '2023-07-13T14:02:23Z'
     end: '2023-07-15T11:02:27Z'
+    declination: -1.60
+    declination_model: IGRF-14
+    declination_epoch: 2023.53
   A12:
     dipole_length_ex: 53.0
     dipole_length_ey: 54.0
@@ -193,6 +227,9 @@ sites:
     start: '2023-07-14T11:23:21Z'
     end: '2023-07-16T12:53:25Z'
     notes: road to the northwest; road to the south
+    declination: -1.60
+    declination_model: IGRF-14
+    declination_epoch: 2023.54
   A13:
     dipole_length_ex: 53.0
     dipole_length_ey: 53.0
@@ -206,6 +243,9 @@ sites:
     start: '2023-07-14T16:57:31Z'
     end: '2023-07-16T09:27:35Z'
     notes: Road to the west; something to the east and south east
+    declination: -1.61
+    declination_model: IGRF-14
+    declination_epoch: 2023.54
   A14:
     dipole_length_ex: 54.0
     dipole_length_ey: 53.0
@@ -219,6 +259,9 @@ sites:
     start: '2023-07-14T15:23:50Z'
     end: '2023-07-16T13:53:54Z'
     notes: Houses and powerline to the south
+    declination: -1.61
+    declination_model: IGRF-14
+    declination_epoch: 2023.54
   A15:
     dipole_length_ex: 54.0
     dipole_length_ey: 51.0
@@ -232,6 +275,9 @@ sites:
     start: '2023-07-14T13:18:34Z'
     end: '2023-07-16T08:48:38Z'
     notes: house to the south west
+    declination: -1.62
+    declination_model: IGRF-14
+    declination_epoch: 2023.54
   A16:
     dipole_length_ex: 54.0
     dipole_length_ey: 48.0
@@ -245,6 +291,9 @@ sites:
     start: '2023-03-02T16:32:51Z'
     end: '2023-03-06T12:02:55Z'
     notes: Deployed in the middle of a village
+    declination: -1.67
+    declination_model: IGRF-14
+    declination_epoch: 2023.17
   A17:
     dipole_length_ex: 48.5
     dipole_length_ey: 54.2
@@ -258,6 +307,9 @@ sites:
     start: '2023-03-02T14:05:59Z'
     end: '2023-03-06T02:06:03Z'
     notes: Power lines on two sides, E cables swappin in box
+    declination: -1.66
+    declination_model: IGRF-14
+    declination_epoch: 2023.17
   A18:
     dipole_length_ex: 53.0
     dipole_length_ey: 53.0
@@ -271,6 +323,9 @@ sites:
     start: '2023-03-02T12:38:46Z'
     end: '2023-03-06T12:38:50Z'
     notes: High resistance because of limestone, e calbes swapped in box
+    declination: -1.66
+    declination_model: IGRF-14
+    declination_epoch: 2023.17
   A19:
     dipole_length_ex: 52.0
     dipole_length_ey: 42.0
@@ -284,6 +339,9 @@ sites:
     start: '2023-02-27T15:48:49Z'
     end: '2023-03-02T11:18:53Z'
     notes: e cables swapped in box
+    declination: -1.64
+    declination_model: IGRF-14
+    declination_epoch: 2023.16
   A20:
     dipole_length_ex: 54.0
     dipole_length_ey: 54.0
@@ -297,6 +355,9 @@ sites:
     start: '2023-02-27T12:59:47Z'
     end: '2023-03-02T09:59:51Z'
     notes: e cables swapped in box
+    declination: -1.65
+    declination_model: IGRF-14
+    declination_epoch: 2023.16
   A21:
     dipole_length_ex: 46.5
     dipole_length_ey: 52.5
@@ -310,6 +371,9 @@ sites:
     start: '2023-02-27T11:35:05Z'
     end: '2023-03-02T08:35:09Z'
     notes: Station deployed in a oasis
+    declination: -1.66
+    declination_model: IGRF-14
+    declination_epoch: 2023.16
   A23:
     dipole_length_ex: 50.5
     dipole_length_ey: 51.2
@@ -322,6 +386,9 @@ sites:
     firmware: '2.1'
     start: '2023-02-24T15:37:29Z'
     end: '2023-02-26T05:07:33Z'
+    declination: -1.69
+    declination_model: IGRF-14
+    declination_epoch: 2023.15
   A24:
     dipole_length_ex: 51.5
     dipole_length_ey: 38.5
@@ -335,6 +402,9 @@ sites:
     start: '2023-02-24T12:26:09Z'
     end: '2023-02-27T09:26:13Z'
     notes: e cables swapped in box
+    declination: -1.68
+    declination_model: IGRF-14
+    declination_epoch: 2023.15
   A25:
     dipole_length_ex: 54.0
     dipole_length_ey: 55.0
@@ -348,6 +418,9 @@ sites:
     start: '2023-02-21T15:53:18Z'
     end: '2023-02-22T09:53:22Z'
     notes: e cables swapped in box
+    declination: -1.68
+    declination_model: IGRF-14
+    declination_epoch: 2023.14
   A26:
     dipole_length_ex: 54.0
     dipole_length_ey: 54.0
@@ -361,6 +434,9 @@ sites:
     start: '2023-02-23T11:36:11Z'
     end: '2023-02-26T11:36:16Z'
     notes: Station in cemetery | Electrode pulled up and chewed after around 48 hours
+    declination: -1.67
+    declination_model: IGRF-14
+    declination_epoch: 2023.15
   A27:
     dipole_length_ex: 54.0
     dipole_length_ey: 54.0
@@ -373,6 +449,9 @@ sites:
     firmware: '2.1'
     start: '2023-02-23T13:26:29Z'
     end: '2023-02-23T17:56:35Z'
+    declination: -1.66
+    declination_model: IGRF-14
+    declination_epoch: 2023.15
   A28:
     dipole_length_ex: 54.0
     dipole_length_ey: 52.0
@@ -385,6 +464,9 @@ sites:
     firmware: '2.1'
     start: '2023-03-07T11:32:41Z'
     end: '2023-03-10T10:02:45Z'
+    declination: -1.65
+    declination_model: IGRF-14
+    declination_epoch: 2023.18
   A29:
     dipole_length_ex: 54.0
     dipole_length_ey: 45.0
@@ -397,6 +479,9 @@ sites:
     firmware: '2.1'
     start: '2023-03-07T10:17:05Z'
     end: '2023-03-10T08:47:09Z'
+    declination: -1.65
+    declination_model: IGRF-14
+    declination_epoch: 2023.18
   A30:
     dipole_length_ex: 51.0
     dipole_length_ey: 52.0
@@ -410,6 +495,9 @@ sites:
     start: '2023-03-05T11:14:10Z'
     end: '2023-03-09T09:44:14Z'
     notes: sandy soil
+    declination: -1.64
+    declination_model: IGRF-14
+    declination_epoch: 2023.18
   A31:
     dipole_length_ex: 48.0
     dipole_length_ey: 46.5
@@ -423,6 +511,9 @@ sites:
     start: '2023-03-01T17:09:18Z'
     end: '2023-03-05T09:39:22Z'
     notes: e cable swapped in box
+    declination: -1.63
+    declination_model: IGRF-14
+    declination_epoch: 2023.17
   B01:
     dipole_length_ex: 54.0
     dipole_length_ey: 54.0
@@ -435,6 +526,9 @@ sites:
     firmware: '2.1'
     start: '2023-02-14T14:29:25Z'
     end: '2023-02-18T11:29:29Z'
+    declination: -1.13
+    declination_model: IGRF-14
+    declination_epoch: 2023.13
   B02:
     dipole_length_ex: 54.9
     dipole_length_ey: 54.0
@@ -447,6 +541,9 @@ sites:
     firmware: '2.1'
     start: '2023-02-15T11:40:51Z'
     end: '2023-02-18T11:40:55Z'
+    declination: -1.13
+    declination_model: IGRF-14
+    declination_epoch: 2023.13
   B03:
     dipole_length_ex: 53.0
     dipole_length_ey: 53.0
@@ -460,6 +557,9 @@ sites:
     start: '2023-07-19T10:22:47Z'
     end: '2023-07-23T10:22:51Z'
     notes: Powerline 400m north; houses to the west
+    declination: -1.07
+    declination_model: IGRF-14
+    declination_epoch: 2023.55
   B04:
     dipole_length_ex: 53.0
     dipole_length_ey: 53.0
@@ -472,6 +572,9 @@ sites:
     firmware: '2.1'
     start: '2023-07-19T12:21:21Z'
     end: '2023-07-23T10:51:25Z'
+    declination: -1.08
+    declination_model: IGRF-14
+    declination_epoch: 2023.55
   B05:
     dipole_length_ex: 54.0
     dipole_length_ey: 54.0
@@ -486,6 +589,9 @@ sites:
     end: '2023-07-20T10:41:59Z'
     notes: power transmission line 300 m to the west; powerline 300 m north, E-south
       50 m | Electri cable in the south part was cut
+    declination: -1.07
+    declination_model: IGRF-14
+    declination_epoch: 2023.55
   B06:
     dipole_length_ex: 48.0
     dipole_length_ey: 54.0
@@ -499,6 +605,9 @@ sites:
     start: '2023-07-18T11:20:14Z'
     end: '2023-07-23T11:20:18Z'
     notes: Houses approx 200 m to the south
+    declination: -1.07
+    declination_model: IGRF-14
+    declination_epoch: 2023.55
   B07:
     dipole_length_ex: 52.0
     dipole_length_ey: 43.0
@@ -511,6 +620,9 @@ sites:
     firmware: '2.1'
     start: '2023-07-18T13:21:50Z'
     end: '2023-07-20T10:21:54Z'
+    declination: -1.08
+    declination_model: IGRF-14
+    declination_epoch: 2023.55
   B08:
     dipole_length_ex: 54.0
     dipole_length_ey: 54.0
@@ -524,6 +636,9 @@ sites:
     start: '2023-07-20T12:04:11Z'
     end: '2023-07-24T10:34:15Z'
     notes: house and powerline 100m south; powerline and road 300 m west
+    declination: -1.09
+    declination_model: IGRF-14
+    declination_epoch: 2023.55
   B09:
     dipole_length_ex: 42.0
     dipole_length_ey: 51.0
@@ -537,6 +652,9 @@ sites:
     start: '2023-07-20T13:33:29Z'
     end: '2023-07-24T10:33:33Z'
     notes: house to the west; telecomunication tower 38 m to the north
+    declination: -1.09
+    declination_model: IGRF-14
+    declination_epoch: 2023.55
   B10:
     dipole_length_ex: 53.0
     dipole_length_ey: 53.0
@@ -549,6 +667,9 @@ sites:
     firmware: '2.1'
     start: '2023-07-20T15:20:51Z'
     end: '2023-07-25T18:20:55Z'
+    declination: -1.08
+    declination_model: IGRF-14
+    declination_epoch: 2023.56
   B11:
     dipole_length_ex: 45.0
     dipole_length_ey: 53.0
@@ -562,6 +683,9 @@ sites:
     start: '2023-07-24T12:08:26Z'
     end: '2023-07-28T12:08:30Z'
     notes: Ey-west 50m
+    declination: -1.08
+    declination_model: IGRF-14
+    declination_epoch: 2023.57
   B13:
     dipole_length_ex: 53.0
     dipole_length_ey: 55.0
@@ -574,6 +698,9 @@ sites:
     firmware: '2.1'
     start: '2023-07-24T15:27:00Z'
     end: '2023-07-27T12:27:04Z'
+    declination: -1.10
+    declination_model: IGRF-14
+    declination_epoch: 2023.56
   B14:
     dipole_length_ex: 53.0
     dipole_length_ey: 53.0
@@ -586,6 +713,9 @@ sites:
     firmware: '2.1'
     start: '2023-07-22T13:16:27Z'
     end: '2023-07-25T10:16:31Z'
+    declination: -1.10
+    declination_model: IGRF-14
+    declination_epoch: 2023.56
   B15:
     dipole_length_ex: 54.0
     dipole_length_ey: 53.0
@@ -598,6 +728,9 @@ sites:
     firmware: '2.1'
     start: '2023-07-22T16:03:58Z'
     end: '2023-07-25T08:34:02Z'
+    declination: -1.10
+    declination_model: IGRF-14
+    declination_epoch: 2023.56
   B16:
     dipole_length_ex: 42.0
     dipole_length_ey: 50.0
@@ -610,6 +743,9 @@ sites:
     firmware: '2.1'
     start: '2023-07-23T13:33:12Z'
     end: '2023-07-26T12:03:16Z'
+    declination: -1.10
+    declination_model: IGRF-14
+    declination_epoch: 2023.56
   B17:
     dipole_length_ex: 38.0
     dipole_length_ey: 41.0
@@ -624,6 +760,9 @@ sites:
     end: '2023-07-26T11:51:46Z'
     notes: house to the west; powerline and house to the south; small valley 100m to
       the north
+    declination: -1.10
+    declination_model: IGRF-14
+    declination_epoch: 2023.56
   B18:
     dipole_length_ex: 51.0
     dipole_length_ey: 52.5
@@ -636,6 +775,9 @@ sites:
     firmware: '2.1'
     start: '2023-07-23T16:47:11Z'
     end: '2023-07-26T10:47:15Z'
+    declination: -1.11
+    declination_model: IGRF-14
+    declination_epoch: 2023.56
   B19:
     dipole_length_ex: 39.0
     dipole_length_ey: 29.0
@@ -648,6 +790,9 @@ sites:
     firmware: '2.1'
     start: '2023-07-25T12:30:25Z'
     end: '2023-07-27T12:30:29Z'
+    declination: -1.11
+    declination_model: IGRF-14
+    declination_epoch: 2023.57
   B20:
     dipole_length_ex: 23.0
     dipole_length_ey: 52.0
@@ -660,6 +805,9 @@ sites:
     firmware: '2.1'
     start: '2023-07-25T13:49:57Z'
     end: '2023-07-27T10:50:01Z'
+    declination: -1.10
+    declination_model: IGRF-14
+    declination_epoch: 2023.57
   B21:
     dipole_length_ex: 29.0
     dipole_length_ey: 27.0
@@ -672,6 +820,9 @@ sites:
     firmware: '2.1'
     start: '2023-07-25T15:00:50Z'
     end: '2023-07-27T10:30:54Z'
+    declination: -1.09
+    declination_model: IGRF-14
+    declination_epoch: 2023.57
   B24:
     dipole_length_ex: 35.0
     dipole_length_ey: 36.0
@@ -683,6 +834,9 @@ sites:
     start: '2023-03-14T17:40:50Z'
     end: '2023-03-16T14:40:54Z'
     notes: dipole lengths and azimuths from defaults - set them from the field sheet
+    declination: -1.16
+    declination_model: IGRF-14
+    declination_epoch: 2023.20
   B25:
     dipole_length_ex: 32.5
     dipole_length_ey: 18.0
@@ -694,6 +848,9 @@ sites:
     start: '2023-03-14T13:55:46Z'
     end: '2023-03-16T13:55:50Z'
     notes: dipole lengths and azimuths from defaults - set them from the field sheet
+    declination: -1.17
+    declination_model: IGRF-14
+    declination_epoch: 2023.20
   B26:
     dipole_length_ex: 50.0
     dipole_length_ey: 53.0
@@ -706,6 +863,9 @@ sites:
     firmware: '2.1'
     start: '2023-03-14T11:52:41Z'
     end: '2023-03-16T11:52:45Z'
+    declination: -1.16
+    declination_model: IGRF-14
+    declination_epoch: 2023.20
   B27:
     dipole_length_ex: 48.0
     dipole_length_ey: 53.0
@@ -718,6 +878,9 @@ sites:
     firmware: '2.1'
     start: '2023-03-12T14:33:57Z'
     end: '2023-03-14T11:34:01Z'
+    declination: -1.16
+    declination_model: IGRF-14
+    declination_epoch: 2023.20
   B28:
     dipole_length_ex: 52.8
     dipole_length_ey: 33.5
@@ -730,6 +893,9 @@ sites:
     firmware: '2.1'
     start: '2023-03-12T12:30:24Z'
     end: '2023-03-14T11:00:28Z'
+    declination: -1.16
+    declination_model: IGRF-14
+    declination_epoch: 2023.20
   B29:
     dipole_length_ex: 54.0
     dipole_length_ey: 48.5
@@ -743,6 +909,9 @@ sites:
     start: '2023-03-12T11:08:44Z'
     end: '2023-03-14T09:38:48Z'
     notes: Moun
+    declination: -1.17
+    declination_model: IGRF-14
+    declination_epoch: 2023.20
   C01:
     dipole_length_ex: 54.0
     dipole_length_ey: 40.0
@@ -756,6 +925,9 @@ sites:
     start: '2023-09-25T10:31:25Z'
     end: '2023-09-27T12:01:29Z'
     notes: Road in the NW (about 500m)
+    declination: -0.48
+    declination_model: IGRF-14
+    declination_epoch: 2023.74
   C02:
     dipole_length_ex: 43.0
     dipole_length_ey: 44.0
@@ -769,6 +941,9 @@ sites:
     start: '2023-09-25T11:46:51Z'
     end: '2023-09-27T10:16:55Z'
     notes: Road+powerline in the south (about 400m)
+    declination: -0.48
+    declination_model: IGRF-14
+    declination_epoch: 2023.74
   C03:
     dipole_length_ex: 34.0
     dipole_length_ey: 36.0
@@ -782,6 +957,9 @@ sites:
     start: '2023-09-25T13:22:29Z'
     end: '2023-09-27T10:22:33Z'
     notes: House +Power line in the east and the road in the south (about 100m)
+    declination: -0.47
+    declination_model: IGRF-14
+    declination_epoch: 2023.74
   C04:
     dipole_length_ex: 54.0
     dipole_length_ey: 53.0
@@ -795,6 +973,9 @@ sites:
     start: '2023-09-25T14:56:24Z'
     end: '2023-09-27T10:26:28Z'
     notes: Road+powerline in the north (about 200m)
+    declination: -0.42
+    declination_model: IGRF-14
+    declination_epoch: 2023.74
   C05:
     dipole_length_ex: 53.0
     dipole_length_ey: 53.0
@@ -809,6 +990,9 @@ sites:
     end: '2023-09-27T09:16:49Z'
     notes: The road in the N and NE( about 400m)+ powerline in the E about(300m) and
       house(about 60m) +Valley(about 200m)
+    declination: -0.41
+    declination_model: IGRF-14
+    declination_epoch: 2023.74
   C06:
     dipole_length_ex: 25.0
     dipole_length_ey: 53.0
@@ -822,6 +1006,9 @@ sites:
     start: '2023-09-25T16:18:42Z'
     end: '2023-09-27T08:48:46Z'
     notes: ROAD IN THE SOUTHERN 160m
+    declination: -0.41
+    declination_model: IGRF-14
+    declination_epoch: 2023.74
   C07:
     dipole_length_ex: 52.0
     dipole_length_ey: 54.0
@@ -834,6 +1021,9 @@ sites:
     firmware: '2.1'
     start: '2023-09-25T17:10:03Z'
     end: '2023-09-27T09:40:07Z'
+    declination: -0.39
+    declination_model: IGRF-14
+    declination_epoch: 2023.74
   C08:
     dipole_length_ex: 33.0
     dipole_length_ey: 53.0
@@ -847,6 +1037,9 @@ sites:
     start: '2023-09-25T17:29:30Z'
     end: '2023-09-27T08:29:34Z'
     notes: ROAD IN THE NORTHERN 60m
+    declination: -0.39
+    declination_model: IGRF-14
+    declination_epoch: 2023.74
   C09:
     dipole_length_ex: 53.0
     dipole_length_ey: 52.0
@@ -860,6 +1053,9 @@ sites:
     start: '2023-09-25T18:24:46Z'
     end: '2023-09-27T07:54:50Z'
     notes: road in the NW 1km, Small path in the east 100m, lake in the south 600m
+    declination: -0.39
+    declination_model: IGRF-14
+    declination_epoch: 2023.74
   C10:
     dipole_length_ex: 53.0
     dipole_length_ey: 42.0
@@ -872,6 +1068,9 @@ sites:
     firmware: '2.1'
     start: '2023-09-24T14:20:56Z'
     end: '2023-09-27T06:55:08Z'
+    declination: -0.39
+    declination_model: IGRF-14
+    declination_epoch: 2023.73
   C11:
     dipole_length_ex: 42.0
     dipole_length_ey: 54.0
@@ -886,6 +1085,9 @@ sites:
     start: '2023-09-24T13:11:29Z'
     end: '2023-09-26T16:35:51Z'
     notes: ROAD IN THE EAST 200m, road in the northern 200m
+    declination: -0.37
+    declination_model: IGRF-14
+    declination_epoch: 2023.73
   C12:
     dipole_length_ex: 54.0
     dipole_length_ey: 52.0
@@ -899,6 +1101,9 @@ sites:
     start: '2023-09-23T17:21:29Z'
     end: '2023-09-25T11:21:33Z'
     notes: Power line in the NE 600m, Road in the South 500m
+    declination: -0.36
+    declination_model: IGRF-14
+    declination_epoch: 2023.73
   C13:
     dipole_length_ex: 33.0
     dipole_length_ey: 52.0
@@ -912,6 +1117,9 @@ sites:
     start: '2023-09-23T16:09:50Z'
     end: '2023-09-25T11:39:54Z'
     notes: Road in NE 200m
+    declination: -0.35
+    declination_model: IGRF-14
+    declination_epoch: 2023.73
   C14:
     dipole_length_ex: 30.0
     dipole_length_ey: 27.0
@@ -926,6 +1134,9 @@ sites:
     end: '2023-09-25T10:19:12Z'
     notes: The road in the west (about 40m) +Village and  station depoloyed in a hotel
       yard
+    declination: -0.36
+    declination_model: IGRF-14
+    declination_epoch: 2023.73
   C15:
     dipole_length_ex: 41.0
     dipole_length_ey: 51.0
@@ -939,6 +1150,9 @@ sites:
     start: '2023-09-23T13:33:40Z'
     end: '2023-09-25T10:33:44Z'
     notes: Road in the SW about 100m
+    declination: -0.36
+    declination_model: IGRF-14
+    declination_epoch: 2023.73
   C16:
     dipole_length_ex: 53.0
     dipole_length_ey: 53.0
@@ -952,6 +1166,9 @@ sites:
     start: '2023-09-23T12:28:42Z'
     end: '2023-09-25T09:28:46Z'
     notes: The road in the south 40m
+    declination: -0.36
+    declination_model: IGRF-14
+    declination_epoch: 2023.73
   C17:
     dipole_length_ex: 52.0
     dipole_length_ey: 20.0
@@ -965,6 +1182,9 @@ sites:
     start: '2023-09-23T11:06:50Z'
     end: '2023-09-25T09:36:54Z'
     notes: The station deployed in the farm, Village and in a village
+    declination: -0.36
+    declination_model: IGRF-14
+    declination_epoch: 2023.73
   C18:
     dipole_length_ex: 55.0
     dipole_length_ey: 45.0
@@ -979,6 +1199,9 @@ sites:
     end: '2023-09-24T10:51:26Z'
     notes: Power line + network tower in the west and power line + Road in the East
       100m
+    declination: -0.36
+    declination_model: IGRF-14
+    declination_epoch: 2023.73
   C19:
     dipole_length_ex: 55.0
     dipole_length_ey: 55.0
@@ -992,6 +1215,9 @@ sites:
     start: '2023-09-22T13:57:21Z'
     end: '2023-09-24T10:57:25Z'
     notes: The road in the west 400m
+    declination: -0.37
+    declination_model: IGRF-14
+    declination_epoch: 2023.73
   C20:
     dipole_length_ex: 54.0
     dipole_length_ey: 54.0
@@ -1005,6 +1231,9 @@ sites:
     start: '2023-09-22T15:16:15Z'
     end: '2023-09-24T09:16:19Z'
     notes: The road in the north 100m
+    declination: -0.38
+    declination_model: IGRF-14
+    declination_epoch: 2023.73
   C21:
     dipole_length_ex: 54.0
     dipole_length_ey: 53.0
@@ -1018,6 +1247,9 @@ sites:
     start: '2023-09-25T17:10:03Z'
     end: '2023-09-27T09:40:07Z'
     notes: Th road in the south 200m
+    declination: -0.39
+    declination_model: IGRF-14
+    declination_epoch: 2023.74
   C21new:
     latitude: 31.656691
     longitude: -5.577793
@@ -1027,6 +1259,9 @@ sites:
     start: '2023-09-22T16:46:48Z'
     end: '2023-09-24T09:16:52Z'
     notes: dipole lengths and azimuths from defaults - set them from the field sheet
+    declination: -0.40
+    declination_model: IGRF-14
+    declination_epoch: 2023.73
   C22:
     dipole_length_ex: 54.0
     dipole_length_ey: 39.0
@@ -1039,6 +1274,9 @@ sites:
     firmware: '2.1'
     start: '2023-09-22T18:02:39Z'
     end: '2023-09-24T08:01:29Z'
+    declination: -0.40
+    declination_model: IGRF-14
+    declination_epoch: 2023.73
   C23:
     dipole_length_ex: 53.0
     dipole_length_ey: 54.0
@@ -1052,6 +1290,9 @@ sites:
     start: '2023-09-22T09:02:31Z'
     end: '2023-09-24T07:32:35Z'
     notes: Power Transmission line + the road about 200 in the south
+    declination: -0.38
+    declination_model: IGRF-14
+    declination_epoch: 2023.73
   D01:
     dipole_length_ex: 53.0
     dipole_length_ey: 53.0
@@ -1065,6 +1306,9 @@ sites:
     start: '2023-09-19T09:50:14Z'
     end: '2023-09-21T08:20:18Z'
     notes: Road (in the south about 70m)
+    declination: 0.15
+    declination_model: IGRF-14
+    declination_epoch: 2023.72
   D02:
     dipole_length_ex: 52.0
     dipole_length_ey: 53.0
@@ -1077,6 +1321,9 @@ sites:
     firmware: '2.1'
     start: '2023-09-19T11:19:28Z'
     end: '2023-09-21T09:49:32Z'
+    declination: 0.17
+    declination_model: IGRF-14
+    declination_epoch: 2023.72
   D03:
     dipole_length_ex: 52.0
     dipole_length_ey: 52.0
@@ -1090,6 +1337,9 @@ sites:
     start: '2023-09-19T12:34:05Z'
     end: '2023-09-21T11:04:09Z'
     notes: Road (in the north about 100m)
+    declination: 0.17
+    declination_model: IGRF-14
+    declination_epoch: 2023.72
   D05:
     dipole_length_ex: 44.0
     dipole_length_ey: 54.0
@@ -1103,6 +1353,9 @@ sites:
     start: '2023-09-19T15:53:27Z'
     end: '2023-09-21T11:23:31Z'
     notes: Power line (in the East and south)
+    declination: 0.20
+    declination_model: IGRF-14
+    declination_epoch: 2023.72
   D06:
     dipole_length_ex: 53.0
     dipole_length_ey: 43.0
@@ -1116,6 +1369,9 @@ sites:
     start: '2023-09-19T17:10:30Z'
     end: '2023-09-21T11:10:34Z'
     notes: power line (in the West)
+    declination: 0.20
+    declination_model: IGRF-14
+    declination_epoch: 2023.72
   D07:
     dipole_length_ex: 53.0
     dipole_length_ey: 53.0
@@ -1129,6 +1385,9 @@ sites:
     start: '2023-09-21T12:04:51Z'
     end: '2023-09-22T10:34:55Z'
     notes: Power line and the road (in the East about 200m)
+    declination: 0.19
+    declination_model: IGRF-14
+    declination_epoch: 2023.72
   D08:
     dipole_length_ex: 43.0
     dipole_length_ey: 53.0
@@ -1142,6 +1401,9 @@ sites:
     start: '2023-09-21T12:49:11Z'
     end: '2023-09-22T09:49:15Z'
     notes: Power line and the road (in the East about 200m)
+    declination: 0.19
+    declination_model: IGRF-14
+    declination_epoch: 2023.72
   D09:
     dipole_length_ex: 53.0
     dipole_length_ey: 53.0
@@ -1155,6 +1417,9 @@ sites:
     start: '2023-09-21T13:36:59Z'
     end: '2023-09-22T10:37:03Z'
     notes: Power line and the road (in the East about 300m)
+    declination: 0.19
+    declination_model: IGRF-14
+    declination_epoch: 2023.72
   D10:
     dipole_length_ex: 33.0
     dipole_length_ey: 36.0
@@ -1169,6 +1434,9 @@ sites:
     end: '2023-09-22T11:50:16Z'
     notes: Station depolyed near the Gas station and the road in the north and the south
       about 20 m
+    declination: 0.18
+    declination_model: IGRF-14
+    declination_epoch: 2023.72
   D11:
     dipole_length_ex: 40.0
     dipole_length_ey: 41.0
@@ -1181,6 +1449,9 @@ sites:
     firmware: '2.1'
     start: '2023-09-19T19:01:46Z'
     end: '2023-09-21T10:01:50Z'
+    declination: 0.24
+    declination_model: IGRF-14
+    declination_epoch: 2023.72
   D12:
     dipole_length_ex: 28.0
     dipole_length_ey: 53.0
@@ -1194,6 +1465,9 @@ sites:
     start: '2023-09-19T17:53:51Z'
     end: '2023-09-21T10:23:55Z'
     notes: River (in the South about 6m and the road in the North about 60m)
+    declination: 0.25
+    declination_model: IGRF-14
+    declination_epoch: 2023.72
   D13:
     dipole_length_ex: 55.0
     dipole_length_ey: 55.5
@@ -1207,6 +1481,9 @@ sites:
     start: '2023-09-19T16:32:57Z'
     end: '2023-09-21T10:33:01Z'
     notes: Power lines ( in the West about 800m and road in the East about 120m)
+    declination: 0.25
+    declination_model: IGRF-14
+    declination_epoch: 2023.72
   D14:
     dipole_length_ex: 54.0
     dipole_length_ey: 44.0
@@ -1219,6 +1496,9 @@ sites:
     firmware: '2.1'
     start: '2023-09-19T14:38:48Z'
     end: '2023-09-21T10:08:52Z'
+    declination: 0.25
+    declination_model: IGRF-14
+    declination_epoch: 2023.72
   D15:
     dipole_length_ex: 55.0
     dipole_length_ey: 54.0
@@ -1232,6 +1512,9 @@ sites:
     start: '2023-09-19T13:13:35Z'
     end: '2023-09-21T11:43:39Z'
     notes: Road (in the East about 100 m)
+    declination: 0.26
+    declination_model: IGRF-14
+    declination_epoch: 2023.72
   D16:
     dipole_length_ex: 53.0
     dipole_length_ey: 54.0
@@ -1245,6 +1528,9 @@ sites:
     start: '2023-09-19T11:11:24Z'
     end: '2023-09-21T11:11:28Z'
     notes: Road and house (in the West) and road (in the south about 200m)
+    declination: 0.26
+    declination_model: IGRF-14
+    declination_epoch: 2023.72
   R01:
     dipole_length_ex: 50.0
     dipole_length_ey: 50.0
@@ -1257,6 +1543,9 @@ sites:
     firmware: '2.1'
     start: '2023-02-13T12:25:55Z'
     end: '2023-02-18T13:55:59Z'
+    declination: -1.10
+    declination_model: IGRF-14
+    declination_epoch: 2023.13
   R02:
     dipole_length_ex: 50.0
     dipole_length_ey: 50.0
@@ -1269,6 +1558,9 @@ sites:
     firmware: '2.1'
     start: '2023-02-18T13:33:54Z'
     end: '2023-02-27T15:03:58Z'
+    declination: -1.10
+    declination_model: IGRF-14
+    declination_epoch: 2023.15
   R03:
     dipole_length_ex: 50.0
     dipole_length_ey: 50.0
@@ -1281,6 +1573,9 @@ sites:
     firmware: '2.1'
     start: '2023-02-28T13:39:16Z'
     end: '2023-03-07T15:09:20Z'
+    declination: -1.10
+    declination_model: IGRF-14
+    declination_epoch: 2023.17
   R04:
     dipole_length_ex: 50.0
     dipole_length_ey: 50.0
@@ -1293,6 +1588,9 @@ sites:
     firmware: '2.1'
     start: '2023-03-17T10:02:36Z'
     end: '2023-03-18T11:32:40Z'
+    declination: -1.09
+    declination_model: IGRF-14
+    declination_epoch: 2023.21
   R05:
     dipole_length_ex: 50.0
     dipole_length_ey: 50.0
@@ -1307,6 +1605,9 @@ sites:
     end: '2023-08-04T18:18:10Z'
     notes: 'recorded at 1 Hz, the survey is 1000 Hz - not a LEMI-423 rate: instrument
       fault, exclude from processing'
+    declination: -1.04
+    declination_model: IGRF-14
+    declination_epoch: 2023.57
   R06:
     dipole_length_ex: 50.0
     dipole_length_ey: 50.0
@@ -1319,6 +1620,9 @@ sites:
     firmware: '2.1'
     start: '2023-09-17T13:05:06Z'
     end: '2023-09-29T20:35:10Z'
+    declination: -1.02
+    declination_model: IGRF-14
+    declination_epoch: 2023.73
   EBR:
     instrument: intermagnet
     channels:
@@ -1331,6 +1635,9 @@ sites:
     start: '2023-02-13T00:00:00Z'
     end: '2023-09-28T00:00:00Z'
     notes: INTERMAGNET observatory, 1 s, fetched 2026-09-25T11:56:55Z
+    declination: 1.21
+    declination_model: IGRF-14
+    declination_epoch: 2023.43
   SPT:
     instrument: intermagnet
     channels:
@@ -1343,6 +1650,9 @@ sites:
     start: '2023-02-13T00:00:00Z'
     end: '2023-09-30T00:00:00Z'
     notes: INTERMAGNET observatory San Pablo de los Montes, 1 s, fetched 2026-09-27 (four runs over the deployment windows)
+    declination: 0.00
+    declination_model: IGRF-14
+    declination_epoch: 2023.43
   B01L:
     derived_from: B01
     sample_rate: 1.0
@@ -1357,6 +1667,9 @@ sites:
     end: '2023-02-18T10:09:28Z'
     notes: B01 decimated to 1 Hz from B01_fa5afd228.h5 by scripts/decimate_site.py,
       2026-09-25T11:39:20Z
+    declination: -1.13
+    declination_model: IGRF-14
+    declination_epoch: 2023.13
   B28L:
     derived_from: B28
     sample_rate: 1.0
@@ -1371,6 +1684,9 @@ sites:
     end: '2023-03-14T09:30:22Z'
     notes: B28 decimated to 1 Hz from B28_f901799d5.h5 by scripts/decimate_site.py,
       2026-09-25T11:40:57Z
+    declination: -1.16
+    declination_model: IGRF-14
+    declination_epoch: 2023.20
   B18L:
     derived_from: B18
     sample_rate: 1.0
@@ -1384,6 +1700,9 @@ sites:
     start: '2023-07-23T16:47:28Z'
     end: '2023-07-26T09:56:33Z'
     notes: B18 decimated to 1 Hz from B18.h5 by scripts/decimate_site.py, 2026-09-25T07:44:41Z
+    declination: -1.11
+    declination_model: IGRF-14
+    declination_epoch: 2023.56
   B04L:
     derived_from: B04
     sample_rate: 1.0
@@ -1398,6 +1717,9 @@ sites:
     end: '2023-07-23T09:35:06Z'
     notes: B04 decimated to 1 Hz from B04_fa5afd228.h5 by scripts/decimate_site.py,
       2026-09-25T07:48:43Z
+    declination: -1.08
+    declination_model: IGRF-14
+    declination_epoch: 2023.55
   B10L:
     derived_from: B10
     sample_rate: 1.0
@@ -1412,6 +1734,9 @@ sites:
     end: '2023-07-25T17:05:02Z'
     notes: B10 decimated to 1 Hz from B10_f81e4c0e6.h5 by scripts/decimate_site.py,
       2026-09-25T11:40:25Z
+    declination: -1.08
+    declination_model: IGRF-14
+    declination_epoch: 2023.56
   B02L:
     derived_from: B02
     sample_rate: 1.0
@@ -1426,6 +1751,9 @@ sites:
     end: '2023-02-18T11:25:00Z'
     notes: B02 decimated to 1 Hz from B02_f98a88596.h5 by scripts/decimate_site.py,
       2026-09-25T11:39:41Z
+    declination: -1.13
+    declination_model: IGRF-14
+    declination_epoch: 2023.13
   R01L:
     derived_from: R01
     sample_rate: 1.0
@@ -1440,6 +1768,9 @@ sites:
     end: '2023-02-18T12:48:20Z'
     notes: R01 decimated to 1 Hz from R01_fea1862d6.h5 by scripts/decimate_site.py,
       2026-09-25T08:12:08Z
+    declination: -1.10
+    declination_model: IGRF-14
+    declination_epoch: 2023.13
   B03L:
     derived_from: B03
     sample_rate: 1.0
@@ -1454,6 +1785,9 @@ sites:
     end: '2023-07-23T09:02:40Z'
     notes: B03 decimated to 1 Hz from B03_fa5afd228.h5 by scripts/decimate_site.py,
       2026-09-25T08:12:36Z
+    declination: -1.07
+    declination_model: IGRF-14
+    declination_epoch: 2023.55
   B14L:
     derived_from: B14
     sample_rate: 1.0
@@ -1468,6 +1802,9 @@ sites:
     end: '2023-07-25T09:31:31Z'
     notes: B14 decimated to 1 Hz from B14_f81e4c0e6.h5 by scripts/decimate_site.py,
       2026-09-25T11:40:44Z
+    declination: -1.10
+    declination_model: IGRF-14
+    declination_epoch: 2023.56
   B09L:
     derived_from: B09
     sample_rate: 1.0
@@ -1481,6 +1818,9 @@ sites:
     start: '2023-07-20T13:33:46Z'
     end: '2023-07-24T09:59:03Z'
     notes: B09 decimated to 1 Hz from B09.h5 by scripts/decimate_site.py, 2026-09-25T08:13:22Z
+    declination: -1.09
+    declination_model: IGRF-14
+    declination_epoch: 2023.55
   B05L:
     derived_from: B05
     sample_rate: 1.0
@@ -1495,6 +1835,9 @@ sites:
     end: '2023-07-20T09:37:10Z'
     notes: B05 decimated to 1 Hz from B05_fa5afd228.h5 by scripts/decimate_site.py,
       2026-09-25T08:13:54Z
+    declination: -1.07
+    declination_model: IGRF-14
+    declination_epoch: 2023.55
   B06L:
     derived_from: B06
     sample_rate: 1.0
@@ -1508,6 +1851,9 @@ sites:
     start: '2023-07-18T11:20:31Z'
     end: '2023-07-23T10:10:23Z'
     notes: B06 decimated to 1 Hz from B06.h5 by scripts/decimate_site.py, 2026-09-25T08:14:24Z
+    declination: -1.07
+    declination_model: IGRF-14
+    declination_epoch: 2023.55
   B07L:
     derived_from: B07
     sample_rate: 1.0
@@ -1522,6 +1868,9 @@ sites:
     end: '2023-07-20T10:16:45Z'
     notes: B07 decimated to 1 Hz from B07_f81e4c0e6.h5 by scripts/decimate_site.py,
       2026-09-25T11:39:55Z
+    declination: -1.08
+    declination_model: IGRF-14
+    declination_epoch: 2023.55
   B08L:
     derived_from: B08
     sample_rate: 1.0
@@ -1535,6 +1884,9 @@ sites:
     start: '2023-07-20T12:04:28Z'
     end: '2023-07-24T09:38:32Z'
     notes: B08 decimated to 1 Hz from B08.h5 by scripts/decimate_site.py, 2026-09-25T08:15:04Z
+    declination: -1.09
+    declination_model: IGRF-14
+    declination_epoch: 2023.55
   B11L:
     derived_from: B11
     sample_rate: 1.0
@@ -1549,6 +1901,9 @@ sites:
     end: '2023-07-28T10:45:17Z'
     notes: B11 decimated to 1 Hz from B11_f81e4c0e6.h5 by scripts/decimate_site.py,
       2026-09-25T08:29:47Z
+    declination: -1.08
+    declination_model: IGRF-14
+    declination_epoch: 2023.57
   C02L:
     derived_from: C02
     sample_rate: 1.0
@@ -1563,6 +1918,9 @@ sites:
     end: '2023-09-27T10:12:26Z'
     notes: C02 decimated to 1 Hz from C02_f768fa47a.h5 by scripts/decimate_site.py,
       2026-09-25T12:00:39Z
+    declination: -0.48
+    declination_model: IGRF-14
+    declination_epoch: 2023.74
   C03L:
     derived_from: C03
     sample_rate: 1.0
@@ -1577,6 +1935,9 @@ sites:
     end: '2023-09-27T10:19:30Z'
     notes: C03 decimated to 1 Hz from C03_f11316925.h5 by scripts/decimate_site.py,
       2026-09-25T12:07:41Z
+    declination: -0.47
+    declination_model: IGRF-14
+    declination_epoch: 2023.74
   C04L:
     derived_from: C04
     sample_rate: 1.0
@@ -1591,6 +1952,9 @@ sites:
     end: '2023-09-27T09:31:24Z'
     notes: C04 decimated to 1 Hz from C04_f81e4c0e6.h5 by scripts/decimate_site.py,
       2026-09-25T12:08:35Z
+    declination: -0.42
+    declination_model: IGRF-14
+    declination_epoch: 2023.74
   C05L:
     derived_from: C05
     sample_rate: 1.0
@@ -1605,6 +1969,9 @@ sites:
     end: '2023-09-27T09:16:39Z'
     notes: C05 decimated to 1 Hz from C05_f22456a9d.h5 by scripts/decimate_site.py,
       2026-09-25T12:09:29Z
+    declination: -0.41
+    declination_model: IGRF-14
+    declination_epoch: 2023.74
   C06L:
     derived_from: C06
     sample_rate: 1.0
@@ -1619,6 +1986,9 @@ sites:
     end: '2023-09-27T08:46:02Z'
     notes: C06 decimated to 1 Hz from C06_fa5afd228.h5 by scripts/decimate_site.py,
       2026-09-25T12:10:25Z
+    declination: -0.41
+    declination_model: IGRF-14
+    declination_epoch: 2023.74
   C07L:
     derived_from: C07
     sample_rate: 1.0
@@ -1633,6 +2003,9 @@ sites:
     end: '2023-09-27T08:31:24Z'
     notes: C07 decimated to 1 Hz from C07_fa5afd228.h5 by scripts/decimate_site.py,
       2026-09-25T12:11:13Z
+    declination: -0.39
+    declination_model: IGRF-14
+    declination_epoch: 2023.74
   C08L:
     derived_from: C08
     sample_rate: 1.0
@@ -1647,6 +2020,9 @@ sites:
     end: '2023-09-27T08:05:07Z'
     notes: C08 decimated to 1 Hz from C08_ff3e66b01.h5 by scripts/decimate_site.py,
       2026-09-25T12:12:01Z
+    declination: -0.39
+    declination_model: IGRF-14
+    declination_epoch: 2023.74
   C09L:
     derived_from: C09
     sample_rate: 1.0
@@ -1661,6 +2037,9 @@ sites:
     end: '2023-09-27T07:39:23Z'
     notes: C09 decimated to 1 Hz from C09_f2edf7f7f.h5 by scripts/decimate_site.py,
       2026-09-25T12:12:57Z
+    declination: -0.39
+    declination_model: IGRF-14
+    declination_epoch: 2023.74
   C10L:
     derived_from: C10
     sample_rate: 1.0
@@ -1675,6 +2054,9 @@ sites:
     end: '2023-09-27T06:54:58Z'
     notes: C10 decimated to 1 Hz from C10_f22456a9d.h5 by scripts/decimate_site.py,
       2026-09-25T12:14:15Z
+    declination: -0.39
+    declination_model: IGRF-14
+    declination_epoch: 2023.73
   C11L:
     derived_from: C11
     sample_rate: 1.0
@@ -1689,6 +2071,9 @@ sites:
     end: '2023-09-26T16:35:41Z'
     notes: C11 decimated to 1 Hz from C11_fa5afd228.h5 by scripts/decimate_site.py,
       2026-09-27T00:51:04Z
+    declination: -0.37
+    declination_model: IGRF-14
+    declination_epoch: 2023.73
   C12L:
     derived_from: C12
     sample_rate: 1.0
@@ -1703,6 +2088,9 @@ sites:
     end: '2023-09-25T10:56:35Z'
     notes: C12 decimated to 1 Hz from C12_f816deecc.h5 by scripts/decimate_site.py,
       2026-09-25T12:16:43Z
+    declination: -0.36
+    declination_model: IGRF-14
+    declination_epoch: 2023.73
   C13L:
     derived_from: C13
     sample_rate: 1.0
@@ -1717,6 +2105,9 @@ sites:
     end: '2023-09-25T10:31:22Z'
     notes: C13 decimated to 1 Hz from C13_feb7c3677.h5 by scripts/decimate_site.py,
       2026-09-25T12:17:37Z
+    declination: -0.35
+    declination_model: IGRF-14
+    declination_epoch: 2023.73
   C14L:
     derived_from: C14
     sample_rate: 1.0
@@ -1731,6 +2122,9 @@ sites:
     end: '2023-09-25T10:00:09Z'
     notes: C14 decimated to 1 Hz from C14_fa5afd228.h5 by scripts/decimate_site.py,
       2026-09-25T12:18:37Z
+    declination: -0.36
+    declination_model: IGRF-14
+    declination_epoch: 2023.73
   C15L:
     derived_from: C15
     sample_rate: 1.0
@@ -1745,6 +2139,9 @@ sites:
     end: '2023-09-25T09:25:55Z'
     notes: C15 decimated to 1 Hz from C15_f393cd20d.h5 by scripts/decimate_site.py,
       2026-09-25T12:19:39Z
+    declination: -0.36
+    declination_model: IGRF-14
+    declination_epoch: 2023.73
   C16L:
     derived_from: C16
     sample_rate: 1.0
@@ -1759,6 +2156,9 @@ sites:
     end: '2023-09-25T08:54:21Z'
     notes: C16 decimated to 1 Hz from C16_f07e1aef4.h5 by scripts/decimate_site.py,
       2026-09-25T12:20:48Z
+    declination: -0.36
+    declination_model: IGRF-14
+    declination_epoch: 2023.73
   C17L:
     derived_from: C17
     sample_rate: 1.0
@@ -1773,6 +2173,9 @@ sites:
     end: '2023-09-25T08:09:15Z'
     notes: C17 decimated to 1 Hz from C17_fa5afd228.h5 by scripts/decimate_site.py,
       2026-09-25T12:22:03Z
+    declination: -0.36
+    declination_model: IGRF-14
+    declination_epoch: 2023.73
   C18L:
     derived_from: C18
     sample_rate: 1.0
@@ -1787,6 +2190,9 @@ sites:
     end: '2023-09-24T10:10:37Z'
     notes: C18 decimated to 1 Hz from C18_fb647033d.h5 by scripts/decimate_site.py,
       2026-09-25T12:23:22Z
+    declination: -0.36
+    declination_model: IGRF-14
+    declination_epoch: 2023.73
   C19L:
     derived_from: C19
     sample_rate: 1.0
@@ -1801,6 +2207,9 @@ sites:
     end: '2023-09-24T09:46:32Z'
     notes: C19 decimated to 1 Hz from C19_f7b05dc48.h5 by scripts/decimate_site.py,
       2026-09-25T12:24:15Z
+    declination: -0.37
+    declination_model: IGRF-14
+    declination_epoch: 2023.73
   C20L:
     derived_from: C20
     sample_rate: 1.0
@@ -1815,6 +2224,9 @@ sites:
     end: '2023-09-24T09:13:25Z'
     notes: C20 decimated to 1 Hz from C20_fa5afd228.h5 by scripts/decimate_site.py,
       2026-09-25T12:25:15Z
+    declination: -0.38
+    declination_model: IGRF-14
+    declination_epoch: 2023.73
   C22L:
     derived_from: C22
     sample_rate: 1.0
@@ -1829,6 +2241,9 @@ sites:
     end: '2023-09-24T08:01:19Z'
     notes: C22 decimated to 1 Hz from C22_fb080d729.h5 by scripts/decimate_site.py,
       2026-09-25T12:26:17Z
+    declination: -0.40
+    declination_model: IGRF-14
+    declination_epoch: 2023.73
   C23L:
     derived_from: C23
     sample_rate: 1.0
@@ -1843,6 +2258,9 @@ sites:
     end: '2023-09-24T07:09:01Z'
     notes: C23 decimated to 1 Hz from C23_fa1684b1a.h5 by scripts/decimate_site.py,
       2026-09-25T12:27:11Z
+    declination: -0.38
+    declination_model: IGRF-14
+    declination_epoch: 2023.73
   C21newL:
     derived_from: C21new
     sample_rate: 1.0
@@ -1857,6 +2275,9 @@ sites:
     end: '2023-09-24T08:42:46Z'
     notes: C21new decimated to 1 Hz from C21new_f4b15686e.h5 by scripts/decimate_site.py,
       2026-09-25T12:28:02Z
+    declination: -0.40
+    declination_model: IGRF-14
+    declination_epoch: 2023.73
   C01L:
     derived_from: C01
     sample_rate: 1.0
@@ -1871,6 +2292,9 @@ sites:
     end: '2023-09-27T10:51:41Z'
     notes: C01 decimated to 1 Hz from C01_f012bbb9e.h5 by scripts/decimate_site.py,
       2026-09-25T12:29:13Z
+    declination: -0.48
+    declination_model: IGRF-14
+    declination_epoch: 2023.74
   A19L:
     derived_from: A19
     sample_rate: 1.0
@@ -1886,6 +2310,9 @@ sites:
     notes: A19 decimated to 1 Hz from A19.h5 by scripts/decimate_site.py (write_derived),
       2026-09-26T23:52:00Z; rebuilt after the A19 re-ingest with azimuth_ey 270 (ey
       sign-flipped)
+    declination: -1.64
+    declination_model: IGRF-14
+    declination_epoch: 2023.16
   A21L:
     derived_from: A21
     sample_rate: 1.0
@@ -1900,6 +2327,9 @@ sites:
     end: '2023-03-02T08:33:20Z'
     notes: A21 decimated to 1 Hz from A21.h5 by scripts/decimate_site.py, 2026-09-26T09:17:14Z
       (lineA dive)
+    declination: -1.66
+    declination_model: IGRF-14
+    declination_epoch: 2023.16
   A23L:
     derived_from: A23
     sample_rate: 1.0
@@ -1914,6 +2344,9 @@ sites:
     end: '2023-02-26T05:07:22Z'
     notes: A23 decimated to 1 Hz from A23.h5 by scripts/decimate_site.py, 2026-09-26T10:25:11Z
       (lineA dive)
+    declination: -1.69
+    declination_model: IGRF-14
+    declination_epoch: 2023.15
   A26L:
     derived_from: A26
     sample_rate: 1.0
@@ -1928,6 +2361,9 @@ sites:
     end: '2023-02-26T10:12:01Z'
     notes: A26 decimated to 1 Hz from A26.h5 by scripts/decimate_site.py, 2026-09-26T10:26:10Z
       (lineA dive)
+    declination: -1.67
+    declination_model: IGRF-14
+    declination_epoch: 2023.15
   A28L:
     derived_from: A28
     sample_rate: 1.0
@@ -1942,3 +2378,6 @@ sites:
     end: '2023-03-10T08:49:37Z'
     notes: A28 decimated to 1 Hz from A28.h5 by scripts/decimate_site.py, 2026-09-26T11:55:38Z
       (A29 dive); registered 29 Sep 2026 as the A28 dive's scratch entry (A28L rr SPT)
+    declination: -1.65
+    declination_model: IGRF-14
+    declination_epoch: 2023.18
