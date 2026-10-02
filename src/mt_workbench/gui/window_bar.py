@@ -11,16 +11,21 @@ start left of the bar and the end right of it, each with the local time
 words of `status_state`, between two round lamps of the status colour.
 
 The window arithmetic is an interval intersection. Spans come from
-`site_span`: `mt_workbench.gui.archive.load_grid` for an archived site, or
+`site_span`: `mt_workbench.gui.archive.read_span` (the HDF5 attributes
+`load_grid` builds its grid from) for an archived site, or
 `mt_workbench.instruments.span` for a site with raw files only. The Process tab's
 summary (`mt_workbench.gui.site_map.PairSummary`) reads its hours through `span`,
 `known` and `read_spans`.
 
-Spans are read off the GUI thread (`load_grid` opens the site's archive; a
+Spans are read off the GUI thread (`read_span` opens the site's archive; a
 raw site needs only a file listing), in the same way the tree reads its windows:
 one `ReadThread` at a time under `State.archive_lock`, the current pair ahead
-of other sites, cached per survey. Each read starts one event-loop turn
-later, so a window clicked in the tree takes the lock first.
+of other sites. Each read starts one event-loop turn later, so a window
+clicked in the tree takes the lock first. An archive's span is kept in
+`State.spans` (`SpanCache`) under the file's path, modification time and
+size, across survey reloads and for every bar: the Process tab's and the
+Cross-powers tab's bars read each unchanged archive once between them, and a
+bar finds a kept span at once, with no thread and no file opened.
 
 @author: ben kay (ben@auscope.org.au)
 
@@ -38,7 +43,7 @@ from PySide6.QtGui import QColor
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QLineEdit, QVBoxLayout, QWidget
 
 from mt_workbench.instruments import span as file_span
-from mt_workbench.gui.archive import load_grid
+from mt_workbench.gui.archive import read_span
 from mt_workbench.gui.reader import ReadThread
 from mt_workbench.gui.theme import (
     BAD_COLOUR, HIGHLIGHT, IDLE_COLOUR, MARKER_EDGE, OK_COLOUR, PAIR_REMOTE_COLOUR, REGION_ALPHA,
@@ -51,12 +56,12 @@ UTC_FMT = "%Y-%m-%d %H:%M"  # what the fields hold and the scripts take
 def site_span(survey, site: str, archive, site_dir):
     """Return a site's recorded span from its archive or its raw files.
 
-    Uses the archive when there is one (`load_grid`, the grid the Time Series
-    tab lists windows from, so the bar and the tree agree to the sample),
-    otherwise the raw file names (`mt_workbench.instruments.span` for the site's
-    instrument). For B423 files the span runs from the first epoch to the
-    last epoch plus the median spacing, as in `scripts/timing_qc.py`.
-    Runs in a `ReadThread`.
+    Uses the archive when there is one (`read_span`, the span of the grid
+    the Time Series tab lists windows from, so the bar and the tree agree to
+    the sample), otherwise the raw file names (`mt_workbench.instruments.span`
+    for the site's instrument). For B423 files the span runs from the first
+    epoch to the last epoch plus the median spacing, as in
+    `scripts/timing_qc.py`. Runs in a `ReadThread`.
 
     Args:
         survey: The open `mt_workbench.survey.Survey`.
@@ -71,12 +76,64 @@ def site_span(survey, site: str, archive, site_dir):
         FileNotFoundError: If the site has neither an archive nor a raw folder.
     """
     if archive is not None and Path(archive).exists():
-        grid = load_grid(archive, survey.name, site)
-        return grid.t0, grid.t0 + pd.Timedelta(seconds=grid.n_samples / grid.sample_rate)
+        return read_span(archive, survey.name, site)
     if site_dir is not None:
         start, end, _n = file_span(Path(site_dir), survey.instrument_of(site))
         return start, end
     raise FileNotFoundError(f"{site}: no archive and no raw folder")
+
+
+class SpanCache:
+    """Archive spans kept under each archive's path, modification time and size.
+
+    One sits on `State` (`State.spans`) and serves every `WindowBar` across
+    survey reloads. `get` answers from what is kept, after a stat and with
+    no file opened; `read` reads a span not kept, or kept for another state
+    of the file, with `site_span` and keeps it. A site with raw files only
+    is read every time (its span comes from a file listing, not a file).
+    `read` runs in a bar's `ReadThread`.
+    """
+
+    def __init__(self):
+        self._spans: dict[tuple[str, str], tuple[tuple, tuple]] = {}  # (survey, site) -> (stamp, span)
+
+    @staticmethod
+    def _stamp(archive) -> tuple | None:
+        """Return (path, st_mtime_ns, st_size) of an archive, or None when there is none."""
+        if archive is None:
+            return None
+        try:
+            status = Path(archive).stat()
+        except OSError:
+            return None
+        return str(archive), status.st_mtime_ns, status.st_size
+
+    def get(self, survey, site: str, archive):
+        """Return the kept span of `site`'s archive as it is now, or None."""
+        stamp = self._stamp(archive)
+        kept = self._spans.get((survey.name, site))
+        return kept[1] if stamp is not None and kept is not None and kept[0] == stamp else None
+
+    def read(self, survey, site: str, archive, site_dir):
+        """Return `site_span`, from what is kept when the archive is unchanged.
+
+        Args:
+            survey: The open `mt_workbench.survey.Survey`.
+            site (str): Site name.
+            archive: The site's archive path, or None.
+            site_dir: The site's raw folder, or None.
+
+        Returns:
+            tuple: (first sample, one past the last sample), UTC.
+        """
+        stamp = self._stamp(archive)
+        kept = self._spans.get((survey.name, site))
+        if stamp is not None and kept is not None and kept[0] == stamp:
+            return kept[1]
+        span = site_span(survey, site, archive, site_dir)
+        if stamp is not None:
+            self._spans[(survey.name, site)] = (stamp, span)
+        return span
 
 
 def to_utc(value) -> pd.Timestamp:
@@ -195,15 +252,32 @@ class WindowBar(QWidget):
     def read_spans(self, sites, first: bool = False) -> None:
         """Queue span reads of the unread `sites`, at the front if `first`.
 
-        Also called by the pair summary for its candidate remotes.
+        Also called by the pair summary for its candidate remotes. A span
+        kept in `State.spans` for the archive as it is now is taken at once;
+        `spans_changed` follows one event-loop turn later, as after a read.
         """
         wanted = [s for s in dict.fromkeys(sites) if s and not self.known(s)]
+        kept = {}
+        if self.state.survey is not None:
+            for site in wanted:
+                span = self.state.spans.get(self.state.survey, site, self.state.archive_path(site))
+                if span is not None:
+                    kept[site] = span
+        if kept:
+            self.spans.update({s: (to_utc(a), to_utc(b)) for s, (a, b) in kept.items()})
+            wanted = [s for s in wanted if s not in kept]
+            QTimer.singleShot(0, self._kept_taken)
         if first:
             self._queue[:] = wanted + [s for s in self._queue if s not in wanted]
         else:
             self._queue += [s for s in wanted if s not in self._queue]
         if wanted:
             QTimer.singleShot(0, self._kick)
+
+    def _kept_taken(self) -> None:
+        """Redraw and tell the listeners after spans were taken from `State.spans`."""
+        self.refresh()
+        self.spans_changed.emit()
 
     def known(self, site) -> bool:
         """True once `site`'s span has been read or has failed."""
@@ -220,7 +294,7 @@ class WindowBar(QWidget):
         survey = self.state.survey
         archive = self.state.archive_path(site)
         site_dir = self.state.raw_sites().get(site)
-        thread = ReadThread(site_span, site, survey, site, archive, site_dir, parent=self)
+        thread = ReadThread(self.state.spans.read, site, survey, site, archive, site_dir, parent=self)
         thread.result.connect(self._span_read)
         thread.failed.connect(self._span_failed)
         thread.finished.connect(self._read_done)

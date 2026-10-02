@@ -26,6 +26,13 @@ Channels keep the archive's own names (`mt_workbench.gui.channels`). `load_grid`
 takes every electric and magnetic channel by default, in stack order, or the
 requested names that exist.
 
+`read_span` returns the grid's span alone (its first sample and one past its
+last) from the HDF5 attributes `load_grid` builds the grid from: the runs'
+`time_period` and the first channel's `sample_rate` and length. It opens the
+file with h5py and builds no mth5 or mt_metadata object, so it costs a few
+milliseconds where `load_grid` takes about 0.13 s; the Process and
+Cross-powers tabs' window bars read every archive's span this way.
+
 `run_slices` maps each run's samples onto the grid.
 `mt_workbench.gui.windows.window_list` walks it to find a station's windows and
 `load_segment` fills a window through it.
@@ -40,6 +47,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+import h5py
 import pandas as pd
 from mth5.mth5 import MTH5
 
@@ -185,6 +193,58 @@ def load_grid(mth5_path: str | Path, survey_name: str, station: str, comps=None)
         sample_rate=sample_rate, n_samples=n, group=group, runs=runs, gains=gains,
         scalar_only=scalar_only,
     )
+
+
+def read_span(mth5_path: str | Path, survey_name: str, station: str) -> tuple[pd.Timestamp, pd.Timestamp]:
+    """Return the span of a station's `Grid` from the archive's HDF5 attributes alone.
+
+    The same arithmetic as `load_grid` on the same values: the runs are the
+    station's groups with a `time_period` from 1990 on and an end after the
+    start (`mt_workbench.timefreq._real_runs`), earliest first; the sample
+    rate is the first run's first channel's (`channels.display` order), and
+    the grid ends one sample past the last run's start plus that channel's
+    length in the last run. The station is looked up under `survey_name`
+    alone, as `load_grid` looks it up.
+
+    Args:
+        mth5_path (str | Path): The MTH5 file, opened read-only.
+        survey_name (str): Survey name inside the MTH5.
+        station (str): Station name.
+
+    Returns:
+        tuple: (first sample, one past the last sample), as `load_grid`'s
+        ``t0`` and ``t0 + n_samples / sample_rate``.
+
+    Raises:
+        KeyError: If the archive holds no such station under `survey_name`
+            (`load_grid` raises `MTH5Error` there).
+        ValueError: If the station has no runs with data.
+    """
+    with h5py.File(Path(mth5_path), "r") as handle:
+        surveys = handle["Experiment/Surveys"]
+        if survey_name not in surveys or station not in surveys[survey_name]["Stations"]:
+            raise KeyError(f"{station}: not in survey {survey_name} of {Path(mth5_path).name}")
+        group = surveys[survey_name]["Stations"][station]
+        runs = []
+        for name, run in group.items():
+            if "time_period.start" not in run.attrs:
+                continue
+            start = pd.Timestamp(str(run.attrs["time_period.start"]))
+            end = pd.Timestamp(str(run.attrs["time_period.end"]))
+            if start.year < 1990 or end <= start:
+                continue
+            runs.append((name, start, end))
+        if not runs:
+            raise ValueError(f"{station}: no runs with data")
+        runs.sort(key=lambda r: r[1])
+        first = group[runs[0][0]]
+        comp = channels.display(list(first))[0]
+        sample_rate = float(first[comp].attrs["sample_rate"])
+        last_id, last_start, _ = runs[-1]
+        n_last = group[last_id][comp].shape[0]
+    t0 = runs[0][1]
+    n = int(round((last_start - t0).total_seconds() * sample_rate)) + n_last
+    return t0, t0 + pd.Timedelta(seconds=n / sample_rate)
 
 
 def run_slices(grid: Grid, station_group, comp: str, i_win: int, n_win: int):

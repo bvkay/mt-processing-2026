@@ -28,6 +28,8 @@ job. Opening a survey with no basemap fetches one through
 * `masks_reader`: the `mt_workbench.gui.masks_reader.MasksReader` that parses
   masks.yaml off the GUI thread when it changed, for the Process and
   Cross-powers tabs.
+* `spans`: the `mt_workbench.gui.window_bar.SpanCache` of archive spans the
+  Process and Cross-powers tabs' window bars share.
 * `goto_time`: emitted by any tab to put the Time Series view on a moment.
 
 `request_qc()` asks the store for the selection with the current remote and
@@ -64,6 +66,7 @@ from mt_workbench.gui.masks_reader import MasksReader
 from mt_workbench.gui.reader import ArchiveLock
 from mt_workbench.gui.segment_store import SegmentStore
 from mt_workbench.gui.site_map import fetch_basemap_if_missing
+from mt_workbench.gui.window_bar import SpanCache
 
 # src/mt_workbench/gui/app.py -> repo root
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -109,6 +112,7 @@ class State(QObject):
         self.archive_lock = ArchiveLock(self)
         self.segment_store = SegmentStore(self, self)
         self.masks_reader = MasksReader(self, self)
+        self.spans = SpanCache()  # archive spans for every window bar, kept across survey reloads
 
     # ------------------------------------------------------------ survey
 
