@@ -8,8 +8,9 @@ survey.yaml, and the conversion between YAML values and table cell text.
 `start_new_survey` queues `scripts/new_survey.py` on `state.runner` and
 starts it immediately with `JobRunner.run_now`, so the window stays
 responsive while it runs. `handle_new_survey_finished`, connected to
-`state.runner.job_finished` by `MetadataTab`, opens the survey.yaml the job
-wrote or reports its failure. Progress shows in the console strip through
+`state.runner.job_finished` by `MetadataTab`, makes the workspace folder the
+job wrote into survey.yaml, then opens the survey.yaml or reports its failure.
+Progress shows in the console strip through
 the runner's `log_line`.
 
 `rewrite_sites_block` writes the table's edits into survey.yaml in the same
@@ -26,6 +27,7 @@ Comments inside the `sites:` block are lost, as with the generator scripts.
 
 from __future__ import annotations
 
+import contextlib
 from pathlib import Path
 from textwrap import indent
 
@@ -36,7 +38,9 @@ from PySide6.QtWidgets import (
     QMessageBox, QPushButton,
 )
 
-from mt_workbench.survey import CHANNEL_PRESETS, INSTRUMENTS as SURVEY_INSTRUMENTS, SITE_TABLE_COLUMNS, default_preset
+from mt_workbench.survey import (
+    CHANNEL_PRESETS, INSTRUMENTS as SURVEY_INSTRUMENTS, SITE_TABLE_COLUMNS, Survey, default_preset,
+)
 from mt_workbench.gui.channels_column import UNCHANGED
 from mt_workbench.gui.theme import DISABLED
 
@@ -413,7 +417,8 @@ def handle_new_survey_finished(parent, state, index: int, ok: bool) -> None:
     """Open the survey.yaml a finished new-survey job wrote, or report its failure.
 
     Connected to `state.runner.job_finished`, which fires for every job;
-    jobs other than new_survey.py (`is_new_survey_job`) are ignored.
+    jobs other than new_survey.py (`is_new_survey_job`) are ignored. The
+    survey's workspace folder is made before the survey is opened.
 
     Args:
         parent (QWidget): Parent of the message boxes.
@@ -430,6 +435,12 @@ def handle_new_survey_finished(parent, state, index: int, ok: bool) -> None:
         return
     out = Path(job.argv[job.argv.index("--out") + 1])
     try:
+        # new_survey.py writes the workspace key only; the folder chosen in the
+        # dialog is made here, so the opening fetches the new survey's basemap
+        # even when its parent folder is new too (`site_map.workspace_unreachable`);
+        # a folder that cannot be made (a drive not connected) does not stop the opening
+        with contextlib.suppress(OSError):
+            Survey.from_yaml(out).workspace.mkdir(parents=True, exist_ok=True)
         state.open_survey(out)
     except Exception as exc:  # a bad YAML should not kill the window
         QMessageBox.critical(parent, "Could not open survey", f"{out}\n\n{exc}")

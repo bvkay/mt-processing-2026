@@ -13,7 +13,13 @@ tab.
 `state.runner`, so the GUI runs one job at a time and an MTH5 file is open in
 one process at a time; the Process tab's `queue_table.QueuePanel` lists every
 job. Opening a survey with no basemap fetches one through
-`site_map.fetch_basemap_if_missing`.
+`site_map.fetch_basemap_if_missing`; a workspace not made yet (the default
+`<survey dir>/work`, or a folder whose parent exists) is fetched into as it
+always was. When the workspace and its parent folder are both missing
+(`site_map.workspace_unreachable`: a wrong `workspace:` path or a drive not
+connected), nothing is fetched and `MainWindow.open_survey` names the folder
+in the status bar and in a non-modal message box, which never holds up the
+window or a test that builds it.
 
 `State` also carries what the Time Series tab and the QC tabs share:
 
@@ -65,7 +71,7 @@ from mt_workbench.gui.jobs import JobRunner
 from mt_workbench.gui.masks_reader import MasksReader
 from mt_workbench.gui.reader import ArchiveLock
 from mt_workbench.gui.segment_store import SegmentStore
-from mt_workbench.gui.site_map import fetch_basemap_if_missing
+from mt_workbench.gui.site_map import fetch_basemap_if_missing, workspace_unreachable
 from mt_workbench.gui.window_bar import SpanCache
 
 # src/mt_workbench/gui/app.py -> repo root
@@ -370,6 +376,8 @@ class MainWindow(QMainWindow):
         from mt_workbench.gui.tabs.timeseries import TimeSeriesTab
 
         self.setWindowTitle("mt-workbench")
+        # the non-modal box `open_survey` shows for a workspace it cannot reach, or None
+        self.workspace_notice: QMessageBox | None = None
         self.state = State()
 
         self.tabs = QTabWidget(self)
@@ -449,7 +457,17 @@ class MainWindow(QMainWindow):
             self.open_survey(path)
 
     def open_survey(self, path: str | Path) -> None:
-        """Open a survey, reporting a load error in a message box and the status bar."""
+        """Open a survey, reporting a load error or a workspace it cannot reach.
+
+        A load error shows in a message box and the status bar. A workspace
+        whose folder and parent folder are both missing
+        (`site_map.workspace_unreachable`) is named in the status bar and in
+        a non-modal box (`workspace_notice`), so nothing waits on it; a
+        workspace that is only not made yet opens as any other.
+
+        Args:
+            path (str | Path): The survey YAML to open.
+        """
         try:
             self.state.open_survey(path)
         except Exception as exc:  # a bad YAML should not kill the window
@@ -457,10 +475,34 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(f"could not open {path}: {exc}")
             return
         survey = self.state.survey
+        self.close_workspace_notice()
+        if workspace_unreachable(survey):
+            self.statusBar().showMessage(
+                f"{survey.name}: workspace folder {survey.workspace} does not exist, nor its parent folder")
+            where = (f"Check `workspace:` in {self.state.survey_yaml}, or connect the drive it is on."
+                     if survey.config.get("workspace") else
+                     f"It is the default <survey dir>/work of {self.state.survey_yaml}.")
+            self.workspace_notice = QMessageBox(
+                QMessageBox.Warning, "Workspace folder not found",
+                f"The workspace folder of {survey.name} does not exist, nor its parent folder:\n\n"
+                f"{survey.workspace}\n\nNo MTH5 archive, transfer function or basemap can be found there, "
+                f"and no basemap is fetched. {where}",
+                QMessageBox.Ok, self,
+            )
+            self.workspace_notice.setWindowModality(Qt.NonModal)
+            self.workspace_notice.show()
+            return
         self.statusBar().showMessage(
             f"{survey.name}: {len(self.state.all_sites())} sites, "
             f"data_root {survey.data_root}, workspace {survey.workspace}"
         )
+
+    def close_workspace_notice(self) -> None:
+        """Close the workspace box of a previous `open_survey`, if one is up."""
+        if self.workspace_notice is not None:
+            self.workspace_notice.close()
+            self.workspace_notice.deleteLater()
+            self.workspace_notice = None
 
     def reload_tabs(self) -> None:
         """Call `reload()` on every tab."""

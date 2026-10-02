@@ -11,7 +11,8 @@ The map is an offline lat/lon scatter of every site with a position in
 grey, each dot outlined dark and each name on a translucent dark box. It is
 drawn over `<workspace>/basemap.png`, which `scripts/fetch_basemap.py` fetches
 once, already warped onto this grid; `fetch_basemap_if_missing` runs the
-script when a survey is opened without a `basemap.json`. The map draws the PNG
+script when a survey is opened without a `basemap.json`, unless the workspace
+cannot be reached (`workspace_unreachable`). The map draws the PNG
 as a `pg.ImageItem` over the JSON's extent and reloads it when a fetch
 finishes. The provider and attribution required by the tile terms are shown in
 the map's tooltip; a grey line below the map appears only when there is no
@@ -62,6 +63,26 @@ def attribution_text(info: dict) -> str:
         "(C)", "\N{COPYRIGHT SIGN}")
 
 
+def workspace_unreachable(survey) -> bool:
+    """Return whether a survey's workspace folder is missing together with its parent folder.
+
+    A workspace that is only not made yet is reachable: the default
+    `<survey dir>/work` of a survey.yaml without a `workspace:` key (the
+    tracked surveys on a clean clone), or new_survey.py's `<data_root>/work`
+    on first open. fetch_basemap.py makes such a folder. A workspace whose
+    parent folder is missing as well points at a wrong path or a drive that
+    is not connected, and nothing should be made there.
+
+    Args:
+        survey (Survey): The survey.
+
+    Returns:
+        bool: True when neither the workspace nor its parent is a folder.
+    """
+    workspace = survey.workspace
+    return not workspace.is_dir() and not workspace.parent.is_dir()
+
+
 def fetch_basemap_if_missing(state) -> int | None:
     """Run scripts/fetch_basemap.py when the open survey has no `<workspace>/basemap.json`.
 
@@ -74,11 +95,15 @@ def fetch_basemap_if_missing(state) -> int | None:
         state: The shared `mt_workbench.gui.app.State`.
 
     Returns:
-        int | None: The job's index, or None when a basemap exists or a
-        fetch for this survey is already queued or running.
+        int | None: The job's index, or None when a basemap exists, a fetch
+        for this survey is already queued or running, or the workspace
+        cannot be reached (`workspace_unreachable`: it and its parent folder
+        are missing, which `MainWindow.open_survey` reports; the fetch would
+        create both). A workspace that is only not made yet is fetched into,
+        and the script makes it.
     """
     survey = state.survey
-    if survey is None or (survey.workspace / "basemap.json").exists():
+    if survey is None or (survey.workspace / "basemap.json").exists() or workspace_unreachable(survey):
         return None
     argv = [state.python_exe, state.script(BASEMAP_SCRIPT), str(state.survey_yaml)]
     if any(job.argv == argv and job.status in (QUEUED, RUNNING) for job in state.runner.jobs):
