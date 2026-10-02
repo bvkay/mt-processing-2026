@@ -96,7 +96,11 @@ PNG and the .json sidecar are moved into <campaign>/tf/ (plan
 `runner.move_products`), so <workspace>/tf holds other outputs alone.
 
 Runner: up to --parallel jobs at once within a stage (variant and stack
-builds too). A job starts when psutil's available memory, less what the
+builds too); without it the plan's `runner.parallel`, and without that (or
+with `runner.parallel: gate`) as many rr jobs as the memory gate admits with
+the memory available at start (`gate_slots`), at least 1. The runner logs
+that count at start (a dry run prints it), with the rr peak it used: four
+jobs at a 22.4 GB peak with 107.7 GB available and min_available_gb 25. A job starts when psutil's available memory, less what the
 running jobs are still expected to grow by (the `peak_percentile` of the
 `peak_recent` most recently finished peaks of their class, else the plan's
 `expected_peak_gb`), is at least `min_available_gb` and `peak_factor` x that
@@ -162,6 +166,7 @@ import hashlib
 import importlib.util
 import io
 import json
+import math
 import os
 import re
 import shutil
@@ -250,6 +255,34 @@ def stamp() -> str:
     return now().strftime("%Y%m%d-%H%M%S")
 
 
+def gate_slots(available_gb: float, peak_gb: float, need_gb: float) -> int:
+    """Return how many jobs of one expected peak the memory gate lets run at once.
+
+    `Campaign.gate` starts a job while the available memory, less what the
+    running jobs may still grow by (each one's expected peak less its RSS),
+    is at least the need, max(`min_available_gb`, `peak_factor` x the
+    finished peaks' percentile). With k jobs running, at or toward their
+    peaks, that is available - k x peak, so the k-th job starts while
+    available - (k - 1) x peak >= need.
+
+    Args:
+        available_gb (float): Available memory with no job running, in GB.
+        peak_gb (float): Expected peak of one job, in GB.
+        need_gb (float): The gate's need, in GB.
+
+    Returns:
+        int: The number of jobs, 0 when not even one starts.
+
+    Raises:
+        ValueError: If `peak_gb` is not positive.
+    """
+    if not peak_gb > 0.0:
+        raise ValueError(f"expected peak {peak_gb!r} GB: must be positive")
+    if available_gb < need_gb:
+        return 0
+    return 1 + int(math.floor((available_gb - need_gb) / peak_gb))
+
+
 def mode_score(q: dict, modes=None) -> float:
     """Return a `tf_quality` result's score over `modes`: the overall score for both, else the mean of theirs."""
     modes = list(modes or MODES)
@@ -301,6 +334,7 @@ class Plan:
     windows: dict[str, dict] = field(default_factory=dict)      # site -> {"modes": {mode: (start, end)}, "merge"}
     mantle_gb_per_hour: float = MANTLE_GB_PER_HOUR  # a MANTLE job's expected peak per hour of window
     deferred_configs: list[str] = field(default_factory=list)  # stage 3 configs run only when --configs names them
+    parallel: int | None = None  # jobs at once (runner.parallel); None: as many as the memory gate admits at start
 
     def group_of(self, site: str) -> str:
         """Return the name of the group that holds `site`."""
@@ -478,6 +512,12 @@ def load_plan(path) -> Plan:
     except (TypeError, ValueError):
         errors.append(f"runner mantle_gb_per_hour {runner.get('mantle_gb_per_hour')!r}: a positive number of GB")
         gb_per_hour = MANTLE_GB_PER_HOUR
+    parallel = runner.get("parallel", "gate")
+    if parallel is None or str(parallel) == "gate":
+        parallel = None
+    elif isinstance(parallel, bool) or not isinstance(parallel, int) or parallel < 1:
+        errors.append(f"runner parallel {parallel!r}: a whole number of jobs, at least 1, or gate")
+        parallel = None
     scoring = raw.get("scoring") or {}
     if errors:
         raise ValueError(f"{path}:\n  " + "\n  ".join(errors))
@@ -492,7 +532,7 @@ def load_plan(path) -> Plan:
         masks=bool(runner.get("masks", False)), remotes=remotes, modes=modes, windows=windows,
         min_available_gb=float(runner.get("min_available_gb", 40.0)),
         peak_factor=float(runner.get("peak_factor", 1.2)),
-        mantle_gb_per_hour=gb_per_hour, deferred_configs=deferred,
+        mantle_gb_per_hour=gb_per_hour, deferred_configs=deferred, parallel=parallel,
     )
     plan.minutes.update({str(k): float(v) for k, v in (runner.get("minutes_per_job") or {}).items()})
     plan.expected_peak_gb.update({str(k): float(v) for k, v in (runner.get("expected_peak_gb") or {}).items()})
@@ -1724,6 +1764,27 @@ class Campaign:
         return ok, (f"available {avail / 1024:.1f} GB, {reserve / 1024:.1f} GB held back for "
                     f"{len(self._running)} running job(s), need {need / 1024:.1f} GB")
 
+    def gate_admits(self) -> tuple[int, str]:
+        """Return how many rr jobs the memory gate admits at once now, and a line saying why.
+
+        The count is `gate_slots` of the memory available now, the rr class's
+        expected peak (`expected_peak_mb`: the `peak_percentile` of the
+        `peak_recent` finished rr runs in the ledger, else the plan's
+        `expected_peak_gb` rr) and the gate's need, as `gate` computes them.
+
+        Returns:
+            tuple[int, str]: The count and the line.
+        """
+        avail = psutil.virtual_memory().available / GB
+        measured = self.finished_peak_mb("rr")
+        peak = self.expected_peak_mb("rr") / 1024.0
+        need = max(self.plan.min_available_gb, self.plan.peak_factor * self.finished_peak_mb(None) / 1024.0)
+        n = gate_slots(avail, peak, need)
+        source = (f"p{self.plan.peak_percentile:g} of the last {self.plan.peak_recent} finished rr runs" if measured
+                  else "runner.expected_peak_gb rr, no rr run finished yet")
+        return n, (f"memory gate: {avail:.1f} GB available, rr peak {peak:.1f} GB ({source}), need {need:.1f} GB "
+                   f"free -> it admits {n} rr job(s) at once")
+
     def sample(self, r: Running) -> None:
         """Update a running job's RSS and peak, children included."""
         if r.ps is None:
@@ -2856,7 +2917,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--configs", default=None, metavar="NAME[,NAME]",
                    help="stage 3 runs only these configs, deferred ones included (default: every config the plan's "
                         "runner.deferred_configs does not name)")
-    p.add_argument("--parallel", type=int, default=2, help="jobs at once (default 2)")
+    p.add_argument("--parallel", type=int, default=None,
+                   help="jobs at once (default: the plan's runner.parallel, else as many as the memory gate admits "
+                        "at start)")
     p.add_argument("--max-runs", type=int, default=None, help="start at most N jobs (smoke checks)")
     p.add_argument("--allow-raw", action="store_true",
                    help="do not wait for the variant API: run on raw archives, rows marked provisional "
@@ -2936,8 +2999,15 @@ def main(argv=None) -> int:
     if refusal:
         print(f"ERROR {args.plan_yaml}: {refusal}", file=sys.stderr)
         return 2
-    c = Campaign(args.survey_yaml, plan, parallel=args.parallel, max_runs=args.max_runs, allow_raw=args.allow_raw,
+    parallel = args.parallel if args.parallel is not None else plan.parallel
+    c = Campaign(args.survey_yaml, plan, parallel=parallel or 1, max_runs=args.max_runs, allow_raw=args.allow_raw,
                  create=not args.dry_run, configs=configs)
+    admits, gate_line = c.gate_admits()
+    if parallel is None:
+        c.parallel = max(1, admits)
+    gate_line += (f"; parallel {c.parallel} ("
+                  + ("--parallel" if args.parallel is not None else
+                     "runner.parallel" if plan.parallel is not None else "the gate's count, at least 1") + ")")
     if args.report:
         c.report(sites if args.sites else None)
         print(f"report: {c.dir / 'summary.md'}")
@@ -2946,6 +3016,7 @@ def main(argv=None) -> int:
         print(f"campaign {plan.name}: {len(plan.sites)} sites, groups "
               + ", ".join(f"{g} ({len(m)})" for g, m in plan.groups.items())
               + "; excluded: " + ("; ".join(f"{s}: {r}" for s, r in plan.exclude.items()) or "none"))
+        print(gate_line)
         c.dry_run(args.stage, sites)
         return 0
 
@@ -2973,6 +3044,7 @@ def main(argv=None) -> int:
           f"parallel {c.parallel}" + (f", max-runs {args.max_runs}" if args.max_runs else "")
           + (f", stage 3 configs {', '.join(configs)}" if configs else "")
           + (", --allow-raw (PROVISIONAL products)" if args.allow_raw else ""))
+    c.log(gate_line)
     rc = 0
     try:
         c.cleanup_orphans()
