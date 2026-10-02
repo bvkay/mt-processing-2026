@@ -36,10 +36,16 @@ against time, phases shaded and labelled).
   `process_rr.resolve`) under cProfile in a child; the top 40 by cumulative
   and by internal time go to `<stem>_cprofile.txt` (+ `.prof`).
 - `tracemalloc`: the same call, traced from the level-0 STFTs to the end of
-  the level-0 merge, where the peak is (tracing the whole run slows its
-  metadata-heavy start many times over), with a snapshot each time the RSS
-  passes its previous high by 2 GiB. The top 20 allocation sites of the last
-  snapshot (the peak, to within 2 GiB) go to `<stem>_tracemalloc.txt`.
+  the level-0 regression, where a whole-overlap run peaks (`--tm-until
+  merge` stops at the end of the level-0 merge; tracing the whole run slows
+  its metadata-heavy start many times over), with a snapshot each time the
+  RSS passes its previous high by --snap-step-gb (2 GiB). The top 20
+  allocation sites of the last snapshot (the peak, to within the step) go
+  to `<stem>_tracemalloc.txt`, every snapshot's to
+  `<stem>_tracemalloc_snaps.txt`, and one row per snapshot (RSS, traced
+  bytes, the time series aurora's kernel dataset holds, traced bytes per
+  owning package) to `<stem>_tm_snaps.csv`. The masks are process_rr's
+  (by role; the base run's when the rows need several aurora runs).
 - `read`: MTH5 opens (r; a on --rw-archive alone, a dedicated file that is
   not a hard link), the channel summary, h5py slicing vs mth5 `time_slice`
   vs `to_runts` for 2 h and a whole run, `RunSummary` + `KernelDataset` for
@@ -104,6 +110,7 @@ Usage:
         [--site SITE] [--members A B C] [--stack-start UTC --stack-end UTC]
         [--rw-archive H5] [--read-archives DIR --read-sites S [S ...]]
         [--interval 0.5] [--need-gb GB] [--no-markers]
+        [--snap-step-gb 2.0] [--tm-until merge|regression]
     python scripts/profile_run.py <survey.yaml> <local> <remote> --stage trace --window START END
         --read-archives DIR [--variants fork stock] [--passes ...] [--stock-aurora DIR]
         [--viz-min-us 10] [--tm-nframe 10] [--tm-pause "L0 read TS"] [--reanalyse RUN_ID]
@@ -202,9 +209,13 @@ TARGETS = {
         ("aurora.transfer_function.regression.RME_RR", "RME_RR.estimate", "regression: RME_RR.estimate", "D"),
         ("aurora.pipelines.transfer_function_kernel", "TransferFunctionKernel.export_tf_collection",
          "aurora TF export", "P"),
-        ("mt_metadata.transfer_functions.core", "TF.write", "EDI write", "P"),
+        ("mt_metadata.transfer_functions.core", "TF.write", "mt_metadata: TF.write", "D"),
         ("mt_workbench.compare", "phase_quadrants", "phase quadrants", "P"),
         ("mt_workbench.compare", "plot_comparison", "comparison figure", "P"),
+        ("mt_workbench.products", "write_products", "products (EDI + XML + TF h5)", "P"),
+        ("mt_workbench.products", "write_edi", "products: EDI", "P"),
+        ("mt_workbench.products", "write_xml", "products: EMTF XML", "P"),
+        ("mt_workbench.products", "write_h5", "products: TF h5", "P"),
     ],
     "ingest": [
         ("mt_workbench.ingest", "select_files", "select B423 files", "P"),
@@ -505,6 +516,11 @@ def child_main(stage: str, spec_path: str) -> int:
 def _rr_call(spec: dict):
     """Resolve a process_rr.py run as its `main` does and return the `process_station` arguments.
 
+    The masks are process_rr's: the entries `resolve` applies by role
+    (none with --no-masks), as the base run's `channel_runs` entry holds
+    them. When the masks split the rows into several aurora runs, the base
+    run alone is profiled, and a PROFINFO line says so.
+
     Returns:
         tuple[tuple, dict]: Positional and keyword arguments of
         `process_station`.
@@ -513,18 +529,25 @@ def _rr_call(spec: dict):
 
     from mt_workbench.bands import build_band_scheme
     from mt_workbench.ingest import processing_archive
-    from mt_workbench.masks import load_masks
 
     args = pr.build_parser().parse_args(spec["argv"])
     started = dt.datetime.now().astimezone()
     res = pr.resolve(args, started)
     survey = res["survey"]
-    local_h5 = processing_archive(survey, args.local)
-    remote_h5 = res["remote_archive"] if res["virtual_remote"] else processing_archive(survey, args.remote)
-    scheme = build_band_scheme(survey.sample_rate, **res["scheme_kwargs"])
-    masks = load_masks(survey, args.local)
+    use_filters = not res["ignore_filters"]
+    local_h5 = processing_archive(survey, args.local, use_filters=use_filters)
+    remote_h5 = (res["remote_archive"] if res["virtual_remote"]
+                 else processing_archive(survey, args.remote, use_filters=use_filters))
+    scheme = build_band_scheme(res["sample_rate"], **res["scheme_kwargs"])
+    runs = res["channel_runs"]
+    base = next(run for run in runs if run["base"])
+    if len(runs) > 1:
+        sys.__stderr__.write(f"PROFINFO {len(runs)} aurora runs by output row: the base run "
+                             f"({', '.join(base['channels'])}, {len(base['masks'])} masks) alone is profiled\n")
     kwargs = dict(out_dir=survey.workspace / "tf", band_scheme=scheme, start=args.start, end=args.end,
-                  tag=res["stem"], tweaks=res["tweaks"] or None, time_masks=masks or None)
+                  tag=res["stem"], tweaks=res["tweaks"] or None, time_masks=base["masks"] or None)
+    if len(runs) == 1:
+        kwargs["site"] = survey.site(args.local)
     if res["output_channels"]:
         kwargs["output_channels"] = res["output_channels"]
     return (local_h5, args.local, remote_h5, args.remote), kwargs
@@ -533,18 +556,27 @@ def _rr_call(spec: dict):
 class PeakSnapper(threading.Thread):
     """Thread taking a tracemalloc snapshot each time this process's RSS passes its last snapshot's by `step`.
 
+    Every snapshot is kept: its report is appended to `history` and one row
+    per snapshot goes to `rows` (time, RSS, traced bytes, the time series
+    aurora's kernel dataset holds (`ts_census`), and the traced bytes per
+    owning package (`tm_owner_bytes`)), so the composition can be followed
+    up to the peak rather than read from the last snapshot alone.
+
     Args:
         step_gib (float): RSS step between snapshots in GiB.
         interval (float): Polling interval in seconds.
         top (int): Number of allocation sites in the report.
         path (Path | None): File the latest report is written to.
+        history (Path | None): File every report is appended to.
     """
 
-    def __init__(self, step_gib: float = 2.0, interval: float = 0.5, top: int = 20, path: Path | None = None):
+    def __init__(self, step_gib: float = 2.0, interval: float = 0.5, top: int = 20, path: Path | None = None,
+                 history: Path | None = None):
         super().__init__(daemon=True)
-        self.step, self.interval, self.top, self.path = step_gib * GIB, interval, top, path
+        self.step, self.interval, self.top, self.path, self.history = step_gib * GIB, interval, top, path, history
         self.stop = threading.Event()
         self.best_rss, self.report, self.n_snaps, self.snap_seconds = 0.0, "", 0, 0.0
+        self.phase, self.rows = "", []
 
     def run(self):
         import tracemalloc
@@ -552,14 +584,25 @@ class PeakSnapper(threading.Thread):
         proc = psutil.Process()
         while not self.stop.is_set():
             rss = proc.memory_info().rss
-            if rss > self.best_rss + self.step:
+            if rss > self.best_rss + self.step and tracemalloc.is_tracing():
                 t0 = time.perf_counter()
                 snap = tracemalloc.take_snapshot()
                 traced, traced_peak = tracemalloc.get_traced_memory()
                 self.report = format_snapshot(snap, rss, traced, traced_peak, self.top)
+                grouped, _own = _tm_group_own(snap)
                 del snap
+                census = ts_census()
+                row = {"t": time.time(), "phase": self.phase, "rss_gib": rss / GIB, "traced_gib": traced / GIB,
+                       "traced_peak_gib": traced_peak / GIB, "census_local_gib": census["local"] / GIB,
+                       "census_remote_gib": census["remote"] / GIB}
+                row.update({f"owner_{k}_gib": v / GIB for k, v in tm_owner_bytes(grouped).items()})
+                del grouped
+                self.rows.append(row)
                 if self.path is not None:  # the latest report is kept if the run is killed
                     self.path.write_text(self.report + "\n", encoding="utf-8")
+                if self.history is not None:
+                    with open(self.history, "a", encoding="utf-8") as f:
+                        f.write(f"===== snapshot {self.n_snaps + 1} in {self.phase} =====\n{self.report}\n\n")
                 self.best_rss = rss
                 self.n_snaps += 1
                 self.snap_seconds += time.perf_counter() - t0
@@ -635,51 +678,79 @@ def inprocess_rr(spec: dict, mode: str) -> None:
         Path(str(stem) + "_cprofile.txt").write_text(buf.getvalue(), encoding="utf-8")
         print(f"cprofile: {stem}_cprofile.txt ({wall:.1f} s)", flush=True)
         return
-    # Traced from the level-0 STFTs to the end of the level-0 merge, where the peak is:
-    # tracing the whole run makes the metadata-heavy start (kernel dataset, to_runts)
-    # crawl. What was allocated before, the level-0 time series the kernel dataset
-    # holds, is untraced; the header gives the RSS at the start of tracing.
+    # Traced from the level-0 STFTs to the end of the level-0 merge (spec "tm_until":
+    # "merge") or of the level-0 regression ("regression", the default), where a
+    # whole-overlap run peaks: tracing the whole run makes the metadata-heavy start
+    # (kernel dataset, to_runts) crawl. What was allocated before, the level-0 time
+    # series the kernel dataset holds, is untraced; the header gives the RSS at the
+    # start of tracing, and each snapshot row the bytes of those time series
+    # (`ts_census`).
     import tracemalloc
+    import weakref
 
     import aurora.pipelines.process_mth5 as apm
 
     nframe = int(spec.get("nframe", 12))
+    until = spec.get("tm_until", "regression")
+    if until not in ("merge", "regression"):
+        raise SystemExit(f"tm_until {until!r}: merge or regression")
     snapper = PeakSnapper(step_gib=float(spec.get("snap_step_gib", 2.0)),
-                          path=Path(str(stem) + "_tracemalloc.txt"))
+                          path=Path(str(stem) + "_tracemalloc.txt"),
+                          history=Path(str(stem) + "_tracemalloc_snaps.txt"))
     state = {"on": False, "rss0": 0.0, "t0": 0.0, "t1": 0.0}
     get_spectrograms, merge_stfts = apm.get_spectrograms, apm.merge_stfts
+    regression = apm.process_tf_decimation_level
+
+    def stop_tracing():
+        if state["on"]:
+            snapper.stop.set()
+            snapper.join()
+            tracemalloc.stop()
+            state.update(on=False, t1=time.perf_counter())
 
     def traced_spectrograms(tfk, i_dec_level, *args, **kw):
         if i_dec_level == 0 and not state["on"] and not state["t1"]:
+            _TFK_REF[0] = weakref.ref(tfk)
             state.update(on=True, rss0=psutil.Process().memory_info().rss, t0=time.perf_counter())
-            snapper.best_rss = state["rss0"]
+            snapper.best_rss, snapper.phase = state["rss0"], "L0 STFT"
             tracemalloc.start(nframe)
             snapper.start()
         return get_spectrograms(tfk, i_dec_level, *args, **kw)
 
     def traced_merge(*args, **kw):
+        snapper.phase = "L0 merge STFTs" if state["on"] else snapper.phase
         try:
             return merge_stfts(*args, **kw)
         finally:
-            if state["on"]:
-                snapper.stop.set()
-                snapper.join()
-                tracemalloc.stop()
-                state.update(on=False, t1=time.perf_counter())
+            if until == "merge":
+                stop_tracing()
+
+    def traced_regression(*args, **kw):
+        snapper.phase = "L0 regression" if state["on"] else snapper.phase
+        try:
+            return regression(*args, **kw)
+        finally:
+            stop_tracing()
 
     apm.get_spectrograms, apm.merge_stfts = traced_spectrograms, traced_merge
-    with phase("process_station, level-0 STFT + merge under tracemalloc"):
+    if until == "regression":
+        apm.process_tf_decimation_level = traced_regression
+    span = "STFT + merge" if until == "merge" else "STFT + merge + regression"
+    with phase(f"process_station, level-0 {span} under tracemalloc"):
         process_station(*call_args, **kwargs)
     wall = time.perf_counter() - t_wall
     peak_wset = getattr(psutil.Process().memory_info(), "peak_wset", 0)
+    end = "merge_stfts" if until == "merge" else "process_tf_decimation_level (the regression)"
     head = (f"tracemalloc (nframe {nframe}) of process_station{call_args}: {wall:.1f} s wall; traced from the "
-            f"first level-0 get_spectrograms to the end of the level-0 merge_stfts ({state['t1'] - state['t0']:.1f} s), "
+            f"first level-0 get_spectrograms to the end of the level-0 {end} ({state['t1'] - state['t0']:.1f} s), "
             f"RSS {state['rss0'] / GIB:.2f} GiB when tracing started (untraced: the level-0 time series and what "
             f"else was allocated before); {snapper.n_snaps} snapshot(s) taking {snapper.snap_seconds:.1f} s; process "
             f"peak working set {peak_wset / GIB:.2f} GiB. The report is the last snapshot, taken when the RSS last "
-            f"passed its previous high by {spec.get('snap_step_gib', 2.0)} GiB\n\n")
+            f"passed its previous high by {spec.get('snap_step_gib', 2.0)} GiB; every snapshot is in "
+            f"{Path(str(stem)).name}_tracemalloc_snaps.txt and _tm_snaps.csv\n\n")
     Path(str(stem) + "_tracemalloc.txt").write_text(head + snapper.report + "\n", encoding="utf-8")
-    print(f"tracemalloc: {stem}_tracemalloc.txt ({wall:.1f} s)", flush=True)
+    pd.DataFrame(snapper.rows).to_csv(str(stem) + "_tm_snaps.csv", index=False)
+    print(f"tracemalloc: {stem}_tracemalloc.txt ({wall:.1f} s, {snapper.n_snaps} snapshots)", flush=True)
 
 
 # ------------------------------------------------------------- read benchmarks (child)
@@ -3237,6 +3308,8 @@ def build_parser() -> argparse.ArgumentParser:
                    help="process_rr's processing window (UTC) for rr/cprofile/tracemalloc, e.g. a few hours")
     p.add_argument("--snap-step-gb", type=float, default=2.0,
                    help="tracemalloc: a snapshot each time the RSS passes its previous high by this much (GiB)")
+    p.add_argument("--tm-until", choices=["merge", "regression"], default="regression",
+                   help="tracemalloc: trace the level-0 STFTs to the end of the level-0 merge or regression")
     p.add_argument("--interval", type=float, default=0.5, help="sampling interval (s)")
     p.add_argument("--no-markers", action="store_true", help="run the step bare: phases from its own log lines")
     p.add_argument("--need-gb", type=float, default=None,
@@ -3313,7 +3386,7 @@ def main(argv=None) -> int:
         if stage in ("rr", "cprofile", "tracemalloc"):
             tag = args.tag if stage == "rr" else f"{args.tag}-{stage}"
             spec = {**common, "argv": [survey_yaml, args.local, args.remote, *(args.window or []), "--tag", tag],
-                    "snap_step_gib": args.snap_step_gb}
+                    "snap_step_gib": args.snap_step_gb, "tm_until": args.tm_until}
             who = f"{args.local}_rr-{args.remote}"
         elif stage == "ingest":
             from mt_workbench.ingest import default_archive_path
