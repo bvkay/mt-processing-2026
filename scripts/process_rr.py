@@ -25,8 +25,11 @@ recorded hash does not match the current `filters.yaml`), or the raw archive
 with `--no-filters`, which shows whether a filter was worth declaring.
 `--tag` adds a suffix to the output name so such runs keep separate files.
 `--dry-run` prints everything the run resolved to (band kwargs, both sites'
-raw and variant archive status, window, product stem) and exits without
-opening a file or building a variant.
+raw and variant archive status, a raw archive that is missing marked so,
+both sites' spans, window, product stem) and exits without writing a file or
+building a variant. A site with no survey.yaml entry (a stacked remote
+excepted) and a pair whose spans share no time exit 2, in the dry run as in
+the real run, before anything is ingested or opened for writing.
 
 Time masks (`<survey>/masks.yaml`, declared per site on the GUI's
 Cross-powers tab or by scripts/cluster_masks.py and scripts/gate_masks.py)
@@ -202,8 +205,8 @@ from mt_workbench.bands import build_band_scheme, lowest_harmonic
 from mt_workbench.compare import phase_quadrants, plot_comparison
 from mt_workbench.ingest import default_archive_path, filters_hash, ingest_site, processing_archive, variant_path, variant_ready
 from mt_workbench.masks import (
-    FOUND_BY, OUTPUTS, SCOPE_RULES, load_masks, masks_for_role, masks_for_row, remote_channel_split, remote_masks,
-    stored, union_masks,
+    FOUND_BY, OUTPUTS, SCOPE_RULES, is_stack, load_masks, masks_for_role, masks_for_row, remote_channel_split,
+    remote_masks, stored, union_masks,
 )
 from mt_workbench.process import ESTIMATOR_DEFAULTS, TAPERS, process_station
 from mt_workbench.products import (apply_site_frame, frame_record, match_coordinate_system, product_names,
@@ -388,7 +391,10 @@ def archive_status(survey: Survey, site: str, raw_sites: dict, use_filters: bool
         use_filters (bool): False with --no-filters.
 
     Returns:
-        dict | None: {"raw", "variant", "variant_state"}. `variant` is None
+        dict | None: {"raw", "raw_missing", "variant", "variant_state"}.
+        `raw_missing` is None when the raw archive exists, else what the
+        run does about it ("missing: ingested from <raw folder> first").
+        `variant` is None
         and `variant_state` "no filters used" with `use_filters=False`, or
         "none declared" when the site's `filters.yaml` entry is empty;
         otherwise `variant_path` and "ready" (the raw archive exists and
@@ -399,20 +405,128 @@ def archive_status(survey: Survey, site: str, raw_sites: dict, use_filters: bool
     """
     parent = survey.parent_of(site)
     if parent:
-        return {"raw": default_archive_path(survey, site), "variant": None, "derived_from": parent,
+        return {"raw": default_archive_path(survey, site), "raw_missing": None, "variant": None,
+                "derived_from": parent,
                 "variant_state": f"none (derived from {parent}: its archive is used as it is)"}
     if site not in raw_sites:
         return None
     raw = default_archive_path(survey, site)
+    missing = None if raw.exists() else f"missing: ingested from {raw_sites[site]} first"
     declared = survey.site(site).filters or []
     if not use_filters:
-        return {"raw": raw, "variant": None, "variant_state": "no filters used (--no-filters)"}
+        return {"raw": raw, "raw_missing": missing, "variant": None, "variant_state": "no filters used (--no-filters)"}
     if not declared:
-        return {"raw": raw, "variant": None, "variant_state": "none declared"}
+        return {"raw": raw, "raw_missing": missing, "variant": None, "variant_state": "none declared"}
     vpath = variant_path(survey, site)
     ready = raw.exists() and variant_ready(survey, site)
     state = "ready" if ready else f"to build ({filters_hash(declared)})"
-    return {"raw": raw, "variant": vpath, "variant_state": state}
+    return {"raw": raw, "raw_missing": missing, "variant": vpath, "variant_state": state}
+
+
+def archive_span(path: Path, site: str) -> tuple[pd.Timestamp, pd.Timestamp] | None:
+    """Return the first and last instant of a site's runs in an archive, read with h5py (mode "r").
+
+    Args:
+        path (Path): The archive.
+        site (str): Station name in it.
+
+    Returns:
+        tuple | None: (start, end), UTC, from the runs' ``time_period``
+        attributes; None when the file is missing or holds no run of `site`.
+    """
+    import h5py
+
+    if not Path(path).exists():
+        return None
+    starts, ends = [], []
+    with h5py.File(path, "r") as f:
+        for survey_group in f.get("Experiment/Surveys", {}).values():
+            station = survey_group.get(f"Stations/{site}")
+            if station is None:
+                continue
+            for run in station.values():
+                if isinstance(run, h5py.Group) and "time_period.start" in run.attrs:
+                    starts.append(_utc(run.attrs["time_period.start"]))
+                    ends.append(_utc(run.attrs["time_period.end"]))
+    if not starts:
+        return None
+    return min(starts), max(ends)
+
+
+def site_span(survey: Survey, site: str, archive: Path) -> tuple[pd.Timestamp, pd.Timestamp, str] | None:
+    """Return a site's recorded span: survey.yaml's start and end, else its archive's runs.
+
+    Args:
+        survey (Survey): The survey.
+        site (str): Site name.
+        archive (Path): The site's raw archive (or a stacked remote's).
+
+    Returns:
+        tuple | None: (start, end, where it was read: "survey.yaml" or the
+        archive's name); None when neither gives one.
+    """
+    if site in survey.site_names():
+        cfg = survey.site(site)
+        if cfg.start and cfg.end:
+            return _utc(cfg.start), _utc(cfg.end), "survey.yaml"
+    span = archive_span(archive, site)
+    return (*span, Path(archive).name) if span else None
+
+
+def _utc(value) -> pd.Timestamp:
+    """Read an instant as a UTC timestamp; a value without an offset is taken as UTC."""
+    t = pd.Timestamp(value.decode() if isinstance(value, bytes) else str(value))
+    return t.tz_localize("UTC") if t.tzinfo is None else t.tz_convert("UTC")
+
+
+def _utc_text(t: pd.Timestamp) -> str:
+    """Format a UTC instant as 2023-09-22T12:21:22Z."""
+    return _utc(t).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def check_pair(survey: Survey, local: str, remote: str, local_h5: Path, remote_h5: Path, virtual: bool,
+               raw_sites: dict) -> dict:
+    """Refuse a pair that cannot run, before anything is opened for writing.
+
+    A site without a survey.yaml entry is refused: its dipole lengths and
+    azimuths would be the survey defaults, and without a raw folder the
+    ingest fails. A remote whose archive is in the workspace (`virtual`), or
+    a stacked remote named STK_..., built or not, has no entry and passes.
+    Then the two sites' spans (`site_span`) are compared, and a pair that
+    shares no time is refused with both spans.
+
+    Args:
+        survey (Survey): The survey.
+        local (str): Local site.
+        remote (str): Remote site.
+        local_h5 (Path): The local's raw archive.
+        remote_h5 (Path): The remote's raw archive, or the stacked remote's.
+        virtual (bool): The remote is a stacked, observatory or derived archive.
+        raw_sites (dict): Site name to raw folder.
+
+    Returns:
+        dict: {"local": span or None, "remote": span or None}, each span
+        (start, end, source) as `site_span` gives it.
+
+    Raises:
+        PairRefused: When a site has no entry, or the spans do not overlap.
+    """
+    names = survey.site_names()
+    for site, path in ((local, local_h5), (remote, remote_h5)):
+        if site in names or (site == remote and (virtual or is_stack(site))):
+            continue
+        folder = (f"a raw folder at {raw_sites[site]}" if site in raw_sites
+                  else f"no raw folder under {survey.data_root}")
+        held = f"an archive at {path}" if Path(path).exists() else f"no archive at {path}"
+        raise PairRefused(f"{site} has no entry in survey.yaml ({folder}, {held}): check the name, or add the site "
+                          f"(scripts/new_survey.py or the GUI's Metadata tab) so its dipoles are declared")
+    spans = {"local": site_span(survey, local, local_h5), "remote": site_span(survey, remote, remote_h5)}
+    a, b = spans["local"], spans["remote"]
+    if a and b and (a[1] <= b[0] or b[1] <= a[0]):
+        raise PairRefused(f"{local} ({_utc_text(a[0])} to {_utc_text(a[1])}, {a[2]}) and {remote} "
+                          f"({_utc_text(b[0])} to {_utc_text(b[1])}, {b[2]}) share no time: choose a remote "
+                          f"recording at the same time")
+    return spans
 
 
 def mask_origins(text: str | None) -> set[str] | None:
@@ -482,11 +596,18 @@ def resolve(args, started) -> dict:
         args (argparse.Namespace): Parsed arguments.
         started (datetime.datetime): Start of the run.
 
+    `check_pair` refuses a site without a survey.yaml entry (a stacked
+    remote excepted) and a pair whose spans (survey.yaml start and end,
+    else the archive's runs) share no time; `spans` holds both spans, which
+    `print_resolution` prints as `local_span` and `remote_span`.
+
     Returns:
         dict: The resolution, printed by `print_resolution`.
 
     Raises:
         RateMismatch: When the two sites' sample rates differ.
+        PairRefused: When a site has no survey.yaml entry or the two sites
+            share no time (`check_pair`).
     """
     survey = Survey.from_yaml(args.survey_yaml)
     scheme_kwargs = dict(survey.processing)
@@ -529,6 +650,8 @@ def resolve(args, started) -> dict:
     stacked = survey.workspace / "mth5" / f"{args.remote}.h5"
     virtual = bool(remote_parent) or (args.remote not in raw_sites and stacked.exists())
     remote_h5 = stacked if virtual else default_archive_path(survey, args.remote)
+    # a site without an entry, or two sites that share no time, end here, so the dry run says so too
+    spans = check_pair(survey, args.local, args.remote, local_h5, remote_h5, virtual, raw_sites)
     ignore_masks = not args.masks
     scope_rule = getattr(args, "mask_scope", "role")
     masks_local = [] if ignore_masks else masks_for_role(load_masks(survey, args.local), "local", scope_rule)
@@ -586,6 +709,7 @@ def resolve(args, started) -> dict:
         "end": args.end,
         "window": (f"{args.start or 'start'} to {args.end or 'end'} UTC"
                    if (args.start or args.end) else "full overlap"),
+        "spans": spans,
         "started": started,
         "tag": args.tag,
         "stem": run_stem(args.local, args.remote, started, args.tag),
@@ -806,6 +930,10 @@ def merge_rows(tfs, runs):
 
 class RateMismatch(ValueError):
     """Raised by `resolve` when the local and remote archives are at different sample rates."""
+
+
+class PairRefused(ValueError):
+    """Raised by `resolve` when a site has no survey.yaml entry or the two sites share no time."""
 
 
 def rate_min_period(sample_rate: float) -> float:
@@ -1041,14 +1169,16 @@ def _print_archive_status(label: str, status: dict | None) -> None:
     """Print one archive status line.
 
     The line is "<label> archive: raw: <path>, variant: ready | to build
-    (<hash>) | none declared | no filters used (--no-filters)", or "(no raw
-    folder)" when `archive_status` returned None (a virtual or stacked
-    remote, or unreadable `raw_sites`).
+    (<hash>) | none declared | no filters used (--no-filters)", with
+    "(missing: ingested from <raw folder> first)" after the path when the
+    raw archive does not exist, or "(no raw folder)" when `archive_status`
+    returned None (a virtual or stacked remote, or unreadable `raw_sites`).
     """
     if status is None:
         print(f"{label} archive: (no raw folder)")
         return
-    print(f"{label} archive: raw: {status['raw']}, variant: {status['variant_state']}")
+    missing = f" ({status['raw_missing']})" if status.get("raw_missing") else ""
+    print(f"{label} archive: raw: {status['raw']}{missing}, variant: {status['variant_state']}")
 
 
 def print_resolution(res: dict) -> None:
@@ -1062,6 +1192,10 @@ def print_resolution(res: dict) -> None:
         print(f"{key}: {value if value is not None else ''}")
     _print_archive_status("local", res["local_status"])
     _print_archive_status("remote", res["remote_status"])
+    for role in ("local", "remote"):
+        span = (res.get("spans") or {}).get(role)
+        print(f"{role}_span: {res[role]} " + (f"{_utc_text(span[0])} to {_utc_text(span[1])} ({span[2]})"
+                                             if span else "unknown (no start/end in survey.yaml and no archive)"))
     print(f"sample_rate: {res['local']} {res['sample_rate']:g} Hz, {res['remote']} {res['remote_sample_rate']:g} Hz")
     oc = res["output_channels"]
     print("output_channels: " + (", ".join(oc) if oc else "aurora default (ex, ey, hz)"))
@@ -1120,7 +1254,7 @@ def main(args) -> None:
     started = dt.datetime.now().astimezone()
     try:
         res = resolve(args, started)
-    except RateMismatch as exc:
+    except (RateMismatch, PairRefused) as exc:
         print(f"ERROR {exc}", file=sys.stderr)
         raise SystemExit(2) from None
     survey = res["survey"]
