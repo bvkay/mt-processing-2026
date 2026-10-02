@@ -107,6 +107,15 @@ _FILTERS_PREFIX = "ingest filters (in order): "
 _VARIANT_HASH_PREFIX = "filters hash "
 
 
+class ArchiveHeldOpen(PermissionError):
+    """A finished build could not replace an archive that another program holds open.
+
+    Raised by `build_variant` when Windows refuses `os.replace` onto a
+    variant that the GUI, or any other process, has open. The new build has
+    been deleted and the file on disk is the one that was there before.
+    """
+
+
 def _run_comment(run_group) -> str:
     """Return a run group's comment text, "" when there is none."""
     comment = run_group.metadata.comments
@@ -341,9 +350,11 @@ def build_variant(survey: Survey, site_name: str, workers: int = 4) -> Path:
     the raw station's metadata, and each run's provenance lines behind a
     leading ``filters hash <hash>; `` that `variant_ready` reads back. One
     run's channel arrays are held in memory at a time. The file is written
-    under a ``.part`` name and moved into place when complete. After a
-    successful write every other ``<site>_f*.h5`` is deleted, leaving one
-    variant per site.
+    under a ``.part`` name and moved into place when complete; when the
+    variant it replaces is open in another program (Windows refuses the
+    move), the ``.part`` file is deleted and `ArchiveHeldOpen` is raised.
+    After a successful write every other ``<site>_f*.h5`` is deleted,
+    leaving one variant per site.
 
     Args:
         survey (Survey): The survey.
@@ -360,6 +371,8 @@ def build_variant(survey: Survey, site_name: str, workers: int = 4) -> Path:
             ``scripts/ingest_site.py <survey.yaml> <site> --raw``), or it
             has no real run.
         FileNotFoundError: If the raw archive is missing.
+        ArchiveHeldOpen: If the existing variant of the same hash is open
+            in another program; the new build is deleted.
     """
     site = survey.site(site_name)
     filters = site.filters or []
@@ -436,8 +449,19 @@ def build_variant(survey: Survey, site_name: str, workers: int = 4) -> Path:
 
     # every run is written and both files are closed; os.replace is an atomic
     # rename on the same filesystem (POSIX and Windows), overwriting any
-    # existing out_path of the same hash
-    os.replace(tmp_path, out_path)
+    # existing out_path of the same hash. Windows refuses it while another
+    # process holds out_path open: the .part is then deleted, so no full-size
+    # copy is left behind, and out_path keeps the previous build
+    try:
+        os.replace(tmp_path, out_path)
+    except PermissionError as exc:
+        tmp_path.unlink(missing_ok=True)
+        if not out_path.exists():
+            raise
+        raise ArchiveHeldOpen(
+            f"{site_name}: {out_path} is open in another program (the GUI?): close it and re-run; "
+            f"the new build was deleted and the existing {out_path.name} is unchanged"
+        ) from exc
     took = time.perf_counter() - started
     size_mb = out_path.stat().st_size / 1e6
     logger.info(f"{site_name}: built variant {out_path.name} ({len(runs)} run(s), {size_mb:.1f} MB) in {took:.1f} s")

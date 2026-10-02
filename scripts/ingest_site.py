@@ -31,7 +31,11 @@ median 1.60e9 counts, open input?" (or the share at the rail and
 every transfer function of the site may have been made from it. A variant
 already current for the site's declared filters
 (`mt_workbench.ingest.variant_ready`) is likewise kept unless --force is given. A
-run that fails part-way removes the partial file it was writing. The Time
+run that fails part-way removes the partial file it was writing (a variant's
+``.part`` file, never the variant it was to replace). A variant that another
+program holds open (the GUI) cannot be replaced on Windows: the new build is
+deleted, the variant on disk is kept, and the script exits 1 with one line
+naming the file. The Time
 Series tab of the GUI runs this script (no flags) from its "Build MTH5"
 button for a site without an archive.
 
@@ -78,7 +82,9 @@ sys.path.insert(0, str(REPO / "src"))
 sys.path.insert(0, str(REPO / "scripts"))
 
 from mt_workbench.dclevel import OK, flag_line, recorded_levels  # noqa: E402
-from mt_workbench.ingest import build_variant, default_archive_path, ingest_site, variant_path, variant_ready  # noqa: E402
+from mt_workbench.ingest import (  # noqa: E402
+    ArchiveHeldOpen, build_variant, default_archive_path, ingest_site, variant_path, variant_ready,
+)
 from mt_workbench.survey import Survey  # noqa: E402
 from process_rr import MAX_RUN_FILES  # noqa: E402  (shared with process_rr.py)
 
@@ -407,9 +413,9 @@ def main(argv=None) -> int:
         argv (list[str] | None): Command-line arguments; sys.argv when None.
 
     Returns:
-        int: 0 on success, 1 when the site has no raw-file folder or a site
-        of a batch failed, 2 when the raw archive of one site exists and
-        --force was not given.
+        int: 0 on success, 1 when the site has no raw-file folder, its
+        variant is open in another program, or a site of a batch failed, 2
+        when the raw archive of one site exists and --force was not given.
     """
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -459,8 +465,12 @@ def main(argv=None) -> int:
             print(f"building {site}'s variant ({len(declared)} declared filter(s)) -> {vpath}", flush=True)
             try:
                 built = build_variant(survey, site)
+            except ArchiveHeldOpen as exc:  # build_variant deleted its .part; the variant on disk is kept
+                print(f"ERROR {exc}", file=sys.stderr)
+                return 1
             except BaseException:
-                _remove_partial(vpath)
+                # the .part being written, never vpath: with --force that is the current variant
+                _remove_partial(vpath.with_name(vpath.name + ".part"))
                 raise
             print(f"variant: {built}")
     return 0
