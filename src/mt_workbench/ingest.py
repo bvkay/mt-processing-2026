@@ -338,13 +338,14 @@ def _donor_channel(survey: Survey, donor_site: str, comp: str, t0, n: int, fs: f
         m.close_mth5()
 
 
-def build_variant(survey: Survey, site_name: str, workers: int = 4) -> Path:
+def build_variant(survey: Survey, site_name: str, workers: int = 4, chunk_workers: int | None = None) -> Path:
     """Build or replace a site's filtered variant from its raw archive.
 
     The raw archive (`default_archive_path`) is read run by run
     (`_real_runs`). The site's declared `filters.yaml` list is applied to
     each run's channel arrays (`mt_workbench.noise.apply_filters_arrays`, with
-    `workers` threads per filter); `replace` entries read the donor's raw
+    `workers` threads per filter, and the `mains` kind cut into time chunks
+    over `chunk_workers` threads); `replace` entries read the donor's raw
     archive over the run's span (`_donor_channel`), so a donor may be any
     instrument. The result is written to `variant_path` with the same runs,
     the raw station's metadata, and each run's provenance lines behind a
@@ -360,6 +361,8 @@ def build_variant(survey: Survey, site_name: str, workers: int = 4) -> Path:
         survey (Survey): The survey.
         site_name (str): Site name.
         workers (int): Threads per filter.
+        chunk_workers (int, optional): Threads for the time chunks of
+            `mains`; the machine's cores (`os.cpu_count`) when None.
 
     Returns:
         Path: The variant path.
@@ -397,6 +400,8 @@ def build_variant(survey: Survey, site_name: str, workers: int = 4) -> Path:
     if tmp_path.exists():
         tmp_path.unlink()
 
+    if chunk_workers is None:
+        chunk_workers = os.cpu_count() or 1
     started = time.perf_counter()
     m_in = MTH5()
     m_in.open_mth5(raw_path, mode="r")
@@ -428,7 +433,7 @@ def build_variant(survey: Survey, site_name: str, workers: int = 4) -> Path:
                                                             run.sample_rate, site_name) for c in needed}
                 arrays = {c: run.dataset[c].data for c in comps}
                 out, lines = apply_filters_arrays(arrays, run.sample_rate, filters, tag=site_name,
-                                                  donors=donors, workers=workers)
+                                                  donors=donors, workers=workers, chunk_workers=chunk_workers)
                 for comp in comps:
                     if not np.may_share_memory(out[comp], arrays[comp]):
                         run.dataset[comp].data = out[comp]

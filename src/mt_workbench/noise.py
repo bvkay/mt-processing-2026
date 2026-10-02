@@ -154,6 +154,14 @@ MAINS_SPREAD_S = 60.0  # mains: that jitter is 1.4826 x the median change betwee
 MAINS_RUN_MAX = 3  # mains: a step's changes span at most this many sub-block boundaries (a switching transient)
 MAINS_MIN_TAIL_S = 0.1  # mains: a segment's last partial block shorter than this joins the one before it
 MAINS_CHUNK = 1 << 17  # mains: samples per vectorised pass (a basis of 18 rows x 131072 float64 is 19 MB)
+def _run(pool, calls) -> None:
+    """Run calls without arguments, over `pool` when one is given, else one after another."""
+    if pool is None:
+        for call in calls:
+            call()
+    else:
+        for _ in pool.map(lambda call: call(), calls):
+            pass
 
 
 def mains_notch(
@@ -294,17 +302,19 @@ def _with_line(basis: np.ndarray, i0: int, centre: float, scale: float) -> np.nd
     return np.vstack((basis, np.ones_like(u), u))
 
 
-def _mains_amplitudes(y: np.ndarray, ph: _MainsPhase, ms: int) -> np.ndarray:
+def _mains_amplitudes(y: np.ndarray, ph: _MainsPhase, ms: int, pool=None) -> np.ndarray:
     """Return the fundamental's amplitude over consecutive ms-sample sub-blocks.
 
     Each sub-block is demodulated with the tracked phase after its straight
-    line is removed through the sums, without copying y.
+    line is removed through the sums, without copying y. The chunks of
+    sub-blocks are independent and may run over a `pool`.
     """
     nsb = len(y) // ms
     amp = np.empty(nsb)
     per = max(1, MAINS_CHUNK // ms)
     u = np.arange(ms) - 0.5 * (ms - 1)
-    for q0 in range(0, nsb, per):
+
+    def chunk(q0: int) -> None:
         q1 = min(nsb, q0 + per)
         b = ph.basis(q0 * ms, q1 * ms, 1)
         seg = y[q0 * ms: q1 * ms].reshape(-1, ms)
@@ -313,6 +323,8 @@ def _mains_amplitudes(y: np.ndarray, ph: _MainsPhase, ms: int) -> np.ndarray:
         re = np.einsum("ij,ij->i", seg, cos_b) - level * cos_b.sum(axis=1) - slope * (cos_b @ u)
         im = np.einsum("ij,ij->i", seg, sin_b) - level * sin_b.sum(axis=1) - slope * (sin_b @ u)
         amp[q0:q1] = 2.0 / ms * np.hypot(re, im)
+
+    _run(pool, [lambda q0=q0: chunk(q0) for q0 in range(0, nsb, per)])
     return amp
 
 
@@ -342,12 +354,14 @@ def _mains_split(y: np.ndarray, s: int, cyc: int, width: int, ph: _MainsPhase, n
     return lo + int(np.argmin(cost))
 
 
-def _mains_steps(y: np.ndarray, fs: float, ph: _MainsPhase, step_fraction: float, nh: int) -> np.ndarray:
+def _mains_steps(
+    y: np.ndarray, fs: float, ph: _MainsPhase, step_fraction: float, nh: int, pool=None,
+) -> np.ndarray:
     """Return the sorted sample indices where the mains amplitude steps, each the first sample at the new level."""
     n = len(y)
     ms = max(1, int(round(MAINS_SUB_S * fs)))
     cyc = max(2, int(round(fs / ph.f0)))
-    amp = _mains_amplitudes(y, ph, ms)
+    amp = _mains_amplitudes(y, ph, ms, pool)
     if len(amp) < 3:
         return np.empty(0, dtype=np.int64)
     change = np.abs(np.diff(amp))
@@ -411,11 +425,19 @@ def _mains_steps(y: np.ndarray, fs: float, ph: _MainsPhase, step_fraction: float
     return np.asarray(keep, dtype=np.int64)
 
 
-def _mains_segment(y: np.ndarray, a: int, b: int, fs: float, ph: _MainsPhase, nh: int, block_s: float) -> None:
-    """Fit and subtract the mains model within one segment [a, b) of y, in place.
+def _mains_segment(y: np.ndarray, a: int, b: int, fs: float, ph: _MainsPhase, nh: int, block_s: float):
+    """Return the work that fits and subtracts the mains model within one segment [a, b) of y, in place.
 
     The harmonics are fitted per block, and the coefficients are joined by
     straight lines between the block centres (flat beyond the end ones).
+
+    Returns:
+        tuple: ``(fits, subtractions)``, two lists of calls without
+        arguments, one per chunk of blocks or of samples. Every fit must
+        run before any subtraction. Within each list the calls write
+        disjoint parts of the coefficients or of y[a:b], and a segment's
+        calls touch no other segment's samples, so they may run in any
+        order or at once with the same result.
     """
     p = 2 * nh
     m = max(2 * p, int(round(block_s * fs)))
@@ -432,7 +454,7 @@ def _mains_segment(y: np.ndarray, a: int, b: int, fs: float, ph: _MainsPhase, nh
     coefs, centres = np.empty((nb, p)), np.empty(nb)
     per = max(1, MAINS_CHUNK // m)
     u = (np.arange(m) - 0.5 * (m - 1)) / m  # each block's straight line, fitted jointly with the harmonics
-    for q0 in range(0, regular, per):  # the regular blocks, stacked: one batched solve per chunk
+    def fit(q0: int) -> None:  # the regular blocks, stacked: one batched solve per chunk
         q1 = min(regular, q0 + per)
         s0, s1 = a + q0 * m, a + q1 * m
         bt = ph.basis(s0, s1, nh).reshape(p, q1 - q0, m).transpose(1, 0, 2)  # (blocks, p, m)
@@ -447,20 +469,25 @@ def _mains_segment(y: np.ndarray, a: int, b: int, fs: float, ph: _MainsPhase, nh
         r[:, p], r[:, p + 1] = yb.sum(axis=1), yb @ u
         coefs[q0:q1] = _lsq(g, r)[:, :p]
         centres[q0:q1] = s0 + np.arange(q1 - q0) * m + 0.5 * (m - 1)
-    if last is not None:
+
+    def fit_last() -> None:
         centres[-1] = 0.5 * (last[0] + last[1] - 1)
         line = _with_line(ph.basis(*last, nh), last[0], centres[-1], last[1] - last[0])
         coefs[-1] = _lsq_one(line, y[last[0]:last[1]])[:p]
-    for c0 in range(a, b, MAINS_CHUNK):
+
+    def subtract(c0: int) -> None:
         c1 = min(b, c0 + MAINS_CHUNK)
         i = np.arange(c0, c1, dtype="float64")
         joined = np.stack([np.interp(i, centres, coefs[:, k]) for k in range(p)])
         y[c0:c1] -= np.einsum("ps,ps->s", ph.basis(c0, c1, nh), joined)
 
+    fits = [lambda q0=q0: fit(q0) for q0 in range(0, regular, per)] + ([fit_last] if last is not None else [])
+    return fits, [lambda c0=c0: subtract(c0) for c0 in range(a, b, MAINS_CHUNK)]
+
 
 def mains_subtract(
     x: np.ndarray, fs: float, f0: float = 50.0, harmonics: int = 9, block_s: float = 1.0,
-    step_fraction: float = 0.3,
+    step_fraction: float = 0.3, pool=None,
 ) -> tuple[np.ndarray, dict]:
     """Subtract a block-wise fitted model of the mains that follows amplitude steps.
 
@@ -487,7 +514,15 @@ def mains_subtract(
 
     Memory use is the float64 copy of x (the output) plus about 75 MB of
     `MAINS_CHUNK`-sample temporaries at any length (6 h at 1000 Hz:
-    173 + 75 MB).
+    173 + 75 MB), per thread of `pool`.
+
+    With a `pool`, the chunks of the amplitude demodulation, of the block
+    fits and of the subtraction run over its threads. The chunks are the
+    ones a single pass uses, each computed by the same operations, so the
+    result is the single pass's, bit for bit. This was checked on the
+    synthetic of tests/noise_chunks_unit.py, against a stored result of the
+    single pass before the pool was added, and on 2 h of B10's four
+    channels with 1 to 20 threads; it is not a proof for every BLAS build.
 
     Args:
         x (np.ndarray): Samples.
@@ -496,6 +531,8 @@ def mains_subtract(
         harmonics (int): Number of harmonics including f0.
         block_s (float): Fit block length in s.
         step_fraction (float): Relative amplitude change that marks a step.
+        pool (concurrent.futures.Executor, optional): Threads for the time
+            chunks; numpy's array operations release the GIL.
 
     Returns:
         tuple: ``(y, info)``: the float64 result and ``{"harmonics": number
@@ -509,11 +546,16 @@ def mains_subtract(
     if nh == 0 or n < 2 * max(2, int(round(fs / f0))):
         return y, info
     ph = _MainsPhase(y, fs, f0)
-    steps = _mains_steps(y, fs, ph, float(step_fraction), nh)
+    steps = _mains_steps(y, fs, ph, float(step_fraction), nh, pool)
     info["offset_mean"], info["steps"] = float(np.mean(ph.offsets)), steps
     bounds = np.concatenate(([0], steps, [n]))
+    fits, subtractions = [], []
     for a, b in zip(bounds[:-1], bounds[1:]):
-        _mains_segment(y, int(a), int(b), fs, ph, nh, float(block_s))
+        f, s = _mains_segment(y, int(a), int(b), fs, ph, nh, float(block_s))
+        fits += f
+        subtractions += s
+    _run(pool, fits)
+    _run(pool, subtractions)
     return y, info
 
 
@@ -775,6 +817,7 @@ def apply_filters_arrays(
     tag: str = "",
     donors: dict | None = None,
     workers: int = 1,
+    chunk_workers: int = 1,
 ) -> tuple[dict[str, np.ndarray], list[str]]:
     """Apply the declared filter list, in order, to plain arrays.
 
@@ -790,6 +833,11 @@ def apply_filters_arrays(
         donors (dict, optional): ``{site: {comp: array}}`` for `replace`.
         workers (int): Threads per filter; scipy's filters release the GIL.
             The GUI preview uses 4; `build_variant` passes its own `workers`.
+        chunk_workers (int): Threads shared by every channel's time chunks
+            in `mains` (`mains_subtract` with a pool); 1 runs each channel
+            in one pass. `build_variant` passes the machine's cores. The
+            output is the same bit for bit either way. `notch` is not
+            chunked.
 
     Returns:
         tuple: ``(filtered, provenance)``. `filtered` has every key of
@@ -813,6 +861,7 @@ def apply_filters_arrays(
     # before any filter, from the unmodified input
     snapshots = dict(out)
     pool = ThreadPoolExecutor(int(workers)) if int(workers) > 1 else None
+    chunks = ThreadPoolExecutor(int(chunk_workers)) if int(chunk_workers) > 1 else None
 
     def run(fn, chans):
         chans = [c for c in chans if c in out]
@@ -844,7 +893,8 @@ def apply_filters_arrays(
                 chans = _channels(opts, comps)
                 done = [c for c in chans if c in out]
                 results = list((pool.map if pool else map)(
-                    lambda x: mains_subtract(x, fs, f0, harmonics, block_s, frac), [out[c] for c in done]))
+                    lambda x: mains_subtract(x, fs, f0, harmonics, block_s, frac, pool=chunks),
+                    [out[c] for c in done]))
                 out.update((c, y) for c, (y, _info) in zip(done, results))
                 infos = [info for _y, info in results]
                 nh = sum(1 for k in range(1, harmonics + 1) if k * f0 < 0.5 * fs)
@@ -907,8 +957,9 @@ def apply_filters_arrays(
             logger.info(f"{tag}: applied {line}")
             lines.append(line)
     finally:
-        if pool is not None:
-            pool.shutdown()
+        for executor in (pool, chunks):
+            if executor is not None:
+                executor.shutdown()
     return out, lines
 
 
