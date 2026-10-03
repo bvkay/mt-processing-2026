@@ -154,6 +154,8 @@ MAINS_SPREAD_S = 60.0  # mains: that jitter is 1.4826 x the median change betwee
 MAINS_RUN_MAX = 3  # mains: a step's changes span at most this many sub-block boundaries (a switching transient)
 MAINS_MIN_TAIL_S = 0.1  # mains: a segment's last partial block shorter than this joins the one before it
 MAINS_CHUNK = 1 << 17  # mains: samples per vectorised pass (a basis of 18 rows x 131072 float64 is 19 MB)
+
+
 def _run(pool, calls) -> None:
     """Run calls without arguments, over `pool` when one is given, else one after another."""
     if pool is None:
@@ -836,8 +838,12 @@ def apply_filters_arrays(
         chunk_workers (int): Threads shared by every channel's time chunks
             in `mains` (`mains_subtract` with a pool); 1 runs each channel
             in one pass. `build_variant` passes the machine's cores. The
-            output is the same bit for bit either way. `notch` is not
-            chunked.
+            chunks are the single pass's, so the output is the same bit for
+            bit either way, as checked for `mains_subtract` (the synthetic
+            of tests/noise_chunks_unit.py against a stored a937bc4
+            single-pass result; 2 h of B10's four channels on 1 to 20
+            threads); it is not a proof for every BLAS build. `notch` is
+            not chunked.
 
     Returns:
         tuple: ``(filtered, provenance)``. `filtered` has every key of
