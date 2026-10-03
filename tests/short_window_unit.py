@@ -35,7 +35,9 @@ band of the reversed level and 1 to every band of a level of 1 window;
 it; `drop_bad_errors` keeps a period with a zero or NaN Z error on every
 row or drops a clean one, touches a Z row that is NaN at every period (not
 estimated), or, where one row alone has a zero error, removes the period
-or changes the other row; on the merged TF it removes any of the 5
+or changes the other row, or does not make that row's residual-covariance
+row and column NaN at that period, or changes any other residual-covariance
+entry; on the merged TF it removes any of the 5
 periods (the first guard removed 4 and 16 s from every row because one
 row's run lacked each), changes any value a run estimated, or does not
 leave ex EMPTY (1e32) at 16 s and ey and hz at 4 s in the EDI;
@@ -127,12 +129,23 @@ def test_bad_errors_dropped() -> None:
     err = np.full((6, 2, 2), 0.1)
     err[3, 0, :] = 0.0  # ex's errors at 7.24 s
     one_row.impedance_error = err
+    rc = one_row._transfer_function["residual_covariance"]
+    rc.values[:] = (np.arange(rc.size).reshape(rc.shape) + 1.0) * (1.0 + 0.5j)  # every entry finite and distinct
+    ex_out, ex_in = list(rc.coords["output"].values).index("ex"), list(rc.coords["input"].values).index("ex")
+    want = rc.values.copy()
+    want[3, ex_out, :], want[3, :, ex_in] = np.nan, np.nan
     assert drop_bad_errors(one_row, "C18 (test)") == [] and one_row.period.size == 6, "a one-row zero error removed the period"
     z = np.asarray(one_row.impedance.data)
     assert np.isnan(z[3, 0]).all() and np.isfinite(np.delete(z[:, 0], 3, axis=0)).all(), z[:, 0]
     assert np.array_equal(z[:, 1], _tf(periods).impedance.data[:, 1]), "the clean row changed"
+    got = np.asarray(one_row._transfer_function["residual_covariance"].values)
+    assert np.isnan(got[3, ex_out, :]).all() and np.isnan(got[3, :, ex_in]).all(), \
+        f"ex's residual-covariance row and column at 7.24 s not blanked: {got[3]}"
+    assert np.array_equal(got, want, equal_nan=True), \
+        f"a residual-covariance entry outside ex's row and column at 7.24 s changed: {np.argwhere(~((got == want) | (np.isnan(got) & np.isnan(want))))}"
     print("  drop_bad_errors: the zero-error period dropped, a NaN error dropped, a NaN output row left alone, "
-          "a one-row zero error blanks that row alone")
+          "a one-row zero error blanks that row alone, with its residual-covariance row and column "
+          f"({int(np.isnan(got).sum())} of {got.size} entries NaN, the rest unchanged)")
 
 
 def _load_process_rr():
