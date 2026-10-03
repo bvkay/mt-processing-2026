@@ -603,3 +603,17 @@ samples staying the stored words.
   assignment (`validate_assignment=True`) and `Metadata.copy` is called per run, so a burst-mode
   station of 2,880 runs a day pays hours of metadata work for 147 s of STFT and regression.
   `aurora.check_if_fcs_already_exist` grows the same way (0.15 s at 10 runs, 11.7 s at 120).
+
+## 47. mt-io 0.0.5: Phoenix stamps of file version < 3 are one second behind GPS time and are not corrected (2026-10-03)
+- **Found:** Phoenix's format note DAA09 (DataFormat 3rd Party v2.0, 2021-09-15, in
+  torresolmx/PhoenixGeoPy Docs), against the Kalkaroo headers.
+- **Spec:** the recording id and every segment time stamp are Unix-epoch GPS time (leap seconds
+  not applied: mt-io's `MTime(gps_time=True)` subtracting 18 s is right); decimated continuous
+  data start one second after the recording start because the first second feeds the decimation
+  filters (mt-io's `+1` for file 1 is right); and "for decimated time series with versions
+  previous to 0x3 (before instrument firmware v2.0), this timestamp was one second behind the
+  real GPS time". The Kalkaroo 2020 files are all file_version 2 (td_150 and td_24k), so their
+  stamps are one second behind: true time = stamp + 1 s. The reader has no version check and
+  applies no correction; the error is common to both sites of a pair (remote reference is
+  unaffected) but shifts absolute time, which matters against observatory data or other
+  instruments. The reader should correct version < 3 stamps and record that it did.
