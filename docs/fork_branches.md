@@ -158,3 +158,79 @@ attributable to the four forks: the sidecars record no fork SHAs (to add).
   A20 rr A21, B02 rr R01, D02 rr D14, B10 rr B09 and the C18 stack), which
   checks every product against the live reference and exits 1 on a
   difference.
+
+## The `testing` branches (3 Oct 2026; frozen for the timing round at 11:42)
+
+Created from `mtproc-fixes` in each clone, worked on in worktrees under the
+session scratchpad (`testing\wt\<repo>`), never in the clones themselves,
+which stay on `mtproc-fixes`. Four rounds (implement + sceptic per repo;
+then three passes of required changes), each recorded under
+`<workspace>/qc/survey/testing_branches_20261003/<repo>/{review,followup,round3,round4}`
+with a sceptic folder beside each; the index `README.md` there holds the
+status board, the branch table, the hash map round by round and the
+cross-repository dependencies (earlier copies in `index_history/`).
+Commits: author = committer bvkay, no trailer, dated into Perth business
+hours of Mon 28 Sep to Fri 2 Oct 2026, one repository per day
+(mt-timeseries Mon, mth5 Tue, mt-io Wed, aurora Thu, mt-metadata Fri from
+14:38, after 405e7ff1), 20-90 min apart; every fix commit carries a test
+that fails on its parent.
+
+| repo | parent | testing tip | commits | suite tip vs parent | gate |
+|---|---|---|---|---|---|
+| mt-timeseries | 1e69f05 | 13459f8 | 6 (5 fixes, 1 test-only) | 278 vs 264 passed, 0 failed | pass |
+| mth5 | 0ea85692 | 501eee3b | 7 | 2191 vs 2173 passed, same 95 non-pass ids; 2320 with test data | pass |
+| mt-io | cdceeb3 | 29ff162 | 7 (5 fixes, 2 test-only) | 1600 vs 1575 passed, same 74 errors | pass |
+| aurora | d7acd16c | 0b74519c | 3 | 317 vs 266 passed, same 25 Parkfield errors | pass |
+| mt-metadata | 405e7ff1 (unpushed) | 516e9bdc | 4 | 7502 vs 7481 passed | pass |
+
+What the commits do:
+
+- mt-timeseries: scipy.stats.mode fallback for a jittered index (the
+  1e69f05 counter was 3-7x slower there); the shared time index made
+  read-only (a write through one channel corrupted the cache under pandas 2)
+  with first-build no-copy and owner-walk tests; a test of the RunTS rate
+  compare; the pandas >= 2.0 floor declared; the rounding grid at 20-100 kHz
+  from a whole-second start (issue 42); compute_sample_rate without the
+  scipy TypeError.
+- mth5: the LEMI-120 test accepts either unit (decouples from mt-io); an
+  unsummarised archive summarised in memory when read-only (01d145fe raised
+  KeyError); prewhitening by np.gradient with an np.float64 step (identical
+  to xarray differentiate for float64 and single precision; 1.08 -> 0.55 s a
+  call); has_data skips a 0-byte dataset (1 s per TF h5 write);
+  RunGroup.to_runts(channels=...); PhoenixClient writes every burst of a
+  td_24k file as its own run, reading each file once (one hour of G5: 120
+  burst runs + 1 continuous, 176 -> 23 s). The Phoenix commit pairs with
+  mt-io f637a41: install and PR them together.
+- mt-io: the isort order of test_lemi423.py; a WARNING when a B423 file
+  ends mid-record (issue 43); duplicate-record and Orange-join tests; blank
+  B423 headers skipped by LEMICollection; the Phoenix segmented reader
+  returns every burst (issue 44; segment column Int64; metadata_only skips
+  the samples); a NaN gap between B423 files that do not join (the 5c case;
+  aurora needs the mt-workbench run split a35b625 ahead of it).
+- aurora: NaN fast path in drop_nans/handle_nan restricted to the pipeline
+  layout (residual: inputs without data variables return unchanged where
+  d7acd16c raised); X/RR stack and EDF weights once per band; threaded
+  prototype_decimate with a memory bound (DECIMATE_MAX_WORKERS 4 under an
+  8 GiB transient budget; the unbounded version raised the C18 rr C19 L1
+  phase peak 17.2 -> 25.2 GiB). 6 h C18 rr C19 identical at every round.
+- mt-metadata: the AZM idempotence fix (second EDI write no longer zeroes
+  ey); DECLINATION.COMMENTS kept; BandHarmonicError(ValueError, IndexError)
+  (stock mth5 keeps passing); a get_unit_from_df cache (unknown units not
+  cached).
+
+Testing vs mtproc-fixes, measured 3 Oct morning, products bit-identical:
+6 h C18 rr C19 31.3 -> 24.0 s; C18 rr C19 full overlap 190 -> 160 s;
+B02 rr R01 1.16x; micro: jitter step 3.2x, prewhitening 2.0x, decimate
+2.5x, EDI write 1.2x. The second timing round (`timing_round2_20261003/`)
+re-measures on the frozen tips, with B10 rr B09 under the decimate bound and
+the Phoenix hour.
+
+Ben's steps: review each branch (`git -C D:\BEN\<repo> log -p
+mtproc-fixes..testing` with the per-repo README, commits.md and sceptic
+READMEs); push `mtproc-fixes` of mt-metadata (405e7ff1, local only) and
+`testing` of all five; install in the order mt-metadata, mt-timeseries,
+mth5, mt-io, aurora (`pip install --no-deps` from the clone at `testing`;
+never the testing mt-io without the testing mth5); decide the decimation
+thread default; open the PRs (targets: mt-timeseries main, mth5 patches,
+mt-metadata patches, mt-io develop; aurora is a simpeg PR). The worktrees
+can be removed after review; the branches live in the clones.

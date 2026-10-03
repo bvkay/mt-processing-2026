@@ -21,6 +21,7 @@ src/mt_workbench/gui/README.md
 !docs/upstream_issues.md
 !docs/fork_branches.md
 !docs/workbench_issues.md
+!docs/worklog.md
 examples/
 
 # Morocco survey: local-only records (Ben, 2 Oct 2026); the files stay on disk
