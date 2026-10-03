@@ -23,8 +23,10 @@ for the path as for that TF object; or `plot_comparison` with
 `out_png` does not write the PNG on the Agg backend and close its figure,
 both in a fresh process and in one where matplotlib.pyplot was imported
 first (as mt_metadata's filter plotting helpers import it in process_rr.py);
-or `import process_rr` leaves matplotlib.pyplot loaded with a backend other
-than Agg (process_rr.py selects it before mth5 and mt_io import pyplot).
+or `import process_rr` does not import matplotlib.pyplot, or the backend
+recorded at the moment it is first imported (a `sys.meta_path` finder in
+the child) is not Agg: process_rr.py must select Agg before mth5 and mt_io
+import pyplot, and selecting it only after them fails.
 """
 
 from __future__ import annotations
@@ -98,13 +100,27 @@ def check_plot() -> None:
 
 
 def check_process_rr_backend() -> None:
-    code = (f"sys.path.insert(0, {str(REPO / 'scripts')!r}); import process_rr, matplotlib; "
-            "print(json.dumps({'backend': str(dict.__getitem__(matplotlib.rcParams, 'backend')), "
-            "'pyplot': 'matplotlib.pyplot' in sys.modules}))")
+    # the finder records the raw rcParams backend (no auto-resolution) when
+    # matplotlib.pyplot is first looked for, before pyplot's own import runs
+    code = (
+        f"sys.path.insert(0, {str(REPO / 'scripts')!r}); seen = {{}}\n"
+        "class PyplotWatch:\n"
+        "    def find_spec(self, name, path=None, target=None):\n"
+        "        if name == 'matplotlib.pyplot' and 'backend' not in seen:\n"
+        "            import matplotlib\n"
+        "            seen['backend'] = str(dict.__getitem__(matplotlib.rcParams, 'backend'))\n"
+        "        return None\n"
+        "sys.meta_path.insert(0, PyplotWatch())\n"
+        "import process_rr, matplotlib\n"
+        "print(json.dumps({'at_pyplot': seen.get('backend'), 'pyplot': 'matplotlib.pyplot' in sys.modules, "
+        "'after': str(dict.__getitem__(matplotlib.rcParams, 'backend'))}))"
+    )
     got = child(code)
-    assert got["pyplot"], f"import process_rr: matplotlib.pyplot not loaded, the check sees nothing: {got}"
-    assert got["backend"].lower() == "agg", f"import process_rr: pyplot loaded with backend {got['backend']!r}, not Agg"
-    print("import process_rr: matplotlib.pyplot loaded with the Agg backend already selected")
+    assert got["pyplot"] and got["at_pyplot"] is not None, \
+        f"import process_rr: matplotlib.pyplot not imported, the check sees nothing: {got}"
+    assert got["at_pyplot"].lower() == "agg", \
+        f"import process_rr: pyplot imported with backend {got['at_pyplot']!r}, not Agg (after the import: {got['after']!r})"
+    print(f"import process_rr: matplotlib.pyplot imported with the backend {got['at_pyplot']!r} already selected")
 
 
 def main() -> int:
