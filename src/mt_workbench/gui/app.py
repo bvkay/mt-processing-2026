@@ -122,7 +122,7 @@ class State(QObject):
 
     # ------------------------------------------------------------ survey
 
-    def open_survey(self, path: str | Path) -> None:
+    def open_survey(self, path: str | Path, fetch_basemap: bool = True) -> None:
         """Load a survey.yaml and tell every tab to reload.
 
         Clears the site, the selection, the remote and the segment store, then
@@ -130,6 +130,9 @@ class State(QObject):
 
         Args:
             path (str | Path): The survey YAML to open.
+            fetch_basemap (bool): False skips the basemap fetch, as for a
+                workspace folder New survey could not make
+                (`metadata_edit.handle_new_survey_finished`).
         """
         self.survey_yaml = Path(path).resolve()
         self.survey = Survey.from_yaml(self.survey_yaml)
@@ -139,7 +142,8 @@ class State(QObject):
         self.selection, self.remote = None, None
         self.selection_changed.emit(None)
         self.survey_changed.emit()
-        fetch_basemap_if_missing(self)  # no <workspace>/basemap.json: run fetch_basemap.py now
+        if fetch_basemap:
+            fetch_basemap_if_missing(self)  # no <workspace>/basemap.json: run fetch_basemap.py now
 
     def set_site(self, name: str | None) -> None:
         """Set the selected site and emit `site_changed` if it differs."""
@@ -482,20 +486,32 @@ class MainWindow(QMainWindow):
             where = (f"Check `workspace:` in {self.state.survey_yaml}, or connect the drive it is on."
                      if survey.config.get("workspace") else
                      f"It is the default <survey dir>/work of {self.state.survey_yaml}.")
-            self.workspace_notice = QMessageBox(
-                QMessageBox.Warning, "Workspace folder not found",
+            self.show_workspace_notice(
+                "Workspace folder not found",
                 f"The workspace folder of {survey.name} does not exist, nor its parent folder:\n\n"
                 f"{survey.workspace}\n\nNo MTH5 archive, transfer function or basemap can be found there, "
                 f"and no basemap is fetched. {where}",
-                QMessageBox.Ok, self,
             )
-            self.workspace_notice.setWindowModality(Qt.NonModal)
-            self.workspace_notice.show()
             return
         self.statusBar().showMessage(
             f"{survey.name}: {len(self.state.all_sites())} sites, "
             f"data_root {survey.data_root}, workspace {survey.workspace}"
         )
+
+    def show_workspace_notice(self, title: str, text: str) -> None:
+        """Show a workspace problem in a non-modal warning box (`workspace_notice`).
+
+        A box of a previous call is closed first; `open_survey` closes this
+        one at the next survey open. Nothing waits on the box.
+
+        Args:
+            title (str): The box's title.
+            text (str): The box's text.
+        """
+        self.close_workspace_notice()
+        self.workspace_notice = QMessageBox(QMessageBox.Warning, title, text, QMessageBox.Ok, self)
+        self.workspace_notice.setWindowModality(Qt.NonModal)
+        self.workspace_notice.show()
 
     def close_workspace_notice(self) -> None:
         """Close the workspace box of a previous `open_survey`, if one is up."""

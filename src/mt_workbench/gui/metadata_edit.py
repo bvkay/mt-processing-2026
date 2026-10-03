@@ -27,7 +27,6 @@ Comments inside the `sites:` block are lost, as with the generator scripts.
 
 from __future__ import annotations
 
-import contextlib
 from pathlib import Path
 from textwrap import indent
 
@@ -418,7 +417,11 @@ def handle_new_survey_finished(parent, state, index: int, ok: bool) -> None:
 
     Connected to `state.runner.job_finished`, which fires for every job;
     jobs other than new_survey.py (`is_new_survey_job`) are ignored. The
-    survey's workspace folder is made before the survey is opened.
+    survey's workspace folder is made before the survey is opened. When it
+    cannot be made (a drive not connected, a file in the way) the survey
+    still opens, no basemap is fetched, and the window says so in the
+    status bar and a non-modal box (`MainWindow.show_workspace_notice`), as
+    `MainWindow.open_survey` does for a workspace it cannot reach.
 
     Args:
         parent (QWidget): Parent of the message boxes.
@@ -434,13 +437,28 @@ def handle_new_survey_finished(parent, state, index: int, ok: bool) -> None:
                              f"{job.label} exited {job.exit_code}:\n\n" + "\n".join(job.output[-8:]))
         return
     out = Path(job.argv[job.argv.index("--out") + 1])
+    unmade = None
     try:
+        workspace = Survey.from_yaml(out).workspace
         # new_survey.py writes the workspace key only; the folder chosen in the
         # dialog is made here, so the opening fetches the new survey's basemap
-        # even when its parent folder is new too (`site_map.workspace_unreachable`);
-        # a folder that cannot be made (a drive not connected) does not stop the opening
-        with contextlib.suppress(OSError):
-            Survey.from_yaml(out).workspace.mkdir(parents=True, exist_ok=True)
-        state.open_survey(out)
+        # even when its parent folder is new too (`site_map.workspace_unreachable`)
+        try:
+            workspace.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:  # reported below; the survey opens without a fetch
+            unmade = exc
+        state.open_survey(out, fetch_basemap=unmade is None)
     except Exception as exc:  # a bad YAML should not kill the window
         QMessageBox.critical(parent, "Could not open survey", f"{out}\n\n{exc}")
+        return
+    if unmade is not None:
+        window = parent.window()
+        window.statusBar().showMessage(
+            f"{state.survey.name}: workspace folder {workspace} could not be made "
+            f"({unmade.strerror or unmade}); no basemap fetched")
+        window.show_workspace_notice(
+            "Workspace folder not made",
+            f"The workspace folder of {state.survey.name} could not be made:\n\n{workspace}\n\n{unmade}\n\n"
+            f"The survey is open, but no MTH5 archive, transfer function or basemap can be kept there, "
+            f"and no basemap is fetched. Check `workspace:` in {state.survey_yaml}, or connect the drive "
+            f"it is on.")

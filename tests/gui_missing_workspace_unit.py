@@ -19,7 +19,12 @@ new_survey.py's `<data_root>/work`, named by the key and not made, on first
 open. It fails too if a finished New survey job
 (`metadata_edit.handle_new_survey_finished`) on a survey.yaml whose
 workspace and its parent do not exist yet does not make that folder and
-start fetch_basemap.py (the new survey's basemap, as before) without a box.
+start fetch_basemap.py (the new survey's basemap, as before) without a box;
+or if a finished New survey job whose workspace folder cannot be made
+(its parent path is a file, or the folder's own path is a file) does not
+open the survey, opens a modal box, does not show the non-modal notice
+naming the folder as not made, does not say so in the status bar, or
+starts fetch_basemap.py.
 
 The surveys are written into a scratch folder: one LEMI-423 site, S01, with
 a position and a raw folder holding one empty B423 file named by its epoch.
@@ -211,6 +216,32 @@ def main() -> int:
     check("control, New survey: opened with one fetch and no box",
           window.state.survey_yaml == new_yaml.resolve() and FETCHES[n_fetches:] == want and len(BOXES) == n_boxes,
           f"opened {window.state.survey_yaml}, fetches {FETCHES[n_fetches:]}, boxes {BOXES[n_boxes:]}")
+
+    # a finished New survey job whose workspace folder cannot be made: opened, reported, nothing fetched
+    for label, name, key in (("New survey, the workspace's parent a file", "new_parent_file", "blocker/work"),
+                             ("New survey, the workspace a file", "new_workspace_file", "work_file")):
+        unmade_yaml, unmade = make_survey(name, workspace=key)
+        (unmade_yaml.parent / key.split("/")[0]).write_text("a file, not a folder", encoding="utf-8")
+        n_boxes, n_fetches = len(BOXES), len(FETCHES)
+        index = window.state.runner.add(f"new survey {name}", [
+            sys.executable, str(REPO / "scripts" / "new_survey.py"), str(unmade_yaml.parent / "raw"),
+            "--out", str(unmade_yaml)])
+        metadata_edit.handle_new_survey_finished(window.metadata_tab, window.state, index, True)
+        pump(app)
+        notice = getattr(window, "workspace_notice", None)
+        text = notice.text() if notice is not None else ""
+        status = window.statusBar().currentMessage()
+        check(f"{label}: the survey opened", window.state.survey_yaml == unmade_yaml.resolve(),
+              f"opened {window.state.survey_yaml}")
+        check(f"{label}: no modal box", len(BOXES) == n_boxes, f"modal boxes {BOXES[n_boxes:]}")
+        check(f"{label}: one non-modal notice naming the folder as not made",
+              notice is not None and notice.isVisible() and not notice.isModal()
+              and notice.windowModality() == Qt.NonModal and str(unmade) in text and "could not be made" in text,
+              "no notice" if notice is None else
+              f"visible {notice.isVisible()}, modality {notice.windowModality()}, text {text!r}")
+        check(f"{label}: the status bar names the folder", str(unmade) in status and "could not be made" in status,
+              repr(status))
+        check(f"{label}: no basemap fetch", FETCHES[n_fetches:] == [], f"fetches {FETCHES[n_fetches:]}")
 
     window.close()
     pump(app, 0.2)
