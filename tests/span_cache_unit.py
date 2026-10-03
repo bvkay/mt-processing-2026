@@ -21,10 +21,14 @@ amount, or opens the archive through MTH5 (building mth5 and mt_metadata
 objects) rather than once with h5py alone; `SpanCache.read` opens a file on
 a second call for an unchanged archive, or `SpanCache.get` opens one at
 all; a changed archive (a new modification time) is not read again;
-`read_span` asked for a station under a survey name the archive does not
-hold returns a span rather than raising KeyError, or `load_grid` does not
-raise on the same call (the bar and the Time Series tree must agree); or no
-archive is found to test (a skip, said so, exit 0).
+`read_span` and `load_grid` do not give the same outcome for the same
+names (the bar and the Time Series tree must agree): asked for a station
+under a survey name the archive does not hold, `read_span` does not raise
+KeyError or `load_grid` does not raise; asked under a survey or station
+name that mth5 makes into the archive's group name (`validate_name`:
+spaces to "_", commas dropped), such as "MT Morocco Atlas Mountains" or
+"C18,", either does not return the span of the exact names; or no archive
+is found to test (a skip, said so, exit 0).
 """
 
 from __future__ import annotations
@@ -137,21 +141,36 @@ def test_c_changed_archive_read_again():
     print(f"  {site} (a copy): mtime +1 s, the kept span dropped and the archive read again")
 
 
-def test_d_survey_name_mismatch():
+def _outcome(call, path, survey: str, site: str) -> tuple[str, object]:
+    """Return ("returned", span) or ("raised", "<error>: <message>") for `read_span` or `load_grid`."""
+    try:
+        got = call(path, survey, site)
+    except Exception as exc:  # noqa: BLE001 - which error each raises is the point
+        return "raised", f"{type(exc).__name__}: {exc}"
+    if not isinstance(got, tuple):  # load_grid's Grid
+        got = (got.t0, got.t0 + pd.Timedelta(seconds=got.n_samples / got.sample_rate))
+    return "returned", got
+
+
+def test_d_survey_names_as_load_grid():
     from mt_workbench.gui.archive import read_span
 
     path, survey, site = present()[0]
-    wrong = f"{survey}_not_this"
-    outcome = {}
-    for name, call in (("read_span", read_span), ("load_grid", load_grid)):
-        try:
-            outcome[name] = ("returned", call(path, wrong, site))
-        except Exception as exc:  # noqa: BLE001 - which error each raises is the point
-            outcome[name] = ("raised", f"{type(exc).__name__}: {exc}")
-    assert outcome["read_span"][0] == "raised" and outcome["read_span"][1].startswith("KeyError"), outcome
-    assert outcome["load_grid"][0] == "raised", outcome
-    print(f"  {site} under survey {wrong!r}: read_span {outcome['read_span'][1]}; "
-          f"load_grid {outcome['load_grid'][1]}")
+    truth = _outcome(load_grid, path, survey, site)
+    assert truth[0] == "returned", truth
+    # (survey name, station name, whether mth5 makes them into the archive's groups)
+    forms = [(f"{survey},", site, True), (survey, f"{site},", True), (f"{survey}_not_this", site, False)]
+    if "_" in survey:
+        forms.insert(0, (survey.replace("_", " "), site, True))
+    for name, station, found in forms:
+        span, grid = _outcome(read_span, path, name, station), _outcome(load_grid, path, name, station)
+        if found:
+            assert span == truth and grid == truth, (name, station, span, grid, truth)
+        else:
+            assert span[0] == "raised" and span[1].startswith("KeyError") and grid[0] == "raised", \
+                (name, station, span, grid)
+        print(f"  {station!r} under survey {name!r}: read_span {span[0]}, load_grid {grid[0]}"
+              + (", the span of the exact names" if found else f" ({span[1]}; {grid[1]})"))
 
 
 if __name__ == "__main__":

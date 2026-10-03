@@ -49,6 +49,7 @@ from pathlib import Path
 
 import h5py
 import pandas as pd
+from mth5.helpers import validate_name
 from mth5.mth5 import MTH5
 
 from mt_workbench.timefreq import _real_runs, _scalar_gain
@@ -203,8 +204,13 @@ def read_span(mth5_path: str | Path, survey_name: str, station: str) -> tuple[pd
     start (`mt_workbench.timefreq._real_runs`), earliest first; the sample
     rate is the first run's first channel's (`channels.display` order), and
     the grid ends one sample past the last run's start plus that channel's
-    length in the last run. The station is looked up under `survey_name`
-    alone, as `load_grid` looks it up.
+    length in the last run. Both names are first made group names as mth5
+    makes them for `load_grid` (`MTH5._make_h5_path` applies
+    `mth5.helpers.validate_name`: spaces to "_", commas dropped), so a
+    survey.yaml name such as "MT Morocco Atlas Mountains" finds the group
+    "MT_Morocco_Atlas_Mountains" in both. The station is then looked up
+    under that survey alone, with no other survey group tried, so a survey
+    or station the archive does not hold raises in both.
 
     Args:
         mth5_path (str | Path): The MTH5 file, opened read-only.
@@ -220,11 +226,12 @@ def read_span(mth5_path: str | Path, survey_name: str, station: str) -> tuple[pd
             (`load_grid` raises `MTH5Error` there).
         ValueError: If the station has no runs with data.
     """
+    survey_key, station_key = validate_name(survey_name), validate_name(station)
     with h5py.File(Path(mth5_path), "r") as handle:
         surveys = handle["Experiment/Surveys"]
-        if survey_name not in surveys or station not in surveys[survey_name]["Stations"]:
+        if survey_key not in surveys or station_key not in surveys[survey_key]["Stations"]:
             raise KeyError(f"{station}: not in survey {survey_name} of {Path(mth5_path).name}")
-        group = surveys[survey_name]["Stations"][station]
+        group = surveys[survey_key]["Stations"][station_key]
         runs = []
         for name, run in group.items():
             if "time_period.start" not in run.attrs:
