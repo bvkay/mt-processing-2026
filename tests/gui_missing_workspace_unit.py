@@ -24,7 +24,11 @@ or if a finished New survey job whose workspace folder cannot be made
 (its parent path is a file, or the folder's own path is a file) does not
 open the survey, opens a modal box, does not show the non-modal notice
 naming the folder as not made, does not say so in the status bar, or
-starts fetch_basemap.py.
+starts fetch_basemap.py. It fails too if a normal New survey job run after
+such a failed one (its workspace a file), on a survey in a new scratch
+folder, leaves a warning box of any kind visible or a status line other
+than the usual "<name>: <n> sites, data_root ..., workspace ..." of the new
+survey, or does not make its workspace and start fetch_basemap.py once.
 
 The surveys are written into a scratch folder: one LEMI-423 site, S01, with
 a position and a raw folder holding one empty B423 file named by its epoch.
@@ -242,6 +246,32 @@ def main() -> int:
         check(f"{label}: the status bar names the folder", str(unmade) in status and "could not be made" in status,
               repr(status))
         check(f"{label}: no basemap fetch", FETCHES[n_fetches:] == [], f"fetches {FETCHES[n_fetches:]}")
+
+    # a normal New survey after the failed one above: the earlier notice and status line go
+    def visible_boxes() -> list[str]:
+        return [w.windowTitle() for w in app.topLevelWidgets() if isinstance(w, QMessageBox) and w.isVisible()]
+
+    check("precondition: the failed New survey's notice is up", notice_up() and visible_boxes() != [],
+          f"notice up {notice_up()}, visible boxes {visible_boxes()}")
+    after_yaml, after_workspace = make_survey("new_after_unmade")
+    n_boxes, n_fetches = len(BOXES), len(FETCHES)
+    index = window.state.runner.add("new survey new_after_unmade", [
+        sys.executable, str(REPO / "scripts" / "new_survey.py"), str(after_yaml.parent / "raw"),
+        "--out", str(after_yaml)])
+    metadata_edit.handle_new_survey_finished(window.metadata_tab, window.state, index, True)
+    pump(app)
+    status = window.statusBar().currentMessage()
+    want = [[sys.executable, str(REPO / "scripts" / "fetch_basemap.py"), str(after_yaml.resolve())]]
+    check("New survey after a failed one: opened, workspace made, one fetch, no modal box",
+          window.state.survey_yaml == after_yaml.resolve() and after_workspace.is_dir()
+          and FETCHES[n_fetches:] == want and len(BOXES) == n_boxes,
+          f"opened {window.state.survey_yaml}, made {after_workspace.is_dir()}, fetches {FETCHES[n_fetches:]}, "
+          f"boxes {BOXES[n_boxes:]}")
+    check("New survey after a failed one: no notice and no box visible", not notice_up() and visible_boxes() == [],
+          f"notice up {notice_up()}, visible boxes {visible_boxes()}")
+    check("New survey after a failed one: the usual status line of the new survey",
+          status.startswith("new_after_unmade: ") and " sites, data_root " in status
+          and status.endswith(f"workspace {after_workspace}"), repr(status))
 
     window.close()
     pump(app, 0.2)

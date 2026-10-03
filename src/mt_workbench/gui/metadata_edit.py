@@ -421,7 +421,9 @@ def handle_new_survey_finished(parent, state, index: int, ok: bool) -> None:
     cannot be made (a drive not connected, a file in the way) the survey
     still opens, no basemap is fetched, and the window says so in the
     status bar and a non-modal box (`MainWindow.show_workspace_notice`), as
-    `MainWindow.open_survey` does for a workspace it cannot reach.
+    `MainWindow.open_survey` does for a workspace it cannot reach. When it
+    is made, the box of an earlier survey is closed and the status bar shows
+    the usual line (`MainWindow.show_survey_status`), as at File > Open.
 
     Args:
         parent (QWidget): Parent of the message boxes.
@@ -462,3 +464,6 @@ def handle_new_survey_finished(parent, state, index: int, ok: bool) -> None:
             f"The survey is open, but no MTH5 archive, transfer function or basemap can be kept there, "
             f"and no basemap is fetched. Check `workspace:` in {state.survey_yaml}, or connect the drive "
             f"it is on.")
+    else:  # the box and status line of an earlier survey go, as at File > Open
+        parent.window().close_workspace_notice()
+        parent.window().show_survey_status()

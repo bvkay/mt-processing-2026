@@ -493,6 +493,11 @@ class MainWindow(QMainWindow):
                 f"and no basemap is fetched. {where}",
             )
             return
+        self.show_survey_status()
+
+    def show_survey_status(self) -> None:
+        """Put the usual "<name>: <n> sites, data_root ..., workspace ..." line in the status bar."""
+        survey = self.state.survey
         self.statusBar().showMessage(
             f"{survey.name}: {len(self.state.all_sites())} sites, "
             f"data_root {survey.data_root}, workspace {survey.workspace}"
@@ -501,8 +506,10 @@ class MainWindow(QMainWindow):
     def show_workspace_notice(self, title: str, text: str) -> None:
         """Show a workspace problem in a non-modal warning box (`workspace_notice`).
 
-        A box of a previous call is closed first; `open_survey` closes this
-        one at the next survey open. Nothing waits on the box.
+        A box of a previous call is closed first. `open_survey` closes this
+        one at the next survey open, as does a New survey job whose
+        workspace folder is made (`metadata_edit.handle_new_survey_finished`).
+        Nothing waits on the box.
 
         Args:
             title (str): The box's title.
@@ -514,7 +521,7 @@ class MainWindow(QMainWindow):
         self.workspace_notice.show()
 
     def close_workspace_notice(self) -> None:
-        """Close the workspace box of a previous `open_survey`, if one is up."""
+        """Close the box of `show_workspace_notice`, if one is up."""
         if self.workspace_notice is not None:
             self.workspace_notice.close()
             self.workspace_notice.deleteLater()

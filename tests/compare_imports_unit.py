@@ -3,7 +3,8 @@
 Unit test for the imports of mt_workbench.compare
 
 Each check runs in a fresh Python process with this tree's src first on the
-path, so the modules a statement loads are its own.
+path, so the modules a statement loads are its own, and without MPLBACKEND,
+so a backend set outside cannot stand in for the one the code selects.
 
 Usage:
     python tests/compare_imports_unit.py
@@ -32,6 +33,7 @@ import pyplot, and selecting it only after them fails.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -43,9 +45,10 @@ WATCH = ("mt_metadata.transfer_functions", "mt_metadata", "matplotlib", "matplot
 
 
 def child(code: str) -> dict:
-    """Run `code` in a fresh process with this tree's src first; return the JSON it prints last."""
+    """Run `code` in a fresh process with this tree's src first and no MPLBACKEND; return the JSON it prints last."""
     head = f"import sys, json; sys.path.insert(0, {str(REPO / 'src')!r}); "
-    res = subprocess.run([sys.executable, "-c", head + code], capture_output=True, text=True)
+    env = {k: v for k, v in os.environ.items() if k.upper() != "MPLBACKEND"}
+    res = subprocess.run([sys.executable, "-c", head + code], capture_output=True, text=True, env=env)
     assert res.returncode == 0, res.stderr[-2000:]
     return json.loads(res.stdout.strip().splitlines()[-1])
 
