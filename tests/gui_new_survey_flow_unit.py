@@ -30,9 +30,9 @@ This test fails if:
   it does not write those two values into S01's entry alone, S03 still
   without an entry and the comments as they were.
 
-Mutation that must make it fail: Save put back on
-`metadata_edit.rewrite_sites_block` (the comments are lost and no
-survey.yaml.previous is made).
+Mutation that must make it fail: Save put back on a rewrite of the whole
+`sites:` block with `yaml.safe_dump`, as before the writer (the comments
+are lost and no survey.yaml.previous is made).
 
 Usage:
     QT_QPA_PLATFORM=offscreen python tests/gui_new_survey_flow_unit.py

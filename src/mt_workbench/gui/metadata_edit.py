@@ -2,8 +2,9 @@
 """
 Editing support for the Metadata tab
 
-Holds the New survey dialog, the rewrite of the `sites:` block of
-survey.yaml, and the conversion between YAML values and table cell text.
+Holds the New survey dialog and the conversion between YAML values and
+table cell text. The Metadata tab saves its edits through
+`mt_workbench.survey_file.edit`.
 
 `start_new_survey` queues `scripts/new_survey.py` on `state.runner` and
 starts it immediately with `JobRunner.run_now`, so the window stays
@@ -13,13 +14,6 @@ job wrote into survey.yaml, then opens the survey.yaml or reports its failure.
 Progress shows in the console strip through
 the runner's `log_line`.
 
-`rewrite_sites_block` writes the table's edits into survey.yaml in the same
-way as `write_sites_block` in `scripts/burra_notes_to_yaml.py`: only the
-`sites:` block is rewritten (`yaml.safe_dump`, two-space indent). The text
-above the block and any top-level keys after it are kept unchanged, as
-are the file's line endings and every per-site key the table does not show.
-Comments inside the `sites:` block are lost, as with the generator scripts.
-
 @author: ben kay (ben@auscope.org.au)
 
 :license: MIT
@@ -28,9 +22,7 @@ Comments inside the `sites:` block are lost, as with the generator scripts.
 from __future__ import annotations
 
 from pathlib import Path
-from textwrap import indent
 
-import yaml
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QComboBox, QDialog, QDialogButtonBox, QFileDialog, QGridLayout, QHBoxLayout, QLabel, QLineEdit,
@@ -158,55 +150,6 @@ def parse_cell(column: str, text: str):
     if text in ("", "-"):
         return None
     return float(text) if SITE_TABLE_COLUMNS[column] is float else text
-
-
-def rewrite_sites_block(yaml_path: str | Path, edits: dict[str, dict]) -> None:
-    """Apply per-site edits to the `sites:` block of a survey.yaml.
-
-    The block runs from the top-level `sites:` line to the next top-level
-    key; comments or blank lines directly above that key stay with it. The
-    text before and after the block is written back unchanged with the
-    file's own line endings. A file with no `sites:` key gets one at the end.
-
-    Args:
-        yaml_path (str | Path): The survey.yaml.
-        edits (dict[str, dict]): {site: {key: value}}; a value of None drops
-            the key.
-
-    Raises:
-        ValueError: If the file has more than one top-level `sites:` key.
-    """
-    path = Path(yaml_path)
-    with open(path, encoding="utf-8", newline="") as f:
-        text = f.read()
-    newline = "\r\n" if "\r\n" in text else "\n"
-    lines = text.splitlines(keepends=True)
-    starts = [i for i, line in enumerate(lines) if line.split(":", 1)[0] == "sites" and ":" in line]
-    if len(starts) > 1:
-        raise ValueError(f"more than one top-level 'sites:' key in {path}")
-    start = end = starts[0] if starts else len(lines)
-    if starts:
-        end = next((k for k in range(start + 1, len(lines))
-                    if lines[k].strip() and not lines[k].startswith((" ", "\t", "#"))), len(lines))
-        while end > start + 1 and (lines[end - 1].startswith("#") or not lines[end - 1].strip()):
-            end -= 1
-    head, tail = "".join(lines[:start]), "".join(lines[end:])
-    if head and not head.endswith("\n"):
-        head += newline
-
-    sites = (yaml.safe_load(text) or {}).get("sites") or {}
-    for site, changes in edits.items():
-        entry = dict(sites.get(site) or {})
-        for key, value in changes.items():
-            if value is None:
-                entry.pop(key, None)
-            else:
-                entry[key] = value
-        sites[site] = entry
-    body = yaml.safe_dump(sites, sort_keys=False, allow_unicode=True, default_flow_style=False)
-    block = ("sites:\n" + indent(body, "  ")).replace("\n", newline)
-    with open(path, "w", encoding="utf-8", newline="") as f:
-        f.write(head + block + tail)
 
 
 class NewSurveyDialog(QDialog):

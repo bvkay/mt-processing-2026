@@ -84,9 +84,9 @@ not win; `SITE_TABLE_COLUMNS` does not type them float, str, float; a site
 table CSV does not read them; or the GUI Metadata table does not round trip
 them: the tab's `COLUMNS` lacks one, `format_cell` then `parse_cell` does not
 give each value back ("-" for None back to None), or
-`metadata_edit.rewrite_sites_block` on a scratch survey.yaml does not write
--1.07, IGRF-14 and 2023.53 that `Survey.site` reads back while the other
-site's entry is unchanged. The GUI functions import PySide6 and make no
+`survey_file.edit` (what the tab's Save calls) on a scratch survey.yaml does
+not write -1.07, IGRF-14 and 2023.53 that `Survey.site` reads back while the
+other site's entry is unchanged. The GUI functions import PySide6 and make no
 widget. Control: the same round trip with the epoch cell typed "2023.5x"
 must raise ValueError.
 
@@ -434,7 +434,9 @@ def test_declination_keys() -> None:
         path.write_text("name: t\ninstrument: lemi423\ndata_root: .\nsites:\n  A:\n    latitude: 31.9\n"
                         "  B:\n    latitude: 32.0\n", encoding="utf-8")
         cells = {k: metadata_edit.parse_cell(k, metadata_edit.format_cell(k, v)) for k, v in values.items()}
-        metadata_edit.rewrite_sites_block(path, {"A": cells})
+        from mt_workbench import survey_file
+
+        survey_file.edit(path, sites={"A": cells})
         back = Survey.from_yaml(path)
         got = {k: getattr(back.site("A"), k) for k in keys}
         assert got == values, got

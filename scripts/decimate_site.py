@@ -58,9 +58,11 @@ too when the channels the archive holds differ from `defaults:`
 takes them from a neighbour with `h_from`, as Tasmania's TAS132 does from
 TAS131), so that process_rr.py asks aurora for the outputs the archive
 has (TAS132L: ex and ey, no hz), through the
-sites-block rewrite of the GUI's Metadata tab
-(`mt_workbench.gui.metadata_edit.rewrite_sites_block`), which rewrites the
-`sites:` block alone.
+survey.yaml writer (`mt_workbench.survey_file.edit`), which changes the
+lines of that entry alone and keeps the file as it was in
+survey.yaml.previous. A dipole length or azimuth equal to the one in
+`defaults:` is left out of the entry, where the site takes it from
+`defaults:` all the same.
 
 --min-free-gb G waits, before each source channel is read, until psutil
 reports G GB of memory available (polled every 30 s, up to 30 min).
@@ -577,10 +579,13 @@ def main(argv=None) -> int:
         made = dt.datetime.now(dt.timezone.utc).strftime(ISO)
         notes = f"{site} decimated to {rate:g} Hz from {source.name} by scripts/decimate_site.py, {made}"
 
-    from mt_workbench.gui.metadata_edit import rewrite_sites_block  # the sites-block rewrite of the Metadata tab
+    from mt_workbench import survey_file  # the survey.yaml writer: one entry changed, the rest as it was
 
     new = survey_entry(survey, site, rate, runs, notes)
-    rewrite_sites_block(yaml_path, {name: new})
+    if name in (survey.config.get("sites") or {}):
+        survey_file.edit(yaml_path, sites={name: new})
+    else:
+        survey_file.edit(yaml_path, add={name: new})
     print(f"{'refreshed' if entry else 'added'} {name} in {yaml_path}: {new}")
     print(f"archive: {out_path}")
     return 0

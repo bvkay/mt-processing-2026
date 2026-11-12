@@ -25,10 +25,10 @@ steps, in order:
   3. survey.yaml gains, or has refreshed, the site entry
      <CODE>: {instrument: intermagnet, channels: [hx, hy, hz], latitude,
      longitude, elevation, start, end, notes: "INTERMAGNET observatory, 1 s,
-     fetched <UTC>"}, through the rewrite used by the GUI Metadata tab
-     (`mt_workbench.gui.metadata_edit.rewrite_sites_block`). The `sites:` block
-     alone is rewritten; every other site's text and everything outside the
-     block stay as they were, and any other key of an existing
+     fetched <UTC>"}, through the survey.yaml writer
+     (`mt_workbench.survey_file.edit`). Only the lines of that entry change;
+     every other line of the file stays as it was, the file as it was is
+     kept in survey.yaml.previous, and any other key of an existing
      <CODE> entry (a remote:, say) is kept. An existing site of that name
      that is not an observatory is left as it is and the script exits 2.
 
@@ -190,10 +190,13 @@ def main(argv=None) -> int:
     for run in summary["runs"]:
         print(f"  run {run['id']}: {run['start']} .. {run['end']} ({run['n']} s)")
 
-    from mt_workbench.gui.metadata_edit import rewrite_sites_block  # the sites-block rewrite of the Metadata tab
+    from mt_workbench import survey_file  # the survey.yaml writer: one entry changed, the rest as it was
 
     entry = observatory.survey_entry(meta, summary["runs"])
-    rewrite_sites_block(yaml_path, {code: entry})
+    if code in sites:
+        survey_file.edit(yaml_path, sites={code: entry})
+    else:
+        survey_file.edit(yaml_path, add={code: entry})
     print(f"{'refreshed' if held else 'added'} {code} in {yaml_path}: {entry}")
     return 0
 
