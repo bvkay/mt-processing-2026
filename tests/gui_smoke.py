@@ -35,7 +35,8 @@ Usage:
 
 (1)  the window cannot be built, or its tabs are not, in order, Metadata, Time
      Series, Spectra, Spectrogram, Coherence, Filter Data, Cross-powers,
-     Stacks, Process, View EDIs, View tensors; or the Metadata table does not show 61 sites
+     Stacks, Process, View EDIs, View tensors; or the Metadata table does not show one row
+     per entry and per site folder (61 entries, `EXPECTED_SITES`)
      with a `remote` column reading E08 for D02, and a `channels` column
      reading "Ex Ey Bx By" (the survey default [ex, ey, hx, hy] as its
      preset's label) for D02 and for A07 (both archived, so both cells drawn
@@ -785,7 +786,10 @@ SITE = "D02"
 REMOTE = "E08"
 OTHER = "E08"  # the site whose second window is clicked in (8)
 ARCHIVED = ["A07", "D02", "D02L", "E08", "E08L"]  # D02L, E08L: the 1 Hz derived sites
-EXPECTED_SITES = 61
+# one row per entry of the sites: block and per site folder under data_root (61 entries; a folder
+# without an entry adds a row)
+_SURVEY = Survey.from_yaml(SURVEY_YAML)
+EXPECTED_SITES = len(set(_SURVEY.site_names()) | set(_SURVEY.site_dirs()))
 EXPECTED_CHANNELS = ("hx", "hy", "ex", "ey")  # top to bottom: magnetics first
 # the expected look, stated here rather than taken from the theme's helpers
 WINDOW_GREY, SURFACE_GREY = "#2b2b2b", "#1f1f1f"

@@ -91,7 +91,8 @@ def test_epoch_and_skip() -> None:
 
 
 def test_line_preserving_write() -> None:
-    committed = read(MOROCCO)
+    # the LF and CRLF cases are built from the file with LF endings: a checkout may hold it as CRLF
+    committed = read(MOROCCO).replace("\r\n", "\n")
     assert committed.count("\n    declination_model: ") > 100, "the Morocco survey.yaml carries no fill"
     base = stripped(committed)
     with tempfile.TemporaryDirectory() as tmp:
