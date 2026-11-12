@@ -9,8 +9,9 @@ Earth Data PR6-24, Phoenix MTU-5C/8A, Orange Box, Phoenix MTU-5A) is a site, and
 files (`detect_instrument`). The top-level `instrument:` of the YAML is the
 survey default, and a site's own `instrument:` overrides both
 (`Survey.instrument_of`). Per-site settings (dipole lengths, azimuths,
-positions, declination) are optional overrides in the YAML, usually generated once from
-the field spreadsheet (see ``scripts/site_table_to_yaml.py``).
+positions, declination) are optional overrides in the YAML, usually taken from
+the field spreadsheet (``scripts/new_survey.py --site-table``, or Import site table in
+the GUI's Metadata tab, both through `merge_table_row`).
 
 `Survey.from_yaml` loads a survey and `Survey.site` returns the merged
 `SiteConfig` of one site. A derived site, written by

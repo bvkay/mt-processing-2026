@@ -2,7 +2,9 @@
 """
 Build the sites block of the Burra survey.yaml from the field sheets
 
-The Burra-specific counterpart of ``site_table_to_yaml.py``. The Burra field
+It rewrites the whole `sites:` block from the Burra sheets, so comments and
+layout inside that block are not kept; every other writer of survey.yaml
+changes the edited entries alone through `mt_workbench.survey_file`. The Burra field
 sheet has a different layout (short site names, a combined
 "Azimuth (Ex, Ey)" cell, no positions for the Sep-Oct 2018 phase), and the
 clock status is kept in two separate timing sheets.
