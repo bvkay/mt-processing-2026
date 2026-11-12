@@ -130,7 +130,7 @@ from mt_io.lemi.lemi423 import Read_Lemi_Data, Read_Lemi_Header
 from mt_workbench.ingest import select_files
 from mt_workbench.instruments import INSTRUMENTS, header_facts, record_files, span
 from mt_workbench.survey import (
-    CHANNEL_PRESETS, Survey, channels_from_label, default_preset, preset_label, read_site_table,
+    CHANNEL_PRESETS, Survey, channels_from_label, default_preset, merge_table_row, preset_label, read_site_table,
 )
 
 REPO = Path(__file__).resolve().parents[1]
@@ -468,17 +468,14 @@ def merge_site_table(sites: dict, path: Path) -> None:
     disagreements = []
     for site in matched:
         entry = sites[site]
-        values = dict(rows[site])
         # the header's GPS fix takes precedence for position and elevation: a
         # table is typed or derived by hand (elevations exactly 1000 m low come
         # from a mis-read of the header's glued four-digit `%Alt` line). The
         # table fills them only where the header has no fix; every
         # disagreement is printed for a check against the sheet.
-        for key, tol in (("latitude", 0.0005), ("longitude", 0.0005), ("elevation", 20.0)):
-            if key in values and entry.get(key) is not None:
-                if abs(float(values[key]) - float(entry[key])) > tol:
-                    disagreements.append(f"{site} {key}: table {values[key]} vs header {entry[key]} -> header kept")
-                del values[key]
+        values, disagree = merge_table_row(entry, rows[site])
+        disagreements += [f"{site} {key}: table {rows[site][key]} vs header {entry[key]} -> header kept"
+                          for key in disagree]
         entry.update(values)
         if all(k in entry for k in DIPOLE_KEYS) and "notes" not in rows[site]:
             entry["notes"] = entry["notes"].replace(DEFAULTS_NOTE, "").lstrip("; ")

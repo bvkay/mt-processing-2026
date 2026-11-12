@@ -38,10 +38,13 @@ with:
   merged into `Survey.site()` and edited on the Filter Data tab).
 
 The `metadata_edit.EDITABLE` columns are edited in place, by double-click or
-with "Import site table..." from a CSV or XLSX. "Save survey.yaml" writes the
-changed cells into the `sites:` block (`metadata_edit.rewrite_sites_block`)
-and reopens the survey, asking first when the file was written by a script
-(`generated_by:`, shown as a yellow line). "New survey..." queues
+with "Import site table..." from a CSV or XLSX (`mt_workbench.survey.merge_table_row`:
+a position the site holds is kept). A row of a site folder with no entry in
+survey.yaml is read-only until the site is added. "Save survey.yaml" writes the
+changed cells into the edited entries through `mt_workbench.survey_file.edit`,
+which leaves every other line as it was and keeps the file as it was in
+survey.yaml.previous, and reopens the survey, asking first when the file was
+written by a script (`generated_by:`, shown as a yellow line). "New survey..." queues
 `scripts/new_survey.py` on `state.runner` and opens the survey it wrote when
 the job finishes (`metadata_edit.start_new_survey`,
 `handle_new_survey_finished`).
@@ -62,11 +65,12 @@ from PySide6.QtWidgets import (
     QMessageBox, QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
+from mt_workbench import survey_file
 from mt_workbench.dclevel import OK, OPEN, VERDICT_ORDER, channel_summary, counts_text, recorded_levels
-from mt_workbench.survey import OBSERVATORY, read_site_table
+from mt_workbench.survey import OBSERVATORY, merge_table_row, read_site_table
 from mt_workbench.gui import channels_column, metadata_edit
 from mt_workbench.gui.metadata_edit import EDITABLE, format_cell, parse_cell
-from mt_workbench.gui.theme import BAD_COLOUR, NOTICE_COLOUR
+from mt_workbench.gui.theme import BAD_COLOUR, DISABLED, NOTICE_COLOUR
 
 DC_LEVEL = "dc level"
 NO_RECORD = len(VERDICT_ORDER)  # the dc level cell's sort key without a record: after ok
@@ -78,6 +82,7 @@ COLUMNS = ["site", "instrument", "latitude", "longitude", "elevation", "declinat
            "firmware", "start", "end", "raw folder", "archive", DC_LEVEL, "filters", "notes"]
 NUMBERS = {"latitude", "longitude", "elevation", "declination", "declination_epoch", "dipole_length_ex",
            "dipole_length_ey", "azimuth_ex", "azimuth_ey"}
+NO_ENTRY_TIP = "no entry yet: press Add sites"
 
 
 class SortableItem(QTableWidgetItem):
@@ -280,6 +285,7 @@ class MetadataTab(QWidget):
 
         raw_sites = self.state.raw_sites()
         sites = self.state.all_sites()
+        entries = set(self.state.configured_sites())
         self.table.blockSignals(True)  # filling is not editing
         self.table.setRowCount(len(sites))
         for row, name in enumerate(sites):
@@ -311,6 +317,11 @@ class MetadataTab(QWidget):
                     item = _yes_no(bool(cfg.filters))
                 else:  # serial, firmware, start, end: header facts, read-only
                     item = SortableItem(getattr(cfg, key) or "-")
+                if name not in entries:  # a folder with no entry: Save has no entry to write into
+                    item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+                    item.setForeground(QColor(DISABLED))
+                    item.setToolTip(NO_ENTRY_TIP)
+                    self._shown.pop((name, key), None)
                 self.table.setItem(row, column, item)
         self.table.setSortingEnabled(True)
         self.table.sortItems(0, Qt.AscendingOrder)
@@ -384,7 +395,13 @@ class MetadataTab(QWidget):
         self._status(f"{n} unsaved change(s) - press Save survey.yaml" if n else "")
 
     def save(self) -> bool:
-        """Write the changed cells into the `sites:` block, then reopen the survey.
+        """Write the changed cells into their sites' entries, then reopen the survey.
+
+        One `survey_file.edit` call writes every edited site: only the lines
+        of those entries change, a cell equal to the `defaults:` value
+        removes the site's own key, and the file as it was is kept as
+        survey.yaml.previous. A refused edit is shown in a box and the file
+        is left as it was.
 
         Returns:
             bool: True if the file was written.
@@ -407,15 +424,20 @@ class MetadataTab(QWidget):
         ):
             return False
         try:
-            metadata_edit.rewrite_sites_block(path, edits)
-        except Exception as exc:  # a malformed file is reported and left unwritten
+            result = survey_file.edit(path, sites=edits)
+        except Exception as exc:  # a refused edit or a malformed file is reported and left unwritten
             QMessageBox.critical(self, "Could not save", f"{path}\n\n{exc}")
             return False
         site = self.state.site
         self.state.open_survey(path)
         self.state.set_site(site)
+        if not result.written:
+            self._status(f"nothing written: {path.name} already reads as the table")
+            return False
         n = sum(len(v) for v in edits.values())
-        self._status(f"saved {n} value(s) for {len(edits)} site(s) to {path.name}")
+        notes = [line for line in result.summary if line.endswith("check it")]  # a comment left above a removed key
+        self._status("; ".join([f"saved {n} value(s) for {len(edits)} site(s); the file as it was: "
+                                f"{result.previous.name}", *notes]))
         return True
 
     def _choose_site_table(self) -> None:
@@ -428,8 +450,11 @@ class MetadataTab(QWidget):
     def import_site_table(self, path) -> tuple[int, int]:
         """Merge a site table's columns into the table for the sites it matches.
 
-        Only the columns the file has are changed; the file is written by
-        Save.
+        Each row goes through `merge_table_row` against the cells as shown:
+        a latitude, longitude or elevation the site already shows is kept,
+        and one that differs from the table's is named in the status line;
+        every other column the file has is set. Rows of folders with no
+        entry are left alone and named. The file is written by Save.
 
         Args:
             path: CSV or XLSX site table.
@@ -443,19 +468,36 @@ class MetadataTab(QWidget):
             self._status(f"not imported: {exc}", BAD_COLOUR)
             return 0, 0
         by_site = {self.table.item(r, 0).text(): r for r in range(self.table.rowCount())}
-        self.table.setSortingEnabled(False)
-        for site, values in rows.items():
-            for key, value in values.items():
-                if site in by_site:
-                    self.table.item(by_site[site], COLUMNS.index(key)).setText(format_cell(key, value))
-        self.table.setSortingEnabled(True)
-        matched = sum(1 for site in rows if site in by_site)
-        text = f"{matched} of {len(rows)} sites matched"
+        entries = set(self.state.configured_sites())
+        matched = [site for site in rows if site in by_site and site in entries]
+        no_entry = [site for site in rows if site in by_site and site not in entries]
         missing = [site for site in rows if site not in by_site]
+        n_changed, disagreements = 0, []
+        self.table.setSortingEnabled(False)
+        for site in matched:
+            cells = {key: self.table.item(by_site[site], COLUMNS.index(key)) for key in rows[site]}
+            shown = {}
+            for key, item in cells.items():
+                try:
+                    shown[key] = parse_cell(key, item.text())
+                except ValueError:  # a number cell typed wrong counts as no value
+                    shown[key] = None
+            values, disagree = merge_table_row(shown, rows[site])
+            disagreements += [f"{site} {key} {rows[site][key]:g} in the table, {shown[key]:g} kept"
+                              for key in disagree]
+            n_changed += any(value != shown[key] for key, value in values.items())
+            for key, value in values.items():
+                cells[key].setText(format_cell(key, value))
+        self.table.setSortingEnabled(True)
+        text = (f"{len(matched)} of {len(rows)} sites matched: {len(matched) - n_changed} as in the file, "
+                f"{n_changed} changed")
+        text += f"; not a site with an entry: {', '.join(no_entry)} (press Add sites first)" if no_entry else ""
         text += f"; not in this survey: {', '.join(missing)}" if missing else ""
+        text += f"; position kept where the table differs: {', '.join(disagreements)}" if disagreements else ""
         text += f"; ignored columns: {', '.join(ignored)}" if ignored else ""
-        self._status(text + " - Save survey.yaml writes them", BAD_COLOUR if missing or ignored else None)
-        return matched, len(rows)
+        warn = missing or no_entry or disagreements or ignored
+        self._status(text + " - Save survey.yaml writes them", BAD_COLOUR if warn else None)
+        return len(matched), len(rows)
 
     def new_survey(self) -> None:
         """Show the New survey dialog, then run scripts/new_survey.py through `metadata_edit.start_new_survey`."""

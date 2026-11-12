@@ -204,6 +204,42 @@ def read_site_table(path: str | Path) -> tuple[dict[str, dict], list[str]]:
         rows[site] = values
     return rows, ignored
 
+
+# How far a site-table position or elevation may lie from the site's own before the two are said to
+# disagree: 0.0005 deg is about 50 m, and 20 m is above the spread of a handheld GPS elevation.
+POSITION_TOLERANCE = {"latitude": 0.0005, "longitude": 0.0005, "elevation": 20.0}
+
+
+def merge_table_row(entry: dict, row: dict) -> tuple[dict, list[str]]:
+    """Work out the values one site-table row sets on a site.
+
+    The row's latitude, longitude and elevation fill the site's only where
+    the site has none: a table is typed by hand, and a value the site
+    already holds (the recorder's GPS fix, or one set before) is kept.
+    Where both exist and differ by more than `POSITION_TOLERANCE`, the key
+    is listed as a disagreement. Every other column is taken from the row.
+    scripts/new_survey.py and the GUI's Import site table both use it, so
+    one sheet gives one file either way.
+
+    Args:
+        entry (dict): The site's values now, {key: value}; a key that is
+            missing or None is a value the site does not have.
+        row (dict): The site's row, as `read_site_table` returns it.
+
+    Returns:
+        tuple[dict, list[str]]: The values to set, and the position keys
+        whose table value disagrees with the site's.
+    """
+    values, disagreements = {}, []
+    for key, value in row.items():
+        held = entry.get(key)
+        if key in POSITION_TOLERANCE and held is not None:
+            if abs(float(value) - float(held)) > POSITION_TOLERANCE[key]:
+                disagreements.append(key)
+            continue
+        values[key] = value
+    return values, disagreements
+
 # Channel sets a survey may declare, per instrument, in the names ingest
 # stores: mt_io.lemi.lemi423 reads the B423 columns Bx By Bz Ex Ey as
 # hx hy hz ex ey; mt_io.lemi.lemi424 reads Bx By Bz E1 E2 E3 E4 as bx by bz e1
