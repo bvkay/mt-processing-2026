@@ -48,6 +48,10 @@ Usage:
   trailing column-0 comment and blank line) with every old line kept, the
   key equal to the default left out, or `Survey.site_names()` does not hold
   them as text;
+- an add of a site whose every value equals `defaults:` is refused, or
+  does not insert one line, the header with no key, after the last entry,
+  with `Survey.site` reading the defaults for it and the summary saying
+  that it has no key of its own;
 - the inline comment `# taped` is not kept when its value changes; the edit
   is not refused when that key is removed, or when a block list holding a
   comment is replaced; the quoted note holding `#` cannot be replaced by a
@@ -127,7 +131,8 @@ ending check and (r) the read-back by `Survey.site` switched off; (s) a site
 refused before the edit refused again; (t) survey.yaml.previous written
 before the replace is tried; (u) the read-only test of survey.yaml.previous
 left out; (v) the earlier text deleted when it cannot be moved onto
-survey.yaml.previous.
+survey.yaml.previous; (w) a new entry whose every value equals `defaults:`
+refused.
 """
 
 from __future__ import annotations
@@ -559,6 +564,23 @@ def test_add() -> None:
     names = survey_of(read(path)).site_names()
     check("four entries added in one edit, in order, as text", names[-4:] == ["101", "yes", "A.1", "KD-Z9"],
           str(names))
+
+    path = put("add_bare", LF)
+    results = []
+    message = refused(lambda: results.append(sf.edit(path, add={"S04": {"dipole_length_ex": 50.0,
+                                                                         "azimuth_ey": 90.0}})))
+    new = read(path)
+    ops = [op for op in difflib.SequenceMatcher(None, split(LF), split(new), autojunk=False).get_opcodes()
+           if op[0] != "equal"]
+    one = len(ops) == 1 and ops[0][0] == "insert" and split(new)[ops[0][3]:ops[0][4]] == ["  S04:"]
+    reads = settings(survey_of(new), "S04")
+    summary = results[0].summary if results else []
+    check("add of a site whose every value equals defaults: one line, the header with no key, after the last entry",
+          message is None and one and split(new)[-2:] == ["  S04:", ""] and "S04" in yaml.safe_load(new)["sites"]
+          and yaml.safe_load(new)["sites"]["S04"] is None and isinstance(reads, dict)
+          and (reads["dipole_length_ex"], reads["azimuth_ey"]) == (50.0, 90.0)
+          and summary == ["S04: added with no key of its own (it takes every value from defaults:)"],
+          f"refused: {message}, changes {ops}, summary {summary}")
 
 
 def test_comments() -> None:

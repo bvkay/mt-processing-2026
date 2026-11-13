@@ -571,10 +571,8 @@ def plan(text: str, *, sites: dict | None = None, add: dict | None = None,
         n, all_entries = _entries(lines, *block)
         if name in all_entries:
             raise SurveyFileRefused(f"site {name!r} already has an entry: leave out --add to change its keys")
+        # an entry whose every value equals defaults: is its header alone
         entry = {k: v for k, v in _lean(dict(values), new_defaults, {}).items() if v is not REMOVE}
-        if not entry:
-            raise SurveyFileRefused(f"site {name!r} would get an empty entry (every value equals defaults:): give "
-                                    f"it at least one key of its own")
         m = (n if n is not None else 2) + _key_offset(lines, all_entries, n or 0)
         new = [f"{' ' * (n if n is not None else 2)}{name_text(name)}:{nl}"]
         new += [f"{' ' * m}{_text(k)}: {_text(v)}{nl}" for k, v in entry.items()]
@@ -583,7 +581,8 @@ def plan(text: str, *, sites: dict | None = None, add: dict | None = None,
             lines[-1] += nl
         lines[at:at] = new
         made["add"][name] = entry
-        summary.append(_site_line(f"{name}: added with ", entry))
+        summary.append(_site_line(f"{name}: added with ", entry) if entry else
+                       f"{name}: added with no key of its own (it takes every value from defaults:)")
     return "".join(lines), made, summary
 
 
@@ -616,7 +615,7 @@ def _expected(config: dict, made: dict) -> dict:
                     entry[key] = value
             out["sites"][site] = entry
         for site, entry in made["add"].items():
-            out["sites"][site] = dict(entry)
+            out["sites"][site] = dict(entry) or None  # a header with no key reads as None
     return out
 
 
