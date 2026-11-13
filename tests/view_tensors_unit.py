@@ -287,10 +287,12 @@ def groups(tab) -> list[tuple[str, list[str]]]:
     return out
 
 
-def choose(tab, stem: str) -> None:
-    """Make a product's row the current one, as a click does."""
-    item = next(item for item in tab.rows() if item.data(0, Qt.UserRole)["stem"] == stem)
-    tab.tree.setCurrentItem(item)
+def choose(tab, stem: str) -> bool:
+    """Make a product's row the current one, as a click does; False when the tree has no such row."""
+    item = next((item for item in tab.rows() if item.data(0, Qt.UserRole)["stem"] == stem), None)
+    if item is not None:
+        tab.tree.setCurrentItem(item)
+    return item is not None
 
 
 def drawn(fig, gid: str) -> list:
@@ -335,7 +337,8 @@ def check_rows(tab) -> None:
         keys[stem] = (side["local"], base, side["remote"], side["window"]["start"], side["kind"], side["tag"] or "",
                       stem)
     order = sorted(stems, key=keys.get)
-    want_groups = [(local, [s for s in order if keys[s][0] == local]) for local in sorted({k[0] for k in keys.values()})]
+    locals_ = sorted({key[0] for key in keys.values()})
+    want_groups = [(local, [s for s in order if keys[s][0] == local]) for local in locals_]
     got = groups(tab)
     check(got[: len(want_groups)] == want_groups, f"2 groups by local site, sorted: {got[: len(want_groups)]}")
     check(rows.get(RUNS[3][0], [None, None])[1] == "stackE", f"3 the stack's row reads base "
@@ -362,7 +365,8 @@ def check_facts(tab, stem: str) -> None:
     check(counts == [side["flags"][flag]["rows"] for flag in FLAGS] == in_csv,
           f"4 facts of {stem}: flag rows {counts}, the sidecar and the CSV give {in_csv}")
     for site, frame in side["frames"]["sites"].items():
-        after = lines[lines.index("frames: as recorded, not rotated"):] if "frames: as recorded, not rotated" in lines else []
+        head = "frames: as recorded, not rotated"
+        after = lines[lines.index(head):] if head in lines else []
         line = next((ln for ln in after if ln.strip().startswith(f"{site} (")), "")
         declination = ("declination not recorded" if frame["declination"] is None else
                        f"declination {frame['declination']} deg, recorded and not applied")
@@ -449,8 +453,9 @@ def check_figure(tab, stem: str) -> dict:
                       f"(not so: {hidden})")
 
     # 7. no artist holds a period that was not estimated
-    held = [artist.get_gid() for artist in fig.findobj(match=lambda a: a.get_gid() is not None and hasattr(a, "get_xdata"))
-            if np.isin(np.round(points(artist)[0], 9), np.round(period[~est], 9)).any()]
+    lines = fig.findobj(match=lambda a: a.get_gid() is not None and hasattr(a, "get_xdata"))
+    held = [line.get_gid() for line in lines
+            if np.isin(np.round(points(line)[0], 9), np.round(period[~est], 9)).any()]
     check(not held, f"7 {stem}: no artist at the {int((~est).sum())} periods not estimated (holding one: {held})")
     if (~est).any():
         check(f"not estimated, no value to draw: {int((~est).sum())}" in texts,
@@ -505,17 +510,17 @@ def check_reload(tab, runner) -> None:
 
 def check_unreadable(tab) -> None:
     """Criterion 10: the cut sidecar and the CSV of another layout."""
-    last = groups(tab)[-1]
+    last = (groups(tab) or [("", [])])[-1]
     row = next((item for item in tab.rows() if item.data(0, Qt.UserRole)["stem"] == CUT_SIDECAR), None)
     check(last == (tensors.UNREADABLE, [CUT_SIDECAR]) and row is not None and f"{CUT_SIDECAR}.json" in row.text(0),
           f"10 the cut sidecar is listed last under {last[0]!r}: {row.text(0)[:90] if row is not None else None!r}")
     for stem, name in ((CUT_SIDECAR, f"{CUT_SIDECAR}.json"), (CUT_CSV, f"{CUT_CSV}.csv"),
                        (NO_ROWS, f"{NO_ROWS}.csv")):
         before = len(SLOT_ERRORS)
-        choose(tab, stem)
+        there = choose(tab, stem)
         text = tab.facts.toPlainText()
-        check(len(SLOT_ERRORS) == before and not tab.figure.axes and name in text and "cannot be read" in text
-              and "Run the pair again" in text and name in tab.status_label.text(),
+        check(there and len(SLOT_ERRORS) == before and not tab.figure.axes and name in text
+              and "cannot be read" in text and "Run the pair again" in text and name in tab.status_label.text(),
               f"10 choosing {stem}: no axes, nothing raised, the reason and what to do: {text.splitlines()[0][:100]!r}")
 
 
@@ -570,7 +575,8 @@ def main() -> int:
 
     totals = {"not estimated": 0, "mixed": 0}
     for stem, _args in RUNS:
-        choose(tab, stem)
+        if not check(choose(tab, stem), f"2 the row of {stem} is there to choose"):
+            continue
         pump(app, 0.05)
         counts = check_figure(tab, stem)
         check_facts(tab, stem)
