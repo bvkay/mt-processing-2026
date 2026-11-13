@@ -217,7 +217,12 @@ of part 3 and on its EDL folder alone. **This test fails if**
      (1 Hz) the same with `min_period` 4.0; the 1000 Hz surveys keep the
      block of (4); and `processing_block`, called here, must keep the block
      of (4) at 100 Hz, give 2 / rate at 99, 10 and 2 Hz, and 4.0 at 1.9 and
-     0.5 Hz.
+     0.5 Hz;
+(30) on a LEMI-424 survey whose `defaults: channels:` are written in the
+     reader's names (e1 e2 bx by bz, as older files hold them), a re-run
+     that adds a folder does not print its line with "declared ex ey hx hy
+     hz", warns that the declared channels are not among the file's
+     columns, or prints that the added site has no entry.
 
 The mutations parts 4 and 5 catch, each made in a copy of the code: `>` written
 as `>=` in `check_survey_name` (the 30-character item of (15) fails); the
@@ -239,7 +244,8 @@ as 4 / rate below 100 Hz, or the 4 s of the slowest records taken from 2 Hz
 down in place of below 2 Hz ((28)); the `sites:` block of the first file
 written with `yaml.safe_dump` again ((29): the usual 45 is written into
 S01; (26): the list is not in flow style); `generated_by`, or the note on
-the dipoles being the defaults, written again ((4)).
+the dipoles being the defaults, written again ((4)); the declared channels
+of a LEMI-424 survey taken as written on a re-run ((30)).
 
 Part 2, the real-data check: the script run over the Curnamona Cube raw data
 (E:, read only) into the scratch folder must give D02 and E08 latitudes and
@@ -998,6 +1004,20 @@ def test_other_recorders() -> None:
     assert all({k: v for k, v in blocks[rate].items() if k != "min_period"} == slow for rate in shortest), blocks
     print(f"(28) processing: 10 Hz {config['processing']}; 1 Hz min_period {one_hz['processing']['min_period']}; "
           f"1000 Hz as in (4); shortest period by rate {shortest}")
+
+    text = lemi_out.read_bytes().decode("utf-8")
+    listed = "  channels: [ex, ey, e3, e4, hx, hy, hz]\n"
+    assert text.count(listed) == 1, text
+    lemi_out.write_bytes(text.replace(listed, "  channels: [e1, e2, bx, by, bz]\n").encode("utf-8"))
+    shutil.copytree(made["MBJ21"], lemi_root / "MBJ22")
+    older = run(lemi_root, "--name", "lemi424_alone", "--out", lemi_out)
+    assert older.returncode == 0 and "added 1 site(s): MBJ22" in older.stdout, (older.returncode, older.stdout)
+    line = next(ln for ln in older.stdout.splitlines() if ln.strip().startswith("MBJ22"))
+    assert line.endswith("declared ex ey hx hy hz"), line
+    assert "not among the first file's columns" not in older.stdout, older.stdout
+    assert "has no entry" not in older.stdout + older.stderr, older.stdout + older.stderr
+    print(f"(30) a LEMI-424 survey with channels [e1, e2, bx, by, bz]: the added site's line ends "
+          f"{line[line.index('declared'):]!r}, no warning")
 
 
 def part2() -> None:

@@ -161,7 +161,7 @@ from mt_io.lemi.lemi423 import Read_Lemi_Data, Read_Lemi_Header
 
 from mt_workbench import survey_file
 from mt_workbench.ingest import select_files
-from mt_workbench.instruments import INSTRUMENTS, header_facts, record_files, span
+from mt_workbench.instruments import INSTRUMENTS, LEMI424_RENAME, header_facts, record_files, span
 from mt_workbench.survey import (
     CHANNEL_PRESETS, Survey, channels_from_label, check_site_name, check_survey_name, default_preset,
     merge_table_row, preset_label, read_site_table,
@@ -842,6 +842,8 @@ def add_sites(args, data_root: Path, out: Path) -> int:
     new = {site: folder for site, folder in found.items() if site not in names}
     defaults = survey.defaults
     channels = defaults.get("channels") or channels_from_label(default_preset(survey.instrument), survey.instrument)
+    if survey.instrument == "lemi424":  # an older file names them as the reader does (e1 e2 bx by bz): `Survey.site`
+        channels = [LEMI424_RENAME.get(str(c).lower(), str(c).lower()) for c in channels]
     recorder = {site: survey.instrument_of(site) for site in new}
     clock_timezone = str(defaults.get("clock_timezone") or "UTC")
     facts = {site: read_site(folder, recorder[site], clock_timezone) for site, folder in new.items()}
