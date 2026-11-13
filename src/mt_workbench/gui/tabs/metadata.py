@@ -371,7 +371,8 @@ class MetadataTab(QWidget):
                 try:
                     value = parse_cell(key, item.text())
                 except ValueError:
-                    raise ValueError(f"{site} {key} {item.text()!r} is not a number") from None
+                    raise ValueError(f"{site} {key} {item.text()!r} is not a number: type the number alone, with "
+                                     f"no unit") from None
                 if value != parse_cell(key, shown):
                     edits.setdefault(site, {})[key] = value
             value = channels_column.edit(self.state.survey, self.table.item(row, COLUMNS.index("channels")),

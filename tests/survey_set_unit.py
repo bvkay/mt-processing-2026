@@ -28,6 +28,10 @@ Usage:
   list) or `swap_h=1` is not refused with exit 2, the file untouched and the
   key named in the message; `dipole_length_ex=abc` and `channels=ex` are values
   `Survey.site` accepts, so only the command's own parsing can refuse them;
+- `dipole_length_ex=50 m` typed without quotes (the `m` a word of its own),
+  `dipole_length=46` (no such key) or `dipole_length_ex=50m` is not refused
+  with exit 2 and a message that says what to type: quotes around a value
+  with a space, the closest key names, or the number alone with no unit;
 - `notes=` does not remove the key;
 - an unknown key (`bogus_key=1`, and `bogus_key=` with nothing to remove) is
   not refused with exit 2 and the file untouched;
@@ -193,6 +197,16 @@ def test_refused(script) -> None:
               code == 2 and untouched(path) and key in out, f"exit {code}, {out.strip()[:200]}")
 
 
+def test_messages(script) -> None:
+    for args, fragment in ((["dipole_length_ex=50", "m"], "put quotes around a value with a space"),
+                           (["dipole_length=46"], "the closest keys are dipole_length_e"),
+                           (["dipole_length_ex=50m"], "type the number alone, with no unit")):
+        path = put("messages")
+        code, out = run(script, path, "S02", *args)
+        check(f"{' '.join(args)}: refused with exit 2 and what to type", code == 2 and untouched(path)
+              and fragment in out, f"exit {code}, {out.strip()[:200]}")
+
+
 def test_remove(script) -> None:
     path = put("remove")
     code, out = run(script, path, "S01", "notes=")
@@ -263,7 +277,8 @@ def main() -> int:
     print(__doc__.split("**This test fails if**")[1].split("The mutation")[0].strip())
     print()
     script = load_script()
-    tests = [(test_text, script), (test_types, script), (test_refused, script), (test_remove, script),
+    tests = [(test_text, script), (test_types, script), (test_refused, script), (test_messages, script),
+             (test_remove, script),
              (test_defaults, script), (test_add, script), (test_nothing, script), (test_command,)]
     for test, *args in tests:
         print(f"{test.__name__}:")

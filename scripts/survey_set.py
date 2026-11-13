@@ -34,6 +34,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import difflib
 import sys
 from dataclasses import fields
 from pathlib import Path
@@ -65,7 +66,9 @@ def parse_value(key: str, text: str):
             as its type; the message says what to type.
     """
     if key not in KEY_TYPES:
-        raise ValueError(f"{key!r} is not a site key of survey.yaml (see mt_workbench.survey.SiteConfig)")
+        close = difflib.get_close_matches(key, list(KEY_TYPES), n=3)
+        hint = f": the closest keys are {', '.join(close)}" if close else " (see mt_workbench.survey.SiteConfig)"
+        raise ValueError(f"{key!r} is not a site key of survey.yaml{hint}")
     if text == "":
         return survey_file.REMOVE
     kind = KEY_TYPES[key]
@@ -75,7 +78,7 @@ def parse_value(key: str, text: str):
         try:
             return float(text)
         except ValueError:
-            raise ValueError(f"{key}={text}: a number wanted") from None
+            raise ValueError(f"{key}={text}: a number wanted; type the number alone, with no unit") from None
     if kind.startswith("bool"):
         if text not in ("true", "false"):
             raise ValueError(f"{key}={text}: true or false wanted")
@@ -118,7 +121,8 @@ def main(argv=None) -> int:
         key, equals, text = item.partition("=")
         try:
             if not equals:
-                raise ValueError(f"{item!r}: key=value wanted")
+                raise ValueError(f"{item!r} is not key=value: put quotes around a value with a space, or type "
+                                 f"the number alone (dipole_length_ex=50)")
             values[key] = parse_value(key, text)
         except ValueError as exc:
             print(f"ERROR {exc}; nothing written", file=sys.stderr)

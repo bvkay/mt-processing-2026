@@ -17,6 +17,8 @@ This test fails if:
   comment, changes a line ending, leaves no survey.yaml.previous holding
   the bytes before the Save, does not give the new value through
   `Survey.site`, or does not name the earlier copy in the status line;
+- "47 m" typed in that cell is saved, or the status line does not say to
+  type the number alone;
 - the same cell typed equal to the `defaults:` value (50) does not remove
   S02's own key on Save, with that one line the only change; or the status
   line, after it and after an emptied cell, does not say that the key was
@@ -219,6 +221,17 @@ def main() -> int:
     status = tab.status_label.text()
     check("the status line names the earlier copy",
           status.startswith("saved 1 value(s) for 1 site(s)") and "survey.yaml.previous" in status, repr(status))
+
+    # a unit typed in a number cell is not saved, and the status line says to type the number alone
+    before = path.read_bytes()
+    cell("S02", "dipole_length_ex").setText("47 m")
+    saved = tab.save()
+    pump(app)
+    status = tab.status_label.text()
+    check("a number cell holding a unit is not saved and the status line says what to type",
+          saved is False and path.read_bytes() == before and "type the number alone, with no unit" in status,
+          f"save() {saved}, status {status!r}")
+    cell("S02", "dipole_length_ex").setText("45")
 
     # a cell typed equal to the default removes the site's own key
     before = path.read_bytes()
