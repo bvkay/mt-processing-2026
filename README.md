@@ -1,10 +1,22 @@
 # mt-workbench
 
 mt-workbench processes magnetotelluric (MT) recordings of Adelaide Uni
-surveys into transfer functions: the impedance and tipper of a site, and the
-telluric and magnetic tensors between two sites. It reads LEMI-423, LEMI-424,
-Earth Data PR6-24 and Orange Box loggers and Phoenix MTU-5C, MTU-8A and
-MTU-5A receivers. It is built on the IAGA-DVI stack
+surveys into transfer functions:
+
+- MT impedance and tipper of a site
+- Telluric tensor between two sites, E to E
+- Magnetic tensor between two sites, B to B
+
+It reads these recorders:
+
+- LEMI-423
+- LEMI-424
+- Earth Data PR6-24
+- Orange Box
+- Phoenix MTU-5C and MTU-8A
+- Phoenix MTU-5A
+
+It is built on the IAGA-DVI stack
 ([mt-io](https://github.com/kujaku11/mt-io),
 [mth5](https://github.com/IAGA-DVI-DataStandards/mth5),
 [mt-metadata](https://github.com/IAGA-DVI-DataStandards/mt-metadata)) with
@@ -14,9 +26,9 @@ scripts.
 
 Design rules, in order:
 
-1. **Thin.** mt-workbench wraps the community packages; it does not re-implement them.
-2. **Headless first.** Everything runs from a script or the command line; the desktop window (`src/mt_workbench/gui`) calls the same scripts and computes no product of its own.
-3. **Decisions are data.** Noise masks, band choices and remote-reference pairs live in per-survey YAML/JSON files, never buried in code or notebooks.
+1. **Thin.** mt-workbench wraps the community packages.
+2. **Headless first.** Everything runs from a script or the command line; the desktop window (`src/mt_workbench/gui`) calls the same scripts.
+3. **Decisions are data.** Noise masks, band choices and remote-reference pairs live in per-survey YAML/JSON files.
 
 ## Install
 
@@ -104,9 +116,9 @@ This opens the window (the GUI) on a survey file. Its tabs, left to right:
 src/mt_workbench/      the package: survey.py, instruments.py, ingest.py, process.py,
                        compare.py, bands.py, qc.py, timefreq.py, virtual.py and more
 src/mt_workbench/gui/  the window: a launcher and viewer over scripts/ and
-                       survey.yaml, no processing code of its own
+                       survey.yaml
 scripts/               the student-facing command line, one job each
-tests/                 unit tests (no Qt) plus the tests of the window
+tests/                 unit tests, plus the tests of the window
 docs/guide/            the topic pages listed below
 docs/                  the issue logs and the work log
 surveys/<name>/        one folder per survey: survey.yaml (config), filters.yaml,
