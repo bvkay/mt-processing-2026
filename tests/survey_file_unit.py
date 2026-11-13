@@ -52,6 +52,9 @@ Usage:
   does not insert one line, the header with no key, after the last entry,
   with `Survey.site` reading the defaults for it and the summary saying
   that it has no key of its own;
+- an add, or an edit of a header with no key, makes the read-back log the
+  warning that the site has no entry, which a student would read as a fault
+  of the site just added;
 - the inline comment `# taped` is not kept when its value changes; the edit
   is not refused when that key is removed, or when a block list holding a
   comment is replaced; the quoted note holding `#` cannot be replaced by a
@@ -132,7 +135,8 @@ refused before the edit refused again; (t) survey.yaml.previous written
 before the replace is tried; (u) the read-only test of survey.yaml.previous
 left out; (v) the earlier text deleted when it cannot be moved onto
 survey.yaml.previous; (w) a new entry whose every value equals `defaults:`
-refused.
+refused; (x) the read-back asking the survey for a site that has no entry
+yet, or only its header.
 """
 
 from __future__ import annotations
@@ -581,6 +585,16 @@ def test_add() -> None:
           and (reads["dipole_length_ex"], reads["azimuth_ey"]) == (50.0, 90.0)
           and summary == ["S04: added with no key of its own (it takes every value from defaults:)"],
           f"refused: {message}, changes {ops}, summary {summary}")
+
+    warned: list[str] = []
+    sink = logger.add(lambda message: warned.append(message.record["message"]), level="WARNING")
+    try:
+        sf.edit(put("add_quiet", LF), add={"S04": {"latitude": -31.4}})
+        sf.edit(put("bare_quiet", BARE), sites={"S09": {"latitude": -29.5}})
+    finally:
+        logger.remove(sink)
+    check("an add and an edit of a header with no key log no warning that the site has no entry",
+          not [text for text in warned if "has no entry" in text], str(warned))
 
 
 def test_comments() -> None:

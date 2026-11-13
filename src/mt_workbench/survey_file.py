@@ -710,8 +710,16 @@ def _kept_lines(old: str, new: str, made: dict) -> list[str]:
 
 
 def _refusals(config: dict, names: list) -> dict:
-    """Return {site: message} for each named site that `Survey.site` refuses, read with no data folder."""
-    config = {**config, "data_root": NO_DATA_ROOT}
+    """Return {site: message} for each named site that `Survey.site` refuses, read with no data folder.
+
+    A name with no entry yet, or with a header and no key, is read as an
+    entry with no key: it takes the same settings from `defaults:`, and the
+    survey does not log that the site has no entry, which would read as a
+    fault of a site being added.
+    """
+    sites = {name: {} for name in names}
+    sites.update({name: entry or {} for name, entry in (config.get("sites") or {}).items()})
+    config = {**config, "sites": sites, "data_root": NO_DATA_ROOT}
     config.setdefault("name", "survey")
     try:
         survey = Survey(config, Path(NO_DATA_ROOT))
