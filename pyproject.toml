@@ -11,7 +11,7 @@ requires-python = ">=3.10"
 license = { text = "MIT" }
 dependencies = [
     # The stack comes from the mtproc-fixes branches of the forks: they carry the
-    # fixes logged in docs/upstream_issues.md (README, "Install"), and mt-workbench patches
+    # fixes logged in docs/upstream_issues.md (docs/guide/install.md), and mt-workbench patches
     # none of these packages at runtime. A local clone of a fork installs with
     # `pip install --no-deps <clone>`.
     "aurora @ git+https://github.com/bvkay/aurora@mtproc-fixes",

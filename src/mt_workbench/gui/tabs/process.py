@@ -34,7 +34,7 @@ picker (`stack_builder.StackBuilder`) and the Products list. The timing
 check and site QC figures are run from the command line, and the basemap is
 fetched when a survey is opened.
 
-Each button runs one command line from the README's table through
+Each button runs one command line of docs/guide/commands.md through
 `mt_workbench.gui.jobs.JobRunner`, from the repo root::
 
     Add to queue     scripts/process_rr.py <survey.yaml> <station> <remote> [start] [end]
