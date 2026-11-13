@@ -722,7 +722,8 @@ class MetadataTab(QWidget):
         Refused while the table holds unsaved edits, since the survey opens
         again when the job ends and the edits would be lost. The data folder
         is listed again, so a folder put there since the survey was opened
-        counts. With no such folder nothing runs. Otherwise `metadata_edit.ask_yes_no` names the
+        counts. With no such folder, or with the data folder not found,
+        nothing runs and the status line says why. Otherwise `metadata_edit.ask_yes_no` names the
         folders, and on Yes `metadata_edit.start_add_sites` runs
         scripts/new_survey.py again, as the command line re-run does.
 
@@ -740,7 +741,9 @@ class MetadataTab(QWidget):
         try:  # read again: a folder put under data_root since the survey was opened counts
             found = self.state.survey.site_dirs()
         except OSError:  # data_root on a drive that is not connected
-            found = {}
+            self._status(f"data folder {self.state.survey.data_root} not found: connect the drive, or correct "
+                         f"data_root in survey.yaml, then press Add sites", BAD_COLOUR)
+            return False
         folders = sorted(site for site in found if site not in entries)
         if not folders:
             self._status("nothing to add: every site folder has an entry")

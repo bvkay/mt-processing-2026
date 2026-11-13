@@ -68,7 +68,9 @@ This test fails if:
   not show the script's "added 1 site(s): S03" line; a second Add sites
   starts a job or does not say there is nothing to add; a folder S05 put
   under the data folder while the survey is open is not named by the next
-  Add sites;
+  Add sites; with data_root on a drive that is not connected, Add sites
+  starts a job, asks, changes the file, or does not say that the data
+  folder was not found and to connect the drive or correct data_root;
 - Check does not list a folder named S.4 (site_name, STOP) before the
   folders S.4 and S03 with no entry (folder_without_entry) and S02's missing
   position (no_position, WARN), one row each, with the level, site, name and
@@ -441,6 +443,23 @@ def test_add_sites(app, window, check) -> None:
     tab.add_sites()
     check("a folder S05 put there while the survey is open is named by the next Add sites",
           len(BOXES) == 1 and "S05" in BOXES[0][2], f"boxes {BOXES}, status {tab.status_label.text()!r}")
+    gone = path.parent / "raw_not_connected"  # a data_root on a drive that is not connected
+    path.write_bytes(path.read_bytes().replace((path.parent / "raw").as_posix().encode("utf-8"),
+                                               gone.as_posix().encode("utf-8"), 1))
+    window.open_survey(path)
+    pump(app)
+    before, jobs = path.read_bytes(), len(runner.jobs)
+    BOXES.clear()
+    ANSWERS[:] = [True]
+    started = tab.add_sites()
+    ANSWERS.clear()
+    status = tab.status_label.text()
+    check("Add sites with the data folder missing starts no job, asks nothing and says the folder was not found "
+          "and what to do",
+          started is False and len(runner.jobs) == jobs and BOXES == [] and path.read_bytes() == before
+          and status.startswith(f"data folder {window.state.survey.data_root} not found: connect the drive, or "
+                                f"correct data_root in survey.yaml"),
+          f"started {started}, boxes {BOXES}, status {status!r}")
 
 
 def test_check(app, window, check) -> None:
