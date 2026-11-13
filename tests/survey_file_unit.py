@@ -88,7 +88,8 @@ Usage:
 - `commit` with a new text that also changes another site (a tampered
   text) does not refuse with the file untouched, or makes
   survey.yaml.previous;
-- the file changed between `plan` and `commit` is not refused.
+- the file changed between `plan` and `commit` is not refused before
+  survey.yaml.previous is made.
 
 The mutations this test catches, each made in a copy of the module: (a) values
 equal to the default written into the entry; (b) entry ends not
@@ -688,8 +689,9 @@ def test_commit() -> None:
     meanwhile = LF.replace("latitude: -31.0", "latitude: -31.05")
     path.write_bytes(meanwhile.encode())
     message = refused(lambda: sf.commit(path, LF, new, made))
-    check("the file changed between plan and commit: refused", message is not None
-          and "changed while the edit was prepared" in message and read(path) == meanwhile, str(message))
+    check("the file changed between plan and commit: refused before the earlier copy is made", message is not None
+          and "changed while the edit was prepared" in message and read(path) == meanwhile
+          and not (path.parent / "survey.yaml.previous").exists(), str(message))
 
 
 def main() -> int:
