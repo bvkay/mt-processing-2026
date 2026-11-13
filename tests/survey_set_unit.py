@@ -41,13 +41,20 @@ Usage:
   into S02 and S03, leaves `Survey.site` of any site with another azimuth,
   does not keep the old bytes in survey.yaml.previous, or does not print
   where they are;
-- `--add S04 latitude=-31.3` does not add the entry, or a site with no entry
-  is not refused without `--add`;
+- `--add S04 latitude=-31.3`, with a folder S04 under `data_root`, does not
+  add the entry, or a site with no entry is not refused without `--add`;
+- `--add S05 latitude=-31.3`, with no folder S05 under `data_root` (a
+  mistyped name), is not refused with exit 2, the file untouched and the
+  folder it looked for named; or `--add S02L derived_from=S02
+  sample_rate=1.0` and `--add S02H bursts_of=S02 sample_rate=24000`, which
+  have no folder by design, are refused;
 - a request that changes nothing exits other than 0 or changes a byte;
 - run as a command, a refused value does not exit 2 or a written one exit 0.
 
-The mutation this test catches, made in a copy of the script: every value
-parsed with a bare ``yaml.safe_load`` (the `036` item fails).
+The mutations this test catches, each made in a copy of the script: every
+value parsed with a bare ``yaml.safe_load`` (the `036` item fails); the
+folder of an added site not looked for (the S05 item fails); a derived or
+burst site asked for its folder too (the S02L and S02H items fail).
 """
 
 from __future__ import annotations
@@ -118,12 +125,12 @@ def load_script():
     return module
 
 
-def put(case: str) -> Path:
+def put(case: str, text: str = TEXT) -> Path:
     folder = SCRATCH / case
     shutil.rmtree(folder, ignore_errors=True)
     folder.mkdir(parents=True)
     path = folder / "survey.yaml"
-    path.write_bytes(TEXT.encode("utf-8"))
+    path.write_bytes(text.encode("utf-8"))
     return path
 
 
@@ -242,10 +249,28 @@ def test_defaults(script) -> None:
 
 
 def test_add(script) -> None:
-    path = put("add")
+    root = SCRATCH / "raw"
+    shutil.rmtree(root, ignore_errors=True)
+    (root / "S04").mkdir(parents=True)
+    text = TEXT.replace("data_root: X\n", f"data_root: {root.as_posix()}\n")
+    path = put("add", text)
     code, out = run(script, path, "S04", "latitude=-31.3", "--add")
     got = parsed(path)["sites"]
-    check("--add S04 adds the entry", code == 0 and got.get("S04") == {"latitude": -31.3}, f"exit {code}, {out}")
+    check("--add S04, a folder under data_root, adds the entry", text != TEXT and code == 0
+          and got.get("S04") == {"latitude": -31.3}, f"exit {code}, {out}")
+    path = put("add_no_folder", text)
+    code, out = run(script, path, "S05", "latitude=-31.3", "--add")
+    looked = str(root / "S05")
+    check("--add S05, no folder under data_root: refused with exit 2, the file untouched, the folder named",
+          code == 2 and path.read_bytes() == text.encode("utf-8")
+          and not path.with_name("survey.yaml.previous").exists() and looked in out
+          and "derived_from= or bursts_of=" in out, f"exit {code}, looked for {looked}, {out.strip()}")
+    for name, key, rate in (("S02L", "derived_from", "1.0"), ("S02H", "bursts_of", "24000")):
+        path = put("add_no_folder_by_design", text)
+        code, out = run(script, path, name, f"{key}=S02", f"sample_rate={rate}", "--add")
+        got = parsed(path)["sites"].get(name)
+        check(f"--add {name} {key}=S02, no folder by design, adds the entry",
+              code == 0 and got == {key: "S02", "sample_rate": float(rate)}, f"exit {code}, {got}, {out.strip()}")
     path = put("no_entry")
     code, out = run(script, path, "S09", "latitude=1.0")
     check("a site with no entry is refused without --add", code == 2 and untouched(path) and "S09" in out,

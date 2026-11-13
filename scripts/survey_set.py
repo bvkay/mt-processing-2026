@@ -5,7 +5,10 @@ Set, change or remove keys of one site entry, or of defaults:, in survey.yaml
 The edit goes through `mt_workbench.survey_file.edit`: only the lines of that
 entry change, comments, blank lines and line endings stay, the file as it was
 is kept as survey.yaml.previous, and a value equal to the one in `defaults:`
-is not written into a site's entry (the key is removed instead).
+is not written into a site's entry (the key is removed instead). `--add`
+makes the entry of a site that has a folder under `data_root`, or of a
+derived or burst site (`derived_from=`, `bursts_of=`); any other name is
+refused, since a mistyped name would make an entry with no data.
 
 Each value is read by the type `mt_workbench.survey.SiteConfig` gives its key:
 a text key takes the text after `=` as typed (`serial=036` stays '036',
@@ -90,6 +93,16 @@ def parse_value(key: str, text: str):
     return value
 
 
+def site_folder(path: Path, site: str) -> Path | None:
+    """Return `data_root`/<site> of a survey.yaml, None when the file does not give a `data_root`."""
+    try:
+        config = yaml.safe_load(path.read_bytes().decode("utf-8"))
+    except (yaml.YAMLError, UnicodeDecodeError):
+        return None  # the edit refuses such a file, with what to fix
+    root = config.get("data_root") if isinstance(config, dict) else None
+    return Path(str(root)) / site if root else None
+
+
 def main(argv=None) -> int:
     """Set, change or remove keys of one entry of a survey.yaml.
 
@@ -124,6 +137,13 @@ def main(argv=None) -> int:
             values[key] = parse_value(key, text)
         except ValueError as exc:
             print(f"ERROR {exc}; nothing written", file=sys.stderr)
+            return 2
+    if args.add and values.get("derived_from") is None and values.get("bursts_of") is None:
+        folder = site_folder(path, args.site)
+        if folder is not None and not folder.is_dir():
+            print(f"ERROR --add makes the entry of a site folder, and there is no folder {folder}: check the "
+                  f"name, and that the data drive is connected; a derived or burst site is added with "
+                  f"derived_from= or bursts_of=; nothing written", file=sys.stderr)
             return 2
 
     dry_run = args.site == "defaults" and not args.yes
