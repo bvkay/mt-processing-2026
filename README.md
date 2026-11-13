@@ -68,8 +68,10 @@ This opens the window (the GUI) on a survey file. Its tabs, left to right:
 
 1. **Make a survey.** `python scripts/new_survey.py <data_root> --name NAME`
    reads a folder of site folders and writes `surveys/NAME/survey.yaml`; `--site-table`
-   merges a field sheet. The Metadata tab does the same with "New survey...".
-2. **Check it.** Read each site's entry on the Metadata tab. On LEMI-423
+   merges a field sheet. The Metadata tab does the same with "New survey...",
+   and "Add sites" adds new site folders later.
+2. **Check it.** `python scripts/check_survey.py <survey.yaml>`, or Check on
+   the Metadata tab, lists what stops an ingest. On LEMI-423
    files, `scripts/timing_qc.py <survey.yaml> <local> <remote>` checks the
    clocks and `scripts/noise_psd.py <survey.yaml> <site>` gives a first look
    at the noise. `scripts/declination.py <survey.yaml> --write` fills each

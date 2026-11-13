@@ -23,6 +23,7 @@ QT_QPA_PLATFORM=offscreen python tests/gui_smoke.py
 
 - `gui_smoke.py`: every tab, on the Curnamona survey; screenshots in `surveys/curnamona_cube/work/qc`. *window*, *external*
 - `gui_missing_workspace_unit.py`: a survey whose workspace folder does not exist. *window*
+- `gui_new_survey_flow_unit.py`: Metadata tab: New survey form, Save, Add sites, Check, the swap boxes, Rebuild archive, the fixed site column. *window*
 - `timeseries_build_unit.py`: Time Series tab: Build MTH5 on a burst site. *window*
 - `process_tab_unit.py`: Process tab: masks switch, engine, band controls. *window*, *external*
 - `process_station_list_unit.py`: Process tab: the station list. *window*, *external*
@@ -42,6 +43,9 @@ QT_QPA_PLATFORM=offscreen python tests/gui_smoke.py
 
 - `survey_unit.py`: `mt_workbench.survey`: site keys, presets, instrument detection.
 - `new_survey_unit.py`: `new_survey.py` on synthetic, mixed-recorder and Curnamona folders. *external*
+- `survey_file_unit.py`: `mt_workbench.survey_file`, the survey.yaml writer: only the edited lines change, comments kept, refused shapes.
+- `survey_set_unit.py`: `survey_set.py`: values read by the key's type, removal, `defaults` with `--yes`.
+- `survey_check_unit.py`: `mt_workbench.survey_check` and `check_survey.py`: each finding, the printed lines, exit codes.
 - `declination_unit.py`: `declination.py`: the IGRF fill, `--write`, `--check`.
 - `instrument_pid_unit.py`: instrument registry DOIs, `survey.yaml` to products; `pidinst_lookup.py`.
 

@@ -17,11 +17,47 @@ lists them.
 
 ## Metadata
 
-Make a survey ("New survey...") or open one, and read each site's
-`survey.yaml` entry. Edit a cell by double-click, then "Save survey.yaml":
-this rewrites the `sites:` block, and comments inside it are lost. The
-`dc level` column is red for an open input and yellow for a saturated
-channel.
+Make a survey ("New survey...") or open one ("Open survey.yaml..."), and
+read each site's `survey.yaml` entry, one row per site. The site column
+stays at the left edge when the table is scrolled sideways. The `dc level`
+column is red for an open input and yellow for a saturated channel.
+
+- **New survey...** asks for the data folder (one folder per site), the
+  survey name (30 characters at most, of letters, digits, `_` and `-`),
+  the instrument ("auto (from the files)" takes the recorder most common
+  among the site folders), the time zone, the usual dipole length and the
+  usual azimuths of Ex and Ey in degrees from magnetic north, the electric
+  gain of an EDL survey and the zone of the logger clocks of an Orange Box
+  survey (both empty unless needed), and an optional site table. It runs
+  `new_survey.py` ([commands.md](commands.md#make-a-survey)) and opens the
+  survey it writes. For a survey that exists it runs nothing: open it and
+  press "Add sites".
+- **Edit** a cell by double-click. "Import site table..." fills cells from
+  a CSV or XLSX and keeps a position a site already has. A value typed
+  equal to the usual one in `defaults:` removes the site's own key.
+- **Save survey.yaml** writes the changed cells into their sites' entries.
+  The other lines and every comment stay, and the file as it was is kept
+  as `survey.yaml.previous`. When another program holds the file open, or
+  it is read-only, Save says so after about two seconds: close that
+  program or clear the flag, and save again.
+- **Add sites** adds an entry for each site folder that has none (a greyed
+  row). It asks first with their names, runs `new_survey.py` again and
+  changes nothing else. Save the table's edits first. A second deployment
+  of a station goes in a folder of its own, such as `SA106_2`.
+- **Check** lists what stops an ingest (STOP, red) and what to look at
+  (WARN, yellow), one row per site and finding, as `check_survey.py`
+  prints it. Double-click a row to select its site.
+- **Ex and Ey swapped** and **Hx and Hy swapped** are tick boxes for a site
+  whose two electric lines, or two horizontal coils, were connected to each
+  other's inputs (`swap_e`, `swap_h`: [instruments.md](instruments.md)).
+  Ingest exchanges the samples of the two channels; for the electric
+  lines, give the lengths and azimuths of the lines as they are after the
+  exchange. A tick reaches the data only when the archive is built again.
+- **Rebuild archive** builds the selected site's archive again from its raw
+  data, after a question (`ingest_site.py <survey.yaml> SITE --force`); a
+  site with declared filters gets its filtered variant built again too. It
+  needs a site with an entry, a raw data folder and an archive, and no job
+  running.
 
 ## Time Series
 

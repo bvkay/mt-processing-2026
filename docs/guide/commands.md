@@ -9,19 +9,44 @@ stands for a value to give.
 
 ## Make a survey
 
-- `new_survey.py <data_root> --name NAME [--instrument auto] [--channels SET] [--site-table FILE] [--timezone Australia/Adelaide] [--clock-timezone TZ] [--electric-gain G] [--calibration FILE] [--workspace <data_root>/work] [--out surveys/<name>/survey.yaml] [--force]`:
-  writes survey.yaml from a folder of site folders. The recorder files hold
-  no dipole lengths or azimuths: every site takes those of `defaults:`
-  until `--site-table` (a CSV or XLSX with a `site` column) or the Metadata
-  tab sets them. `--channels` names the columns that had a sensor, such as
-  `hx,hy`. Keep `NAME` to 30 characters: mth5 cuts a longer survey id in
-  its summaries (upstream 550). A new folder under `surveys/` is ignored
-  by git.
+- `new_survey.py <data_root> --name NAME [--dipole-length 50] [--azimuths 0 90] [--instrument auto] [--channels SET] [--site-table FILE] [--timezone Australia/Adelaide] [--clock-timezone UTC] [--electric-gain G] [--calibration FILE] [--workspace <data_root>/work] [--out surveys/<name>/survey.yaml]`:
+  - The first run (no survey.yaml at `--out`) writes survey.yaml from a
+    folder of site folders: one entry per folder with what its files say
+    (position, serial, span, rate), and a declination where the header
+    gives a position. `NAME` takes 30 characters at most, of letters,
+    digits, `_` and `-` (mth5 cuts a longer survey id in its summaries,
+    upstream 550); another name is refused before any folder is read.
+  - The recorder files hold no dipole lengths or azimuths. `--dipole-length`
+    and `--azimuths` (degrees from magnetic north) are the usual values of
+    the survey, written to `defaults:`; a site that differs gets its own
+    from `--site-table` (a CSV or XLSX with a `site` column) or the
+    Metadata tab. A Phoenix survey refuses `--dipole-length`: its receivers
+    record their lengths. `--channels` names the columns that had a sensor,
+    such as `hx,hy`.
+  - Run again with the same folder and `--out` (a re-run), it adds an entry
+    for each site folder that has none and changes no other line; the file
+    as it was is kept as `survey.yaml.previous`. With `--site-table`, a
+    re-run also sets the table's values on the sites that have an entry.
+    An option of the first run given again with another value is printed
+    as ignored. "Add sites" on the Metadata tab runs the same re-run. A
+    second deployment of a station goes in a folder of its own, such as
+    `SA106_2`.
+  - `--force` is refused: to start again, delete survey.yaml by hand and
+    run the command again. A new folder under `surveys/` is ignored by git.
+  - Next: `check_survey.py`, below.
+- `survey_set.py <survey.yaml> <SITE | defaults> key=value [key=value ...] [--add] [--yes]`:
+  sets keys of one site's entry in place, for a key the Metadata tab has
+  no column for (`rot_h`, `record_window`, a span). Only that entry's lines
+  change, comments stay, and the file as it was is kept as
+  `survey.yaml.previous`. `key=` removes the key; a value is read by the
+  key's type, so `serial=036` stays text; an unknown key is refused.
+  `--add` makes the entry of a site with a folder, or of a derived or
+  burst site. `defaults` changes `defaults:`: without `--yes` it prints the
+  sites each key reaches and writes nothing; a site that took a changed
+  usual dipole length or azimuth keeps the old value in its own entry.
+  Exit 0 written or nothing to change, 2 refused.
 - `site_table_from_notes.py <notes.csv> <site_table.csv> [--timezone TZ] [--data-root DIR]`:
   a field-notes CSV into that site table.
-- `site_table_to_yaml.py <field_sheet.xlsx> <survey.yaml>`: a field-sheet
-  spreadsheet into the `sites:` block. It writes the whole file again:
-  comments, and sites not in the sheet, are lost.
 - `burra_notes_to_yaml.py [survey.yaml]`: the same for the Burra survey's
   own sheets.
 - `match_reference_edis.py <edi_dir> <survey.yaml>`: matches earlier EDIs to
@@ -38,7 +63,15 @@ stands for a value to give.
 
 ## Check before ingest
 
-Both read LEMI-423 files.
+- `check_survey.py <survey.yaml> [--all]`: what stops an ingest (STOP) and
+  what to look at (WARN), one line per finding with the number of sites,
+  the first five and what to do; `--all` gives one line per site. Below
+  them, the number of sites that take the usual dipoles and azimuths, and
+  a count. Exit 0 with no STOP, 1 with one, 2 when the file cannot be
+  read. It writes nothing. "Check" on the Metadata tab lists the same
+  findings.
+
+The next two read LEMI-423 files.
 
 - `timing_qc.py <survey.yaml> <local> <remote> [--files 6] [--out PNG]`:
   file-start spacing, the clock offset against the remote, and GPS lock.
@@ -84,8 +117,8 @@ Both read LEMI-423 files.
   between its outer electrodes, as the derived site `<site>D`.
 - `edl_unpack.py`: unpacks one PR6-24 site zip into a site folder.
 
-`decimate_site.py` and `fetch_observatory.py` add their entry by writing
-the `sites:` block of survey.yaml again: comments inside it are lost.
+`decimate_site.py` and `fetch_observatory.py` add or change their one
+entry of survey.yaml in place: the other lines and the comments stay.
 
 ## Look at the noise
 
