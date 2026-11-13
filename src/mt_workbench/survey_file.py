@@ -820,13 +820,12 @@ def commit(path, old: str, new: str, made: dict, *, dry_run: bool = False) -> Ed
     """Check a new text and write it over survey.yaml, keeping the file as it was.
 
     `commit` writes nothing when the text is unchanged, on a dry run, or
-    when `check` finds a problem. Otherwise the new text and the old one go
-    to two temporary files in the same folder. The first replaces
-    survey.yaml (retried while Windows holds the file; before each try the
-    file is read again and must still be `old`). Only after that does the
-    second become survey.yaml.previous, so a save that fails leaves the
-    earlier survey.yaml.previous as it was. If the second cannot be moved
-    there, it stays under its temporary name and `Edit.previous` names it.
+    when `check` finds a problem. Otherwise the new and the old text go to
+    two temporary files beside survey.yaml. The first replaces survey.yaml
+    (retried while Windows holds the file, which is read again before each
+    try and must still be `old`). Only then does the second become
+    survey.yaml.previous; if it cannot be moved there, it stays under its
+    temporary name, which `Edit.previous` names.
 
     Args:
         path (str | Path): The survey.yaml.
@@ -840,9 +839,8 @@ def commit(path, old: str, new: str, made: dict, *, dry_run: bool = False) -> Ed
 
     Raises:
         SurveyFileRefused: If a check fails, survey.yaml.previous is
-            read-only, the file changed meanwhile, or it could not be
-            replaced; survey.yaml and survey.yaml.previous are then as
-            they were.
+            read-only, the file changed meanwhile or could not be replaced;
+            survey.yaml and survey.yaml.previous are then as they were.
     """
     path = Path(path)
     if new == old:
