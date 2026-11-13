@@ -68,6 +68,8 @@ Usage:
   `Survey.site` accepts, so only the typed comparison can refuse it);
 - removing the last key of an entry is not refused; the bare header `S09`
   cannot be given a key at the file's key indent;
+- in a file with no final newline, the last value written over two lines
+  replaced by one gains a final newline;
 - the euro sign of a note is written as an escape when the note is
   rewritten;
 - a refused shape (a flow entry on its header, an unquoted numeric name, a
@@ -604,6 +606,10 @@ def test_entries() -> None:
     check("the bare header S09 is given a key at the file's key indent",
           "  S09:\n    latitude: -29.5\n  S10:" in new and yaml.safe_load(new)["sites"]["S09"] == {"latitude": -29.5},
           repr(new))
+    path = put("no_final_newline", "name: t\ndata_root: X\nsites:\n  S01:\n    notes: x\n      more")
+    sf.edit(path, sites={"S01": {"notes": "y"}})
+    check("the last value of a file with no final newline, two lines replaced by one: no newline added",
+          read(path) == "name: t\ndata_root: X\nsites:\n  S01:\n    notes: y", repr(read(path)))
     path = put("euro", TEXT)
     sf.edit(path, sites={"S01": {"notes": "cable 6 € per metre, 20 °C"}})
     line = next(line for line in split(read(path)) if "notes" in line)

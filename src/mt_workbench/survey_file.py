@@ -381,7 +381,7 @@ def _edit_entry(lines, head, stop, changes, nl, key_indent, name, label, summary
             continue
         old = lines[a].rstrip("\r\n")
         tail = old[len(old[:comments[0][0]].rstrip()):] if comments else ""
-        ending = nl if lines[a].endswith("\n") else ""
+        ending = nl if lines[b - 1].endswith("\n") else ""  # a last line with no ending stays without one
         new[a] = [f"{pad}{_text(key)}: {_text(value)}{tail}{ending}"]
     at = max((b for _a, b in spans.values()), default=head + 1)
     out = []
