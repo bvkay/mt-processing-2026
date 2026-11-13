@@ -66,14 +66,16 @@ This test fails if:
   the job the table does not hold S03 as a row with editable cells, a line
   of S01's or S02's entry or a comment changes, or the status line does
   not show the script's "added 1 site(s): S03" line; a second Add sites
-  starts a job or does not say there is nothing to add;
+  starts a job or does not say there is nothing to add; a folder S05 put
+  under the data folder while the survey is open is not named by the next
+  Add sites;
 - Check does not list a folder named S.4 (site_name, STOP) before the
   folders S.4 and S03 with no entry (folder_without_entry) and S02's missing
   position (no_position, WARN), one row each, with the level, site, name and
-  message that
-  scripts/check_survey.py --all prints for them, or its caption lacks the
-  command's line on the usual dipoles and its count line; or a double click
-  on a finding does not set `State.site` to its site and select its row;
+  message that scripts/check_survey.py --all prints for them, or misses a
+  folder S06 put there after the survey was opened; or its caption lacks
+  the command's line on the usual dipoles and its count line; or a double
+  click on a finding does not set `State.site` to its site and select its row;
 - Save of a survey.yaml that is read-only, or that another program holds
   open, holds the window for more than five seconds, writes the file, or
   does not say in its box that the file is open in another program or
@@ -116,7 +118,8 @@ accepted without the check of the name; New survey... starting its job on a
 survey.yaml that exists; the yellow line and the question for every
 `generated_by`; neither of them for any text that contains new_survey.py;
 the instrument passed under auto; `--dipole-length` passed when unchanged;
-Add sites run with unsaved edits; Add sites given `--force`; the Check
+Add sites run with unsaved edits; Add sites given `--force`; Add sites
+and Check on the folders listed when the survey was opened; the Check
 double click not setting the site; Save with the writer's twenty tries;
 every tick written as swap_e; an untick written as false; a tick written
 into the first row's site; no rebuild asked after a swap change; Rebuild
@@ -431,6 +434,12 @@ def test_add_sites(app, window, check) -> None:
           started is False and len(runner.jobs) == jobs and BOXES == []
           and tab.status_label.text() == "nothing to add: every site folder has an entry",
           f"started {started}, boxes {BOXES}, status {tab.status_label.text()!r}")
+    write_b423(path.parent / "raw" / "S05" / f"{EPOCH}.B423", 41, "2.1", -31.9, 138.9, 200.0, EPOCH)
+    BOXES.clear()
+    ANSWERS[:] = [False]
+    tab.add_sites()
+    check("a folder S05 put there while the survey is open is named by the next Add sites",
+          len(BOXES) == 1 and "S05" in BOXES[0][2], f"boxes {BOXES}, status {tab.status_label.text()!r}")
 
 
 def test_check(app, window, check) -> None:
@@ -443,15 +452,17 @@ def test_check(app, window, check) -> None:
     path.write_bytes(text.encode("utf-8"))
     window.open_survey(path)
     pump(app)
+    write_b423(path.parent / "raw" / "S06" / f"{EPOCH}.B423", 42, "2.1", -31.9, 138.9, 200.0, EPOCH)
     tab = window.metadata_tab
     found = tab.run_check()
     table = tab.check_table
     rows = [tuple(table.item(r, c).text() for c in range(4)) for r in range(table.rowCount())]
     names = [(level, site, name) for level, site, name, _message in rows]
-    check("Check lists the folder S.4's site_name (STOP) first, then the folders S.4 and S03 with no entry and "
-          "S02 with no position (WARN), one row each",
+    check("Check lists the folder S.4's site_name (STOP) first, then the folders S.4, S03 and S06 (put there "
+          "after the survey was opened) with no entry and S02 with no position (WARN), one row each",
           names == [("STOP", "S.4", "site_name"), ("WARN", "S.4", "folder_without_entry"),
-                    ("WARN", "S03", "folder_without_entry"), ("WARN", "S02", "no_position")], str(names))
+                    ("WARN", "S03", "folder_without_entry"), ("WARN", "S06", "folder_without_entry"),
+                    ("WARN", "S02", "no_position")], str(names))
     done = subprocess.run([sys.executable, str(REPO / "scripts" / "check_survey.py"), str(path), "--all"], cwd=REPO,
                           capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=300)
     lines = done.stdout.strip().splitlines()

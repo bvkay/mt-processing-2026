@@ -713,8 +713,9 @@ class MetadataTab(QWidget):
         """Add the site folders that have no entry, after a question that lists them.
 
         Refused while the table holds unsaved edits, since the survey opens
-        again when the job ends and the edits would be lost. With no such
-        folder nothing runs. Otherwise `metadata_edit.ask_yes_no` names the
+        again when the job ends and the edits would be lost. The data folder
+        is listed again, so a folder put there since the survey was opened
+        counts. With no such folder nothing runs. Otherwise `metadata_edit.ask_yes_no` names the
         folders, and on Yes `metadata_edit.start_add_sites` runs
         scripts/new_survey.py again, as the command line re-run does.
 
@@ -732,7 +733,11 @@ class MetadataTab(QWidget):
                          f"them, then Add sites", BAD_COLOUR)
             return False
         entries = set(self.state.configured_sites())
-        folders = sorted(site for site in self.state.raw_sites() if site not in entries)
+        try:  # read again: a folder put under data_root since the survey was opened counts
+            found = self.state.survey.site_dirs()
+        except OSError:  # data_root on a drive that is not connected
+            found = {}
+        folders = sorted(site for site in found if site not in entries)
         if not folders:
             self._status("nothing to add: every site folder has an entry")
             return False
@@ -749,7 +754,9 @@ class MetadataTab(QWidget):
     def run_check(self) -> list:
         """List the findings of `mt_workbench.survey_check.check_survey` below the site table.
 
-        One row per finding, in `survey_check.ORDER` (the stops first),
+        The data folder is listed again, so a site folder put there since
+        the survey was opened is found. One row per finding, in
+        `survey_check.ORDER` (the stops first),
         with its level, site, name and message, the text
         scripts/check_survey.py --all prints; STOP rows red, WARN rows
         yellow. The line on the usual dipoles and the count line of the
@@ -761,8 +768,7 @@ class MetadataTab(QWidget):
         survey = self.state.survey
         if survey is None:
             return []
-        raw_sites = self.state.raw_sites()
-        findings = survey_check.check_survey(survey, raw_sites)
+        findings = survey_check.check_survey(survey)  # lists the data folder itself, as the command does
         findings.sort(key=lambda f: survey_check.ORDER.index(f.name))  # stable: sites keep their order
         self.check_table.setRowCount(len(findings))
         for row, finding in enumerate(findings):
