@@ -108,6 +108,7 @@ import yaml
 from loguru import logger
 
 from . import intersite
+from .ingest import default_archive_path
 from .masks import _LOADER, RACY_S, REPLACE_TRIES, _Dumper
 from .virtual import WEIGHT_CHUNK_S
 
@@ -1213,6 +1214,104 @@ def intersite_argv(python_exe, script, survey_yaml, local: str, kind: str, stack
     if dry_run:
         argv.append("--dry-run")
     return argv
+
+
+def _pair_refusal(survey, local: str, base: str, kind: str, remote: str, start, end, runs_of) -> str:
+    """Return why scripts/process_intersite.py refuses a plain pair, or "" (`pair_argv` lists the rules)."""
+    if local == base:
+        return f"the station and the base are both {local}: choose another site as the base"
+    if remote in (local, base):
+        return (f"the remote {remote} is the {'station' if remote == local else 'base'}: choose a third site as "
+                f"the remote, whose noise the pair does not share")
+    roles = intersite.KINDS[kind]
+    three = (("the station", local, roles), (f"the base {base}", base, roles),
+             (f"the remote {remote}", remote, intersite.FIELDS["H"]))
+    entries = survey.site_names()
+    for who, site, _channels in three:
+        if site not in entries:
+            if site == remote and default_archive_path(survey, site).exists():
+                return (f"{who} is an archive with no survey.yaml entry, such as a stack: choose a site of "
+                        f"survey.yaml as the remote")
+            return f"{who} has no entry in survey.yaml: add it there, or choose another site"
+    bursts = [who for who, site, _channels in three if survey.bursts_parent(site)]
+    if bursts and len(bursts) < len(three):
+        return (f"burst sites and continuous sites do not go in one run (the burst sites: {', '.join(bursts)}): "
+                f"choose three burst sites, or three continuous ones")
+    rate = survey.sample_rate_of(local)
+    for who, site, _channels in three[1:]:
+        if survey.sample_rate_of(site) != rate:
+            return (f"the station is at {rate:g} Hz and {who} at {survey.sample_rate_of(site):g} Hz: choose sites "
+                    f"at one sample rate")
+    runs = {}
+    for who, site, channels in three:
+        path = default_archive_path(survey, site)
+        if not path.exists():
+            return (f"{who} has no archive: build it (Build MTH5 on the Time Series tab, or "
+                    f"scripts/ingest_site.py), or choose another site")
+        runs[who] = intersite.archive_runs(path, site, channels) if runs_of is None else runs_of(site, path, channels)
+        if runs[who] is not None and not runs[who]:
+            return f"{who} holds no run with {', '.join(channels)}: choose another site"
+    known = {who: found for who, found in runs.items() if found is not None}
+    if start is not None:
+        lo, hi = _ns(start), _ns(end)
+        if hi <= lo:
+            return "the window ends at or before its start: set the end after the start"
+    elif len(known) == len(three):  # the script's own window: the time the three sites share
+        lo = max(min(s for s, _e in found) for found in known.values())
+        hi = min(max(e for _s, e in found) for found in known.values())
+        if hi <= lo:
+            return (f"the station, the base {base} and the remote {remote} share no recording time: choose sites "
+                    f"that recorded together")
+    else:
+        return ""
+    for who, found in known.items():
+        if intersite.overlap_hours(found, lo, hi) <= 0:
+            window = " to ".join(pd.Timestamp(t, unit="ns", tz="UTC").strftime(TIME_FMT) for t in (lo, hi))
+            return f"{who} records nothing in the window {window}: move the window, or choose another site"
+    return ""
+
+
+def pair_argv(python_exe, script, survey_yaml, local: str, base: str, kind: str, remote: str,
+              start: str | None = None, end: str | None = None, tag: str | None = None, no_filters: bool = False,
+              survey=None, runs_of: Callable | None = None) -> tuple[list[str] | None, str]:
+    """Return the scripts/process_intersite.py command line of a plain pair, or why the script refuses it.
+
+    A plain pair is a local site on a named base site with a third site's
+    hx, hy as the reference. A refusal reads "<what is wrong>: <what to
+    do>", calls the local "the station" as the Process tab does, and is one
+    the script gives the same command line (exit 2): two of the three sites
+    the same, no survey.yaml entry or archive, a burst site unless all three
+    are, sample rates that differ, no run with the channels, a window in
+    which a site records nothing.
+
+    Args:
+        python_exe, script, survey_yaml (str or Path): As `intersite_argv`.
+        local, base, remote (str): The three sites.
+        kind (str): ``telluric`` or ``magnetic``.
+        start, end (str or None): The window in UTC, both or neither;
+            neither takes the time the three sites share.
+        tag, no_filters: ``--tag`` and ``--no-filters``.
+        survey (Survey or None): The loaded survey; None reads `survey_yaml`.
+        runs_of (callable or None): ``runs_of(site, path, channels)``, a
+            site's runs as (start_ns, end_ns) or None when not known (the
+            run then judges it). None reads each archive with h5py.
+
+    Returns:
+        tuple: (the command line, "") or (None, the refusal).
+
+    Raises:
+        ValueError: For another kind, or start without end.
+    """
+    if kind not in intersite.KINDS:
+        raise ValueError(f"kind is {' or '.join(intersite.KINDS)}, not {kind!r}")
+    if (start is None) != (end is None):
+        raise ValueError("give start and end together, or neither")
+    why = _pair_refusal(_survey(survey_yaml if survey is None else survey), local, base, kind, remote, start, end,
+                        runs_of)
+    if why:
+        return None, why
+    return intersite_argv(python_exe, script, survey_yaml, local, kind, [], base=base, remote=remote, start=start,
+                          end=end, tag=tag, no_filters=no_filters), ""
 
 
 def build_argv(python_exe, script, survey_yaml, name: str, overwrite: bool = True, check: bool = False) -> list[str]:
