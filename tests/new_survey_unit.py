@@ -200,7 +200,16 @@ of part 3 and on its EDL folder alone. **This test fails if**
      `instrument: lemi423`, `channels: [ex, ey, hx, hy]` and `sample_rate:
      1000.0`, with `Survey.site("S01")` reading `h_scale` -1000.0 and the
      `calibration_fn` from `defaults:`, and MBJ21 its own `instrument:
-     lemi424` and `sample_rate: 1.0`.
+     lemi424` and `sample_rate: 1.0`;
+(28) the `processing:` block does not follow the survey's rate: the EDL
+     survey at 10 Hz of (27) must hold `min_period` 0.2, `max_period`
+     100000.0, `periods_per_decade` 10.0 and `min_band_windows` 2 with no
+     `notch_frequencies`, read back by `Survey.processing` and
+     `Survey.min_band_windows`; a survey over the LEMI-424 folder alone
+     (1 Hz) the same with `min_period` 4.0; the 1000 Hz surveys keep the
+     block of (4); and `processing_block`, called here, must keep the block
+     of (4) at 100 Hz, give 2 / rate at 99, 10 and 2 Hz, and 4.0 at 1.9 and
+     0.5 Hz.
 
 The mutations parts 4 and 5 catch, each made in a copy of the code: `>` written
 as `>=` in `check_survey_name` (the 30-character item of (15) fails); the
@@ -216,7 +225,10 @@ compared on a re-run ((22)); the declination not filled for a site added by
 a re-run ((23)); the fill also writing `layout_north: geographic` and the
 site's azimuths turned by the declination ((24)); `sample_rate` written only
 for a site of the survey's own recorder ((26)); `calibration_fn` and
-`h_scale` written only for a LEMI-423 survey ((27)).
+`h_scale` written only for a LEMI-423 survey ((27)); the block of 100 Hz and
+above written at every rate, or only above 100 Hz, the shortest period taken
+as 4 / rate below 100 Hz, or the 4 s of the slowest records taken from 2 Hz
+down in place of below 2 Hz ((28)).
 
 Part 2, the real-data check: the script run over the Curnamona Cube raw data
 (E:, read only) into the scratch folder must give D02 and E08 latitudes and
@@ -929,6 +941,29 @@ def test_other_recorders() -> None:
     assert read == {"EGFLP02": 10.0, "MBJ21": 1.0, "S01": 1000.0}, read
     print(f"(27) an EDL survey at 10 Hz keeps calibration_fn and h_scale; S01 and MBJ21 added by a re-run with "
           f"their own instrument and sample_rate {read}; S01 reads h_scale {merged.h_scale} from defaults:")
+
+    slow = {"max_period": 100000.0, "periods_per_decade": 10.0, "min_band_windows": 2}
+    assert config["processing"] == {"min_period": 0.2, **slow}, config["processing"]
+    assert survey.processing == {"min_period": 0.2, "max_period": 100000.0, "periods_per_decade": 10.0}
+    assert survey.min_band_windows == 2, survey.min_band_windows
+    lemi_root, lemi_out = SCRATCH / "lemi424_alone", fresh("lemi424_alone_survey")
+    shutil.rmtree(lemi_root, ignore_errors=True)
+    shutil.copytree(made["MBJ21"], lemi_root / "MBJ21")
+    alone = run(lemi_root, "--name", "lemi424_alone", "--out", lemi_out)
+    assert alone.returncode == 0, (alone.returncode, alone.stdout, alone.stderr)
+    one_hz = yaml.safe_load(lemi_out.read_text(encoding="utf-8"))
+    assert (one_hz["instrument"], one_hz["sample_rate"]) == ("lemi424", 1), one_hz["sample_rate"]
+    assert one_hz["processing"] == {"min_period": 4.0, **slow}, one_hz["processing"]
+    fast = yaml.safe_load(samples.MIXED_YAML.read_text(encoding="utf-8"))
+    assert fast["sample_rate"] == 1000 and fast["processing"] == EXPECTED_PROCESSING, fast["processing"]
+    blocks = {rate: yaml.safe_load(new_survey.processing_block(rate))["processing"]
+              for rate in (1000.0, 100.0, 99.0, 10.0, 2.0, 1.9, 0.5)}
+    assert blocks[1000.0] == blocks[100.0] == EXPECTED_PROCESSING, blocks[100.0]
+    shortest = {rate: block["min_period"] for rate, block in blocks.items() if rate < 100.0}
+    assert shortest == {99.0: 2 / 99.0, 10.0: 0.2, 2.0: 1.0, 1.9: 4.0, 0.5: 4.0}, shortest
+    assert all({k: v for k, v in blocks[rate].items() if k != "min_period"} == slow for rate in shortest), blocks
+    print(f"(28) processing: 10 Hz {config['processing']}; 1 Hz min_period {one_hz['processing']['min_period']}; "
+          f"1000 Hz as in (4); shortest period by rate {shortest}")
 
 
 def part2() -> None:

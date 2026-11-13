@@ -33,7 +33,9 @@ The name of a new survey is checked before any folder is read
 digits, _ and -). The script writes surveys/<name>/survey.yaml (or --out) with the survey's
 name, instrument, sample_rate (the most common across sites; a warning names
 any site that differs), data_root, workspace, timezone and `generated_by:
-scripts/new_survey.py`; a `defaults:` block and a `processing:` block; and a
+scripts/new_survey.py`; a `defaults:` block and a `processing:` block that
+fits the survey's rate (`processing_block`: 0.005 to 5000 s with mains
+notches at 100 Hz and above, a long-period layout to 100000 s below); and a
 `sites:` block with one entry per folder: latitude, longitude, elevation,
 serial, firmware, start and end (UTC), and a note that the dipole lengths and
 azimuths are the defaults. A site recorded at another rate than the survey's
@@ -239,7 +241,12 @@ defaults:
   # in the survey instrument's names; ingest drops the rest, e.g. the B423 Bz column,
   # an open input with no hz coil. A site on another instrument has its own channels:
   channels: {channels}
-{edl_sensor}{edl_gain}# lemimt-style even log-period band layout (see mt_workbench.bands.build_band_scheme)
+{edl_sensor}{edl_gain}{processing}"""
+
+# the survey rate from which the processing block is the broadband one
+BROADBAND_MIN_RATE = 100.0
+PROCESSING_BROADBAND = """\
+# lemimt-style even log-period band layout (see mt_workbench.bands.build_band_scheme)
 processing:
   min_period: 0.005
   max_period: 5000.0
@@ -247,6 +254,39 @@ processing:
   # keep bands clear of mains and its first in-range harmonic
   notch_frequencies: [50.0, 150.0]
 """
+PROCESSING_LONG_PERIOD = """\
+# lemimt-style even log-period band layout (see mt_workbench.bands.build_band_scheme)
+processing:
+  # {rate} Hz records: the shortest period is {rule}; mains (50 Hz) lies above the Nyquist
+  # frequency, so no notch_frequencies are set
+  min_period: {min_period}
+  max_period: 100000.0
+  periods_per_decade: 10.0
+  # a band of a long record is kept from two STFT windows up
+  min_band_windows: 2
+"""
+
+
+def processing_block(sample_rate: float) -> str:
+    """Return the `processing:` block of a new survey for its sample rate.
+
+    At 100 Hz and above the block is the broadband one: 0.005 to 5000 s,
+    with the bands kept clear of 50 and 150 Hz. Below 100 Hz the layout
+    runs to 100000 s with no notch, since mains lies above the Nyquist
+    frequency, and `min_band_windows: 2`; its shortest period is 2 / rate
+    (0.2 s at 10 Hz) down to 2 Hz, and 4 s below 2 Hz.
+
+    Args:
+        sample_rate (float): The survey's sample rate in Hz.
+
+    Returns:
+        str: The block as YAML text, with its comments.
+    """
+    rate = float(sample_rate)
+    if rate >= BROADBAND_MIN_RATE:
+        return PROCESSING_BROADBAND
+    min_period, rule = (2.0 / rate, "2 / rate") if rate >= 2.0 else (4.0, "4 s")
+    return PROCESSING_LONG_PERIOD.format(rate=f"{rate:g}", rule=rule, min_period=scalar(min_period))
 
 
 # the 150 Hz shortest period whose band edges fall on the 24 kHz burst layout's (4**(22/6)/6000 s):
@@ -1000,6 +1040,7 @@ def main(argv=None) -> int:
             "  # what the reader already models (the x10 terminal box): hardwired at the field terminal\n"
             "  # junction box, declared from the field notes (EDL sites only)\n"
             f"  electric_gain: {scalar(args.electric_gain)}\n"),
+        processing=processing_block(sample_rate),
     )
     if instrument == "phoenix":
         head = phoenix_defaults(head)
