@@ -226,7 +226,8 @@ def facts_text(facts: dict) -> str:
         lines.append("masks applied:")
         lines += [f"    {site} ({role}): {count} masks.yaml entr{'y' if count == 1 else 'ies'}, {windows} band "
                   f"windows left out" for site, role, count, windows in masks if count]
-    lines.append("frames: as recorded, not rotated" + ("" if facts["frames"] else f" ({NOT_RECORDED})"))
+    lines.append("frames: as recorded, not rotated"
+                 + ("" if facts["frames"] else "; the sidecar holds no site frame"))
     for site, frame in facts["frames"].items():
         declination = frame.get("declination")
         lines.append(f"    {site} ({frame.get('role')}): ex at {frame.get('azimuth_ex')} deg, ey at "
