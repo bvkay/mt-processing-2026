@@ -67,7 +67,7 @@ This opens the window (the GUI) on a survey file. Its tabs, left to right:
 ## The usual path through a survey
 
 1. **Make a survey.** `python scripts/new_survey.py <data_root> --name NAME`
-   reads a folder of site folders and writes `survey.yaml`; `--site-table`
+   reads a folder of site folders and writes `surveys/NAME/survey.yaml`; `--site-table`
    merges a field sheet. The Metadata tab does the same with "New survey...".
 2. **Check it.** Read each site's entry on the Metadata tab. On LEMI-423
    files, `scripts/timing_qc.py <survey.yaml> <local> <remote>` checks the
@@ -87,14 +87,17 @@ This opens the window (the GUI) on a survey file. Its tabs, left to right:
    - telluric tensor, E to E: `scripts/process_intersite.py <survey.yaml> <local> <base> --kind telluric --remote SITE`;
    - magnetic tensor, B to B: the same script with `--kind magnetic`.
 
-   Every product is remote-referenced. `scripts/campaign.py` runs a whole
+   Every product is remote-referenced. After a run, read
+   [Check after a run](docs/guide/commands.md#process_rrpy) or, for a
+   tensor, [the timing check](docs/guide/tensors.md#check-the-timing-first).
+   `scripts/campaign.py` runs a whole
    line of sites from a plan file.
 5. **View the products.** They are in `<workspace>/tf`. The View EDIs tab
    plots the EDIs and the View tensors tab the tensor products.
 6. **Deliver.** `scripts/merge_modes.py` and `scripts/merge_best.py` join
    products of one site into one EDI, and `scripts/deliver_as_laid.py
-   <survey.yaml> <in.edi> <out.edi>` writes the delivered EDI with each
-   reversed electric line as laid.
+   <survey.yaml> <in.edi> <out.edi>`, run for every site, writes the
+   delivered EDI with each reversed electric line as laid.
 
 ## House rules of the data
 
