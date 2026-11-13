@@ -949,6 +949,55 @@ python -m mt_workbench surveys/<survey>/survey.yaml
 
 The installed console script `mt-workbench surveys/<survey>/survey.yaml` does the same.
 
+### Processing type: MT, telluric tensor or magnetic tensor
+
+The first box of the Process tab, Processing type, chooses what Add to
+queue runs:
+
+- "MT impedance and tipper" (the default): `scripts/process_rr.py` for the
+  station against the remote, as described above.
+- "Telluric tensor, E to E": `scripts/process_intersite.py --kind telluric`,
+  the station's ex, ey on the base's ex, ey.
+- "Magnetic tensor, B to B": `scripts/process_intersite.py --kind magnetic`,
+  the station's hx, hy on the base's hx, hy.
+
+A tensor type shows a Base box. The tensor and psi = arg(det) / 2 are the
+station's field relative to the base's field, so a product is always read
+against its base, and another base gives another tensor. Both are in each
+site's channels as recorded, in geomagnetic coordinates: no rotation is
+applied, and a declination is a recorded number that is not applied. The
+Base box lists the survey.yaml sites that have an archive at the station's
+sample rate, then the base stacks saved on the Stacks tab for the tensor's
+field, as "stack: NAME". The remote stays the reference: a third site, to
+whose hx, hy the estimate is referenced.
+
+To queue one pair, choose the type, the station, the remote and the base,
+set the window on the bar and press Add to queue, then Run queue. To queue
+a star of pairs around one base, choose a base site and press "Add every
+site on this base": it queues one run for every other site that has an
+archive at that sample rate, with the same remote, window, tag and filters
+switch. The base and the remote are left out, and so is every site the
+script would refuse, such as a site that records nothing in the window;
+the status line counts the runs queued and names the sites left out under
+each reason. A base stack takes one station at a time. A pair the script
+would refuse is never queued: a message says what is wrong and what to do
+next. A tensor run takes the tag and the "use declared filters" switch;
+the other run options are greyed meanwhile, since process_intersite.py
+estimates on the survey's band layout with its own estimator and always
+applies masks.yaml.
+
+A finished run writes four files to `<workspace>/tf` and lists them under
+Products: `<station>_te-<base>_rr-<remote>.csv` (one row per period; the
+flag columns mark a period and never remove it), `.json` (the facts of the
+run), `.h5` and `.png`, with `_hm-` in place of `_te-` for the magnetic
+tensor and `_<tag>` at the end with a tag. A second run of the same pair
+with the same tag replaces the first. No EDI is written.
+
+Planning the pairs of a network (which base for which site, and the pairs
+that tie the groups together) and solving the network datum are run from
+the command line for now: `scripts/solve_datum.py`, under "The network
+datum" above.
+
 Tests, each run on its own (no pytest runner wired up yet); the smoke test
 needs an offscreen Qt platform and writes its screenshots to
 `surveys/curnamona_cube/work/qc/gui_*.png` (gitignored; regenerate them by
@@ -1046,6 +1095,7 @@ python tests/mth5_fork_unit.py       # the mth5 / mt-metadata forks (../mth5, ..
 python tests/aurora_fork_unit.py     # aurora fork 0.6.2+mtproc (installed, or the clone at ../aurora) against stock-0.6.2 fixtures: Z identity, config window masks, time and memory; with the fork installed, the clone's estimate compared with it; fixtures only without the fork
 python tests/mtio_fork_unit.py       # mt-io fork (the clone at ../mt-io, or installed) on synthetic files: issues 6, 7, 8, 18, 19, 21; the installed mt-io reported check by check (stock 0.0.5 fails all six); skipped without the fork
 python tests/orangebox_unit.py       # mt-io's Orange Box reader: the synthetic layout, the 10.00064 Hz rate kept, files that do not join refused; one real Stuart Shelf hour against the legacy converter (skipped without the raw-data drive)
+QT_QPA_PLATFORM=offscreen python tests/process_type_unit.py  # the Process tab's Processing type on a scratch survey with a known telluric tensor: MT queues process_rr as before; stacks.pair_argv's command line and each of its refusals against the script's dry run (exit 2); the Base box's list; a tensor type queues that line for the station, base, remote, window and kind, the magnetic type a magnetic run; each refusal shown in a warning box; the star of pairs around one base with the sites left out named; a base stack through the recipe picker; one telluric job run through the job runner, the model tensor recovered and its four files under Products
 # (tests/instrument_samples.py cuts the one-hour LEMI-424 and EDL samples from the raw-data drives, read only)
 ```
 
