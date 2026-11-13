@@ -44,6 +44,7 @@ DEFAULT_TIMEZONE = "Australia/Adelaide"
 USUAL_DIPOLE_LENGTH = 50.0
 USUAL_AZIMUTHS = (0.0, 90.0)
 PHOENIX_DIPOLES_TIP = "Phoenix receivers record their dipole lengths"
+ADD_SITES = "add sites"  # the label of an Add sites job, before the survey's name
 TABLE_FILTER = "Site table (*.csv *.xlsx *.xls);;All files (*)"
 
 
@@ -411,6 +412,47 @@ def is_new_survey_job(job) -> bool:
     return len(job.argv) > 1 and Path(job.argv[1]).name == "new_survey.py"
 
 
+def add_sites_argv(state) -> list[str]:
+    """Build the scripts/new_survey.py command line that adds the site folders with no entry to the open survey.
+
+    It is the re-run of the command line: the survey's own data folder,
+    name and survey.yaml, and no other argument, so nothing but the new
+    entries is written.
+
+    Args:
+        state: The shared `mt_workbench.gui.app.State`, with a survey open.
+
+    Returns:
+        list[str]: The command line.
+    """
+    survey = state.survey
+    return [state.python_exe, state.script("new_survey.py"), str(survey.data_root), "--name", survey.name,
+            "--out", str(state.survey_yaml)]
+
+
+def start_add_sites(parent, state) -> bool:
+    """Run scripts/new_survey.py again on the open survey, which adds the site folders with no entry.
+
+    The job starts at once on `state.runner` (`JobRunner.run_now`), labelled
+    `ADD_SITES` and the survey's name, and `handle_new_survey_finished`
+    opens the survey again when it ends. While another job is running the
+    request is refused with a message.
+
+    Args:
+        parent (QWidget): Parent of the message box.
+        state: The shared `mt_workbench.gui.app.State`, with a survey open.
+
+    Returns:
+        bool: True if the job was started.
+    """
+    if state.runner.running:
+        QMessageBox.information(parent, "Add sites",
+                                "A job is already running - wait for it to finish, then press Add sites again.")
+        return False
+    state.runner.run_now(f"{ADD_SITES} {state.survey.name}", add_sites_argv(state))
+    return True
+
+
 def start_new_survey(parent, state, values: dict, out: Path) -> bool:
     """Queue scripts/new_survey.py on `state.runner` and start it immediately.
 
@@ -447,10 +489,11 @@ def start_new_survey(parent, state, values: dict, out: Path) -> bool:
 
 
 def handle_new_survey_finished(parent, state, index: int, ok: bool) -> None:
-    """Open the survey.yaml a finished new-survey job wrote, or report its failure.
+    """Open the survey.yaml a finished new-survey or Add sites job wrote, or report its failure.
 
-    Connected to `state.runner.job_finished`, which fires for every job;
-    jobs other than new_survey.py (`is_new_survey_job`) are ignored. The
+    Called by `MetadataTab` on `state.runner.job_finished`, which fires for
+    every job; jobs other than new_survey.py (`is_new_survey_job`) are
+    ignored. The
     survey's workspace folder is made before the survey is opened. When it
     cannot be made (a drive not connected, a file in the way) the survey
     still opens, no basemap is fetched, and the window says so in the
@@ -469,7 +512,7 @@ def handle_new_survey_finished(parent, state, index: int, ok: bool) -> None:
     if job is None or not is_new_survey_job(job):
         return
     if not ok:
-        QMessageBox.critical(parent, "New survey failed",
+        QMessageBox.critical(parent, "Add sites failed" if job.label.startswith(ADD_SITES) else "New survey failed",
                              f"{job.label} exited {job.exit_code}:\n\n" + "\n".join(job.output[-8:]))
         return
     out = Path(job.argv[job.argv.index("--out") + 1])

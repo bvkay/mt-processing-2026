@@ -40,7 +40,10 @@ with:
 The `metadata_edit.EDITABLE` columns are edited in place, by double-click or
 with "Import site table..." from a CSV or XLSX (`mt_workbench.survey.merge_table_row`:
 a position the site holds is kept). A row of a site folder with no entry in
-survey.yaml is read-only until the site is added. "Save survey.yaml" writes the
+survey.yaml is read-only until "Add sites" adds it: that button runs
+scripts/new_survey.py again on the survey (`metadata_edit.start_add_sites`),
+after a question that lists the folders, and is refused while the table holds
+unsaved edits. "Save survey.yaml" writes the
 changed cells into the edited entries through `mt_workbench.survey_file.edit`,
 which leaves every other line as it was and keeps the file as it was in
 survey.yaml.previous, and reopens the survey, asking first when the file is
@@ -85,6 +88,7 @@ COLUMNS = ["site", "instrument", "latitude", "longitude", "elevation", "declinat
 NUMBERS = {"latitude", "longitude", "elevation", "declination", "declination_epoch", "dipole_length_ex",
            "dipole_length_ey", "azimuth_ex", "azimuth_ey"}
 NO_ENTRY_TIP = "no entry yet: press Add sites"
+ADD_SHOWN = 20  # the folders the question of Add sites names before "and N more"
 ADDS_ONLY = "scripts/new_survey.py"  # run again on a survey.yaml, this script only adds site folders
 
 
@@ -227,6 +231,10 @@ class MetadataTab(QWidget):
         self.save_button = QPushButton("Save survey.yaml", self)
         self.save_button.setToolTip("write the edited cells into the sites: block, nothing else")
         self.save_button.clicked.connect(self.save)
+        self.add_button = QPushButton("Add sites", self)
+        self.add_button.setToolTip("add the site folders under data_root that have no entry yet; a second "
+                                   "deployment goes in its own folder (SA106_2); nothing else changes")
+        self.add_button.clicked.connect(self.add_sites)
 
         self.name_label, self.data_root_label, self.workspace_label = (QLabel("-", self) for _ in range(3))
         self.count_label, self.status_label, self.warning_label = (QLabel("", self) for _ in range(3))
@@ -247,6 +255,7 @@ class MetadataTab(QWidget):
         edit_row = QHBoxLayout()
         edit_row.addWidget(self.import_button)
         edit_row.addWidget(self.save_button)
+        edit_row.addWidget(self.add_button)
         edit_row.addWidget(self.status_label, 1)
 
         self.table = QTableWidget(0, len(COLUMNS), self)
@@ -271,8 +280,7 @@ class MetadataTab(QWidget):
         layout.addWidget(self.table)
 
         self.state.site_changed.connect(self.select_site)
-        self.state.runner.job_finished.connect(  # opens what a New survey job wrote
-            lambda index, ok: metadata_edit.handle_new_survey_finished(self, self.state, index, ok))
+        self.state.runner.job_finished.connect(self._job_finished)
         self._set_enabled(False)
 
     # ------------------------------------------------------------ filling
@@ -353,9 +361,10 @@ class MetadataTab(QWidget):
             self.select_site(self.state.site)
 
     def _set_enabled(self, loaded: bool) -> None:
-        """Enable Import and Save when a survey is loaded."""
+        """Enable Import, Save and Add sites when a survey is loaded."""
         self.import_button.setEnabled(loaded)
         self.save_button.setEnabled(loaded)
+        self.add_button.setEnabled(loaded)
 
     def _status(self, text: str, colour: str | None = None) -> None:
         """Show a status message, optionally coloured."""
@@ -517,6 +526,53 @@ class MetadataTab(QWidget):
         warn = missing or no_entry or disagreements or ignored
         self._status(text + " - Save survey.yaml writes them", BAD_COLOUR if warn else None)
         return len(matched), len(rows)
+
+    def add_sites(self) -> bool:
+        """Add the site folders that have no entry, after a question that lists them.
+
+        Refused while the table holds unsaved edits, since the survey opens
+        again when the job ends and the edits would be lost. With no such
+        folder nothing runs. Otherwise `metadata_edit.ask_yes_no` names the
+        folders, and on Yes `metadata_edit.start_add_sites` runs
+        scripts/new_survey.py again, as the command line re-run does.
+
+        Returns:
+            bool: True if the job was started.
+        """
+        if self.state.survey is None:
+            return False
+        try:
+            n = sum(len(v) for v in self.pending().values())
+        except ValueError:  # a cell that does not parse is an unsaved edit too
+            n = 1
+        if n:
+            self._status(f"{n} unsaved change(s): press Save survey.yaml first, or open the survey again to drop "
+                         f"them, then Add sites", BAD_COLOUR)
+            return False
+        entries = set(self.state.configured_sites())
+        folders = sorted(site for site in self.state.raw_sites() if site not in entries)
+        if not folders:
+            self._status("nothing to add: every site folder has an entry")
+            return False
+        shown = ", ".join(folders[:ADD_SHOWN]) + (f" and {len(folders) - ADD_SHOWN} more"
+                                                   if len(folders) > ADD_SHOWN else "")
+        if not metadata_edit.ask_yes_no(self, "Add sites", f"Add {len(folders)} site(s) that have a folder and no "
+                                                           f"entry: {shown}? Nothing else in the file changes."):
+            return False
+        if not metadata_edit.start_add_sites(self, self.state):
+            return False
+        self._status(f"adding {len(folders)} site(s) ... (the log is in the console strip below)")
+        return True
+
+    def _job_finished(self, index: int, ok: bool) -> None:
+        """Open what a New survey or Add sites job wrote, and show the line Add sites printed."""
+        metadata_edit.handle_new_survey_finished(self, self.state, index, ok)
+        job = self.state.runner.jobs[index] if 0 <= index < len(self.state.runner.jobs) else None
+        if job is None or not ok or not metadata_edit.is_new_survey_job(job) \
+                or not job.label.startswith(metadata_edit.ADD_SITES):
+            return
+        said = [line for line in job.output if line.startswith(("added ", "nothing to add"))]
+        self._status(said[-1] if said else "Add sites finished")
 
     def new_survey(self) -> None:
         """Show the New survey dialog, then run scripts/new_survey.py through `metadata_edit.start_new_survey`."""
