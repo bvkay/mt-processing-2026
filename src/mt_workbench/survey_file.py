@@ -30,7 +30,6 @@ import copy
 import difflib
 import os
 import re
-import shutil
 import tempfile
 import time
 from collections import Counter
@@ -814,11 +813,13 @@ def commit(path, old: str, new: str, made: dict, *, dry_run: bool = False) -> Ed
     """Check a new text and write it over survey.yaml, keeping the file as it was.
 
     `commit` writes nothing when the text is unchanged, on a dry run, or
-    when `check` finds a problem. Otherwise the file is read again and must
-    still be `old`; it is copied to survey.yaml.previous; the new text goes
-    to a temporary file in the same folder, which replaces survey.yaml
-    (retried while Windows holds the file, the file read again before each
-    try).
+    when `check` finds a problem. Otherwise the new text and the old one go
+    to two temporary files in the same folder. The first replaces
+    survey.yaml (retried while Windows holds the file; before each try the
+    file is read again and must still be `old`). Only after that does the
+    second become survey.yaml.previous, so a save that fails leaves the
+    earlier survey.yaml.previous as it was. If the second cannot be moved
+    there, it stays under its temporary name and `Edit.previous` names it.
 
     Args:
         path (str | Path): The survey.yaml.
@@ -831,8 +832,10 @@ def commit(path, old: str, new: str, made: dict, *, dry_run: bool = False) -> Ed
         Edit: The outcome, with an empty summary.
 
     Raises:
-        SurveyFileRefused: If a check fails, the file changed meanwhile, or
-            it could not be replaced; survey.yaml is then as it was.
+        SurveyFileRefused: If a check fails, survey.yaml.previous is
+            read-only, the file changed meanwhile, or it could not be
+            replaced; survey.yaml and survey.yaml.previous are then as
+            they were.
     """
     path = Path(path)
     if new == old:
@@ -846,27 +849,38 @@ def commit(path, old: str, new: str, made: dict, *, dry_run: bool = False) -> Ed
     if dry_run:
         return Edit(path, False, None, made)
     planned = old.encode("utf-8")
-    _unchanged(path, planned)
     previous = path.with_name(path.name + ".previous")
-    shutil.copyfile(path, previous)
-    handle, temporary = tempfile.mkstemp(dir=path.parent, prefix=path.name + ".", suffix=".tmp")
+    if previous.exists() and not os.access(previous, os.W_OK):
+        raise SurveyFileRefused("survey.yaml.previous is read-only, so the file as it was could not be kept and "
+                                "survey.yaml was not saved: clear its read-only flag or delete it, then save again")
+    temporary = []
     try:
-        with os.fdopen(handle, "wb") as out:
-            out.write(new.encode("utf-8"))
+        for data in (new.encode("utf-8"), planned):
+            handle, name = tempfile.mkstemp(dir=path.parent, prefix=path.name + ".", suffix=".tmp")
+            temporary.append(name)
+            with os.fdopen(handle, "wb") as out:
+                out.write(data)
+        new_file, old_file = temporary
         for attempt in range(REPLACE_TRIES):
             _unchanged(path, planned)
             try:
-                os.replace(temporary, path)
-                return Edit(path, True, previous, made)
+                os.replace(new_file, path)
+                break
             except PermissionError as exc:
                 if attempt == REPLACE_TRIES - 1:
                     raise SurveyFileRefused("survey.yaml is open in another program or read-only, so it was not "
                                             "saved: close that program (or clear the read-only flag) and save "
                                             "again") from exc
                 time.sleep(REPLACE_WAIT_S)
+        try:
+            os.replace(old_file, previous)
+        except OSError:  # survey.yaml.previous is held open: the earlier text stays under its temporary name
+            previous = Path(old_file)
+        return Edit(path, True, previous, made)
     finally:
-        if os.path.exists(temporary):
-            os.remove(temporary)
+        for name in temporary:
+            if os.path.exists(name) and Path(name) != previous:
+                os.remove(name)
 
 
 def edit(path, *, sites: dict | None = None, add: dict | None = None, defaults: dict | None = None,

@@ -97,8 +97,14 @@ Usage:
 - after a write, survey.yaml.previous is not the old bytes, or a `*.tmp`
   file is left; with `os.replace` raising PermissionError twice the third
   try does not succeed; with survey.yaml read-only the commit is not refused
-  with the file intact and a message that names no temporary file, or
-  after the flag is cleared the next commit fails;
+  with the file intact and a message that names no temporary file, the
+  survey.yaml.previous of the save before it is replaced by that failed
+  save, or after the flag is cleared the next commit fails;
+- with survey.yaml.previous read-only the commit is not refused with both
+  files intact, no temporary file left and a message that says what to do;
+  or, with the move of the earlier text onto survey.yaml.previous failing
+  after the replace, the save is not written or the result does not name a
+  file beside it that holds the earlier text;
 - `commit` with a new text that also changes another site (a tampered
   text) does not refuse with the file untouched, or makes
   survey.yaml.previous, or its message does not say that the fault is in
@@ -116,9 +122,12 @@ returning no problem; (f) `NO_LEAN` emptied; (g) the burst exemption removed;
 switched off; (l) the lines of an edited entry other than the keys asked not
 compared; (m) a `NO_LEAN` key the site holds removed when asked equal to
 `defaults:`; (n) survey.yaml.previous made before the checks; (o) the
-re-read before the copy left out; (p) the line diff check, (q) the line
+re-read before the replace left out; (p) the line diff check, (q) the line
 ending check and (r) the read-back by `Survey.site` switched off; (s) a site
-refused before the edit refused again.
+refused before the edit refused again; (t) survey.yaml.previous written
+before the replace is tried; (u) the read-only test of survey.yaml.previous
+left out; (v) the earlier text deleted when it cannot be moved onto
+survey.yaml.previous.
 """
 
 from __future__ import annotations
@@ -722,10 +731,14 @@ def test_commit() -> None:
         result = exc
     finally:
         sf.os.replace = real_replace
-    check("os.replace refused twice: the third try writes", not isinstance(result, Exception) and result.written
-          and len(calls) == 3 and yaml.safe_load(read(path))["sites"]["S02"]["timing"] == "two", str(calls))
+    onto = [Path(b).name for b in calls]
+    check("os.replace refused twice: the third try writes, and only then the earlier text becomes "
+          "survey.yaml.previous", not isinstance(result, Exception) and result.written
+          and onto == ["survey.yaml"] * 3 + ["survey.yaml.previous"]
+          and yaml.safe_load(read(path))["sites"]["S02"]["timing"] == "two", str(onto))
 
     before = read(path)
+    earlier = previous.read_bytes()
     os.chmod(path, stat.S_IREAD)
     try:
         message = refused(lambda: sf.edit(path, sites={"S02": {"timing": "three"}}))
@@ -735,9 +748,42 @@ def test_commit() -> None:
     check("a read-only survey.yaml: refused with the file intact and a message that says what to do",
           message is not None and intact and "open in another program or read-only" in message
           and ".tmp" not in message, str(message))
+    check("a save that fails every try leaves the survey.yaml.previous of the save before it",
+          earlier != before.encode() and previous.read_bytes() == earlier,
+          f"as before the failed save {previous.read_bytes() == earlier}, now the unsaved file's own bytes "
+          f"{previous.read_bytes() == before.encode()}")
     result = sf.edit(path, sites={"S02": {"timing": "three"}})
     check("after the flag is cleared the next commit writes", result.written
           and yaml.safe_load(read(path))["sites"]["S02"]["timing"] == "three", "")
+
+    before, earlier = read(path), previous.read_bytes()
+    os.chmod(previous, stat.S_IREAD)
+    try:
+        message = refused(lambda: sf.edit(path, sites={"S02": {"timing": "four"}}))
+        intact = (read(path) == before and previous.read_bytes() == earlier
+                  and not list(path.parent.glob("*.tmp")))
+    finally:
+        os.chmod(previous, stat.S_IREAD | stat.S_IWRITE)
+    check("a read-only survey.yaml.previous: refused with both files intact and a message that says what to do",
+          message is not None and intact and "survey.yaml.previous is read-only" in message
+          and "clear its read-only flag or delete it" in message, str(message))
+
+    def held(a, b):
+        if str(b).endswith(".previous"):
+            raise PermissionError("held by another program")
+        real_replace(a, b)
+
+    sf.os.replace = held
+    try:
+        result = sf.edit(path, sites={"S02": {"timing": "four"}})
+    finally:
+        sf.os.replace = real_replace
+    kept = result.previous
+    check("the earlier text cannot be moved onto survey.yaml.previous: the save is written and the result names "
+          "a file beside it that holds the earlier text",
+          result.written and yaml.safe_load(read(path))["sites"]["S02"]["timing"] == "four" and kept is not None
+          and kept != previous and kept.parent == path.parent and kept.read_bytes() == before.encode()
+          and previous.read_bytes() == earlier, str(kept))
 
     path = put("tampered", LF)
     new, made, _ = sf.plan(LF, sites={"S01": {"timing": "x"}})
