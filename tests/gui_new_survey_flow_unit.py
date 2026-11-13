@@ -109,6 +109,11 @@ This test fails if:
   filtered variant for a site with declared filters; or the command it
   queues is anything but `<python> scripts/ingest_site.py <survey.yaml> S02
   --force`; or the status line does not report the finished job;
+- with S02L, S02D and S02SL derived from S02 and holding archives (and
+  S02X derived from it with none), the question of Rebuild archive and the
+  status line after a Save that changed S02's swap do not name S02L with
+  scripts/decimate_site.py at its rate, S02D with scripts/diagonal_site.py
+  and S02SL alone, or name S02X;
 - after the 40-site table is scrolled fully to the right, at the middle of
   its rows, after one row is made taller, and after a sort by latitude, the
   fixed site column is not at the left edge of the rows, on top, or shows
@@ -703,6 +708,31 @@ def test_rebuild(app, window, check) -> None:
     check("with no declared filters the question has no sentence on a variant",
           BOXES[-1][2] == "Rebuild the archive of S02 from its raw data? The present archive is replaced."
           if BOXES else False, str(BOXES))
+
+    # the derived sites of S02: their archives are made from S02's and keep the old samples after a rebuild
+    path.write_bytes(path.read_bytes() + b"  S02L:\n    derived_from: S02\n    sample_rate: 1.0\n"
+                                         b"  S02D:\n    derived_from: S02\n    sample_rate: 1000\n"
+                                         b"  S02SL:\n    derived_from: S02\n    sample_rate: 1.0\n"
+                                         b"  S02X:\n    derived_from: S02\n    sample_rate: 1.0\n")
+    for site in ("S02L", "S02D", "S02SL"):  # S02X has no archive
+        (mth5 / f"{site}.h5").write_bytes(b"")
+    window.open_survey(path)
+    pump(app)
+    state.set_site("S02")
+    BOXES.clear()
+    tab.rebuild_archive()
+    then = ("the derived sites of S02 keep the old samples until they are built again, after the rebuild: "
+            "S02L (python scripts/decimate_site.py survey.yaml S02 --rate 1), S02D (python scripts/diagonal_site.py "
+            "survey.yaml S02, with the --sign it was built with if one was given), S02SL")
+    check("the question of Rebuild archive names S02L, S02D and S02SL with the command for each kind, not S02X",
+          bool(BOXES) and BOXES[-1][2].endswith(f"replaced.\n\nThen {then}.") and "S02X" not in BOXES[-1][2],
+          str(BOXES[-1:]))
+    find(tab.table, "S02", "swap_e").setCheckState(Qt.Checked)
+    tab.save()
+    pump(app)
+    status = tab.status_label.text()
+    check("after a Save that changed S02's swap the status line names its derived sites and their commands",
+          then in status and "S02X" not in status, repr(status))
 
 
 def metadata_edit_job(label: str, argv: list[str]):

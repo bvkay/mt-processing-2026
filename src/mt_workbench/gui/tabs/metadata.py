@@ -211,6 +211,41 @@ def _swap_elsewhere(survey, name: str) -> str | None:
     return None
 
 
+def derived_rebuilds(survey, site: str, has_archive) -> str:
+    """Return the sentence naming the derived sites a rebuild of `site` leaves with the old samples, "" when none.
+
+    A derived site's archive is made from its parent's, so a rebuilt parent
+    leaves it as it was. Each derived site that has an archive is named with
+    the command that builds it again: ``<site>L`` by scripts/decimate_site.py
+    at its own rate, ``<site>D`` by scripts/diagonal_site.py; any other is
+    named alone.
+
+    Args:
+        survey: The open `Survey`.
+        site (str): The recorded site whose archive is rebuilt.
+        has_archive: Callable, site name -> whether it has an archive.
+
+    Returns:
+        str: The sentence, or "".
+    """
+    parts = []
+    for name in survey.site_names():
+        if survey.parent_of(name) != site or not has_archive(name):
+            continue
+        if name == f"{site}L":
+            parts.append(f"{name} (python scripts/decimate_site.py survey.yaml {site} --rate "
+                         f"{survey.sample_rate_of(name):g})")
+        elif name == f"{site}D":
+            parts.append(f"{name} (python scripts/diagonal_site.py survey.yaml {site}, with the --sign it was "
+                         f"built with if one was given)")
+        else:
+            parts.append(name)
+    if not parts:
+        return ""
+    return (f"the derived sites of {site} keep the old samples until they are built again, after the rebuild: "
+            f"{', '.join(parts)}")
+
+
 def _dc_level_item(survey_name: str, site: str, path) -> SortableItem:
     """Return the dc level cell of a site: each channel's recorded verdict and median in counts.
 
@@ -372,6 +407,7 @@ class MetadataTab(QWidget):
 
         self.name_label, self.data_root_label, self.workspace_label = (QLabel("-", self) for _ in range(3))
         self.count_label, self.status_label, self.warning_label = (QLabel("", self) for _ in range(3))
+        self.status_label.setWordWrap(True)  # a long message wraps instead of widening the window
         self.warning_label.setStyleSheet(f"color: {NOTICE_COLOUR}; font-weight: bold")
         self.warning_label.hide()
 
@@ -678,6 +714,8 @@ class MetadataTab(QWidget):
         stale = [s for s, values in edits.items() if set(values) & set(SWAPS) and self.state.has_archive(s)]
         rebuild = ([f"the archive of {', '.join(stale)} was built before the swap changed: select "
                     f"{'it' if len(stale) == 1 else 'each'} and press Rebuild archive"] if stale else [])
+        rebuild += [text for text in (derived_rebuilds(self.state.survey, s, self.state.has_archive) for s in stale)
+                    if text]
         self._status("; ".join([f"saved {n} value(s) for {len(edits)} site(s); the file as it was: "
                                 f"{result.previous.name}", *rebuild, *notes]), NOTICE_COLOUR if stale else None)
         return True
@@ -862,8 +900,10 @@ class MetadataTab(QWidget):
             return None
         variant = (" Its filtered variant is built again from the new archive too."
                    if self.state.survey.site(site).filters else "")
+        derived = derived_rebuilds(self.state.survey, site, self.state.has_archive)
+        derived = f"\n\nThen {derived}." if derived else ""
         if not metadata_edit.ask_yes_no(self, "Rebuild archive", f"Rebuild the archive of {site} from its raw data? "
-                                                                 f"The present archive is replaced.{variant}"):
+                                                                 f"The present archive is replaced.{variant}{derived}"):
             return None
         index = self.state.runner.run_now(f"{REBUILD} {site}", self.rebuild_command(site), station=site)
         self._status(f"rebuilding {site}.h5 ... (the log is in the console strip below)")
