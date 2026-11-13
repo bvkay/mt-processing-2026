@@ -110,7 +110,9 @@ appear in the table, and Reset queue calls `JobRunner.reset`. When a run
 finishes, the EDI and figure paths its output reports writing ("wrote
 <path>") that exist are added to the Products list, and "Show in View EDIs"
 shows the chosen EDI with its lemimt reference on the View EDIs tab.
-Comparison figures are listed only.
+Comparison figures are listed only. A finished tensor run adds its CSV, its
+sidecar, its h5 file and its figure, read from the four lines the script
+ends with; a tensor has no EDI, so "Show in View EDIs" is disabled on them.
 
 @author: ben kay (ben@auscope.org.au)
 

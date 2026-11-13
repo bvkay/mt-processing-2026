@@ -26,6 +26,12 @@ read from the output because a run's EDI and figure share a stem built from
 the local start time (`scripts/process_rr.run_stem`), which the argv alone
 does not determine.
 
+A tensor run (`scripts/process_intersite.py`) ends with one line per output,
+"csv: <path>", "json: <path>", "h5: <path>" and "figure: <path>". The four
+files of a finished tensor job are listed too, and kept in
+`ProductList.tensors`: a tensor has no EDI, so "Show in View EDIs" is
+disabled on those rows.
+
 @author: ben kay (ben@auscope.org.au)
 
 :license: MIT
@@ -51,6 +57,9 @@ STATUS_COLOURS = {RUNNING: WARN_COLOUR, DONE: OK_COLOUR, FAILED: BAD_COLOUR}
 # a script's "wrote <path>" line for an EDI or a figure; process_rr.py also logs
 # one for the sidecar JSON, which is not matched since View EDIs does not plot it
 WROTE_RE = re.compile(r"wrote\s+(\S.*\.(?:edi|png))\s*$", re.IGNORECASE)
+# the lines scripts/process_intersite.py ends a tensor run with, one per output
+TENSOR_SCRIPT = "process_intersite.py"
+TENSOR_RE = re.compile(r"^(?:csv|json|h5|figure):\s+(\S.*\.(?:csv|json|h5|png))\s*$", re.IGNORECASE)
 
 
 class QueueTable(QTableWidget):
@@ -147,10 +156,11 @@ class QueuePanel(QWidget):
 
 
 class ProductList(QWidget):
-    """List of the EDIs and figures the jobs wrote, read from their output.
+    """List of the EDIs, figures and tensor files the jobs wrote, read from their output.
 
     "Show in View EDIs" or a double-click emits `show_requested` with the
-    chosen path.
+    chosen path. Both do nothing on an output of a tensor run (`tensors`),
+    which the View EDIs tab cannot draw.
 
     Args:
         runner (JobRunner): The window's job runner.
@@ -164,27 +174,32 @@ class ProductList(QWidget):
         super().__init__(parent)
         self.runner, self.repo_root = runner, Path(repo_root)
         self.products: list[Path] = []
+        self.tensors: set[Path] = set()  # the outputs of tensor runs among `products`
         self.list = QListWidget(self)
         self.list.itemDoubleClicked.connect(lambda _item: self.show_product())
         self.show_button = QPushButton("Show in View EDIs", self, enabled=False)
         self.show_button.clicked.connect(self.show_product)
-        self.list.currentRowChanged.connect(
-            lambda row: self.show_button.setEnabled(0 <= row < len(self.products)))
+        self.list.currentRowChanged.connect(lambda _row: self.show_button.setEnabled(self._shown() is not None))
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(QLabel("Products (EDIs and figures written by these jobs)", self))
+        layout.addWidget(QLabel("Products (EDIs, figures and tensor files written by these jobs)", self))
         layout.addWidget(self.list, 1)
         layout.addWidget(self.show_button)
         runner.job_finished.connect(self._job_finished)
 
     def _job_finished(self, index: int, _ok: bool) -> None:
-        """Add every EDI or PNG a finished job reports writing."""
-        for line in self.runner.jobs[index].output:
-            match = WROTE_RE.search(line)
+        """Add every EDI or PNG a finished job reports writing, and the four outputs of a tensor run."""
+        job = self.runner.jobs[index]
+        tensor = any(Path(arg).name == TENSOR_SCRIPT for arg in job.argv[:2])
+        for line in job.output:
+            match = WROTE_RE.search(line) or (TENSOR_RE.match(line) if tensor else None)
             if not match:
                 continue
             path = Path(match.group(1).strip().strip("'\""))
-            self.add(path if path.is_absolute() else self.repo_root / path)
+            path = path if path.is_absolute() else self.repo_root / path
+            if tensor:
+                self.tensors.add(path)
+            self.add(path)
 
     def add(self, path: Path) -> None:
         """List a product path once, if the file exists, and select it."""
@@ -194,8 +209,15 @@ class ProductList(QWidget):
         self.list.addItem(str(path))
         self.list.setCurrentRow(len(self.products) - 1)
 
+    def _shown(self) -> Path | None:
+        """Return the selected product when View EDIs can show it: any row but an output of a tensor run."""
+        row = self.list.currentRow()
+        if 0 <= row < len(self.products) and self.products[row] not in self.tensors:
+            return self.products[row]
+        return None
+
     def show_product(self) -> None:
         """Emit `show_requested` for the selected product."""
-        row = self.list.currentRow()
-        if 0 <= row < len(self.products):
-            self.show_requested.emit(self.products[row])
+        path = self._shown()
+        if path is not None:
+            self.show_requested.emit(path)
