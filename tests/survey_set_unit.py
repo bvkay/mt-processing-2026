@@ -37,10 +37,14 @@ Usage:
   not refused with exit 2 and the file untouched;
 - `defaults azimuth_ey=91` without `--yes` writes anything, or does not print
   the sites that keep 90 (S02 and S03, not S01, which has its own 95);
+- that dry run prints more than the one line of the change and the line
+  that says it is a dry run (a line per site would read as done); or, over
+  fifteen sites that keep the old dipole length, the one line does not give
+  the count 15 and the first ten names;
 - `defaults azimuth_ey=91 --yes` does not write 91 into `defaults:` and 90
   into S02 and S03, leaves `Survey.site` of any site with another azimuth,
-  does not keep the old bytes in survey.yaml.previous, or does not print
-  where they are;
+  does not keep the old bytes in survey.yaml.previous, does not print
+  where they are, or does not print the line of each site it wrote into;
 - `--add S04 latitude=-31.3`, with a folder S04 under `data_root`, does not
   add the entry, or a site with no entry is not refused without `--add`;
 - `--add S05 latitude=-31.3`, with no folder S05 under `data_root` (a
@@ -54,7 +58,10 @@ Usage:
 The mutations this test catches, each made in a copy of the script: every
 value parsed with a bare ``yaml.safe_load`` (the `036` item fails); the
 folder of an added site not looked for (the S05 item fails); a derived or
-burst site asked for its folder too (the S02L and S02H items fail).
+burst site asked for its folder too (the S02L and S02H items fail); every
+summary line printed on a defaults dry run (the one-line items fail); the
+lines per site left out of a written defaults edit too (the last `--yes`
+item fails).
 """
 
 from __future__ import annotations
@@ -229,6 +236,19 @@ def test_defaults(script) -> None:
     check("defaults without --yes: exit 0 and nothing written", code == 0 and untouched(path), f"exit {code}")
     check("defaults without --yes names the sites that keep 90 (S02, S03, not S01)",
           "S02" in named and "S03" in named and "S01" not in named and "90" in named, out.strip()[:300])
+    printed = out.strip().splitlines()
+    check("defaults without --yes prints the line of the change and the dry-run line, and no line per site",
+          len(printed) == 2 and printed[0].startswith("defaults azimuth_ey: 90.0 -> 91.0; 2 site(s) keep 90.0")
+          and printed[1].startswith("dry run: nothing written"), str(printed)[:400])
+    many = TEXT + "".join(f"  T{k:02d}:\n    latitude: -32.0\n" for k in range(1, 13))
+    path = put("defaults_many", many)
+    code, out = run(script, path, "defaults", "dipole_length_ex=45")
+    printed = out.strip().splitlines()
+    first = printed[0] if printed else ""
+    check("a dry run over 15 sites that keep 50: one line with the count and the first ten names",
+          code == 0 and len(printed) == 2 and path.read_bytes() == many.encode("utf-8")
+          and first == ("defaults dipole_length_ex: 50.0 -> 45.0; 15 site(s) keep 50.0 in their own entry: "
+                        "S01, S02, S03, T01, T02, T03, T04, T05, T06, T07 ..."), str(printed)[:400])
 
     path = put("defaults_yes")
     code, out = run(script, path, "defaults", "azimuth_ey=91", "--yes")
@@ -246,6 +266,9 @@ def test_defaults(script) -> None:
     check("survey.yaml.previous holds the old bytes and is printed",
           previous.exists() and previous.read_bytes() == TEXT.encode("utf-8") and "survey.yaml.previous" in out,
           out.strip()[-200:])
+    printed = out.strip().splitlines()
+    check("defaults --yes prints the line of each site it wrote into",
+          "S02: azimuth_ey 90.0" in printed and "S03: azimuth_ey 90.0" in printed, str(printed)[:400])
 
 
 def test_add(script) -> None:

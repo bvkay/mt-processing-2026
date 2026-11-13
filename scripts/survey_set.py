@@ -18,7 +18,8 @@ list such as `[hy]`. `key=` with nothing after `=` removes the key. A key
 that is not a site key of survey.yaml is refused.
 
 A `defaults` edit changes what every site without its own key takes, so it
-is a dry run that prints the sites it reaches unless `--yes` is given. A
+is a dry run unless `--yes` is given; the dry run prints one line per key,
+with the number of sites it reaches and the first ten of them. A
 change of a usual dipole length or azimuth writes the old value into each
 site that took it, so no site's dipoles move.
 
@@ -154,8 +155,12 @@ def main(argv=None) -> int:
     except survey_file.SurveyFileRefused as exc:
         print(f"ERROR {exc}", file=sys.stderr)
         return 2
+    # on a dry run the line of each site that would keep the old value is left out: it reads as done,
+    # and the line of the defaults key already gives their count and the first ten names
+    per_site = tuple(f"{site}: " for site in result.made["sites"]) if dry_run else ()
     for line in result.summary:
-        print(line)
+        if not line.startswith(per_site):
+            print(line)
     if not any(result.made.values()):
         print(f"nothing to change: {path.name} already reads as asked")
     elif dry_run:
