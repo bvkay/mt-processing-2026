@@ -394,8 +394,18 @@ def _edit_entry(lines, head, stop, changes, nl, key_indent, name, label, summary
     return out
 
 
-def _site_line(head: str, changes: dict) -> str:
-    return head + ", ".join(f"{k} removed" if v is REMOVE else f"{k} {_text(v)}" for k, v in changes.items())
+def _site_line(head: str, changes: dict, takes: dict | None = None) -> str:
+    """One summary line; a removed key in `takes` names the value the site now reads from `defaults:`."""
+    takes = takes or {}
+    parts = []
+    for k, v in changes.items():
+        if v is not REMOVE:
+            parts.append(f"{k} {_text(v)}")
+        elif k in takes:
+            parts.append(f"{k} removed (takes {_text(takes[k])} from defaults:)")
+        else:
+            parts.append(f"{k} removed")
+    return head + ", ".join(parts)
 
 
 def _names(sites: list) -> str:
@@ -537,7 +547,11 @@ def plan(text: str, *, sites: dict | None = None, add: dict | None = None,
             done[name] = changes
         for name in sorted(done, key=lambda s: places[s][0]):
             made["sites"][name] = done[name]
-            summary.append(_site_line(f"{name}: ", done[name]))
+            own = entries.get(name) or {}
+            # NO_LEAN keys, and some keys of a burst entry, are read from the entry alone: no value from defaults:
+            takes = {} if "bursts_of" in own else {k: new_defaults[k] for k in done[name] if k in new_defaults
+                                                   and k not in NO_LEAN}
+            summary.append(_site_line(f"{name}: ", done[name], takes))
 
     for name, values in (add or {}).items():
         block = _block(lines, "sites")

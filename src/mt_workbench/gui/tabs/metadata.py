@@ -435,7 +435,8 @@ class MetadataTab(QWidget):
             self._status(f"nothing written: {path.name} already reads as the table")
             return False
         n = sum(len(v) for v in edits.values())
-        notes = [line for line in result.summary if line.endswith("check it")]  # a comment left above a removed key
+        # every summary line, so a removed key and the value the site now takes are seen
+        notes = result.summary[:5] + ([f"and {len(result.summary) - 5} more"] if len(result.summary) > 5 else [])
         self._status("; ".join([f"saved {n} value(s) for {len(edits)} site(s); the file as it was: "
                                 f"{result.previous.name}", *notes]))
         return True

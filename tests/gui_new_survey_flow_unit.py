@@ -18,7 +18,9 @@ This test fails if:
   the bytes before the Save, does not give the new value through
   `Survey.site`, or does not name the earlier copy in the status line;
 - the same cell typed equal to the `defaults:` value (50) does not remove
-  S02's own key on Save, with that one line the only change;
+  S02's own key on Save, with that one line the only change; or the status
+  line, after it and after an emptied cell, does not say that the key was
+  removed and that S02 takes 50.0 from `defaults:`;
 - a cell of the S03 row (a folder with no entry) can be edited, is not
   greyed, or lacks the "no entry yet" tooltip; or the S01 and S02 rows lose
   their editable cells;
@@ -30,9 +32,10 @@ This test fails if:
   it does not write those two values into S01's entry alone, S03 still
   without an entry and the comments as they were.
 
-Mutation that must make it fail: Save put back on a rewrite of the whole
+Mutations that must make it fail: Save put back on a rewrite of the whole
 `sites:` block with `yaml.safe_dump`, as before the writer (the comments
-are lost and no survey.yaml.previous is made).
+are lost and no survey.yaml.previous is made); the status line given only
+the summary lines that end in "check it" (a removal is not shown).
 
 Usage:
     QT_QPA_PLATFORM=offscreen python tests/gui_new_survey_flow_unit.py
@@ -155,7 +158,7 @@ def changes(before: bytes, after: bytes) -> list[tuple[list[str], list[str]]]:
 
 
 def main() -> int:
-    print(__doc__.split("This test fails if:")[1].split("Mutation that")[0].strip())
+    print(__doc__.split("This test fails if:")[1].split("Mutations that")[0].strip())
     print()
     app = QApplication.instance() or QApplication(sys.argv)
     window = MainWindow()
@@ -228,6 +231,22 @@ def main() -> int:
           saved is True and diff == [(["    dipole_length_ex: 45.0\n"], [])], f"save() {saved}, changes {diff}")
     value = Survey.from_yaml(path).site("S02").dipole_length_ex
     check("S02 then reads the default", value == 50.0, f"S02 dipole_length_ex {value}")
+    status = tab.status_label.text()
+    check("the status line says the key was removed and what the site now reads",
+          "S02: dipole_length_ex removed (takes 50.0 from defaults:)" in status, repr(status))
+
+    # an emptied cell removes the site's own key, and the status line says what the site now reads
+    cell("S02", "dipole_length_ex").setText("44")
+    tab.save()
+    pump(app)
+    cell("S02", "dipole_length_ex").setText("")
+    saved = tab.save()
+    pump(app)
+    status = tab.status_label.text()
+    value = Survey.from_yaml(path).site("S02").dipole_length_ex
+    check("an emptied cell removes the key and the status line says the site takes 50.0",
+          saved is True and value == 50.0 and "S02: dipole_length_ex removed (takes 50.0 from defaults:)" in status,
+          f"save() {saved}, S02 dipole_length_ex {value}, status {status!r}")
 
     # Import site table through merge_table_row
     csv_path = SCRATCH / "flow" / "table.csv"
