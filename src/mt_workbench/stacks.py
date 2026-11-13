@@ -1235,8 +1235,8 @@ def _pair_refusal(survey, local: str, base: str, kind: str, remote: str, start, 
             return f"{who} has no entry in survey.yaml: add it there, or choose another site"
     bursts = [who for who, site, _channels in three if survey.bursts_parent(site)]
     if bursts and len(bursts) < len(three):
-        return (f"burst sites and continuous sites do not go in one run (the burst sites: {', '.join(bursts)}): "
-                f"choose three burst sites, or three continuous ones")
+        return (f"bursts ({', '.join(bursts)}) and continuous records do not go in one run: choose three burst "
+                f"sites, or three continuous ones")
     rate = survey.sample_rate_of(local)
     for who, site, _channels in three[1:]:
         if survey.sample_rate_of(site) != rate:
