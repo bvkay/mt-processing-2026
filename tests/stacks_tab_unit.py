@@ -34,7 +34,7 @@ Usage:
 
 1.  the tab titles are not, in order, Metadata, Time Series, Spectra,
     Spectrogram, Coherence, Filter Data, Cross-powers, Stacks, Process, View
-    EDIs, or `window.tabs.widget(7)` is not `window.stacks_tab`;
+    EDIs, View tensors, or `window.tabs.widget(7)` is not `window.stacks_tab`;
 2.  once the chart's reads finish (STK_H, local L), the chart does not hold
     one row per survey.yaml site, or any row's member flag or reason differs
     from `stacks.resolve_members` with its default h5py reads for the same
@@ -177,7 +177,7 @@ N = int(4200 * FS)  # 70 min: a window of whole hours then ends inside every rec
 T0 = pd.Timestamp("2024-03-01T00:00:00", tz="UTC")
 SITES = ("L", "M1", "M2", "M3", "M4", "P", "Q", "R")
 EXPECTED_TABS = ["Metadata", "Time Series", "Spectra", "Spectrogram", "Coherence", "Filter Data", "Cross-powers",
-                 "Stacks", "Process", "View EDIs"]
+                 "Stacks", "Process", "View EDIs", "View tensors"]
 # this tree and the main tree (the folder holding .git as a folder, not a worktree's .git file)
 TREES = [REPO] + [p for p in REPO.parents if (p / ".git").is_dir()][:1]
 REAL_SURVEYS = [tree / "surveys" / name for tree in TREES

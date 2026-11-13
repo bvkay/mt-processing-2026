@@ -35,7 +35,7 @@ Usage:
 
 (1)  the window cannot be built, or its tabs are not, in order, Metadata, Time
      Series, Spectra, Spectrogram, Coherence, Filter Data, Cross-powers,
-     Stacks, Process, View EDIs; or the Metadata table does not show 61 sites
+     Stacks, Process, View EDIs, View tensors; or the Metadata table does not show 61 sites
      with a `remote` column reading E08 for D02, and a `channels` column
      reading "Ex Ey Bx By" (the survey default [ex, ey, hx, hy] as its
      preset's label) for D02 and for A07 (both archived, so both cells drawn
@@ -796,7 +796,7 @@ MAINS = [50.0 * k for k in range(1, 11)]  # to Nyquist at 1000 Hz
 Y_EXTENT_HZ = (0.003, 400.0)  # below the anti-alias roll-off, psd_qc.py's rule
 WINDOW_MIN = 120.0  # the QC window in minutes, the Spectrogram and Coherence x unit
 EXPECTED_TABS = ["Metadata", "Time Series", "Spectra", "Spectrogram", "Coherence",
-                 "Filter Data", "Cross-powers", "Stacks", "Process", "View EDIs"]
+                 "Filter Data", "Cross-powers", "Stacks", "Process", "View EDIs", "View tensors"]
 WINDOW_SAMPLES = 7_200_000
 WINDOW_INDEX = 3  # the fourth window of D02
 N_WINDOWS_D02 = 21

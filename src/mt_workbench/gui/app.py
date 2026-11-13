@@ -44,9 +44,9 @@ that builds it, carry on.
 `request_qc()` asks the store for the selection with the current remote and
 window ladder.
 
-`MainWindow` is a QTabWidget over ten tabs in this order (QC
+`MainWindow` is a QTabWidget over eleven tabs in this order (QC
 first: Metadata, Time Series, Spectra, Spectrogram, Coherence; then Filter
-Data, Cross-powers, Stacks, Process, View EDIs), with a status bar, a File menu and,
+Data, Cross-powers, Stacks, Process, View EDIs, View tensors), with a status bar, a File menu and,
 below the tabs in a vertical `QSplitter`, the `console.ConsoleStrip` showing
 the runner's log, loguru output and `qc_started` messages. The Stacks tab
 hands its work to the Process tab: Build archive queues through
@@ -446,6 +446,7 @@ class MainWindow(QMainWindow):
         from mt_workbench.gui.tabs.spectra import SpectraTab
         from mt_workbench.gui.tabs.spectrogram import SpectrogramTab
         from mt_workbench.gui.tabs.stacks import StacksTab
+        from mt_workbench.gui.tabs.tensors import TensorTab
         from mt_workbench.gui.tabs.timeseries import TimeSeriesTab
 
         self.setWindowTitle("mt-workbench")
@@ -462,9 +463,10 @@ class MainWindow(QMainWindow):
         self.coherence_tab = CoherenceTab(self.state, self)
         self.filters_tab = FiltersTab(self.state, self)
         self.edis_tab = EdiTab(self.state, self)
+        self.tensors_tab = TensorTab(self.state, self)
         self.crosspower_tab = CrossPowerTab(self.state, self)
         self.stacks_tab = StacksTab(self.state, self)
-        # tab order: QC tabs, then filters, then processing, then EDIs
+        # tab order: QC tabs, then filters, then processing, then EDIs, then the inter-site tensors
         self.tabs.addTab(self.metadata_tab, "Metadata")
         self.tabs.addTab(self.timeseries_tab, "Time Series")
         self.tabs.addTab(self.spectra_tab, "Spectra")
@@ -475,6 +477,7 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.stacks_tab, "Stacks")
         self.tabs.addTab(self.process_tab, "Process")
         self.tabs.addTab(self.edis_tab, "View EDIs")
+        self.tabs.addTab(self.tensors_tab, "View tensors")
 
         self.metadata_tab.open_requested.connect(self.choose_survey)
         self.timeseries_tab.processing_window_selected.connect(self.use_processing_window)
@@ -608,7 +611,7 @@ class MainWindow(QMainWindow):
         """Call `reload()` on every tab."""
         for tab in (self.metadata_tab, self.timeseries_tab, self.spectra_tab, self.spectrogram_tab,
                     self.coherence_tab, self.filters_tab, self.process_tab, self.crosspower_tab, self.stacks_tab,
-                    self.edis_tab):
+                    self.edis_tab, self.tensors_tab):
             tab.reload()
 
     def use_processing_window(self, start: str, end: str) -> None:
