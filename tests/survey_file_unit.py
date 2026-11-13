@@ -88,6 +88,10 @@ Usage:
   (the closest entries for a mistyped name) and, for the shapes a student
   fixes by hand, what to do; or another entry of the file with the flow
   entry cannot be edited;
+- a value that `Survey.site` refuses (`rot_h: abc`) is written or leaves
+  survey.yaml.previous, or its message does not say that the survey would
+  no longer read the site; or a site that `Survey.site` refused before the
+  edit cannot be edited;
 - after a write, survey.yaml.previous is not the old bytes, or a `*.tmp`
   file is left; with `os.replace` raising PermissionError twice the third
   try does not succeed; with survey.yaml read-only the commit is not refused
@@ -667,6 +671,17 @@ def test_refused_shapes() -> None:
     sf.edit(path, sites={"S02": {"latitude": 2.0}})
     check("another entry of the file with a flow entry is edited",
           yaml.safe_load(read(path))["sites"]["S02"] == {"latitude": 2.0}, "")
+
+    path = put("read_back", LF)
+    message = refused(lambda: sf.edit(path, sites={"S01": {"rot_h": "abc"}}))
+    check("a value Survey.site refuses (rot_h: abc) is refused, the file as it was and no earlier copy",
+          message is not None and "the survey would no longer read site S01" in message and read(path) == LF
+          and not (path.parent / "survey.yaml.previous").exists(), str(message))
+    already = LF.replace("    serial: '036'\n", "    serial: '036'\n    rot_h: abc\n")
+    path = put("read_back_before", already)
+    message = refused(lambda: sf.edit(path, sites={"S01": {"latitude": -31.5}}))
+    check("a site Survey.site refused before the edit is still edited",
+          message is None and yaml.safe_load(read(path))["sites"]["S01"]["latitude"] == -31.5, str(message))
 
 
 def test_commit() -> None:
