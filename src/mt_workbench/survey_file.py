@@ -737,8 +737,9 @@ def check(old: str, new: str, made: dict) -> list[str]:
     list; every line removed, changed or inserted lies inside an
     edited entry or the defaults block, or at the point where a new entry
     or block goes; inside an edited entry or `defaults:`, every line that
-    is not a line of a key asked stays as it was; every line keeps the file's ending; and `Survey.site`
-    reads every site the edit reaches unless it was refused before.
+    is not a line of a key asked stays as it was; every line keeps the
+    file's ending; and `Survey.site` reads every site the edit reaches
+    unless it was refused before.
 
     Args:
         old (str): The file as read.
