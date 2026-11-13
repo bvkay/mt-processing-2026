@@ -67,6 +67,8 @@ Usage:
   or of the new entry at the point of an add) is not refused by `check`;
 - a line of an entry that is not edited, rewritten to the same value in a
   new text, is not refused by the line diff;
+- the new line of a CRLF file written with LF in a new text is not refused
+  by the line ending check;
 - `elevation: true` written in place of 1.0 is not refused by `check` (a value
   `Survey.site` accepts, so only the typed comparison can refuse it);
 - removing the last key of an entry is not refused; the bare header `S09`
@@ -597,6 +599,12 @@ def test_tampered() -> None:
     problems = sf.check(LF, outside_edit, made)
     check("a line of an entry not edited rewritten to the same value: refused by the line diff",
           outside_edit != new and any("would change outside the edit" in p for p in problems), str(problems))
+    crlf = LF.replace("\n", "\r\n")
+    new_crlf, made_crlf, _ = sf.plan(crlf, sites={"S01": {"timing": "x"}})
+    lf_line = new_crlf.replace("    timing: x\r\n", "    timing: x\n")
+    problems = sf.check(crlf, lf_line, made_crlf)
+    check("the new line of a CRLF file written with LF: refused by the line ending check",
+          lf_line != new_crlf and any("would change its line ending" in p for p in problems), str(problems))
 
     new, made, _ = sf.plan(LF, sites={"S01": {"dipole_length_ex": 53.5}})
     retold = new.replace("53.5  # taped", "53.5  # taped twice")
