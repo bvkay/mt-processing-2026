@@ -241,6 +241,41 @@ def merge_table_row(entry: dict, row: dict) -> tuple[dict, list[str]]:
         values[key] = value
     return values, disagreements
 
+
+# A survey's name is its folder under surveys/ and its id in the archives. mth5's channel and run
+# summaries keep 30 characters of the id (docs/upstream_issues.md 550) in an ASCII field, and mt_metadata
+# takes letters, digits, "_", "-" and the space in a survey id; the space is left out here, as in a
+# folder name.
+SURVEY_NAME_MAX = 30
+SURVEY_NAME_PATTERN = re.compile(r"[A-Za-z0-9_-]+")
+
+
+def check_survey_name(name: str) -> None:
+    """Refuse a name that a new survey cannot take.
+
+    Run when a survey is made (scripts/new_survey.py at its first run, and
+    the New survey form), never when one is opened: a survey made before
+    this check keeps its name.
+
+    Args:
+        name (str): The survey name.
+
+    Raises:
+        ValueError: If the name is empty, longer than `SURVEY_NAME_MAX`
+            characters, or holds a character other than a letter, a digit,
+            "_" or "-"; the message says what to choose.
+    """
+    if not name or not name.strip():
+        raise ValueError("survey name is empty: give the survey a name")
+    if len(name) > SURVEY_NAME_MAX:
+        raise ValueError(f"survey name has {len(name)} characters: {SURVEY_NAME_MAX} at most; choose a shorter "
+                         f"name (mth5 keeps {SURVEY_NAME_MAX} in its summaries, docs/upstream_issues.md 550)")
+    if not SURVEY_NAME_PATTERN.fullmatch(name):
+        raise ValueError(f"survey name {name!r} holds characters other than letters, digits, _ and -: choose "
+                         f"another name (mt_metadata refuses them in a survey id, and mth5's summary field "
+                         f"holds ASCII only)")
+
+
 # Channel sets a survey may declare, per instrument, in the names ingest
 # stores: mt_io.lemi.lemi423 reads the B423 columns Bx By Bz Ex Ey as
 # hx hy hz ex ey; mt_io.lemi.lemi424 reads Bx By Bz E1 E2 E3 E4 as bx by bz e1

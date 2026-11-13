@@ -32,12 +32,16 @@ This test fails if:
   of the S03 row or does not name S03 as a site with no entry; does not
   count one matched site as in the file and one changed; or the Save after
   it does not write those two values into S01's entry alone, S03 still
-  without an entry and the comments as they were.
+  without an entry and the comments as they were;
+- the New survey form, given a survey name of 31 characters, is accepted,
+  or does not show the message of `mt_workbench.survey.check_survey_name`
+  in one warning box; or a name of 30 characters is not accepted.
 
 Mutations that must make it fail: Save put back on a rewrite of the whole
 `sites:` block with `yaml.safe_dump`, as before the writer (the comments
 are lost and no survey.yaml.previous is made); the status line given only
-the summary lines that end in "check it" (a removal is not shown).
+the summary lines that end in "check it" (a removal is not shown); the form
+accepted without the check of the name.
 
 Usage:
     QT_QPA_PLATFORM=offscreen python tests/gui_new_survey_flow_unit.py
@@ -60,17 +64,18 @@ if os.environ.get("QT_QPA_PLATFORM") == "offscreen" and sys.platform == "win32":
     os.environ.setdefault("QT_QPA_FONTDIR", r"C:\Windows\Fonts")
 
 from PySide6.QtCore import Qt  # noqa: E402
-from PySide6.QtWidgets import QApplication, QMessageBox  # noqa: E402
+from PySide6.QtWidgets import QApplication, QDialog, QMessageBox  # noqa: E402
 
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "src"))
 sys.path.insert(0, str(REPO / "tests"))
 
+from mt_workbench.gui import metadata_edit  # noqa: E402
 from mt_workbench.gui.app import MainWindow  # noqa: E402
 from mt_workbench.gui.jobs import JobRunner  # noqa: E402
 from mt_workbench.gui.tabs.metadata import COLUMNS, NO_ENTRY_TIP  # noqa: E402
 from mt_workbench.gui.theme import DISABLED  # noqa: E402
-from mt_workbench.survey import Survey  # noqa: E402
+from mt_workbench.survey import Survey, check_survey_name  # noqa: E402
 from mt_workbench.survey_file import comment_texts  # noqa: E402
 from _scratch import scratch_dir  # noqa: E402
 
@@ -298,6 +303,25 @@ def main() -> int:
     check("the comments are as they were", comment_texts(after.decode("utf-8")) == comment_texts(SURVEY_TEXT),
           f"comments {comment_texts(after.decode('utf-8'))}")
     check("no box was shown", BOXES == [], f"boxes {BOXES}")
+
+    # the New survey form refuses a name a new survey cannot take, and stays open
+    try:
+        check_survey_name("n" * 31)
+        refusal = None
+    except ValueError as exc:
+        refusal = str(exc)
+    dialog = metadata_edit.NewSurveyDialog(SCRATCH / "flow" / "surveys", window)
+    dialog.folder_edit.setText(str(SCRATCH / "flow" / "raw"))
+    dialog.name_edit.setText("n" * 31)
+    dialog._accept()
+    check("the New survey form with a 31-character name stays open and shows the library's message",
+          dialog.result() != QDialog.Accepted and refusal is not None and "31 characters: 30 at most" in refusal
+          and BOXES == [("warning", "New survey", refusal)], f"result {dialog.result()}, boxes {BOXES}")
+    dialog.name_edit.setText("n" * 30)
+    dialog._accept()
+    check("the New survey form with a 30-character name is accepted with no further box",
+          dialog.result() == QDialog.Accepted and len(BOXES) == 1, f"result {dialog.result()}, boxes {BOXES}")
+    BOXES.clear()
 
     window.close()
     print()

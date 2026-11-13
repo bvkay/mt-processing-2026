@@ -30,7 +30,8 @@ from PySide6.QtWidgets import (
 )
 
 from mt_workbench.survey import (
-    CHANNEL_PRESETS, INSTRUMENTS as SURVEY_INSTRUMENTS, SITE_TABLE_COLUMNS, Survey, default_preset,
+    CHANNEL_PRESETS, INSTRUMENTS as SURVEY_INSTRUMENTS, SITE_TABLE_COLUMNS, Survey, check_survey_name,
+    default_preset,
 )
 from mt_workbench.gui.channels_column import UNCHANGED
 from mt_workbench.gui.theme import DISABLED
@@ -269,13 +270,26 @@ class NewSurveyDialog(QDialog):
         self.out_label.setText(f"writes {self.out_path()}" if name else "")
 
     def _accept(self) -> None:
-        """Accept when the data folder exists and a name is given; otherwise warn."""
+        """Accept when the data folder exists and the name can be a new survey's; otherwise warn.
+
+        A name `mt_workbench.survey.check_survey_name` refuses is shown with
+        its message and the form stays open. A survey that exists keeps its
+        name: `start_new_survey` then says what to do with it.
+        """
+        name = self.name_edit.text().strip()
         if not Path(self.folder_edit.text().strip()).is_dir():
             QMessageBox.warning(self, "New survey", "Pick the folder that holds the site folders.")
-        elif not self.name_edit.text().strip():
+            return
+        if not name:
             QMessageBox.warning(self, "New survey", "Give the survey a name.")
-        else:
-            self.accept()
+            return
+        if not self.out_path().exists():
+            try:
+                check_survey_name(name)
+            except ValueError as exc:
+                QMessageBox.warning(self, "New survey", str(exc))
+                return
+        self.accept()
 
     def values(self) -> dict:
         """Return the dialog's values; empty optional fields are None."""

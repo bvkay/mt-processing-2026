@@ -111,6 +111,22 @@ an EDL, EGFLP02, cut into the scratch folder). **This test fails if**
      value, or the flag over part 1's LEMI-423-only root, does not stop the
      script (exit 2) before it writes anything.
 
+Part 4, the name of a new survey, on part 1's data root and on a folder with
+no site in it. **This test fails if**
+
+(15) at a first run a name of 31 characters, a name with a space or a name
+     with an accent is not refused with exit 2 and a message that says what
+     to choose, over a data root with no site folder (where a name read
+     after the folders would exit 1), or the refused run makes the folder of
+     the survey.yaml; a name of 30 characters is refused; or
+     `check_survey_name` accepts an empty name, a dot, a slash or a space,
+     or refuses letters, digits, "_" and "-".
+
+The mutations part 4 catches, each made in a copy of the code: `>` written
+as `>=` in `check_survey_name` (the 30-character item of (15) fails); the
+name checked after the site folders are looked for (the first item of (15)
+exits 1).
+
 Part 2, the real-data check: the script run over the Curnamona Cube raw data
 (E:, read only) into the scratch folder must give D02 and E08 latitudes and
 longitudes within 0.001 degree of surveys/curnamona_cube/survey.yaml (the
@@ -520,6 +536,41 @@ def test_edl_electric_gain() -> None:
           f"LEMI-423-only root refused (exit 2), nothing written")
 
 
+def test_survey_name() -> None:
+    """Run check (15): the name of a new survey is checked before any folder is read."""
+    from mt_workbench.survey import check_survey_name
+
+    no_sites = SCRATCH / "name_no_sites"
+    no_sites.mkdir(exist_ok=True)
+    out = SCRATCH / "name_refused" / "survey.yaml"
+    shutil.rmtree(out.parent, ignore_errors=True)
+    letters = "holds characters other than letters, digits, _ and -: choose another name"
+    accent = chr(233)  # an e with an acute accent, by its code point
+    for name, fragment in (("n" * 31, "survey name has 31 characters: 30 at most; choose a shorter name"),
+                           ("my survey", letters), (f"Maroc_T{accent}n{accent}r{accent}", letters)):
+        done = run(no_sites, "--name", name, "--out", out)
+        assert done.returncode == 2, (name, done.returncode, done.stdout, done.stderr)
+        assert fragment in done.stdout, (name, done.stdout)
+        assert not out.parent.exists(), f"{name}: the refused run made {out.parent}"
+    root = SCRATCH / "raw"
+    build_data_root(root)
+    out = SCRATCH / "name_30" / "survey.yaml"
+    shutil.rmtree(out.parent, ignore_errors=True)
+    done = run(root, "--name", "n" * 30, "--out", out)
+    assert done.returncode == 0, (done.returncode, done.stdout, done.stderr)
+    assert yaml.safe_load(out.read_text(encoding="utf-8"))["name"] == "n" * 30
+    for good in ("n" * 30, "A-b_9"):
+        check_survey_name(good)
+    for bad in ("", " ", "n" * 31, "a.b", "a/b", "a b", accent):
+        try:
+            check_survey_name(bad)
+        except ValueError:
+            continue
+        raise AssertionError(f"check_survey_name accepted {bad!r}")
+    print("(15) names of 31 characters, with a space and with an accent refused (exit 2) before any folder is "
+          "read, nothing made; a name of 30 characters accepted")
+
+
 def part2() -> None:
     """Run part 2, the real-data check on the Curnamona Cube raw data; skipped when E: is not mounted."""
     if not CURNAMONA_RAW.is_dir():
@@ -555,6 +606,10 @@ def main() -> int:
     part3()
     test_edl_broadband_sensor_type()
     test_edl_electric_gain()
+    print()
+    print(__doc__.split("**This test fails if**")[3].split("Part 2, the real-data check:")[0].strip())
+    print()
+    test_survey_name()
     part2()
     print("\nPASS  new_survey_unit")
     return 0

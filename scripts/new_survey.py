@@ -28,7 +28,9 @@ first file can run to more than 100 MB); the bounded read takes milliseconds.
 The recorded span is that of the file-name epochs, first to last plus the
 median spacing, as the GUI's window bar reads it.
 
-The script writes surveys/<name>/survey.yaml (or --out) with the survey's
+The name of a new survey is checked before any folder is read
+(`mt_workbench.survey.check_survey_name`: 30 characters at most, of letters,
+digits, _ and -). The script writes surveys/<name>/survey.yaml (or --out) with the survey's
 name, instrument, sample_rate (the most common across sites; a warning names
 any site that differs), data_root, workspace, timezone and `generated_by:
 scripts/new_survey.py`; a `defaults:` block and a `processing:` block; and a
@@ -130,7 +132,8 @@ from mt_io.lemi.lemi423 import Read_Lemi_Data, Read_Lemi_Header
 from mt_workbench.ingest import select_files
 from mt_workbench.instruments import INSTRUMENTS, header_facts, record_files, span
 from mt_workbench.survey import (
-    CHANNEL_PRESETS, Survey, channels_from_label, default_preset, merge_table_row, preset_label, read_site_table,
+    CHANNEL_PRESETS, Survey, channels_from_label, check_survey_name, default_preset, merge_table_row, preset_label,
+    read_site_table,
 )
 
 REPO = Path(__file__).resolve().parents[1]
@@ -500,7 +503,8 @@ def main(argv=None) -> int:
 
     Returns:
         int: 0 on success, 1 when no site folder is found, 2 when the
-        survey.yaml exists and --force was not given.
+        survey.yaml exists and --force was not given, or when the name of
+        a new survey is refused.
     """
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("data_root", help="the folder holding one subfolder per site")
@@ -527,6 +531,12 @@ def main(argv=None) -> int:
     workspace = Path(args.workspace).resolve() if args.workspace else data_root / "work"
     out = Path(args.out) if args.out else REPO / "surveys" / args.name / "survey.yaml"
     out = out.resolve()
+    if not out.exists():  # a new survey: its name is checked before any folder is read
+        try:
+            check_survey_name(args.name)
+        except ValueError as exc:
+            print(f"ERROR {exc}")
+            return 2
     calibration = Path(args.calibration)
     try:
         pd.Timestamp.now(tz=args.timezone)
