@@ -296,7 +296,10 @@ class FrozenSiteColumn(QTableView):
     table's first column and kept in step with its vertical scrolling, row
     heights, column width and sort order. The rows, their order, the
     selection and the edits are the table's own, so the two views cannot
-    disagree on them. A click on its header sorts the table by that column.
+    disagree on them. A click on its header sorts the table by that column,
+    and a drag of its header edge widens the column in both views. The table
+    scrolls by pixel, and a cell made current, by a click or the keyboard,
+    is scrolled out from under the view.
 
     Args:
         table (QTableWidget): The table; this view becomes its child.
@@ -318,14 +321,17 @@ class FrozenSiteColumn(QTableView):
         self.setVerticalScrollMode(table.verticalScrollMode())
         self.verticalHeader().hide()
         self.verticalHeader().setDefaultSectionSize(table.verticalHeader().defaultSectionSize())
-        self.horizontalHeader().setSectionResizeMode(QHeaderView.Fixed)
+        self.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)  # its edge widens the site column
         self.horizontalHeader().setSectionsClickable(True)
         self.horizontalHeader().setSortIndicatorShown(True)
         for column in range(1, table.columnCount()):
             self.setColumnHidden(column, True)
         table.viewport().stackUnder(self)
 
+        table.setHorizontalScrollMode(QAbstractItemView.ScrollPerPixel)  # no column starts half under this view
         table.horizontalHeader().sectionResized.connect(self._column_resized)
+        self.horizontalHeader().sectionResized.connect(self._dragged)
+        table.selectionModel().currentChanged.connect(self._keep_clear)
         table.verticalHeader().sectionResized.connect(lambda row, _old, new: self.setRowHeight(row, new))
         table.verticalScrollBar().valueChanged.connect(self.verticalScrollBar().setValue)
         self.verticalScrollBar().valueChanged.connect(table.verticalScrollBar().setValue)
@@ -348,6 +354,20 @@ class FrozenSiteColumn(QTableView):
         """Follow a new width of the table's first column."""
         if column == 0:
             self.place()
+
+    def _dragged(self, column: int, _old: int, new: int) -> None:
+        """Give the table's first column the width dragged on this view's header."""
+        if column == 0 and new != self.table.columnWidth(0):
+            self.table.setColumnWidth(0, new)
+
+    def _keep_clear(self, current, _previous) -> None:
+        """Scroll a current cell that lies partly under this view out from under it (Qt's frozen-column scrollTo)."""
+        if not current.isValid() or current.column() == 0:
+            return
+        under = self.table.columnWidth(0) - self.table.columnViewportPosition(current.column())
+        if under > 0:
+            bar = self.table.horizontalScrollBar()
+            bar.setValue(bar.value() - under)
 
     def _sort(self, _column: int) -> None:
         """Sort the table by its first column, the other way round when it is sorted by it already."""

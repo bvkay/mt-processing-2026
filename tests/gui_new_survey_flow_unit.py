@@ -128,7 +128,11 @@ This test fails if:
   disagree on the selected row, or a click in the fixed column does not
   select that row and set `State.site`; or, after the sort and the
   scrolling, the table holds an unsaved change, or an edit of one row is
-  saved into another site's entry.
+  saved into another site's entry; with the table scrolled anywhere, a
+  cell made current by a click, by the program or by the Left key lies
+  partly under the fixed column; or a drag of the site column's header
+  edge does not widen it, or leaves the fixed column and the table at
+  different widths.
 
 Mutations that must make it fail: Save put back on a rewrite of the whole
 `sites:` block with `yaml.safe_dump`, as before the writer (the comments
@@ -173,7 +177,8 @@ import yaml
 if os.environ.get("QT_QPA_PLATFORM") == "offscreen" and sys.platform == "win32":
     os.environ.setdefault("QT_QPA_FONTDIR", r"C:\Windows\Fonts")
 
-from PySide6.QtCore import QPoint, Qt  # noqa: E402
+from PySide6.QtCore import QEvent, QPoint, QPointF, Qt  # noqa: E402
+from PySide6.QtGui import QMouseEvent  # noqa: E402
 from PySide6.QtTest import QTest  # noqa: E402
 from PySide6.QtWidgets import QApplication, QDialog, QMessageBox  # noqa: E402
 
@@ -869,6 +874,55 @@ def test_site_column(app, window, check) -> None:
           and Survey.from_yaml(path).site(site).dipole_length_ey == 47.0
           and yaml.safe_load(path.read_bytes().decode("utf-8"))["sites"][site].get("dipole_length_ey") == 47.0,
           f"save() {saved}, {site} at line {head}, changes {diff}")
+
+    # the current cell is never under the fixed column, wherever the table is scrolled
+    bar = table.horizontalScrollBar()
+    width0 = table.columnWidth(0)
+    row = table.rowAt(table.viewport().height() // 2)
+    covered = []
+    for value in sorted({0, bar.maximum() // 3, bar.maximum() // 2, bar.maximum()}):
+        for column in range(1, table.columnCount()):
+            bar.setValue(value)
+            table.setCurrentCell(row, column)
+            app.processEvents()
+            if table.columnViewportPosition(column) < width0:
+                covered.append((value, COLUMNS[column], table.columnViewportPosition(column)))
+    check("with the table scrolled anywhere, a cell made current by a click or by the program is clear of the "
+          "fixed column", not covered, f"site column {width0} px, covered (scroll, column, x) {covered[:4]}")
+    bar.setValue(bar.maximum())
+    table.setCurrentCell(row, table.columnCount() - 1)
+    table.setFocus()
+    covered = []
+    for _ in range(table.columnCount() - 2):
+        QTest.keyClick(table, Qt.Key_Left)
+        app.processEvents()
+        column = table.currentColumn()
+        if table.columnViewportPosition(column) < width0:
+            covered.append((COLUMNS[column], table.columnViewportPosition(column)))
+    check("moving left with the keyboard from the last column, the current cell is never under the fixed column",
+          not covered and table.currentColumn() == 1, f"current {table.currentColumn()}, covered {covered[:4]}")
+
+    # the site column is widened by dragging its header edge
+    header = fixed.horizontalHeader() if fixed is not None else None
+    if header is not None:
+        edge, y = header.sectionSize(0), header.height() // 2
+
+        def mouse(kind, x: int, buttons) -> None:
+            point = QPoint(x, y)
+            QApplication.sendEvent(header.viewport(), QMouseEvent(
+                kind, QPointF(point), QPointF(header.viewport().mapToGlobal(point)), Qt.LeftButton, buttons,
+                Qt.NoModifier))
+
+        mouse(QEvent.MouseButtonPress, edge - 2, Qt.LeftButton)
+        mouse(QEvent.MouseMove, edge + 38, Qt.LeftButton)
+        mouse(QEvent.MouseButtonRelease, edge + 38, Qt.NoButton)
+        pump(app)
+        widths = (header.sectionSize(0), table.columnWidth(0), fixed.width())
+        check("a drag of the site column's header edge widens it by 40 px, and the fixed column and the table "
+              "agree on the width", widths == (edge + 40,) * 3, f"before {edge}, after {widths}")
+        bar.setValue(bar.maximum() // 2)
+        pump(app)
+        in_line("after the site column is widened")
     window.hide()
 
 
