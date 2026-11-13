@@ -43,7 +43,10 @@ a position the site holds is kept). A row of a site folder with no entry in
 survey.yaml is read-only until "Add sites" adds it: that button runs
 scripts/new_survey.py again on the survey (`metadata_edit.start_add_sites`),
 after a question that lists the folders, and is refused while the table holds
-unsaved edits. "Save survey.yaml" writes the
+unsaved edits. "Check" lists what stops an ingest and what is doubtful
+(`mt_workbench.survey_check`, the findings and lines scripts/check_survey.py
+prints) in a table below the sites, one row per finding, the stops first; a
+double click on a row selects its site. "Save survey.yaml" writes the
 changed cells into the edited entries through `mt_workbench.survey_file.edit`,
 which leaves every other line as it was and keeps the file as it was in
 survey.yaml.previous, and reopens the survey, asking first when the file is
@@ -70,7 +73,7 @@ from PySide6.QtWidgets import (
     QMessageBox, QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
-from mt_workbench import survey_file
+from mt_workbench import survey_check, survey_file
 from mt_workbench.dclevel import OK, OPEN, VERDICT_ORDER, channel_summary, counts_text, recorded_levels
 from mt_workbench.survey import OBSERVATORY, merge_table_row, read_site_table
 from mt_workbench.gui import channels_column, metadata_edit
@@ -89,6 +92,7 @@ NUMBERS = {"latitude", "longitude", "elevation", "declination", "declination_epo
            "dipole_length_ey", "azimuth_ex", "azimuth_ey"}
 NO_ENTRY_TIP = "no entry yet: press Add sites"
 ADD_SHOWN = 20  # the folders the question of Add sites names before "and N more"
+CHECK_COLUMNS = ["level", "site", "finding", "message"]
 ADDS_ONLY = "scripts/new_survey.py"  # run again on a survey.yaml, this script only adds site folders
 
 
@@ -235,6 +239,10 @@ class MetadataTab(QWidget):
         self.add_button.setToolTip("add the site folders under data_root that have no entry yet; a second "
                                    "deployment goes in its own folder (SA106_2); nothing else changes")
         self.add_button.clicked.connect(self.add_sites)
+        self.check_button = QPushButton("Check", self)
+        self.check_button.setToolTip("list what stops an ingest (STOP) and what to look at (WARN), site by site, "
+                                     "as scripts/check_survey.py prints it")
+        self.check_button.clicked.connect(self.run_check)
 
         self.name_label, self.data_root_label, self.workspace_label = (QLabel("-", self) for _ in range(3))
         self.count_label, self.status_label, self.warning_label = (QLabel("", self) for _ in range(3))
@@ -256,6 +264,7 @@ class MetadataTab(QWidget):
         edit_row.addWidget(self.import_button)
         edit_row.addWidget(self.save_button)
         edit_row.addWidget(self.add_button)
+        edit_row.addWidget(self.check_button)
         edit_row.addWidget(self.status_label, 1)
 
         self.table = QTableWidget(0, len(COLUMNS), self)
@@ -272,12 +281,27 @@ class MetadataTab(QWidget):
         self.table.setItemDelegateForColumn(COLUMNS.index("channels"),
                                             channels_column.ChannelsDelegate(state, self.table))
 
+        self.check_label = QLabel("", self)
+        self.check_label.setWordWrap(True)
+        self.check_table = QTableWidget(0, len(CHECK_COLUMNS), self)
+        self.check_table.setHorizontalHeaderLabels(CHECK_COLUMNS)
+        self.check_table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.check_table.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.check_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.check_table.verticalHeader().setVisible(False)
+        self.check_table.horizontalHeader().setStretchLastSection(True)
+        self.check_table.setMaximumHeight(180)
+        self.check_table.cellDoubleClicked.connect(self._finding_selected)
+        self._clear_check()
+
         layout = QVBoxLayout(self)
         layout.addLayout(header)
         layout.addWidget(self.warning_label)
         layout.addLayout(edit_row)
         layout.addWidget(self.count_label)
         layout.addWidget(self.table)
+        layout.addWidget(self.check_label)
+        layout.addWidget(self.check_table)
 
         self.state.site_changed.connect(self.select_site)
         self.state.runner.job_finished.connect(self._job_finished)
@@ -292,6 +316,7 @@ class MetadataTab(QWidget):
         self.table.setRowCount(0)
         self._shown.clear()
         self.status_label.clear()
+        self._clear_check()
         self._set_enabled(survey is not None)
         if survey is None:
             self.count_label.setText("")
@@ -365,6 +390,7 @@ class MetadataTab(QWidget):
         self.import_button.setEnabled(loaded)
         self.save_button.setEnabled(loaded)
         self.add_button.setEnabled(loaded)
+        self.check_button.setEnabled(loaded)
 
     def _status(self, text: str, colour: str | None = None) -> None:
         """Show a status message, optionally coloured."""
@@ -563,6 +589,55 @@ class MetadataTab(QWidget):
             return False
         self._status(f"adding {len(folders)} site(s) ... (the log is in the console strip below)")
         return True
+
+    def run_check(self) -> list:
+        """List the findings of `mt_workbench.survey_check.check_survey` below the site table.
+
+        One row per finding, in `survey_check.ORDER` (the stops first),
+        with its level, site, name and message, the text
+        scripts/check_survey.py --all prints; STOP rows red, WARN rows
+        yellow. The line on the usual dipoles and the count line of the
+        command stand above the list.
+
+        Returns:
+            list: The findings.
+        """
+        survey = self.state.survey
+        if survey is None:
+            return []
+        raw_sites = self.state.raw_sites()
+        findings = survey_check.check_survey(survey, raw_sites)
+        findings.sort(key=lambda f: survey_check.ORDER.index(f.name))  # stable: sites keep their order
+        self.check_table.setRowCount(len(findings))
+        for row, finding in enumerate(findings):
+            colour = QColor(BAD_COLOUR if finding.level == survey_check.STOP else NOTICE_COLOUR)
+            texts = (finding.level.upper(), finding.site or "", finding.name, finding.message)
+            for column, text in enumerate(texts):
+                item = QTableWidgetItem(text)
+                item.setForeground(colour)
+                item.setToolTip(finding.message)
+                self.check_table.setItem(row, column, item)
+        self.check_table.resizeColumnsToContents()
+        folders = {f.site for f in findings if f.name == "folder_without_entry"}
+        self.check_label.setText(survey_check.usual_dipoles_text(survey) + "\n"
+                                 + survey_check.count_line(findings, len(survey.site_names()) + len(folders)))
+        self.check_label.show()
+        self.check_table.setVisible(bool(findings))
+        self._status("check done: double-click a finding to select its site" if findings else "check done")
+        return findings
+
+    def _clear_check(self) -> None:
+        """Empty and hide the Check list."""
+        self.check_table.setRowCount(0)
+        self.check_table.hide()
+        self.check_label.clear()
+        self.check_label.hide()
+
+    def _finding_selected(self, row: int, _column: int) -> None:
+        """Select the site of a double-clicked finding in the site table (`State.set_site`)."""
+        item = self.check_table.item(row, CHECK_COLUMNS.index("site"))
+        if item is not None and item.text():
+            self.state.set_site(item.text())
 
     def _job_finished(self, index: int, ok: bool) -> None:
         """Open what a New survey or Add sites job wrote, and show the line Add sites printed."""

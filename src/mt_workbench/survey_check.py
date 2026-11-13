@@ -19,7 +19,9 @@ site folder with no entry is listed, and its name checked.
 
 `usual_dipoles` counts the recorded sites that take the usual dipole
 lengths and azimuths of `defaults:`, and `usual_dipoles_text` is the line
-that says so. scripts/check_survey.py prints the findings.
+that says so, and `count_line` the last line, with what to do next.
+scripts/check_survey.py prints the findings, and the Check button of the
+GUI's Metadata tab lists them, both in the order of `ORDER`.
 
 @author: ben kay (ben@auscope.org.au)
 
@@ -51,6 +53,8 @@ LEVELS = {
     "dipoles_not_perpendicular": WARN,
     "remote_unknown": WARN,
 }
+# the order the findings are listed in, by scripts/check_survey.py and the Check list of the GUI: the stops first
+ORDER = sorted(LEVELS, key=lambda name: LEVELS[name] != STOP)
 # a record longer than this is taken for a wrong clock or a wrong stamp, in days
 SPAN_MAX_DAYS = 400.0
 # how far from a right angle the two electric lines may be laid, in degrees
@@ -298,6 +302,24 @@ def usual_dipoles(survey: Survey) -> tuple[int, int]:
     own = [any(key in _entry(survey, name) for key in DIPOLE_KEYS)
            for name in survey.site_names() if _recorded(_entry(survey, name))]
     return own.count(False), own.count(True)
+
+
+def count_line(findings: list[Finding], n_sites: int) -> str:
+    """Return the line that counts the findings of each level and says what to do next.
+
+    Args:
+        findings (list[Finding]): The findings of `check_survey`.
+        n_sites (int): The sites checked: the entries and the folders with no entry.
+
+    Returns:
+        str: ``S STOP and W WARN, naming N of M site(s): <what to do>``.
+    """
+    stops = sum(f.level == STOP for f in findings)
+    warns = len(findings) - stops
+    named = len({f.site for f in findings if f.site is not None})
+    what = ("fix every STOP before ingest, then run this check again" if stops else
+            "no STOP, so ingest can run; look at each WARN first" if warns else "ready for ingest")
+    return f"{stops} STOP and {warns} WARN, naming {named} of {n_sites} site(s): {what}"
 
 
 def usual_dipoles_text(survey: Survey) -> str:

@@ -35,7 +35,9 @@ sys.path.insert(0, str(REPO / "src"))
 import yaml  # noqa: E402
 
 from mt_workbench.survey import Survey  # noqa: E402
-from mt_workbench.survey_check import LEVELS, STOP, Finding, check_survey, usual_dipoles_text  # noqa: E402
+from mt_workbench.survey_check import (  # noqa: E402
+    LEVELS, ORDER, STOP, Finding, check_survey, count_line, usual_dipoles_text,
+)
 
 # how many site names one line of a finding lists without --all
 NAMES_SHOWN = 5
@@ -53,7 +55,7 @@ def finding_lines(findings: list[Finding], every: bool = False) -> list[str]:
         name, or ``STOP name: A: message`` per site with `every`.
     """
     lines = []
-    for name in sorted(LEVELS, key=lambda n: LEVELS[n] != STOP):
+    for name in ORDER:
         group = [f for f in findings if f.name == name]
         if not group:
             continue
@@ -67,16 +69,6 @@ def finding_lines(findings: list[Finding], every: bool = False) -> list[str]:
         tail = f" (the message of {sites[0]}; --all prints every site's)" if differ else ""
         lines.append(f"{head}: {len(sites)} site(s): {shown}: {group[0].message}{tail}")
     return lines
-
-
-def count_line(findings: list[Finding], n_sites: int) -> str:
-    """Return the last printed line: how many findings of each level, and what to do next."""
-    stops = sum(f.level == STOP for f in findings)
-    warns = len(findings) - stops
-    named = len({f.site for f in findings if f.site is not None})
-    what = ("fix every STOP before ingest, then run this check again" if stops else
-            "no STOP, so ingest can run; look at each WARN first" if warns else "ready for ingest")
-    return f"{stops} STOP and {warns} WARN, naming {named} of {n_sites} site(s): {what}"
 
 
 def main(argv=None) -> int:
