@@ -93,6 +93,9 @@ NUMBERS = {"latitude", "longitude", "elevation", "declination", "declination_epo
 NO_ENTRY_TIP = "no entry yet: press Add sites"
 ADD_SHOWN = 20  # the folders the question of Add sites names before "and N more"
 CHECK_COLUMNS = ["level", "site", "finding", "message"]
+# Save tries the replace of a survey.yaml held open this many times, this far apart: the window waits about 2 s
+SAVE_TRIES = 3
+SAVE_WAIT_S = 1.0
 ADDS_ONLY = "scripts/new_survey.py"  # run again on a survey.yaml, this script only adds site folders
 
 
@@ -453,7 +456,9 @@ class MetadataTab(QWidget):
         of those entries change, a cell equal to the `defaults:` value
         removes the site's own key, and the file as it was is kept as
         survey.yaml.previous. A refused edit is shown in a box and the file
-        is left as it was.
+        is left as it was. A file another program holds open, or a
+        read-only one, is tried `SAVE_TRIES` times, `SAVE_WAIT_S` apart,
+        so the window waits about two seconds before the box says so.
 
         Returns:
             bool: True if the file was written.
@@ -477,7 +482,7 @@ class MetadataTab(QWidget):
         ):
             return False
         try:
-            result = survey_file.edit(path, sites=edits)
+            result = survey_file.edit(path, sites=edits, tries=SAVE_TRIES, wait_s=SAVE_WAIT_S)
         except Exception as exc:  # a refused edit or a malformed file is reported and left unwritten
             QMessageBox.critical(self, "Could not save", f"{path}\n\n{exc}")
             return False

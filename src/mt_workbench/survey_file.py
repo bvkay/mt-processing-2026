@@ -816,16 +816,17 @@ def _unchanged(path: Path, planned: bytes) -> None:
         raise SurveyFileRefused("survey.yaml changed while the edit was prepared: nothing written; do it again")
 
 
-def commit(path, old: str, new: str, made: dict, *, dry_run: bool = False) -> Edit:
+def commit(path, old: str, new: str, made: dict, *, dry_run: bool = False, tries: int = REPLACE_TRIES,
+           wait_s: float = REPLACE_WAIT_S) -> Edit:
     """Check a new text and write it over survey.yaml, keeping the file as it was.
 
     `commit` writes nothing when the text is unchanged, on a dry run, or
     when `check` finds a problem. Otherwise the new and the old text go to
     two temporary files beside survey.yaml. The first replaces survey.yaml
-    (retried while Windows holds the file, which is read again before each
-    try and must still be `old`). Only then does the second become
-    survey.yaml.previous; if it cannot be moved there, it stays under its
-    temporary name, which `Edit.previous` names.
+    (tried `tries` times, `wait_s` apart, while Windows holds the file,
+    which is read again before each try and must still be `old`). Only then
+    does the second become survey.yaml.previous; if it cannot be moved
+    there, it stays under its temporary name, which `Edit.previous` names.
 
     Args:
         path (str | Path): The survey.yaml.
@@ -833,6 +834,10 @@ def commit(path, old: str, new: str, made: dict, *, dry_run: bool = False) -> Ed
         new (str): The new text.
         made (dict): The edit, as `plan` returns it.
         dry_run (bool): Check only.
+        tries (int): How many times the replace is tried. A script waits
+            out a program that holds the file for a while; the window,
+            which a student is looking at, tries fewer times.
+        wait_s (float): Seconds between two tries.
 
     Returns:
         Edit: The outcome, with an empty summary.
@@ -866,17 +871,17 @@ def commit(path, old: str, new: str, made: dict, *, dry_run: bool = False) -> Ed
             with os.fdopen(handle, "wb") as out:
                 out.write(data)
         new_file, old_file = temporary
-        for attempt in range(REPLACE_TRIES):
+        for attempt in range(tries):
             _unchanged(path, planned)
             try:
                 os.replace(new_file, path)
                 break
             except PermissionError as exc:
-                if attempt == REPLACE_TRIES - 1:
+                if attempt == tries - 1:
                     raise SurveyFileRefused("survey.yaml is open in another program or read-only, so it was not "
                                             "saved: close that program (or clear the read-only flag) and save "
                                             "again") from exc
-                time.sleep(REPLACE_WAIT_S)
+                time.sleep(wait_s)
         try:
             os.replace(old_file, previous)
         except OSError:  # survey.yaml.previous is held open: the earlier text stays under its temporary name
@@ -889,7 +894,7 @@ def commit(path, old: str, new: str, made: dict, *, dry_run: bool = False) -> Ed
 
 
 def edit(path, *, sites: dict | None = None, add: dict | None = None, defaults: dict | None = None,
-         dry_run: bool = False) -> Edit:
+         dry_run: bool = False, tries: int = REPLACE_TRIES, wait_s: float = REPLACE_WAIT_S) -> Edit:
     """Edit a survey.yaml in place: read it, plan the edit, check it and write it.
 
     Args:
@@ -899,6 +904,8 @@ def edit(path, *, sites: dict | None = None, add: dict | None = None, defaults: 
         add (dict | None): {site: {key: value}} for new entries.
         defaults (dict | None): {key: value} for the `defaults:` block.
         dry_run (bool): Plan and check only.
+        tries (int): How many times the replace is tried (`commit`).
+        wait_s (float): Seconds between two tries.
 
     Returns:
         Edit: What was written and the summary lines.
@@ -912,6 +919,6 @@ def edit(path, *, sites: dict | None = None, add: dict | None = None, defaults: 
     except UnicodeDecodeError as exc:
         raise SurveyFileRefused(f"survey.yaml is not UTF-8 text ({exc}): save it as UTF-8 first") from exc
     new, made, summary = plan(old, sites=sites, add=add, defaults=defaults)
-    result = commit(path, old, new, made, dry_run=dry_run)
+    result = commit(path, old, new, made, dry_run=dry_run, tries=tries, wait_s=wait_s)
     result.summary = summary
     return result
