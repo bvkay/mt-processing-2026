@@ -94,8 +94,9 @@ This test fails if:
 - Rebuild archive is enabled with no site selected, for a site with no
   archive, for a folder with no entry (that has an archive), for an entry
   with an archive and no raw data folder, or while a job runs; it is not
-  enabled for S02 (entry, raw data folder, archive); it starts a job when
-  the answer is No; its question is not "Rebuild the archive of S02 from its
+  enabled for S02 (entry, raw data folder, archive); with a ticked box not
+  yet saved it starts a job or asks, or does not say to press Save
+  survey.yaml first; it starts a job when the answer is No; its question is not "Rebuild the archive of S02 from its
   raw data? The present archive is replaced." with the sentence on the
   filtered variant for a site with declared filters; or the command it
   queues is anything but `<python> scripts/ingest_site.py <survey.yaml> S02
@@ -606,6 +607,18 @@ def test_rebuild(app, window, check) -> None:
     state.runner.queue_changed.emit()
     check("Rebuild archive is off while a job runs and starts nothing",
           not while_running and index is None and INGESTS == [], f"enabled {while_running}, queued {INGESTS}")
+    find(tab.table, "S02", "swap_h").setCheckState(Qt.Checked)  # a tick not saved
+    BOXES.clear()
+    ANSWERS[:] = [True]
+    index = tab.rebuild_archive()
+    ANSWERS.clear()
+    status = tab.status_label.text()
+    check("Rebuild archive with a ticked box not saved starts nothing, asks nothing and says to save first",
+          index is None and INGESTS == [] and BOXES == []
+          and status == "1 unsaved change(s): press Save survey.yaml first, then Rebuild archive",
+          f"index {index}, queued {INGESTS}, boxes {BOXES}, status {status!r}")
+    find(tab.table, "S02", "swap_h").setCheckState(Qt.Unchecked)
+    INGESTS.clear()
     BOXES.clear()
     ANSWERS[:] = [False]
     index = tab.rebuild_archive()

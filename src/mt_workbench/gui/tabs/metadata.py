@@ -51,8 +51,8 @@ after a question that lists the folders, and is refused while the table holds
 unsaved edits. "Rebuild archive" builds the selected site's archive again
 from its raw data (scripts/ingest_site.py <survey.yaml> <site> --force, on
 `state.runner`), after a question, for a site with an entry, a raw data
-folder and an archive, while no job runs; a changed swap box or electric gain
-reaches the data that way. "Check" lists what stops an ingest and what is doubtful
+folder and an archive, while no job runs and the table holds no unsaved edit;
+a changed swap box or electric gain reaches the data that way. "Check" lists what stops an ingest and what is doubtful
 (`mt_workbench.survey_check`, the findings and lines scripts/check_survey.py
 prints) in a table below the sites, one row per finding, the stops first; a
 double click on a row selects its site. "Save survey.yaml" writes the
@@ -596,6 +596,13 @@ class MetadataTab(QWidget):
             return
         self._status(f"{n} unsaved change(s) - press Save survey.yaml" if n else "")
 
+    def _unsaved(self) -> int:
+        """Return the number of unsaved changes; a cell that does not parse counts as one."""
+        try:
+            return sum(len(v) for v in self.pending().values())
+        except ValueError:
+            return 1
+
     def save(self) -> bool:
         """Write the changed cells into their sites' entries, then reopen the survey.
 
@@ -724,10 +731,7 @@ class MetadataTab(QWidget):
         """
         if self.state.survey is None:
             return False
-        try:
-            n = sum(len(v) for v in self.pending().values())
-        except ValueError:  # a cell that does not parse is an unsaved edit too
-            n = 1
+        n = self._unsaved()
         if n:
             self._status(f"{n} unsaved change(s): press Save survey.yaml first, or open the survey again to drop "
                          f"them, then Add sites", BAD_COLOUR)
@@ -808,7 +812,9 @@ class MetadataTab(QWidget):
     def rebuild_archive(self) -> int | None:
         """Build the selected site's archive again from its raw data, after a question.
 
-        The question says that the present archive is replaced and, for a
+        Refused while the table holds unsaved edits, since the job reads
+        survey.yaml as saved. The question says that the present archive is
+        replaced and, for a
         site with declared filters, that its filtered variant is built again
         too, as scripts/ingest_site.py --force does. On Yes the command of
         `rebuild_command` starts at once on `state.runner`
@@ -821,6 +827,10 @@ class MetadataTab(QWidget):
         self._update_rebuild()
         site = self.state.site
         if not self.rebuild_button.isEnabled() or not site:
+            return None
+        n = self._unsaved()
+        if n:  # the job reads survey.yaml as saved
+            self._status(f"{n} unsaved change(s): press Save survey.yaml first, then Rebuild archive", BAD_COLOUR)
             return None
         variant = (" Its filtered variant is built again from the new archive too."
                    if self.state.survey.site(site).filters else "")
