@@ -129,7 +129,7 @@ def comment_texts(text: str) -> list[str]:
 
 
 # characters that YAML or an editor reads as a line break; YAML would write them escaped or raw inside quotes
-_BREAK = re.compile("[\r\n\x85  ]")
+_BREAK = re.compile("[\r\n\x85\u2028\u2029]")
 
 
 def _text(value) -> str:

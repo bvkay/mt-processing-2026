@@ -244,10 +244,10 @@ REFUSED = {  # name: (text, request, a fragment the message holds)
                    "line break"),
     "carriage return and line feed": (HEAD + "sites:\n  S01:\n    latitude: 1.0\n",
                                       {"sites": {"S01": {"notes": "a\r\nb"}}}, "line break"),
-    "line separator": (HEAD + "sites:\n  S01:\n    latitude: 1.0\n", {"sites": {"S01": {"notes": "a b"}}},
+    "line separator": (HEAD + "sites:\n  S01:\n    latitude: 1.0\n", {"sites": {"S01": {"notes": "a\u2028b"}}},
                        "line break"),
     "paragraph separator": (HEAD + "sites:\n  S01:\n    latitude: 1.0\n",
-                            {"sites": {"S01": {"notes": "a b"}}}, "line break"),
+                            {"sites": {"S01": {"notes": "a\u2029b"}}}, "line break"),
     "next line": (HEAD + "sites:\n  S01:\n    latitude: 1.0\n", {"sites": {"S01": {"notes": "a\x85b"}}},
                   "line break"),
     "line break in a list item": (HEAD + "sites:\n  S01:\n    latitude: 1.0\n",
