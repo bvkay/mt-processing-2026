@@ -52,7 +52,7 @@ Usage:
   is not refused when that key is removed, or when a block list holding a
   comment is replaced; the quoted note holding `#` cannot be replaced by a
   note with none; removing the key below an own-line comment does not add
-  the "comment above it stays" summary line;
+  the summary line that quotes the comment left above it;
 - three tampered new texts (a comment reworded; a comment moved to its
   entry's foot; a comment moved from one edited entry into another, both in
   `made`) are not refused by `check`; the inline comment of a key asked
@@ -547,7 +547,8 @@ def test_comments() -> None:
           message is None and yaml.safe_load(read(path))["sites"]["S03"]["notes"] == "short", str(message))
     path = put("above", LF)
     result = sf.edit(path, sites={"S02": {"azimuth_ey": sf.REMOVE}})
-    note = "S02: removed azimuth_ey; the comment above it stays: check it"
+    note = ("S02: removed azimuth_ey; the comment above it (# the next key was typed from the sheet) was left "
+            "where it was: move or delete it by hand if it was about azimuth_ey")
     check("removing the key below an own-line comment adds the summary line",
           note in result.summary and "    # the next key was typed from the sheet" in split(read(path)),
           str(result.summary))

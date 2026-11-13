@@ -377,7 +377,8 @@ def _edit_entry(lines, head, stop, changes, nl, key_indent, name, label, summary
             new[i] = []
         if value is REMOVE:
             if a - 1 > head and _comment_line(lines[a - 1]):
-                summary.append(f"{name}: removed {key}; the comment above it stays: check it")
+                summary.append(f"{name}: removed {key}; the comment above it ({lines[a - 1].strip()}) was left where "
+                               f"it was: move or delete it by hand if it was about {key}")
             continue
         old = lines[a].rstrip("\r\n")
         tail = old[len(old[:comments[0][0]].rstrip()):] if comments else ""
