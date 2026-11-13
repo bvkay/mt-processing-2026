@@ -66,7 +66,9 @@ exists, `rewriting_script`). "New survey..." queues
 the job finishes (`metadata_edit.start_new_survey`,
 `handle_new_survey_finished`).
 
-Selecting a row sets `State.site`, which the other tabs preselect.
+Selecting a row sets `State.site`, which the other tabs preselect. The site
+column stays at the left edge when the table is scrolled sideways
+(`FrozenSiteColumn`), so every row can be read against its site.
 
 @author: ben kay (ben@auscope.org.au)
 
@@ -75,11 +77,11 @@ Selecting a row sets `State.site`, which the other tabs preselect.
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QEvent, Qt, Signal
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
-    QAbstractItemView, QFileDialog, QGridLayout, QHBoxLayout, QHeaderView, QLabel, QLineEdit,
-    QMessageBox, QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
+    QAbstractItemView, QFileDialog, QFrame, QGridLayout, QHBoxLayout, QHeaderView, QLabel, QLineEdit,
+    QMessageBox, QPushButton, QTableView, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
 from mt_workbench import survey_check, survey_file
@@ -232,6 +234,80 @@ def _dc_level_item(survey_name: str, site: str, path) -> SortableItem:
     return item
 
 
+class FrozenSiteColumn(QTableView):
+    """The first column of a table, kept at the left edge while the table scrolls sideways.
+
+    Qt's frozen-column arrangement: a second view over the table's own model
+    and selection model, showing the first column only, laid over the
+    table's first column and kept in step with its vertical scrolling, row
+    heights, column width and sort order. The rows, their order, the
+    selection and the edits are the table's own, so the two views cannot
+    disagree on them. A click on its header sorts the table by that column.
+
+    Args:
+        table (QTableWidget): The table; this view becomes its child.
+    """
+
+    def __init__(self, table: QTableWidget):
+        super().__init__(table)
+        self.table = table
+        self.setModel(table.model())
+        self.setSelectionModel(table.selectionModel())
+        self.setSelectionBehavior(table.selectionBehavior())
+        self.setSelectionMode(table.selectionMode())
+        self.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.setFocusPolicy(Qt.NoFocus)
+        self.setFrameShape(QFrame.NoFrame)
+        self.setAlternatingRowColors(table.alternatingRowColors())
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setVerticalScrollMode(table.verticalScrollMode())
+        self.verticalHeader().hide()
+        self.verticalHeader().setDefaultSectionSize(table.verticalHeader().defaultSectionSize())
+        self.horizontalHeader().setSectionResizeMode(QHeaderView.Fixed)
+        self.horizontalHeader().setSectionsClickable(True)
+        self.horizontalHeader().setSortIndicatorShown(True)
+        for column in range(1, table.columnCount()):
+            self.setColumnHidden(column, True)
+        table.viewport().stackUnder(self)
+
+        table.horizontalHeader().sectionResized.connect(self._column_resized)
+        table.verticalHeader().sectionResized.connect(lambda row, _old, new: self.setRowHeight(row, new))
+        table.verticalScrollBar().valueChanged.connect(self.verticalScrollBar().setValue)
+        self.verticalScrollBar().valueChanged.connect(table.verticalScrollBar().setValue)
+        table.horizontalHeader().sortIndicatorChanged.connect(self.horizontalHeader().setSortIndicator)
+        self.horizontalHeader().sectionClicked.connect(self._sort)
+        table.installEventFilter(self)
+        table.viewport().installEventFilter(self)
+        self.place()
+
+    def place(self) -> None:
+        """Lay the view over the table's first column, from the top of its header to the foot of its rows."""
+        table = self.table
+        header = table.horizontalHeader()
+        self.setColumnWidth(0, table.columnWidth(0))
+        self.horizontalHeader().setFixedHeight(header.height())
+        self.setGeometry(table.viewport().x(), header.y(), table.columnWidth(0),
+                         header.height() + table.viewport().height())
+
+    def _column_resized(self, column: int, _old: int, _new: int) -> None:
+        """Follow a new width of the table's first column."""
+        if column == 0:
+            self.place()
+
+    def _sort(self, _column: int) -> None:
+        """Sort the table by its first column, the other way round when it is sorted by it already."""
+        header = self.table.horizontalHeader()
+        again = header.sortIndicatorSection() == 0 and header.sortIndicatorOrder() == Qt.AscendingOrder
+        self.table.sortByColumn(0, Qt.DescendingOrder if again else Qt.AscendingOrder)
+
+    def eventFilter(self, watched, event) -> bool:
+        """Lay the view again when the table or its viewport is resized or shown."""
+        if event.type() in (QEvent.Resize, QEvent.Show, QEvent.LayoutRequest):
+            self.place()
+        return False
+
+
 class MetadataTab(QWidget):
     """The survey's sites as a sortable, editable table; selecting a row sets `State.site`.
 
@@ -314,6 +390,7 @@ class MetadataTab(QWidget):
         self.table.itemChanged.connect(lambda _item: self._show_pending())
         self.table.setItemDelegateForColumn(COLUMNS.index("channels"),
                                             channels_column.ChannelsDelegate(state, self.table))
+        self.site_column = FrozenSiteColumn(self.table)  # the site stays at the left edge when scrolled sideways
 
         self.check_label = QLabel("", self)
         self.check_label.setWordWrap(True)
