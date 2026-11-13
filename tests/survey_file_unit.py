@@ -65,6 +65,8 @@ Usage:
 - a key or a site entry written twice in a new text (the old key line kept
   above the new one, an unasked key line repeated, a copy of another entry
   or of the new entry at the point of an add) is not refused by `check`;
+- a line of an entry that is not edited, rewritten to the same value in a
+  new text, is not refused by the line diff;
 - `elevation: true` written in place of 1.0 is not refused by `check` (a value
   `Survey.site` accepts, so only the typed comparison can refuse it);
 - removing the last key of an entry is not refused; the bare header `S09`
@@ -589,6 +591,12 @@ def test_tampered() -> None:
         problems = sf.check(LF, text, old_made)
         check(f"{label}: refused by check", text not in (new, new_d)
               and any("other than those of the keys asked" in p for p in problems), str(problems))
+
+    new, made, _ = sf.plan(LF, sites={"S01": {"timing": "x"}})
+    outside_edit = new.replace("    latitude: -31.2\n", "    latitude: -31.20\n")
+    problems = sf.check(LF, outside_edit, made)
+    check("a line of an entry not edited rewritten to the same value: refused by the line diff",
+          outside_edit != new and any("would change outside the edit" in p for p in problems), str(problems))
 
     new, made, _ = sf.plan(LF, sites={"S01": {"dipole_length_ex": 53.5}})
     retold = new.replace("53.5  # taped", "53.5  # taped twice")
