@@ -129,7 +129,6 @@ the archives in `mth5/`, the products in `tf/`, the figures in `qc/`, and
 - [tensors.md](docs/guide/tensors.md): the telluric and magnetic tensors between sites, and the network datum.
 - [campaigns.md](docs/guide/campaigns.md): a processing campaign over a line of sites.
 - [tests.md](docs/guide/tests.md): the test list.
-- [status.md](docs/guide/status.md): what is built and what is open.
 
 ## Tests
 
