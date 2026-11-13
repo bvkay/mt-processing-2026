@@ -304,14 +304,13 @@ class NewSurveyDialog(QDialog):
         }
 
 
-def new_survey_argv(state, values: dict, out: Path, force: bool) -> list[str]:
-    """Build the scripts/new_survey.py command line.
+def new_survey_argv(state, values: dict, out: Path) -> list[str]:
+    """Build the scripts/new_survey.py command line for a new survey.
 
     Args:
         state: The shared `mt_workbench.gui.app.State`.
         values (dict): `NewSurveyDialog.values()`.
         out (Path): The survey.yaml to write.
-        force (bool): Add `--force` to overwrite an existing file.
 
     Returns:
         list[str]: The command line.
@@ -325,7 +324,7 @@ def new_survey_argv(state, values: dict, out: Path, force: bool) -> list[str]:
         argv += ["--workspace", values["workspace"]]
     if values.get("site_table"):
         argv += ["--site-table", values["site_table"]]
-    return argv + (["--force"] if force else [])
+    return argv
 
 
 def is_new_survey_job(job) -> bool:
@@ -340,10 +339,11 @@ def start_new_survey(parent, state, values: dict, out: Path) -> bool:
     with `JobRunner.run_now`, which leaves any queued job waiting for Run
     queue. `MetadataTab.new_survey` calls this after the dialog closes. The
     job's output reaches the console strip through the runner's `log_line`,
-    and `handle_new_survey_finished` opens the survey.yaml it wrote. An
-    existing survey.yaml is overwritten (`--force`) only after the user
-    answers Yes. While another job is running the request is refused with a
-    message, so one new-survey job runs at a time.
+    and `handle_new_survey_finished` opens the survey.yaml it wrote. A
+    survey.yaml that exists is never written again from the folders: no job
+    is started, and a box says to open it and press Add sites. While
+    another job is running the request is refused with a message, so one
+    new-survey job runs at a time.
 
     Args:
         parent (QWidget): Parent of the message boxes.
@@ -354,18 +354,16 @@ def start_new_survey(parent, state, values: dict, out: Path) -> bool:
     Returns:
         bool: True if the job was started.
     """
+    out = Path(out)
+    if out.exists():
+        QMessageBox.information(parent, "New survey", f"{out} exists: open it and press Add sites")
+        return False
     if state.runner.running:
         QMessageBox.information(
             parent, "New survey",
             "A job is already running - wait for it to finish, then try New survey... again.")
         return False
-    out = Path(out)
-    force = out.exists()
-    if force and not ask_yes_no(parent, "New survey",
-                                f"{out} exists.\n\nOverwrite it? Every edit made in it is lost."):
-        return False
-    argv = new_survey_argv(state, values, out, force)
-    state.runner.run_now(f"new survey {values['name']}", argv)
+    state.runner.run_now(f"new survey {values['name']}", new_survey_argv(state, values, out))
     return True
 
 

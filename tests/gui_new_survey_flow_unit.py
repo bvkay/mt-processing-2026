@@ -35,13 +35,17 @@ This test fails if:
   without an entry and the comments as they were;
 - the New survey form, given a survey name of 31 characters, is accepted,
   or does not show the message of `mt_workbench.survey.check_survey_name`
-  in one warning box; or a name of 30 characters is not accepted.
+  in one warning box; or a name of 30 characters is not accepted;
+- New survey... on a survey.yaml that exists starts a job, changes the file,
+  or does not say in one box that the file exists and to open it and press
+  Add sites; or the command line built for a new survey holds `--force`.
 
 Mutations that must make it fail: Save put back on a rewrite of the whole
 `sites:` block with `yaml.safe_dump`, as before the writer (the comments
 are lost and no survey.yaml.previous is made); the status line given only
 the summary lines that end in "check it" (a removal is not shown); the form
-accepted without the check of the name.
+accepted without the check of the name; New survey... starting its job on a
+survey.yaml that exists.
 
 Usage:
     QT_QPA_PLATFORM=offscreen python tests/gui_new_survey_flow_unit.py
@@ -321,6 +325,20 @@ def main() -> int:
     dialog._accept()
     check("the New survey form with a 30-character name is accepted with no further box",
           dialog.result() == QDialog.Accepted and len(BOXES) == 1, f"result {dialog.result()}, boxes {BOXES}")
+    BOXES.clear()
+
+    # New survey... on a survey.yaml that exists starts no job
+    values = dialog.values()
+    before, n_jobs = path.read_bytes(), len(window.state.runner.jobs)
+    started = metadata_edit.start_new_survey(tab, window.state, values, path)
+    pump(app)
+    check("New survey... on a survey.yaml that exists starts no job and says to open it and press Add sites",
+          started is False and len(window.state.runner.jobs) == n_jobs and path.read_bytes() == before
+          and BOXES == [("information", "New survey", f"{path} exists: open it and press Add sites")],
+          f"started {started}, jobs {len(window.state.runner.jobs) - n_jobs}, boxes {BOXES}")
+    argv = metadata_edit.new_survey_argv(window.state, values, SCRATCH / "flow" / "surveys" / "n" / "survey.yaml")
+    check("the command line built for a new survey has no --force",
+          "--force" not in argv and Path(argv[1]).name == "new_survey.py" and "--name" in argv, str(argv))
     BOXES.clear()
 
     window.close()

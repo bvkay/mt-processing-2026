@@ -97,18 +97,32 @@ It sits beside the raw data rather than in the repo because a 100-site
 survey's archives run to hundreds of GB. The script writes the key; the
 folder is created by the first script that writes into it.
 
-An existing survey.yaml holds hand edits and is overwritten only with
---force. When legacy EDIs exist for the survey (lemimt, a contractor's), run
+A survey.yaml that exists holds hand edits and is never written again from
+the folders. Run on it a second time (a re-run, with the same data folder
+and name), the script adds an entry for each site folder that has none,
+through `mt_workbench.survey_file.edit`: every other line of the file stays,
+and the file as it was is kept as survey.yaml.previous. The new entries are
+read as at the first run, against the file's own instrument and sample
+rate. The head of the file is not changed: a head argument given with
+another value than the file's is named as ignored. With --site-table, the
+rows of sites that already have an entry are applied to those entries in
+place (a value equal to `defaults:` is not written, a position the entry
+holds is kept), and the sites and values changed are printed. To start
+again, delete the survey.yaml by hand; --force is refused. A second
+deployment at a station goes in a site folder of its own (SA106_2), never
+into an existing one, and becomes a site like any other.
+
+When legacy EDIs exist for the survey (lemimt, a contractor's), run
 
     python scripts/match_reference_edis.py <edi_dir> <survey.yaml>
 
 afterwards to write reference_edis.yaml, which the View EDIs tab overlays.
 
-Usage:
+Usage (the same command again adds the site folders that have no entry):
     python scripts/new_survey.py <data_root> --name NAME [--instrument auto]
         [--channels "Ex Ey Bx By"] [--electric-gain 10]
         [--timezone Australia/Adelaide] [--out PATH]
-        [--workspace DIR] [--calibration FILE] [--site-table CSV_OR_XLSX] [--force]
+        [--workspace DIR] [--calibration FILE] [--site-table CSV_OR_XLSX]
 
 @author: ben kay (ben@auscope.org.au)
 
@@ -129,6 +143,7 @@ import pandas as pd
 import yaml
 from mt_io.lemi.lemi423 import Read_Lemi_Data, Read_Lemi_Header
 
+from mt_workbench import survey_file
 from mt_workbench.ingest import select_files
 from mt_workbench.instruments import INSTRUMENTS, header_facts, record_files, span
 from mt_workbench.survey import (
@@ -138,6 +153,9 @@ from mt_workbench.survey import (
 
 REPO = Path(__file__).resolve().parents[1]
 DEFAULT_CALIBRATION = REPO / "surveys" / "burra" / "sensors" / "l120n.rsp"
+DEFAULT_TIMEZONE = "Australia/Adelaide"
+FORCE_GONE = ("--force is gone: a re-run only adds the site folders that have no entry. To start again, delete "
+              "{out} by hand and run this command again.")
 DEFAULT_FILE_SECONDS = 5400  # a B423 file's nominal span, for a site with one file
 DEFAULTS_NOTE = "dipole lengths and azimuths from defaults - set them from the field sheet"
 # the LEMI-423's documented rates (mt_io.lemi.lemi_collection.LEMICollection's docstring).
@@ -178,8 +196,8 @@ workspace: {workspace}
 # local time of the field area (IANA name), for display only: every
 # timestamp in the YAML, the archives and the scripts is UTC
 timezone: {timezone}
-# written by this script from the raw files' headers: re-running it (--force)
-# overwrites every edit made since, the GUI's Metadata tab included
+# written by this script from the raw files' headers; run again, it adds the
+# site folders that have no entry and leaves every other line
 generated_by: scripts/new_survey.py
 defaults:
   dipole_length_ex: 50.0
@@ -455,21 +473,35 @@ def table_timezone(path: Path) -> str | None:
     return zones[0]
 
 
-def merge_site_table(sites: dict, path: Path) -> None:
-    """Merge a site table over the header values, for the sites it names.
+def merge_site_table(sites: dict, path: Path, existing: dict | None = None) -> dict:
+    """Merge a site table over the values read from the files, for the sites it names.
 
-    Position and elevation from the header's GPS fix are kept; the table
-    fills them only where the header has none. Disagreements, unmatched
-    sites and ignored columns are printed.
+    A position or elevation a site already holds (the header's GPS fix, or
+    the value in its survey.yaml entry) is kept; the table fills them only
+    where the site has none. Disagreements, unmatched sites and ignored
+    columns are printed.
 
     Args:
-        sites (dict): Site entries, updated in place.
+        sites (dict): The entries being written, updated in place.
         path (Path): CSV or XLSX site table.
+        existing (dict | None): On a re-run, {site: entry} of the sites that
+            already have an entry in survey.yaml.
+
+    Returns:
+        dict: {site: {key: value}} to set on the sites of `existing` that
+        the table names; empty at a first run.
     """
+    existing = existing or {}
     rows, ignored = read_site_table(path)
-    matched = [s for s in rows if s in sites]
-    disagreements = []
+    matched = [s for s in rows if s in sites or s in existing]
+    disagreements, changes = [], {}
     for site in matched:
+        if site in existing:
+            entry = existing[site] or {}
+            changes[site], disagree = merge_table_row(entry, rows[site])
+            disagreements += [f"{site} {key}: table {rows[site][key]} vs survey.yaml {entry[key]} -> survey.yaml kept"
+                              for key in disagree]
+            continue
         entry = sites[site]
         # the header's GPS fix takes precedence for position and elevation: a
         # table is typed or derived by hand (elevations exactly 1000 m low come
@@ -488,113 +520,40 @@ def merge_site_table(sites: dict, path: Path) -> None:
     print(f"site table {path.name}: {len(matched)} of {len(rows)} sites matched")
     for line in disagreements:
         print(f"  WARNING {line}")
-    missing = sorted(set(rows) - set(sites))
+    missing = sorted(set(rows) - set(sites) - set(existing))
     if missing:
         print(f"  WARNING not a site folder: {', '.join(missing)}")
     if ignored:
         print(f"  WARNING ignored columns: {', '.join(ignored)}")
+    return changes
 
 
-def main(argv=None) -> int:
-    """Write the survey.yaml and print the per-site summary.
+def build_entries(facts: dict, recorder: dict, instrument: str, sample_rate: float) -> tuple[dict, dict]:
+    """Build the survey.yaml entries of sites from the facts of their files.
+
+    A site recorded on another instrument than the survey's gets its own
+    `instrument:` and that instrument's default `channels:` (and
+    `sensor_type:` for an EDL). A site of the survey's instrument at
+    another rate than the survey's gets a note.
 
     Args:
-        argv (list[str] | None): Command-line arguments; sys.argv when None.
+        facts (dict): {site: facts}, as `read_site` returns them.
+        recorder (dict): {site: instrument}, as detected from the folders.
+        instrument (str): The survey's instrument.
+        sample_rate (float): The survey's sample rate in Hz.
 
     Returns:
-        int: 0 on success, 1 when no site folder is found, 2 when the
-        survey.yaml exists and --force was not given, or when the name of
-        a new survey is refused.
+        tuple[dict, dict]: The entries, and {site: channels} of the sites
+        recorded on another instrument.
     """
-    parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("data_root", help="the folder holding one subfolder per site")
-    parser.add_argument("--name", required=True, help="survey name (also the default folder under surveys/)")
-    parser.add_argument("--instrument", default="auto", choices=["auto", *INSTRUMENTS],
-                        help="the survey's instrument (default: the most common among the sites' folders)")
-    parser.add_argument("--channels", help="the columns that had a sensor, for the survey's instrument: a "
-                        "preset label (LEMI-423: " + "; ".join(CHANNEL_PRESETS["lemi423"]) + ") or a comma "
-                        "list such as hx,hy; default the instrument's first preset")
-    parser.add_argument("--electric-gain", type=float, help="extra gain of an EDL (PR6-24) site's electric "
-                        "chain beyond the reader's own (the x10 terminal box), declared from the field "
-                        "notes, e.g. 10; written as defaults: electric_gain")
-    parser.add_argument("--timezone", default="Australia/Adelaide", help="IANA name, for display only")
-    parser.add_argument("--clock-timezone", default="UTC", help="Orange Box sites: the IANA name of the zone the "
-                        "loggers' real-time clocks ran on, with which their stamps are read as UTC")
-    parser.add_argument("--out", help="survey.yaml to write (default surveys/<name>/survey.yaml)")
-    parser.add_argument("--workspace", help="archives, TFs and figures (default <data_root>/work)")
-    parser.add_argument("--calibration", default=str(DEFAULT_CALIBRATION), help="coil response file")
-    parser.add_argument("--site-table", help="CSV or XLSX: a site column plus any editable column")
-    parser.add_argument("--force", action="store_true", help="overwrite an existing survey.yaml")
-    args = parser.parse_args(argv)
-
-    data_root = Path(args.data_root).resolve()
-    workspace = Path(args.workspace).resolve() if args.workspace else data_root / "work"
-    out = Path(args.out) if args.out else REPO / "surveys" / args.name / "survey.yaml"
-    out = out.resolve()
-    if not out.exists():  # a new survey: its name is checked before any folder is read
-        try:
-            check_survey_name(args.name)
-        except ValueError as exc:
-            print(f"ERROR {exc}")
-            return 2
-    calibration = Path(args.calibration)
-    try:
-        pd.Timestamp.now(tz=args.timezone)
-    except Exception:
-        parser.error(f"unknown timezone {args.timezone!r} (an IANA name, e.g. Australia/Adelaide)")
-    try:
-        pd.Timestamp.now(tz=args.clock_timezone)
-    except Exception:
-        parser.error(f"unknown clock timezone {args.clock_timezone!r} (an IANA name, e.g. Australia/Perth)")
-    if not data_root.is_dir():
-        parser.error(f"no such folder: {data_root}")
-    if not calibration.is_file():
-        parser.error(f"no such coil response file: {calibration}")
-    if out.exists() and not args.force:
-        print(f"ERROR {out} exists: it may hold hand edits. Pass --force to overwrite it.")
-        return 2
-
-    prefer = "lemi423" if args.instrument == "auto" else args.instrument
-    probe = Survey({"name": args.name, "instrument": prefer, "data_root": str(data_root)}, out.parent)
-    found = probe.site_dirs()
-    if not found:
-        print(f"ERROR no site folder with {', '.join(spec['label'] for spec in INSTRUMENTS.values())} "
-              f"files under {data_root}")
-        return 1
-    # a folder of a recorder mt-workbench does not read (Orange Box HFM*.BIN files, say) is not
-    # a site of this survey; such folders are listed here
-    skipped = sorted(d.name for d in data_root.iterdir() if d.is_dir() and d.name not in found)
-    if skipped:
-        print(f"skipped {len(skipped)} folder(s) with no {', '.join(spec['label'] for spec in INSTRUMENTS.values())} "
-              f"files (not a recorder mt-workbench reads, or no data): {', '.join(skipped)}")
-    recorder = {site: probe.instrument_of(site) for site in found}
-    counts = Counter(recorder.values())  # the most common is the survey's; a tie goes to INSTRUMENTS order
-    instrument = prefer if args.instrument != "auto" else max(INSTRUMENTS, key=lambda i: counts[i])
-    channels = channels_from_label(args.channels or default_preset(instrument), instrument)
-    if not channels:
-        parser.error(f"--channels {args.channels!r} names no channel: a preset ("
-                     + "; ".join(CHANNEL_PRESETS[instrument]) + ") or a list such as hx,hy")
     own = {site: channels_from_label(default_preset(inst), inst)
            for site, inst in recorder.items() if inst != instrument}
-    electric_gain = args.electric_gain if args.electric_gain is not None else 1.0
-    if args.electric_gain is not None and "edl" not in recorder.values():
-        parser.error("--electric-gain is an Earth Data PR6-24 electric-chain setting, and no site here is an EDL")
-    facts = {site: read_site(folder, recorder[site], args.clock_timezone) for site, folder in found.items()}
-    # the survey's rate: the most common among its own instrument's sites
-    rates = Counter(f["sample_rate"] for site, f in facts.items()
-                    if f["sample_rate"] and recorder[site] == instrument)
-    sample_rate = rates.most_common(1)[0][0] if rates else 1000.0
     sites = {site: site_entry(f) for site, f in facts.items()}
     for site, site_channels in own.items():
         entry = dict(sites[site], instrument=recorder[site], channels=site_channels)
         if recorder[site] == "edl":  # an EDL site in another recorder's survey: its own sensors
             entry["sensor_type"] = edl_sensor_for(facts[site]["sample_rate"])
         sites[site] = {k: entry[k] for k in KEY_ORDER if k in entry}
-    # an EDL site whose recorder.ini flags channel_n_high_gain on some channel: printed against
-    # the declared electric_gain below for information; the electric chain's gain is declared
-    # from the field notes
-    ini_flags = {site: f.get("high_gain") for site, f in facts.items()
-                if recorder[site] == "edl" and f.get("high_gain")}
     for site, f in facts.items():
         # a site of the survey's instrument not at the survey rate gets a note
         # in its entry, shown in the Metadata table, as well as a console
@@ -606,12 +565,304 @@ def main(argv=None) -> int:
             entry = sites[site]
             entry["notes"] = "; ".join(t for t in (entry.get("notes", ""), note) if t)
             sites[site] = {k: entry[k] for k in KEY_ORDER if k in entry}
+    return sites, own
+
+
+def print_sites(sites: dict, facts: dict, recorder: dict, own: dict, channels: list, sample_rate: float) -> None:
+    """Print one line per site read (serial, position, span, rate, recorder, columns) and its warnings.
+
+    Args:
+        sites (dict): The entries, as `build_entries` returns them.
+        facts (dict): {site: facts}, as `read_site` returns them.
+        recorder (dict): {site: instrument}.
+        own (dict): {site: channels} of the sites recorded on another
+            instrument than the survey's.
+        channels (list): The survey's declared channels.
+        sample_rate (float): The survey's sample rate in Hz.
+    """
+    for site, f in facts.items():
+        entry = sites[site]
+        declared = own.get(site, channels)
+        where = (f"{entry['latitude']:.6f} {entry['longitude']:.6f} {entry.get('elevation', float('nan')):.1f} m"
+                 if "latitude" in entry else "no position")
+        hours = (f["end"] - f["start"]).total_seconds() / 3600.0
+        rate = f"{f['sample_rate']:g} Hz" if f["sample_rate"] else "rate unknown"
+        columns = "unknown" if f["columns"] is None else " ".join(f["columns"]) or "none"
+        print(f"  {site:<12} serial {entry.get('serial', '-'):>5}  firmware {entry.get('firmware', '-')}  "
+              f"{where}  {entry['start']} to {entry['end']} ({hours:.1f} h, {f['files']} files)  {rate}  "
+              f"{recorder[site]}  columns {columns}, declared {' '.join(declared)}")
+        if f["problem"]:
+            print(f"  WARNING {site}: {f['problem']}")
+        missing = [c for c in declared if f["columns"] is not None and c not in f["columns"]]
+        if missing:
+            print(f"  WARNING {site}: declared channel(s) {' '.join(missing)} not among the first file's "
+                  f"columns ({columns}): ingest has nothing to keep for them")
+        if f["sample_rate"] and f["sample_rate"] != sample_rate and site not in own:
+            print(f"  WARNING {site}: recorded at {f['sample_rate']:g} Hz, the survey says {sample_rate:g} Hz")
+
+
+def print_skipped(data_root: Path, found: dict, workspace: Path) -> None:
+    """Print the folders under data_root that are not sites: no file of a recorder mt-workbench reads.
+
+    The workspace is left out when it lies under data_root, as it does by
+    default.
+    """
+    skipped = sorted(d.name for d in data_root.iterdir()
+                     if d.is_dir() and d.name not in found and d.resolve() != workspace)
+    if skipped:
+        print(f"skipped {len(skipped)} folder(s) with no {', '.join(spec['label'] for spec in INSTRUMENTS.values())} "
+              f"files (not a recorder mt-workbench reads, or no data): {', '.join(skipped)}")
+
+
+def ignored_arguments(args, config: dict) -> list[str]:
+    """Return one line per head argument given on a re-run whose value differs from the file's.
+
+    A re-run does not change the head of survey.yaml, so such an argument
+    has no effect and is named. An argument that was not given, or that
+    equals the file's value, has no line.
+
+    Args:
+        args (argparse.Namespace): The parsed command line; a head argument
+            that was not given is None.
+        config (dict): The parsed survey.yaml.
+
+    Returns:
+        list[str]: The lines, each starting "ignored on a re-run: ".
+    """
+    defaults = config.get("defaults") or {}
+    instrument = config.get("instrument", "lemi423")
+    asked = []  # (the argument as typed, its value, the key of survey.yaml, True for a key of defaults:)
+    if args.instrument not in (None, "auto"):
+        asked.append((f"--instrument {args.instrument}", args.instrument, "instrument", False))
+    if args.channels is not None:
+        asked.append((f"--channels {args.channels}", channels_from_label(args.channels, instrument), "channels",
+                      True))
+    if args.electric_gain is not None:
+        asked.append((f"--electric-gain {args.electric_gain:g}", args.electric_gain, "electric_gain", True))
+    if args.timezone is not None:
+        asked.append((f"--timezone {args.timezone}", args.timezone, "timezone", False))
+    if args.clock_timezone is not None:
+        asked.append((f"--clock-timezone {args.clock_timezone}", args.clock_timezone, "clock_timezone", True))
+    if args.workspace is not None:
+        asked.append((f"--workspace {args.workspace}", Path(args.workspace).resolve().as_posix(), "workspace", False))
+    if args.calibration is not None:
+        asked.append((f"--calibration {args.calibration}", f"sensors/{Path(args.calibration).name}",
+                      "calibration_fn", True))
+    lines = []
+    for typed, value, key, in_defaults in asked:
+        held = (defaults if in_defaults else config).get(key)
+        if key == "workspace" and held is not None:
+            held = Path(str(held)).resolve().as_posix()
+        if survey_file.same(value, held):
+            continue
+        shown = "[" + ", ".join(str(item) for item in held) + "]" if isinstance(held, list) else held
+        if held is None:
+            kept = f"has no {key} in defaults:" if in_defaults else f"has no {key}: line"
+        else:
+            kept = f"keeps {shown} in defaults:" if in_defaults else f"keeps {key}: {shown}"
+        lines.append(f"ignored on a re-run: {typed} (survey.yaml {kept})")
+    return lines
+
+
+def add_sites(args, data_root: Path, out: Path) -> int:
+    """Add an entry for each site folder that has none to a survey.yaml that exists.
+
+    The new entries are built against the file's own instrument, sample
+    rate and `defaults:`. The head of the file is not changed, and a head
+    argument given with another value is printed as ignored. With
+    --site-table, the rows of sites that already have an entry are applied
+    to those entries in place. One `mt_workbench.survey_file.edit` writes
+    the new entries and those changes, and keeps the file as it was in
+    survey.yaml.previous.
+
+    Args:
+        args (argparse.Namespace): The parsed command line.
+        data_root (Path): The data folder given, resolved.
+        out (Path): The survey.yaml, which exists.
+
+    Returns:
+        int: 0 done or nothing to add, 1 no site folder found, 2 refused.
+    """
+    try:
+        config = yaml.safe_load(out.read_bytes().decode("utf-8"))
+    except (yaml.YAMLError, UnicodeDecodeError) as exc:
+        print(f"ERROR {out} does not read as YAML ({exc}): fix it by hand first")
+        return 2
+    entries = (config.get("sites") or {}) if isinstance(config, dict) else None
+    if not isinstance(entries, dict) or not config.get("name") or not config.get("data_root"):
+        print(f"ERROR {out} is not a survey.yaml with a name, a data_root and a sites: block of entries: fix it "
+              f"by hand, or give another --out")
+        return 2
+    held_root = Path(str(config["data_root"])).resolve()
+    if held_root != data_root:
+        print(f"ERROR survey.yaml reads its sites from {held_root}; give that folder, or change data_root by hand "
+              f"({out})")
+        return 2
+    if str(config["name"]) != args.name:
+        print(f"ERROR {out} is the survey {str(config['name'])!r}, not {args.name!r}: give --name {config['name']}, "
+              f"or another --out for a new survey")
+        return 2
+    try:
+        survey = Survey(config, out.parent)
+    except ValueError as exc:
+        print(f"ERROR {out}: {exc}")
+        return 2
+    for line in ignored_arguments(args, config):
+        print(line)
+    found = survey.site_dirs()
+    if not found:
+        print(f"ERROR no site folder with {', '.join(spec['label'] for spec in INSTRUMENTS.values())} "
+              f"files under {data_root}")
+        return 1
+    print_skipped(data_root, found, survey.workspace.resolve())
+    names = {str(name) for name in entries}
+    new = {site: folder for site, folder in found.items() if site not in names}
+    defaults = survey.defaults
+    channels = defaults.get("channels") or channels_from_label(default_preset(survey.instrument), survey.instrument)
+    recorder = {site: survey.instrument_of(site) for site in new}
+    clock_timezone = str(defaults.get("clock_timezone") or "UTC")
+    facts = {site: read_site(folder, recorder[site], clock_timezone) for site, folder in new.items()}
+    sites, own = build_entries(facts, recorder, survey.instrument, survey.sample_rate)
+    asked = {}
+    if args.site_table:
+        asked = merge_site_table(sites, Path(args.site_table), {str(name): entry for name, entry in entries.items()})
+    try:
+        result = survey_file.edit(out, add=sites, sites=asked)
+    except survey_file.SurveyFileRefused as exc:
+        print(f"ERROR {exc}")
+        return 2
+
+    added, changed = list(result.made["add"]), list(result.made["sites"])
+    left = f"left as they are: {len(entries) - len(changed)} site(s) with an entry"
+    print_sites(sites, facts, recorder, own, channels, survey.sample_rate)
+    print(f"added {len(added)} site(s): {', '.join(added)}; {left}" if added else
+          "nothing to add: every site folder has an entry")
+    if changed:
+        print(f"changed {len(changed)} site(s) from the site table:")
+        for line in result.summary:
+            if line.startswith(tuple(f"{site}: " for site in changed)):
+                print(f"  {line}")
+        if not added:
+            print(left)
+    elif asked:
+        print(f"site table {Path(args.site_table).name}: the {len(asked)} site(s) with an entry that it names "
+              f"already read as the table")
+    no_folder = [str(name) for name in entries if str(name) not in found]
+    if no_folder:
+        print(f"entries with no folder under {data_root}: {len(no_folder)} (derived, burst or observatory sites, "
+              f"or a folder that was not found): {', '.join(no_folder[:10])}{' ...' if len(no_folder) > 10 else ''}")
+    if result.written:
+        print(f"wrote {out}; the file as it was: {result.previous}")
+    if added:
+        print("next: set the dipole lengths and azimuths of the new site(s) that differ from the usual values "
+              "(the GUI's Metadata tab, or --site-table)")
+    return 0
+
+
+def main(argv=None) -> int:
+    """Write a new survey.yaml, or add the site folders with no entry to one that exists.
+
+    Args:
+        argv (list[str] | None): Command-line arguments; sys.argv when None.
+
+    Returns:
+        int: 0 on success, also when a re-run finds nothing to add; 1 when
+        no site folder is found; 2 when refused: the name of a new survey,
+        --force, a re-run whose data folder or name differs from the
+        file's, an edit the survey.yaml cannot take, or a bad argument.
+    """
+    parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    parser.add_argument("data_root", help="the folder holding one subfolder per site")
+    parser.add_argument("--name", required=True, help="survey name (also the default folder under surveys/)")
+    parser.add_argument("--instrument", choices=["auto", *INSTRUMENTS],
+                        help="the survey's instrument (default auto: the most common among the sites' folders)")
+    parser.add_argument("--channels", help="the columns that had a sensor, for the survey's instrument: a "
+                        "preset label (LEMI-423: " + "; ".join(CHANNEL_PRESETS["lemi423"]) + ") or a comma "
+                        "list such as hx,hy; default the instrument's first preset")
+    parser.add_argument("--electric-gain", type=float, help="extra gain of an EDL (PR6-24) site's electric "
+                        "chain beyond the reader's own (the x10 terminal box), declared from the field "
+                        "notes, e.g. 10; written as defaults: electric_gain")
+    parser.add_argument("--timezone", help=f"IANA name, for display only (default {DEFAULT_TIMEZONE}, or the "
+                        "site table's)")
+    parser.add_argument("--clock-timezone", help="Orange Box sites: the IANA name of the zone the loggers' "
+                        "real-time clocks ran on, with which their stamps are read as UTC (default UTC)")
+    parser.add_argument("--out", help="survey.yaml to write, or to add sites to when it exists (default "
+                        "surveys/<name>/survey.yaml)")
+    parser.add_argument("--workspace", help="archives, TFs and figures (default <data_root>/work)")
+    parser.add_argument("--calibration", help="coil response file (default the LEMI-120 table "
+                        "surveys/burra/sensors/l120n.rsp)")
+    parser.add_argument("--site-table", help="CSV or XLSX: a site column plus any editable column; on a re-run "
+                        "its rows also change the sites that already have an entry")
+    parser.add_argument("--force", action="store_true", help="refused: a re-run only adds the site folders that "
+                        "have no entry; to start again, delete the survey.yaml by hand")
+    args = parser.parse_args(argv)
+
+    data_root = Path(args.data_root).resolve()
+    out = Path(args.out) if args.out else REPO / "surveys" / args.name / "survey.yaml"
+    out = out.resolve()
+    if args.force:
+        print("ERROR " + FORCE_GONE.format(out=out))
+        return 2
+    for zone, what, example in ((args.timezone, "timezone", DEFAULT_TIMEZONE),
+                                (args.clock_timezone, "clock timezone", "Australia/Perth")):
+        try:
+            pd.Timestamp.now(tz=zone)  # None reads as no zone
+        except Exception:
+            parser.error(f"unknown {what} {zone!r} (an IANA name, e.g. {example})")
+    if not data_root.is_dir():
+        parser.error(f"no such folder: {data_root}")
+    calibration = Path(args.calibration) if args.calibration else DEFAULT_CALIBRATION
+    if not calibration.is_file():
+        parser.error(f"no such coil response file: {calibration}")
+    if out.exists():
+        return add_sites(args, data_root, out)
+
+    # a new survey: its name is checked before any folder is read, and a head argument not given takes its default
+    try:
+        check_survey_name(args.name)
+    except ValueError as exc:
+        print(f"ERROR {exc}")
+        return 2
+    workspace = Path(args.workspace).resolve() if args.workspace else data_root / "work"
+    timezone = args.timezone or DEFAULT_TIMEZONE
+    clock_timezone = args.clock_timezone or "UTC"
+    prefer = "lemi423" if args.instrument in (None, "auto") else args.instrument
+    probe = Survey({"name": args.name, "instrument": prefer, "data_root": str(data_root)}, out.parent)
+    found = probe.site_dirs()
+    if not found:
+        print(f"ERROR no site folder with {', '.join(spec['label'] for spec in INSTRUMENTS.values())} "
+              f"files under {data_root}")
+        return 1
+    # a folder of a recorder mt-workbench does not read is not a site of this survey; such folders are listed
+    print_skipped(data_root, found, workspace)
+    recorder = {site: probe.instrument_of(site) for site in found}
+    counts = Counter(recorder.values())  # the most common is the survey's; a tie goes to INSTRUMENTS order
+    instrument = prefer if args.instrument not in (None, "auto") else max(INSTRUMENTS, key=lambda i: counts[i])
+    channels = channels_from_label(args.channels or default_preset(instrument), instrument)
+    if not channels:
+        parser.error(f"--channels {args.channels!r} names no channel: a preset ("
+                     + "; ".join(CHANNEL_PRESETS[instrument]) + ") or a list such as hx,hy")
+    electric_gain = args.electric_gain if args.electric_gain is not None else 1.0
+    if args.electric_gain is not None and "edl" not in recorder.values():
+        parser.error("--electric-gain is an Earth Data PR6-24 electric-chain setting, and no site here is an EDL")
+    facts = {site: read_site(folder, recorder[site], clock_timezone) for site, folder in found.items()}
+    # the survey's rate: the most common among its own instrument's sites
+    rates = Counter(f["sample_rate"] for site, f in facts.items()
+                    if f["sample_rate"] and recorder[site] == instrument)
+    sample_rate = rates.most_common(1)[0][0] if rates else 1000.0
+    sites, own = build_entries(facts, recorder, instrument, sample_rate)
+    # an EDL site whose recorder.ini flags channel_n_high_gain on some channel: printed against
+    # the declared electric_gain below for information; the electric chain's gain is declared
+    # from the field notes
+    ini_flags = {site: f.get("high_gain") for site, f in facts.items()
+                if recorder[site] == "edl" and f.get("high_gain")}
     if args.site_table:
         merge_site_table(sites, Path(args.site_table))
         zone = table_timezone(Path(args.site_table))
-        if zone and zone != args.timezone:
-            print(f"timezone from the site table: {zone} (command line said {args.timezone})")
-            args.timezone = zone
+        if zone and zone != timezone:
+            print(f"timezone from the site table: {zone}" +
+                  (f" (command line said {args.timezone})" if args.timezone else ""))
+            timezone = zone
 
     out.parent.mkdir(parents=True, exist_ok=True)
     sensor = out.parent / "sensors" / calibration.name
@@ -622,7 +873,7 @@ def main(argv=None) -> int:
         name=scalar(args.name), instrument=instrument,
         sample_rate=int(sample_rate) if float(sample_rate).is_integer() else sample_rate,
         data_root=scalar(data_root.as_posix()), workspace=scalar(workspace.as_posix()),
-        timezone=scalar(args.timezone),
+        timezone=scalar(timezone),
         calibration_fn=scalar(f"sensors/{calibration.name}"),
         channels="[" + ", ".join(scalar(c) for c in channels) + "]",
         edl_sensor="" if instrument != "edl" else (
@@ -644,9 +895,8 @@ def main(argv=None) -> int:
     if instrument == "phoenix":
         head = phoenix_defaults(head)
     if instrument == "orangebox":
-        head = orangebox_defaults(head, args.clock_timezone)
-    # the sites block as burra_notes_to_yaml.py's write_sites_block and the GUI's
-    # Save write it, so a later save rewrites it without reflowing anything
+        head = orangebox_defaults(head, clock_timezone)
+    # the sites block as burra_notes_to_yaml.py's write_sites_block writes it
     body = yaml.safe_dump(sites, sort_keys=False, allow_unicode=True, default_flow_style=False)
     with open(out, "w", encoding="utf-8", newline="\n") as f:
         f.write(head + "sites:\n" + indent(body, "  "))
@@ -665,25 +915,7 @@ def main(argv=None) -> int:
     for site, flags in ini_flags.items():
         print(f"  {site}: recorder.ini sets channel_n_high_gain=1 for {' '.join(flags)}: informational; "
               f"electric_gain {electric_gain:g} is declared from the field notes, not read from recorder.ini")
-    for site, f in facts.items():
-        entry = sites[site]
-        declared = own.get(site, channels)
-        where = (f"{entry['latitude']:.6f} {entry['longitude']:.6f} {entry.get('elevation', float('nan')):.1f} m"
-                 if "latitude" in entry else "no position")
-        hours = (f["end"] - f["start"]).total_seconds() / 3600.0
-        rate = f"{f['sample_rate']:g} Hz" if f["sample_rate"] else "rate unknown"
-        columns = "unknown" if f["columns"] is None else " ".join(f["columns"]) or "none"
-        print(f"  {site:<12} serial {entry.get('serial', '-'):>5}  firmware {entry.get('firmware', '-')}  "
-              f"{where}  {entry['start']} to {entry['end']} ({hours:.1f} h, {f['files']} files)  {rate}  "
-              f"{recorder[site]}  columns {columns}, declared {' '.join(declared)}")
-        if f["problem"]:
-            print(f"  WARNING {site}: {f['problem']}")
-        missing = [c for c in declared if f["columns"] is not None and c not in f["columns"]]
-        if missing:
-            print(f"  WARNING {site}: declared channel(s) {' '.join(missing)} not among the first file's "
-                  f"columns ({columns}): ingest has nothing to keep for them")
-        if f["sample_rate"] and f["sample_rate"] != sample_rate and site not in own:
-            print(f"  WARNING {site}: recorded at {f['sample_rate']:g} Hz, the survey says {sample_rate:g} Hz")
+    print_sites(sites, facts, recorder, own, channels, sample_rate)
     print("next: set dipole lengths and azimuths from the field sheet (the GUI's Metadata tab, or "
           "--site-table); with legacy EDIs, run scripts/match_reference_edis.py <edi_dir> "
           f"{out}")

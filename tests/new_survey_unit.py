@@ -42,16 +42,19 @@ Usage:
     and the dipole lengths as the defaults; or the `workspace:` key (and
     `Survey.workspace`) is not `<data_root>/work`, or the script made that
     folder (it only writes the key: on a real survey it is the data drive);
-(5) a second run without --force does not refuse (exit 2) and leave the file
-    unchanged;
-(6) --site-table with a CSV naming S01 (dipole_length_ex 48.5, azimuth_ex
-    180) and a site that does not exist (X99) does not set exactly those two
-    values on S01, leave S02 as it was, and print "1 of 2 sites matched";
-(7) --workspace DIR (with --force) does not write `workspace:` DIR instead;
+(5) a second run with the same folders exits other than 0, does not say
+    "nothing to add: every site folder has an entry", changes a byte of the
+    file, makes survey.yaml.previous, or prints an "ignored on a re-run"
+    line;
+(6) a first run with --site-table and a CSV naming S01 (dipole_length_ex
+    48.5, azimuth_ex 180) and a site that does not exist (X99) does not set
+    exactly those two values on S01, leave S02 as it was, and print "1 of 2
+    sites matched";
+(7) --workspace DIR does not write `workspace:` DIR instead;
 (8) the default run's summary does not print, on each site's line, the
     columns mt-io reads from the first file ("columns hx hy hz ex ey") next
     to the declared set ("declared ex ey hx hy"); or --channels "hx,hy"
-    (with --force) does not write `defaults: channels: [hx, hy]`, print
+    does not write `defaults: channels: [hx, hy]`, print
     "declared hx hy" on both sites' lines and warn about no channel; or
     --channels "Bx By (magnetics only)" (a preset label) does not write
     [hx, hy] too;
@@ -108,11 +111,12 @@ an EDL, EGFLP02, cut into the scratch folder). **This test fails if**
      informationally; `--electric-gain 10` does not write `defaults:
      electric_gain: 10.0` with no site's own entry given one, with
      `Survey.site` reading 10.0 back for all three sites; or a non-numeric
-     value, or the flag over part 1's LEMI-423-only root, does not stop the
-     script (exit 2) before it writes anything.
+     value, or the flag over part 1's LEMI-423-only root, each run into a
+     survey.yaml that does not exist, does not stop the script with exit 2
+     and a message that names the electric gain, with no file written.
 
-Part 4, the name of a new survey, on part 1's data root and on a folder with
-no site in it. **This test fails if**
+Part 4, the name of a new survey and the second run over a survey.yaml that
+exists (a re-run), on data roots built as part 1's. **This test fails if**
 
 (15) at a first run a name of 31 characters, a name with a space or a name
      with an accent is not refused with exit 2 and a message that says what
@@ -120,12 +124,50 @@ no site in it. **This test fails if**
      after the folders would exit 1), or the refused run makes the folder of
      the survey.yaml; a name of 30 characters is refused; or
      `check_survey_name` accepts an empty name, a dot, a slash or a space,
-     or refuses letters, digits, "_" and "-".
+     or refuses letters, digits, "_" and "-";
+(16) after a first run with `--timezone Australia/Perth`, a comment line and
+     a key (`rot_h: 3.0` on S01) typed into the file and a folder S03 put
+     under the data root, a re-run with no head argument does not exit 0,
+     insert the entry of S03 (its position, serial, firmware and span as
+     its files give them) as one run of lines after the last entry with
+     every other line as it was, keep the file before it as
+     survey.yaml.previous, print "added 1 site(s): S03; left as they are: 2
+     site(s) with an entry", or it prints an "ignored on a re-run" line;
+(17) a re-run with `--timezone Australia/Adelaide`, which differs from the
+     file, does not print the one line "ignored on a re-run: --timezone
+     Australia/Adelaide (survey.yaml keeps timezone: Australia/Perth)" and
+     leave every byte; or `--timezone Australia/Perth`, equal to the file,
+     prints such a line;
+(18) `--force`, on the survey.yaml that exists and on one that does not, does
+     not exit 2 with the message that says to delete the file by hand, the
+     file unchanged or not made;
+(19) a re-run with another data root, or another `--name`, is not refused
+     with exit 2, a message that names the folder or the name the file
+     holds, and the file unchanged;
+(20) on a file whose `name:` has 33 characters (typed in by hand, as two
+     surveys made before the name check have), a re-run with that name does
+     not add the folder S04; or its row of the `--site-table` given
+     (dipole_length_ex 46) is not in the new entry;
+(21) a re-run with `--site-table` does not change the sites that have an
+     entry in place: S01's row (dipole_length_ex 48.5, azimuth_ex 0, which
+     equals `defaults:`, a latitude 0.01 deg off the header's) must add the
+     one line `dipole_length_ex: 48.5` to S01's entry, write no azimuth_ex,
+     keep the latitude and print the disagreement, S03's row must add
+     `dipole_length_ey: 47.0`, every other line and the typed comment must
+     stay, and the output must name both sites with the values changed and
+     "left as they are: 2 site(s)"; or the same table run again changes a
+     byte or does not say that the two sites already read as the table.
 
 The mutations part 4 catches, each made in a copy of the code: `>` written
 as `>=` in `check_survey_name` (the 30-character item of (15) fails); the
 name checked after the site folders are looked for (the first item of (15)
-exits 1).
+exits 1); a re-run that writes the file again from the folders ((5) does
+not say "nothing to add") or, when it adds, from its parsed form ((16): the
+typed comment is lost and every line changes); `--timezone` defaulting to
+Australia/Adelaide again ((16) prints an "ignored" line); `--force`
+accepted ((18)); the data root of the file not compared ((19)); the name
+checked on a re-run ((20)); the table rows of sites that have an entry not
+applied ((21)).
 
 Part 2, the real-data check: the script run over the Curnamona Cube raw data
 (E:, read only) into the scratch folder must give D02 and E08 latitudes and
@@ -140,6 +182,7 @@ Skipped with a printed reason when E: is not mounted.
 
 from __future__ import annotations
 
+import difflib
 import importlib.util
 import shutil
 import subprocess
@@ -241,6 +284,13 @@ def build_data_root(root: Path) -> None:
     (root / "field_notes" / "sheet.txt").write_text("not a site\n")
 
 
+def fresh(name: str) -> Path:
+    """Return <scratch>/<name>/survey.yaml with its folder removed, so the next run is a first run."""
+    out = SCRATCH / name / "survey.yaml"
+    shutil.rmtree(out.parent, ignore_errors=True)
+    return out
+
+
 def run(*args) -> subprocess.CompletedProcess:
     """Run scripts/new_survey.py with `args`, output captured."""
     return subprocess.run([sys.executable, str(SCRIPT), *map(str, args)], cwd=REPO,
@@ -307,19 +357,22 @@ def part1() -> None:
 
     before = out.read_bytes()
     again = run(root, "--name", "synthetic", "--out", out)
-    assert again.returncode == 2 and out.read_bytes() == before, (again.returncode, again.stdout)
-    print(f"(5) a second run without --force refused: {again.stdout.strip()}")
+    assert again.returncode == 0 and out.read_bytes() == before, (again.returncode, again.stdout, again.stderr)
+    assert "nothing to add: every site folder has an entry" in again.stdout, again.stdout
+    assert "ignored on a re-run" not in again.stdout, again.stdout
+    assert not out.with_name("survey.yaml.previous").exists(), "a run that adds nothing made survey.yaml.previous"
+    print(f"(5) a second run with the same folders: {again.stdout.strip().splitlines()[-1]}; the file as it was")
 
     table = SCRATCH / "two_rows.csv"
     # the table's elevation is 1000 m low on purpose (as a hand-typed table can
     # be): the header's GPS fix must win and the disagreement be printed
     low = float(sites["S01"]["elevation"]) - 1000.0
     table.write_text(f"site,dipole_length_ex,azimuth_ex,elevation\nS01,48.5,180,{low}\nX99,10,0,\n", encoding="utf-8")
-    merged = run(root, "--name", "synthetic", "--out", out, "--site-table", table, "--force")
+    merged = run(root, "--name", "synthetic", "--out", fresh("synthetic_table"), "--site-table", table)
     assert merged.returncode == 0, merged.stdout + merged.stderr
     assert "1 of 2 sites matched" in merged.stdout, merged.stdout
     assert "S01 elevation: table" in merged.stdout and "header kept" in merged.stdout, merged.stdout
-    after = yaml.safe_load(out.read_text(encoding="utf-8"))["sites"]
+    after = yaml.safe_load((SCRATCH / "synthetic_table" / "survey.yaml").read_text(encoding="utf-8"))["sites"]
     changed = {k: v for k, v in after["S01"].items() if sites["S01"].get(k) != v}
     assert changed == {"dipole_length_ex": 48.5, "azimuth_ex": 180.0}, changed
     assert after["S01"]["elevation"] == sites["S01"]["elevation"], after["S01"]["elevation"]
@@ -327,9 +380,10 @@ def part1() -> None:
     print(f"(6) --site-table: S01 changed {changed}, its elevation kept from the header, S02 untouched")
 
     elsewhere = SCRATCH / "elsewhere"
-    moved = run(root, "--name", "synthetic", "--out", out, "--workspace", elsewhere, "--force")
+    moved_out = fresh("synthetic_workspace")
+    moved = run(root, "--name", "synthetic", "--out", moved_out, "--workspace", elsewhere)
     assert moved.returncode == 0, moved.stdout + moved.stderr
-    got = yaml.safe_load(out.read_text(encoding="utf-8"))["workspace"]
+    got = yaml.safe_load(moved_out.read_text(encoding="utf-8"))["workspace"]
     assert Path(got) == elsewhere.resolve(), got
     print(f"(7) --workspace {elsewhere}: workspace {got}")
 
@@ -337,16 +391,17 @@ def part1() -> None:
         line = next(ln for ln in done.stdout.splitlines() if ln.strip().startswith(site))
         assert line.endswith("columns hx hy hz ex ey, declared ex ey hx hy"), line
     for arg in ("hx,hy", "Bx By (magnetics only)"):
-        mag = run(root, "--name", "synthetic", "--out", out, "--channels", arg, "--force")
+        mag_out = fresh("synthetic_channels")
+        mag = run(root, "--name", "synthetic", "--out", mag_out, "--channels", arg)
         assert mag.returncode == 0, mag.stdout + mag.stderr
-        got = yaml.safe_load(out.read_text(encoding="utf-8"))["defaults"]["channels"]
+        got = yaml.safe_load(mag_out.read_text(encoding="utf-8"))["defaults"]["channels"]
         assert got == ["hx", "hy"], (arg, got)
         lines = [ln for ln in mag.stdout.splitlines() if ln.strip().startswith(("S01", "S02"))]
         assert len(lines) == 2 and all(ln.endswith("declared hx hy") for ln in lines), lines
         assert "not among" not in mag.stdout, mag.stdout
         print(f"(8) --channels {arg!r}: defaults channels {got}; S01 {lines[0][lines[0].index('columns'):]}")
 
-    odd = run(root, "--name", "synthetic", "--out", out, "--channels", "e1,e2,hx,hy", "--force")
+    odd = run(root, "--name", "synthetic", "--out", fresh("synthetic_odd"), "--channels", "e1,e2,hx,hy")
     assert odd.returncode == 0, odd.stdout + odd.stderr
     warned = [ln.strip() for ln in odd.stdout.splitlines() if "not among the first file's columns" in ln]
     assert [w.split(":")[0] for w in warned] == ["WARNING S01", "WARNING S02"], warned
@@ -517,7 +572,8 @@ def test_edl_electric_gain() -> None:
     own = {s: config["sites"][s].get("electric_gain") for s in flags}
     assert own == {"ST91": None, "ST92": None, "ST93": None}, own
     assert "ST91: recorder.ini sets channel_n_high_gain=1 for ex ey" in done.stdout, done.stdout
-    done = run(root / "raw", "--name", "edl_gain", "--out", out, "--electric-gain", "10", "--force")
+    out = root / "gain_10" / "survey.yaml"
+    done = run(root / "raw", "--name", "edl_gain", "--out", out, "--electric-gain", "10")
     assert done.returncode == 0, done.stdout + done.stderr
     config = yaml.safe_load(out.read_text(encoding="utf-8"))
     assert config["defaults"]["electric_gain"] == 10.0, config["defaults"]
@@ -526,14 +582,17 @@ def test_edl_electric_gain() -> None:
     survey = Survey.from_yaml(out)
     resolved = {s: survey.site(s).electric_gain for s in flags}
     assert resolved == {"ST91": 10.0, "ST92": 10.0, "ST93": 10.0}, resolved
-    before = out.read_bytes()
-    for args in ((root / "raw", "--electric-gain", "abc"), (SCRATCH / "raw", "--electric-gain", "10")):
-        bad = run(args[0], "--name", "edl_gain", "--out", out, "--force", *args[1:])
-        assert bad.returncode == 2, (args, bad.returncode, bad.stdout, bad.stderr)
-    assert out.read_bytes() == before, "a refused run wrote survey.yaml"
+    for data_root, value, fragment in ((root / "raw", "abc", "argument --electric-gain: invalid float value"),
+                                       (SCRATCH / "raw", "10", "--electric-gain is an Earth Data PR6-24")):
+        bad_out = root / "refused" / "survey.yaml"
+        shutil.rmtree(bad_out.parent, ignore_errors=True)
+        bad = run(data_root, "--name", "edl_gain", "--out", bad_out, "--electric-gain", value)
+        assert bad.returncode == 2, (data_root, value, bad.returncode, bad.stdout, bad.stderr)
+        assert fragment in bad.stderr, (value, bad.stderr)
+        assert not bad_out.exists(), f"a refused run wrote {bad_out}"
     print(f"(14) electric gain: no flag -> no defaults key, no site key, recorder.ini noted "
           f"informationally; '10' -> defaults 10.0, no site key, resolved {resolved}; 'abc' and a "
-          f"LEMI-423-only root refused (exit 2), nothing written")
+          f"LEMI-423-only root refused (exit 2) with the electric gain named, nothing written")
 
 
 def test_survey_name() -> None:
@@ -569,6 +628,116 @@ def test_survey_name() -> None:
         raise AssertionError(f"check_survey_name accepted {bad!r}")
     print("(15) names of 31 characters, with a space and with an accent refused (exit 2) before any folder is "
           "read, nothing made; a name of 30 characters accepted")
+
+
+def line_changes(old: str, new: str) -> list[tuple]:
+    """Return (tag, first old line, old lines, new lines) for each run of lines that differs."""
+    a, b = old.splitlines(keepends=True), new.splitlines(keepends=True)
+    return [(tag, i1, a[i1:i2], b[j1:j2])
+            for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(None, a, b, autojunk=False).get_opcodes()
+            if tag != "equal"]
+
+
+def test_rerun() -> None:
+    """Run checks (16)-(21): a re-run adds the folders with no entry and leaves the rest of the file."""
+    root, out = SCRATCH / "rerun_raw", fresh("rerun")
+    previous = out.with_name("survey.yaml.previous")
+    build_data_root(root)
+    first = run(root, "--name", "rerun", "--out", out, "--timezone", "Australia/Perth")
+    assert first.returncode == 0, first.stdout + first.stderr
+    made = out.read_bytes().decode("utf-8")
+    comment = "  # S02 moved 20 m east on the second day\n"
+    typed = made.replace("  S02:\n", comment + "  S02:\n").replace("  S01:\n", "  S01:\n    rot_h: 3.0\n")
+    assert typed.count(comment) == 1 and typed.count("    rot_h: 3.0\n") == 1, "the hand edits did not go in"
+    out.write_bytes(typed.encode("utf-8"))
+    epoch, spacing = 1625100000, 3600
+    for k in range(2):
+        write_b423(root / "S03" / f"{epoch + k * spacing}.B423", 77, "2.2", -31.3, 138.8, 300.0, epoch + k * spacing)
+
+    again = run(root, "--name", "rerun", "--out", out)
+    assert again.returncode == 0, (again.returncode, again.stdout, again.stderr)
+    added = out.read_bytes().decode("utf-8")
+    changes = line_changes(typed, added)
+    assert len(changes) == 1 and changes[0][0] == "insert" and changes[0][1] == len(typed.splitlines()), changes
+    assert changes[0][3][0] == "  S03:\n", changes[0][3]
+    sites = yaml.safe_load(added)["sites"]
+    assert list(sites) == ["S01", "S02", "S03"], list(sites)
+    s03 = sites["S03"]
+    assert abs(s03["latitude"] + 31.3) <= 1e-6 and abs(s03["longitude"] - 138.8) <= 1e-6, s03
+    assert (s03["elevation"], s03["serial"], s03["firmware"]) == (300.0, "77", "2.2"), s03
+    assert (s03["start"], s03["end"]) == (iso(epoch), iso(epoch + 2 * spacing)), s03
+    assert sites["S01"]["rot_h"] == 3.0 and comment in added
+    assert previous.read_bytes() == typed.encode("utf-8"), "survey.yaml.previous is not the file before the re-run"
+    assert "added 1 site(s): S03; left as they are: 2 site(s) with an entry" in again.stdout, again.stdout
+    assert "ignored on a re-run" not in again.stdout, again.stdout
+    print("(16) re-run: S03 added as one run of lines after the last entry, the typed comment and key and every "
+          "other line kept, the file before it in survey.yaml.previous, no head argument compared")
+
+    ignored = "ignored on a re-run: --timezone Australia/Adelaide (survey.yaml keeps timezone: Australia/Perth)"
+    other = run(root, "--name", "rerun", "--out", out, "--timezone", "Australia/Adelaide")
+    assert other.returncode == 0 and out.read_bytes().decode("utf-8") == added, (other.returncode, other.stdout)
+    assert [ln for ln in other.stdout.splitlines() if "ignored on a re-run" in ln] == [ignored], other.stdout
+    same = run(root, "--name", "rerun", "--out", out, "--timezone", "Australia/Perth")
+    assert same.returncode == 0 and "ignored on a re-run" not in same.stdout, same.stdout
+    print(f"(17) {ignored}; no such line for a value equal to the file's")
+
+    absent = fresh("rerun_force")
+    for target in (out, absent):
+        forced = run(root, "--name", "rerun", "--out", target, "--force")
+        assert forced.returncode == 2, (forced.returncode, forced.stdout, forced.stderr)
+        assert "--force is gone: a re-run only adds the site folders that have no entry" in forced.stdout
+        assert f"delete {target.resolve()} by hand and run this command again" in forced.stdout, forced.stdout
+    assert out.read_bytes().decode("utf-8") == added and not absent.exists(), "--force wrote a file"
+    print("(18) --force refused (exit 2) with the delete-by-hand message, on a file that exists and on none")
+
+    elsewhere = run(SCRATCH / "raw", "--name", "rerun", "--out", out)
+    assert elsewhere.returncode == 2, (elsewhere.returncode, elsewhere.stdout)
+    assert f"survey.yaml reads its sites from {root.resolve()}" in elsewhere.stdout, elsewhere.stdout
+    renamed = run(root, "--name", "other_name", "--out", out)
+    assert renamed.returncode == 2 and "'rerun'" in renamed.stdout, (renamed.returncode, renamed.stdout)
+    assert out.read_bytes().decode("utf-8") == added, "a refused re-run changed the file"
+    print("(19) a re-run with another data root, or another --name, refused (exit 2), the file unchanged")
+
+    long_name = "a_survey_name_of_33_characters_xx"
+    assert len(long_name) == 33
+    assert added.count("name: rerun\n") == 1
+    long_text = added.replace("name: rerun\n", f"name: {long_name}\n")
+    out.write_bytes(long_text.encode("utf-8"))
+    write_b423(root / "S04" / f"{epoch}.B423", 78, "2.2", -31.4, 138.9, 310.0, epoch)
+    table = SCRATCH / "rerun_new_site.csv"
+    table.write_text("site,dipole_length_ex\nS04,46\n", encoding="utf-8")
+    long_run = run(root, "--name", long_name, "--out", out, "--site-table", table)
+    assert long_run.returncode == 0, (long_run.returncode, long_run.stdout, long_run.stderr)
+    sites = yaml.safe_load(out.read_text(encoding="utf-8"))["sites"]
+    assert list(sites) == ["S01", "S02", "S03", "S04"] and sites["S04"]["dipole_length_ex"] == 46.0, sites
+    assert "added 1 site(s): S04" in long_run.stdout, long_run.stdout
+    print("(20) a file whose name has 33 characters: the re-run adds S04, with its row of the site table")
+
+    before = out.read_bytes().decode("utf-8")
+    table = SCRATCH / "rerun_table.csv"
+    off = round(sites["S01"]["latitude"] + 0.01, 6)
+    table.write_text("site,dipole_length_ex,dipole_length_ey,azimuth_ex,latitude\n"
+                     f"S01,48.5,,0,{off}\nS03,,47,,\nX99,10,,,\n", encoding="utf-8")
+    tabled = run(root, "--name", long_name, "--out", out, "--site-table", table)
+    assert tabled.returncode == 0, (tabled.returncode, tabled.stdout, tabled.stderr)
+    after = out.read_bytes().decode("utf-8")
+    inserted = [(tag, old, new) for tag, _at, old, new in line_changes(before, after)]
+    assert inserted == [("insert", [], ["    dipole_length_ex: 48.5\n"]),
+                        ("insert", [], ["    dipole_length_ey: 47.0\n"])], inserted
+    now = yaml.safe_load(after)["sites"]
+    assert list(now["S01"])[-1] == "dipole_length_ex" and "azimuth_ex" not in now["S01"], now["S01"]
+    assert now["S01"]["latitude"] == sites["S01"]["latitude"] and list(now["S03"])[-1] == "dipole_length_ey"
+    assert comment in after and now["S01"]["rot_h"] == 3.0
+    for line in ("changed 2 site(s) from the site table:", "  S01: dipole_length_ex 48.5",
+                 "  S03: dipole_length_ey 47.0", "left as they are: 2 site(s) with an entry"):
+        assert line in tabled.stdout, (line, tabled.stdout)
+    assert "S01 latitude: table" in tabled.stdout and "survey.yaml kept" in tabled.stdout, tabled.stdout
+    assert "not a site folder: X99" in tabled.stdout, tabled.stdout
+    twice = run(root, "--name", long_name, "--out", out, "--site-table", table)
+    assert twice.returncode == 0 and out.read_bytes().decode("utf-8") == after, (twice.returncode, twice.stdout)
+    assert "the 2 site(s) with an entry that it names already read as the table" in twice.stdout, twice.stdout
+    print("(21) a re-run with --site-table: one line added to S01 and one to S03, the value equal to defaults: "
+          "not written, S01's latitude kept and the disagreement printed; the same table again changes no byte")
 
 
 def part2() -> None:
@@ -610,6 +779,7 @@ def main() -> int:
     print(__doc__.split("**This test fails if**")[3].split("Part 2, the real-data check:")[0].strip())
     print()
     test_survey_name()
+    test_rerun()
     part2()
     print("\nPASS  new_survey_unit")
     return 0

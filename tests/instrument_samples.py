@@ -100,7 +100,10 @@ def mixed_root() -> Path:
 
 
 def mixed_survey(*extra: str) -> subprocess.CompletedProcess:
-    """Run scripts/new_survey.py over `mixed_root()` into MIXED_YAML with --force.
+    """Run scripts/new_survey.py over `mixed_root()` into MIXED_YAML as a first run.
+
+    An earlier MIXED_YAML is deleted first: on a file that exists the script
+    only adds the site folders that have no entry.
 
     Args:
         *extra (str): Further command-line arguments for new_survey.py.
@@ -110,8 +113,9 @@ def mixed_survey(*extra: str) -> subprocess.CompletedProcess:
         captured as text.
     """
     root = mixed_root()
+    MIXED_YAML.unlink(missing_ok=True)
     return subprocess.run([sys.executable, str(REPO / "scripts" / "new_survey.py"), str(root), "--name", "mixed",
-                           "--out", str(MIXED_YAML), "--force", *extra],
+                           "--out", str(MIXED_YAML), *extra],
                           cwd=REPO, capture_output=True, text=True)
 
 

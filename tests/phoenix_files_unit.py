@@ -517,9 +517,10 @@ def check_new_survey(root: Path, mutate: bool = False) -> list[str]:
     rsp = phoenix_only.parent / "coil.rsp"
     rsp.write_text("0.1 1.0 0.0\n")
     out = phoenix_only.parent / "survey" / "survey.yaml"
+    out.unlink(missing_ok=True)  # a first run: on a file that exists the script only adds site folders
     with contextlib.redirect_stdout(io.StringIO()):
         code = module.main([str(phoenix_only), "--name", "PHX", "--instrument", "phoenix", "--out", str(out),
-                            "--calibration", str(rsp), "--force"])
+                            "--calibration", str(rsp)])
     if code not in (0, None):
         return [f"new_survey.py exit {code}"]
     survey = Survey.from_yaml(out)
