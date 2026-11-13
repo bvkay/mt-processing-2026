@@ -1096,6 +1096,7 @@ python tests/aurora_fork_unit.py     # aurora fork 0.6.2+mtproc (installed, or t
 python tests/mtio_fork_unit.py       # mt-io fork (the clone at ../mt-io, or installed) on synthetic files: issues 6, 7, 8, 18, 19, 21; the installed mt-io reported check by check (stock 0.0.5 fails all six); skipped without the fork
 python tests/orangebox_unit.py       # mt-io's Orange Box reader: the synthetic layout, the 10.00064 Hz rate kept, files that do not join refused; one real Stuart Shelf hour against the legacy converter (skipped without the raw-data drive)
 QT_QPA_PLATFORM=offscreen python tests/process_type_unit.py  # the Process tab's Processing type on a scratch survey with a known telluric tensor: MT queues process_rr as before; stacks.pair_argv's command line and each of its refusals against the script's dry run (exit 2); the Base box's list; a tensor type queues that line for the station, base, remote, window and kind, the magnetic type a magnetic run; each refusal shown in a warning box; the star of pairs around one base with the sites left out named; a base stack through the recipe picker; one telluric job run through the job runner, the model tensor recovered and its four files under Products
+QT_QPA_PLATFORM=offscreen python tests/view_tensors_unit.py  # the View tensors tab and intersite.draw_estimate on five products process_intersite.py makes on a scratch survey: the rows against the sidecars (an EDI, an impedance sidecar under a tensor's file name and a stray CSV left out), the facts beside the figure, arg(det)/2 and its error bars read back from the figure against the CSV read with pandas, each flag's open marker and its legend entry, no artist at a period not estimated, M less the identity, Reload and the reread after a finished job, products that do not read listed with their reason; 39 mutations that must trip
 # (tests/instrument_samples.py cuts the one-hour LEMI-424 and EDL samples from the raw-data drives, read only)
 ```
 
@@ -1104,6 +1105,58 @@ New dependencies (`pyproject.toml`): `PySide6` and
 rho/phase and phase-tensor plots (induction arrows later), which also drags
 in `contextily` + `xyzservices` (reused by `scripts/fetch_basemap.py`'s tile
 fetch), `geopandas`, `rasterio`, `pyproj`, `simpeg`, `bokeh` and `panel`.
+
+## Viewing a tensor product
+
+The window's View tensors tab, after View EDIs, lists the telluric tensor
+and magnetic tensor products of the survey's `<workspace>/tf` folder: every
+stem that has a `.csv` and a `.json` sidecar whose `kind` is telluric or
+magnetic. The sidecar decides, not the file name, and an EDI product is
+never listed. Each product is one row under its local site, with the base
+(a site, or the stack's name), the reference, the tensor, the tag and the
+window. Reload reads the folder again, and the tab does so itself when a
+`process_intersite.py` job of the queue has finished. A product whose
+sidecar or CSV cannot be read stays in the list with the reason and what
+to do about it.
+
+Choosing a row draws the product. It is the figure
+`scripts/process_intersite.py` writes as `<stem>.png`, drawn from the CSV
+by the same function (`mt_workbench.intersite.draw_estimate`), in three
+panels over one log period axis that spans the whole band layout:
+
+1. the magnitudes of the four elements xx, xy, yx and yy. For a magnetic
+   tensor it is the magnitude of M less the identity, so two matched coils
+   plot near zero and a 1 % gain difference plots at 0.01;
+2. the phases of the four elements, in degrees;
+3. psi = arg(det) / 2, in degrees, with its jackknife error bars and the
+   line of the timing check over the periods it fitted.
+
+psi is relative to the base. It is the phase of the local site's field
+less the base's (half the phase of the determinant of the tensor), and a
+value of psi means something only with its base named: two products of one
+local on two bases differ by the phase between the bases. On a stack as
+the base the magnitudes are in each period's normalised units and are not
+field ratios; the box beside the figure gives the sidecar's own words on
+the units.
+
+A flag marks a period and never removes it. A flagged period keeps its
+place on every curve with an open marker, and in the third panel each flag
+adds a marker of its own, named in the legend under the figure with its
+number of periods: few jackknife groups, low coherence, off-diagonal, and
+Re det < 0. A period that was not estimated has no value and is absent;
+the legend counts those periods, and the period axis still runs to the end
+of the layout. Every point stays in view, and a long error bar may run off
+its panel.
+
+No rotation and no correction is applied, in the tab or in the product:
+each element is in the two sites' channels as recorded (geomagnetic
+coordinates for a layout to magnetic north). The box beside the figure
+gives the facts of the run from the sidecar: local, base, reference,
+window and tag, the periods estimated and the periods under each flag, the
+`masks.yaml` entries applied, each site's frame under the words "as
+recorded, not rotated" (the azimuths of ex and ey, the layout's north, and
+the declination as a recorded number that is not applied), and whether the
+timing check determined a delay.
 
 ## Status
 
