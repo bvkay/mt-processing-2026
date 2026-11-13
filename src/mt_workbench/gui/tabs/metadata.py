@@ -15,6 +15,11 @@ with:
   `instrument:` or what its folder holds), with the parent and rate of a
   derived site ("lemi423 (B01 at 1 Hz)") and an observatory's rate
   ("intermagnet (1 Hz)");
+* two tick boxes, "Ex and Ey swapped" (`swap_e:`) and "Hx and Hy swapped"
+  (`swap_h:`), for a site whose two electric lines or two horizontal coils
+  were connected to each other's inputs; ingest exchanges the samples of the
+  two channels, so a change reaches the data only when the archive is built
+  again ("Rebuild archive");
 * the site's usual remote-reference partner (`remote:`), which the Process,
   Spectra and Coherence tabs preselect;
 * its channels (`channels_column`);
@@ -86,8 +91,21 @@ NO_RECORD_TIP = ("no dc level recorded: the archive was built before the ingest 
                  "scripts/dc_level_check.py reads its samples, and a rebuild records it")
 COLUMNS = ["site", "instrument", "latitude", "longitude", "elevation", "declination", "declination_model",
            "declination_epoch", "dipole_length_ex", "dipole_length_ey",
-           "azimuth_ex", "azimuth_ey", "timing", "remote", "channels", metadata_edit.ELECTRIC_GAIN, "serial",
-           "firmware", "start", "end", "raw folder", "archive", DC_LEVEL, "filters", "notes"]
+           "azimuth_ex", "azimuth_ey", "swap_e", "swap_h", "timing", "remote", "channels",
+           metadata_edit.ELECTRIC_GAIN, "serial", "firmware", "start", "end", "raw folder", "archive", DC_LEVEL,
+           "filters", "notes"]
+# the tick box columns: the site key, its header and the header's tooltip
+SWAPS = {
+    "swap_e": ("Ex and Ey swapped",
+               "Ticked for a site whose two electric lines were connected to each other's inputs: ingest exchanges "
+               "the samples of ex and ey, and the dipole lengths and azimuths are declared for the lines as they "
+               "are after the exchange. The change reaches the data only when the archive is built again: select "
+               "the site and press Rebuild archive."),
+    "swap_h": ("Hx and Hy swapped",
+               "Ticked for a site whose two horizontal coils were plugged into each other's inputs: ingest "
+               "exchanges the samples of hx and hy. The change reaches the data only when the archive is built "
+               "again: select the site and press Rebuild archive."),
+}
 NUMBERS = {"latitude", "longitude", "elevation", "declination", "declination_epoch", "dipole_length_ex",
            "dipole_length_ey", "azimuth_ex", "azimuth_ey"}
 NO_ENTRY_TIP = "no entry yet: press Add sites"
@@ -112,7 +130,7 @@ def rewriting_script(survey) -> str | None:
 
 
 class SortableItem(QTableWidgetItem):
-    """A table cell that sorts on `key`, or its text, and displays `text` as given.
+    """A table cell that sorts on `key`, or its text, and displays `text` as given; a tick box sorts on its state.
 
     Qt's numeric sorting needs the number in the display role, which rounds a
     latitude to six digits on screen; a separate key keeps the YAML value
@@ -133,6 +151,8 @@ class SortableItem(QTableWidgetItem):
 
     def sort_key(self):
         """Return the value the cell sorts on."""
+        if self.data(Qt.CheckStateRole) is not None:  # a tick box sorts on its state, ticked last
+            return 1 if self.checkState() == Qt.Checked else 0
         if self.number:
             try:
                 return float(self.text())
@@ -271,7 +291,9 @@ class MetadataTab(QWidget):
         edit_row.addWidget(self.status_label, 1)
 
         self.table = QTableWidget(0, len(COLUMNS), self)
-        self.table.setHorizontalHeaderLabels(COLUMNS)
+        self.table.setHorizontalHeaderLabels([SWAPS[c][0] if c in SWAPS else c for c in COLUMNS])
+        for key, (_label, tip) in SWAPS.items():
+            self.table.horizontalHeaderItem(COLUMNS.index(key)).setToolTip(tip)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SingleSelection)
         self.table.setEditTriggers(QAbstractItemView.DoubleClicked | QAbstractItemView.EditKeyPressed)
@@ -358,6 +380,12 @@ class MetadataTab(QWidget):
                                                             survey.instrument_of(name), self.state.has_archive(name))
                     if item.flags() & Qt.ItemIsEditable:
                         self._shown[(name, key)] = item.text()
+                elif key in SWAPS:  # a tick box: the site's merged value, false when unset
+                    flag = bool(getattr(cfg, key))
+                    item = SortableItem("")
+                    item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+                    item.setCheckState(Qt.Checked if flag else Qt.Unchecked)
+                    self._shown[(name, key)] = flag
                 elif key == "raw folder":
                     item = _yes_no(name in raw_sites)
                 elif key == "archive":
@@ -370,7 +398,8 @@ class MetadataTab(QWidget):
                 else:  # serial, firmware, start, end: header facts, read-only
                     item = SortableItem(getattr(cfg, key) or "-")
                 if name not in entries:  # a folder with no entry: Save has no entry to write into
-                    item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+                    item.setFlags(item.flags() & ~Qt.ItemIsEditable & ~Qt.ItemIsUserCheckable
+                                  & ~(Qt.ItemIsEnabled if key in SWAPS else Qt.NoItemFlags))
                     item.setForeground(QColor(DISABLED))
                     item.setToolTip(NO_ENTRY_TIP)
                     self._shown.pop((name, key), None)
@@ -409,7 +438,9 @@ class MetadataTab(QWidget):
             dict[str, dict]: {site: {column: value}} for every editable cell
             whose value differs from the loaded one. A value of None drops
             the site's key (a blank or "-" cell, or channels or electric gain
-            equal to the survey default), so the default applies again.
+            equal to the survey default), so the default applies again. A
+            ticked swap box gives True; an unticked one None, or False when
+            `defaults:` holds True.
 
         Raises:
             ValueError: If a number cell, including electric gain, does not
@@ -438,6 +469,13 @@ class MetadataTab(QWidget):
                                                       self._shown.get((site, metadata_edit.ELECTRIC_GAIN)))
             if value is not channels_column.UNCHANGED:  # likewise for the electric gain
                 edits.setdefault(site, {})[metadata_edit.ELECTRIC_GAIN] = value
+            for key in SWAPS:  # a tick box: true is written, false removes the key (false is the default)
+                item, shown = self.table.item(row, COLUMNS.index(key)), self._shown.get((site, key))
+                ticked = item is not None and item.checkState() == Qt.Checked
+                if shown is None or ticked == shown:
+                    continue
+                edits.setdefault(site, {})[key] = True if ticked else (False if self.state.survey.defaults.get(key)
+                                                                       else None)
         return edits
 
     def _show_pending(self) -> None:
@@ -495,8 +533,12 @@ class MetadataTab(QWidget):
         n = sum(len(v) for v in edits.values())
         # every summary line, so a removed key and the value the site now takes are seen
         notes = result.summary[:5] + ([f"and {len(result.summary) - 5} more"] if len(result.summary) > 5 else [])
+        # a swap acts at ingest: an archive built before the change still holds the channels as they were
+        stale = [s for s, values in edits.items() if set(values) & set(SWAPS) and self.state.has_archive(s)]
+        rebuild = ([f"the archive of {', '.join(stale)} was built before the swap changed: select "
+                    f"{'it' if len(stale) == 1 else 'each'} and press Rebuild archive"] if stale else [])
         self._status("; ".join([f"saved {n} value(s) for {len(edits)} site(s); the file as it was: "
-                                f"{result.previous.name}", *notes]))
+                                f"{result.previous.name}", *rebuild, *notes]), NOTICE_COLOUR if stale else None)
         return True
 
     def _choose_site_table(self) -> None:
