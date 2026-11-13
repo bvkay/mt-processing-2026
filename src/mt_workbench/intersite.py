@@ -234,6 +234,7 @@ from .timefreq import GAP_DILATE, _merge_intervals, decimation_levels
 
 KINDS = {"telluric": ("ex", "ey"), "magnetic": ("hx", "hy")}  # the channels of each tensor, outputs and inputs
 TENSORS = {"telluric": "T", "magnetic": "M"}
+TENSOR_NAMES = {"T": "telluric tensor", "M": "magnetic tensor"}  # the words a figure or a window gives each letter
 STEM_CODES = {"telluric": "te", "magnetic": "hm"}
 FIELDS = {"E": ("ex", "ey"), "H": ("hx", "hy")}  # the channel pairs a reference may take
 BASE_FIELDS = {"telluric": "E", "magnetic": "H"}  # the field a base stack takes for each tensor
@@ -252,6 +253,11 @@ FLAG_MIN_GROUPS = 5  # a band with fewer jackknife slices is flagged: its error 
 # The coherence screen limit of upstream 110: a coherence of the output on the reference, not calibrated
 # against the errors of T.
 FLAG_COHERENCE = 0.1  # a band whose weighted output coherence (either row) is under this is flagged
+# The flags an estimated band can carry: the words, the marker and the colour `draw_estimate` gives each.
+FLAG_MARKS = {"flag_few_groups": (f"few jackknife groups (under {FLAG_MIN_GROUPS})", "D", "tab:purple"),
+              "flag_low_coherence": (f"low coherence (under {FLAG_COHERENCE:g})", "s", "tab:orange"),
+              "flag_off_diagonal": ("off-diagonal, |xy yx| > |xx yy|", "^", "tab:cyan"),
+              "flag_re_det_negative": ("Re det < 0", "v", "tab:red")}
 LONG_WINDOW_S = 600.0  # windows longer than this overlap 75 %, the others 25 %
 MIN_OVERLAP_HOURS = 12.0  # the default overlap a stack member needs with the window
 STACK_REJECT_FACTOR = 25.0  # a member's window over this many times the array level leaves the band stack
@@ -2270,11 +2276,133 @@ def read_h5(path) -> tuple[TensorEstimate, str, dict]:
     return est, str(attrs["tensor"]), attrs
 
 
-def plot_estimate(est: TensorEstimate, letter: str, path, title: str = "", timing: dict | None = None) -> Path:
-    """Draw the estimate: magnitude and phase per element, and arg(det) / 2 with error bars.
+def _timing_line(est: TensorEstimate, timing: dict | None):
+    """Return (periods, degrees) of the timing check's line over the bands it fitted, None without a fit."""
+    if not timing or timing.get("tau_ms") is None or not np.isfinite(timing["tau_ms"]):
+        return None
+    pr = timing["period_range_s"]
+    sel = (est.period >= pr[0] * (1 - 1e-9)) & (est.period <= pr[1] * (1 + 1e-9))
+    line = timing["intercept_deg"] - 360.0 * est.f_weighted[sel] * timing["tau_ms"] * 1e-3
+    line = (line + 90.0) % 180.0 - 90.0  # onto the data's branch, arg(det) / 2 in [-90, 90)
+    order = np.argsort(est.period[sel])
+    x, line = est.period[sel][order], line[order]
+    jumps = np.flatnonzero(np.abs(np.diff(line)) > 90.0) + 1
+    return np.insert(x, jumps, np.nan), np.insert(line, jumps, np.nan)
 
-    For M the magnitude panel shows |M - I| per element; for T, |T|. The
-    third panel draws the timing check's line over the bands it fitted.
+
+def draw_estimate(fig, est: TensorEstimate, letter: str, title: str = "", timing: dict | None = None) -> list:
+    """Draw the estimate on a matplotlib Figure: magnitude and phase per element, and arg(det) / 2.
+
+    Three panels share a log period axis over every period of the layout:
+    the magnitude of each element (of M less the identity for the magnetic
+    tensor), its phase, and arg(det) / 2 in degrees with its error bars and
+    the timing check's line. The elements are in each site's channels as
+    recorded; no rotation is applied.
+
+    A period that was not estimated has no value and is absent; the lower
+    legend counts those periods. A flag never removes a period: a flagged
+    period keeps its place on every curve with an open marker, and in the
+    third panel each flag adds its own marker, named in the legend
+    (`FLAG_MARKS`). Every point stays in view; a long error bar may run off
+    its panel. Each artist carries a gid: ``abs_<el>``, ``arg_<el>``,
+    ``psi``, ``psi_error``, ``flagged`` on the open markers and a flag's
+    name on its own markers.
+
+    Args:
+        fig (matplotlib.figure.Figure): The figure to draw on, cleared first.
+        est (TensorEstimate): The estimate.
+        letter (str): "T" or "M".
+        title (str): Figure title.
+        timing (dict, optional): `timing_check` of the estimate.
+
+    Returns:
+        list: The three axes, top to bottom.
+    """
+    from matplotlib import rcParams
+
+    fig.clear()
+    fig.set_layout_engine("constrained")
+    top, middle, bottom = axes = list(fig.subplots(3, 1, sharex=True))
+    flags = est.flags()
+    ok = ~flags["flag_not_estimated"]  # a period that was not estimated has no value to draw
+    flagged = np.any([flags[flag] for flag in FLAG_MARKS], axis=0)
+    period = np.asarray(est.period, dtype=float)
+    ink, face = rcParams["text.color"], top.get_facecolor()
+
+    def curve(ax, y, yerr, gid, **style):
+        """Draw one curve over the estimated periods, the flagged ones with an open marker."""
+        bars = ax.errorbar(period[ok], y[ok], yerr=yerr[ok], capsize=2, **style)
+        bars.lines[0].set_gid(gid)
+        colour = bars.lines[0].get_color()
+        ax.plot(period[flagged], y[flagged], "o", ms=5, color=colour, mfc=face, zorder=3, gid="flagged")
+        return bars
+
+    shown = np.abs(est.tensor - (np.eye(2)[None] if letter == "M" else 0.0))
+    for k, el in enumerate(ELEMENTS):
+        i, j = divmod(k, 2)
+        zt, s = est.tensor[:, i, j], est.sigma[:, i, j]
+        with np.errstate(divide="ignore", invalid="ignore"):
+            phase_err = np.degrees(s / np.abs(zt))
+        curve(top, shown[:, i, j], s, f"abs_{el}", fmt="o-", ms=3, lw=0.8, label=el)
+        curve(middle, np.degrees(np.angle(zt)), phase_err, f"arg_{el}", fmt="o-", ms=3, lw=0.8, label=el)
+    psi, psi_err = est.half_arg_deg, est.half_arg_err_deg
+    bars = curve(bottom, psi, psi_err, "psi", fmt="o", ms=3.5, color=ink, label="arg(det) / 2")
+    for line in bars.lines[2]:
+        line.set_gid("psi_error")
+    fit = _timing_line(est, timing)
+    if fit is not None:
+        bottom.plot(*fit, "r-", lw=1.2, label=f"fit: tau {timing['tau_ms']:+.3f} +/- {timing['tau_err_ms']:.3f} ms")
+    for ax in (top, bottom):
+        if flagged.any():
+            ax.plot([], [], "o", ms=5, color=ink, mfc=face, label="open marker: a flagged period")
+    for flag, (words, marker, colour) in FLAG_MARKS.items():
+        rows = flags[flag]
+        if rows.any():
+            bottom.plot(period[rows], psi[rows], marker, ms=10, color=colour, mfc="none", mew=1.2, zorder=4,
+                        gid=flag, label=f"{words}: {int(rows.sum())}")
+    if not ok.all():
+        bottom.plot([], [], " ", label=f"not estimated, no value to draw: {int((~ok).sum())}")
+
+    name = TENSOR_NAMES.get(letter, letter)
+    top.set_yscale("log")
+    top.set_ylabel(f"{name}\nless the identity, magnitude" if letter == "M" else f"{name}\nmagnitude")
+    middle.set_ylabel(f"{name}\nphase (deg)")
+    middle.set_ylim(-180, 180)
+    bottom.axhline(0.0, color="0.6", lw=0.6)
+    bottom.set_ylabel("arg(det) / 2 (deg)\nlocal relative to base")
+    bottom.set_xlabel("period (s)")
+    bottom.set_xscale("log")
+    if period.size:
+        bottom.set_xlim(period.min() / 1.5, period.max() * 1.5)
+    # every point stays in view; an error bar may run off: one that reaches towards zero on the log axis,
+    # and the bar of a flagged period
+    seen = shown[ok][shown[ok] > 0]
+    if seen.size:
+        top.set_ylim(seen.min() / 2.0, seen.max() * 2.0)
+    clean = ok & ~flagged & np.isfinite(psi_err)
+    seen = np.concatenate([psi[ok], (psi - psi_err)[clean], (psi + psi_err)[clean]])
+    if seen.size:
+        pad = max(0.08 * float(np.ptp(seen)), 0.05)
+        bottom.set_ylim(seen.min() - pad, seen.max() + pad)
+    for ax in axes:
+        ax.grid(True, which="both", alpha=0.3)
+
+    def entries(ax):
+        """Return a panel's legend handles and labels, the curves with error bars first."""
+        handles, labels = ax.get_legend_handles_labels()
+        order = sorted(range(len(handles)), key=lambda k: not hasattr(handles[k], "lines"))
+        return [handles[k] for k in order], [labels[k] for k in order]
+
+    # the legends sit outside the panels, where they cover no point: the elements above, arg(det) / 2 below
+    top.legend(*entries(top), loc="lower left", bbox_to_anchor=(0.0, 1.0), ncol=5, fontsize=8, frameon=False)
+    fig.legend(*entries(bottom), loc="outside lower center", ncol=3, fontsize=8)
+    if title:
+        fig.suptitle(title)
+    return axes
+
+
+def plot_estimate(est: TensorEstimate, letter: str, path, title: str = "", timing: dict | None = None) -> Path:
+    """Write the figure of an estimate as a PNG: `draw_estimate` on a page of 8.5 by 11 inches.
 
     Args:
         est (TensorEstimate): The estimate.
@@ -2286,49 +2414,10 @@ def plot_estimate(est: TensorEstimate, letter: str, path, title: str = "", timin
     Returns:
         Path: The PNG.
     """
-    import matplotlib
-
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
+    from matplotlib.figure import Figure
 
     path = Path(path)
-    fig, axes = plt.subplots(3, 1, figsize=(8.5, 11), sharex=True)
-    shown = est.tensor - (np.eye(2)[None] if letter == "M" else 0.0)
-    for k, el in enumerate(ELEMENTS):
-        i, j = divmod(k, 2)
-        z, s = shown[:, i, j], est.sigma[:, i, j]
-        axes[0].errorbar(est.period, np.abs(z), yerr=s, fmt="o-", ms=3, lw=0.8, capsize=2, label=f"{letter}{el}")
-        zt = est.tensor[:, i, j]
-        axes[1].errorbar(est.period, np.degrees(np.angle(zt)), yerr=np.degrees(s / np.abs(zt)), fmt="o-", ms=3,
-                         lw=0.8, capsize=2, label=f"{letter}{el}")
-    axes[0].set_yscale("log")
-    axes[0].set_ylabel(f"|{letter} - I|" if letter == "M" else f"|{letter}|")
-    axes[1].set_ylabel(f"arg {letter} (deg)")
-    axes[1].set_ylim(-180, 180)
-    axes[2].errorbar(est.period, est.half_arg_deg, yerr=est.half_arg_err_deg, fmt="ko", ms=3, capsize=2,
-                     label=f"arg(det {letter}) / 2")
-    if timing and timing.get("tau_ms") is not None and np.isfinite(timing["tau_ms"]):
-        pr = timing["period_range_s"]
-        sel = (est.period >= pr[0] * (1 - 1e-9)) & (est.period <= pr[1] * (1 + 1e-9))
-        f = est.f_weighted[sel]
-        line = timing["intercept_deg"] - 360.0 * f * timing["tau_ms"] * 1e-3
-        line = (line + 90.0) % 180.0 - 90.0  # onto the data's branch, arg(det) / 2 in [-90, 90)
-        order = np.argsort(est.period[sel])
-        x, line = est.period[sel][order], line[order]
-        jumps = np.flatnonzero(np.abs(np.diff(line)) > 90.0) + 1
-        x, line = np.insert(x, jumps, np.nan), np.insert(line, jumps, np.nan)
-        axes[2].plot(x, line, "r-", lw=1.2,
-                     label=f"fit: tau {timing['tau_ms']:+.3f} +/- {timing['tau_err_ms']:.3f} ms")
-    axes[2].axhline(0.0, color="0.6", lw=0.6)
-    axes[2].set_ylabel(f"arg(det {letter}) / 2 (deg)")
-    axes[2].set_xlabel("period (s)")
-    axes[2].set_xscale("log")
-    for ax in axes:
-        ax.grid(True, which="both", alpha=0.3)
-        ax.legend(fontsize=8, ncol=4)
-    if title:
-        fig.suptitle(title)
-    fig.tight_layout()
+    fig = Figure(figsize=(8.5, 11))
+    draw_estimate(fig, est, letter, title=title, timing=timing)
     fig.savefig(path, dpi=110)
-    plt.close(fig)
     return path

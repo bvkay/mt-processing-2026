@@ -173,7 +173,10 @@ run with the same stem overwrites the last:
   attributes add the stack's form, threshold and minimum members, and its
   per-band record as JSON (`stack_record`);
 - `<stem>.png`: magnitude (|M - I| for M) and phase of each element and
-  arg(det) / 2 against period with error bars and the timing fit.
+  arg(det) / 2 against period with error bars and the timing fit
+  (`mt_workbench.intersite.draw_estimate`, which the GUI's View tensors
+  tab draws with too): a flagged period has an open marker and each flag
+  its own marker in the third panel, and a period not estimated is absent.
 
 No EDI or XML is written: every EDI reader would take T or M for an
 impedance.
@@ -1461,7 +1464,7 @@ def main(args) -> None:
     intersite.write_csv(est, letter, paths["csv"])
     base_text = (res["base"] if res["base"] else
                  f"the {bstack['field']} stack of {len(base_members) - len(polarity['dropped'])} member(s)")
-    title = (f"{letter} of {res['local']} on {base_text}, reference {res['ref_label']}, "
+    title = (f"{intersite.TENSOR_NAMES[letter]} of {res['local']} on {base_text}, reference {res['ref_label']}, "
              f"{_text_ns(res['window'][0])} to {_text_ns(res['window'][1])}")
     intersite.plot_estimate(est, letter, paths["figure"], title=title, timing=timing)
     finished = dt.datetime.now().astimezone()
