@@ -276,6 +276,33 @@ def check_survey_name(name: str) -> None:
                          f"holds ASCII only)")
 
 
+# A site's name is its folder's and its station id in the archives; 28 leaves room for the L, D and SL
+# endings of the sites derived from it.
+SITE_NAME_MAX = 28
+
+
+def check_site_name(name: str) -> None:
+    """Refuse a site name that an archive cannot take as a station id.
+
+    A site is named by its data folder, so the way out is to rename the
+    folder.
+
+    Args:
+        name (str): The site name.
+
+    Raises:
+        ValueError: If the name holds a character other than a letter, a
+            digit, "_" or "-", or is longer than `SITE_NAME_MAX` characters;
+            the message says what to do.
+    """
+    if not SURVEY_NAME_PATTERN.fullmatch(name):
+        raise ValueError(f"site name {name!r} holds characters other than letters, digits, _ and -: rename its "
+                         f"folder (mt_metadata refuses it as a station id)")
+    if len(name) > SITE_NAME_MAX:
+        raise ValueError(f"site name {name!r} has {len(name)} characters: {SITE_NAME_MAX} at most; rename its "
+                         f"folder (a site derived from it adds up to two letters)")
+
+
 # Channel sets a survey may declare, per instrument, in the names ingest
 # stores: mt_io.lemi.lemi423 reads the B423 columns Bx By Bz Ex Ey as
 # hx hy hz ex ey; mt_io.lemi.lemi424 reads Bx By Bz E1 E2 E3 E4 as bx by bz e1

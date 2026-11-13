@@ -46,7 +46,9 @@ Usage:
   - scripts/new_survey.py on the Phoenix folders does not write a survey
     whose `Survey.site` gives each site its receiver as `serial`, dipole
     lengths 0.0 (the receiver metadata's at ingest), `calibration_dir:
-    sensors` and the aligned min_period 4**(22/6)/6000;
+    sensors` and the aligned min_period 4**(22/6)/6000; or, given
+    `--dipole-length 45`, is not refused with exit 2, the message that
+    Phoenix receivers record their dipole lengths, and no file written;
   - the run plan (`mt_workbench.phoenix.plan_runs` of `recording_files`)
     of a synthetic MTU-8A recording of four `.td_150` files per folder
     (sequence 1 of 359 s, then 360 s each) is not: one run of sequences
@@ -532,6 +534,16 @@ def check_new_survey(root: Path, mutate: bool = False) -> list[str]:
             bad.append(f"{site}: serial, dipoles, calibration_dir {got}")
     if abs(float(survey.processing["min_period"]) - 4 ** (22 / 6) / 6000) > 1e-15:
         bad.append(f"min_period {survey.processing['min_period']!r}")
+    # a usual dipole length is refused: the receivers record theirs
+    refused = phoenix_only.parent / "survey_refused" / "survey.yaml"
+    shutil.rmtree(refused.parent, ignore_errors=True)
+    printed = io.StringIO()
+    with contextlib.redirect_stdout(printed):
+        code = module.main([str(phoenix_only), "--name", "PHX", "--instrument", "phoenix", "--out", str(refused),
+                            "--calibration", str(rsp), "--dipole-length", "45"])
+    if code != 2 or "Phoenix receivers record their dipole lengths" not in printed.getvalue() or refused.exists():
+        bad.append(f"--dipole-length 45 on a Phoenix survey: exit {code}, file written {refused.exists()}, "
+                   f"printed {printed.getvalue().strip()[-160:]!r}")
     return bad
 
 

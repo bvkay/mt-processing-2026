@@ -36,12 +36,21 @@ any site that differs), data_root, workspace, timezone and `generated_by:
 scripts/new_survey.py`; a `defaults:` block and a `processing:` block; and a
 `sites:` block with one entry per folder: latitude, longitude, elevation,
 serial, firmware, start and end (UTC), and a note that the dipole lengths and
-azimuths are the defaults. The declination keys (declination,
-declination_model, declination_epoch) are left unset unless the site table
-gives them; scripts/declination.py fills them from the IGRF, and the
-summary's last line says so. Dipole lengths and azimuths are left out of the
-site entries, so the defaults apply until they are set from the field sheet,
-on the GUI's Metadata tab or with --site-table. The site table is a CSV or
+azimuths are the defaults. A site recorded at another rate than the survey's
+gets its own `sample_rate:`, which `Survey.sample_rate_of` reads. The
+`defaults:` block holds the usual dipole length of the survey
+(--dipole-length, 50 m, for Ex and Ey) and the usual azimuths of Ex and Ey
+(--azimuths, 0 and 90) in degrees from magnetic north, as laid out with a
+compass. A Phoenix survey keeps 0.0, since its receivers record their dipole
+lengths, and refuses --dipole-length. Dipole lengths and azimuths are left
+out of the site entries, so the usual values apply until a site that differs
+is given its own from the field sheet,
+on the GUI's Metadata tab or with --site-table. A site with a position and a
+span gets its declination from the IGRF (`fill` of scripts/declination.py:
+declination, declination_model, declination_epoch) unless the site table
+gives one. The declination is recorded with the products and never applied
+to the data: azimuths stay as laid out, from magnetic north, and no
+`layout_north` is written. The site table is a CSV or
 XLSX with a `site` column plus any of `mt_workbench.survey.SITE_TABLE_COLUMNS`;
 its values are merged over the header's for
 the sites it names. The header's GPS fix takes precedence for latitude,
@@ -119,9 +128,9 @@ When legacy EDIs exist for the survey (lemimt, a contractor's), run
 afterwards to write reference_edis.yaml, which the View EDIs tab overlays.
 
 Usage (the same command again adds the site folders that have no entry):
-    python scripts/new_survey.py <data_root> --name NAME [--instrument auto]
-        [--channels "Ex Ey Bx By"] [--electric-gain 10]
-        [--timezone Australia/Adelaide] [--out PATH]
+    python scripts/new_survey.py <data_root> --name NAME [--dipole-length 50] [--azimuths 0 90]
+        [--instrument auto] [--channels "Ex Ey Bx By"] [--electric-gain 10]
+        [--timezone Australia/Adelaide] [--clock-timezone UTC] [--out PATH]
         [--workspace DIR] [--calibration FILE] [--site-table CSV_OR_XLSX]
 
 @author: ben kay (ben@auscope.org.au)
@@ -147,13 +156,21 @@ from mt_workbench import survey_file
 from mt_workbench.ingest import select_files
 from mt_workbench.instruments import INSTRUMENTS, header_facts, record_files, span
 from mt_workbench.survey import (
-    CHANNEL_PRESETS, Survey, channels_from_label, check_survey_name, default_preset, merge_table_row, preset_label,
-    read_site_table,
+    CHANNEL_PRESETS, Survey, channels_from_label, check_site_name, check_survey_name, default_preset,
+    merge_table_row, preset_label, read_site_table,
 )
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))  # scripts/, also when this file is loaded by its path
+
+import declination  # noqa: E402  (scripts/declination.py: the IGRF fill)
 
 REPO = Path(__file__).resolve().parents[1]
 DEFAULT_CALIBRATION = REPO / "surveys" / "burra" / "sensors" / "l120n.rsp"
 DEFAULT_TIMEZONE = "Australia/Adelaide"
+DEFAULT_DIPOLE_LENGTH = 50.0  # m, the usual length of both dipoles
+DEFAULT_AZIMUTHS = (0.0, 90.0)  # degrees from magnetic north, Ex and Ey
+PHOENIX_DIPOLES = ("Phoenix receivers record their dipole lengths (empower_recmeta.json); a site's taped length "
+                   "goes in its own entry")
 FORCE_GONE = ("--force is gone: a re-run only adds the site folders that have no entry. To start again, delete "
               "{out} by hand and run this command again.")
 DEFAULT_FILE_SECONDS = 5400  # a B423 file's nominal span, for a site with one file
@@ -168,7 +185,8 @@ READER_CHANNELS = {"Bx": "hx", "By": "hy", "Bz": "hz", "Ex": "ex", "Ey": "ey"}
 DIPOLE_KEYS = ("dipole_length_ex", "dipole_length_ey", "azimuth_ex", "azimuth_ey")
 # the order a site entry's keys are written in (instrument and channels only
 # for a site whose recorder is not the survey's)
-KEY_ORDER = ("instrument", "channels", "sensor_type", "electric_gain", *DIPOLE_KEYS, "latitude", "longitude",
+KEY_ORDER = ("instrument", "sample_rate", "channels", "sensor_type", "electric_gain", *DIPOLE_KEYS, "latitude",
+             "longitude",
              "elevation", "declination", "declination_model", "declination_epoch", "remote", "timing", "serial", "firmware", "start", "end", "notes")
 # an EDL site's magnetic sensors from its rate (`sensor_type`, mt_workbench.instruments.EDL_SENSORS): the
 # UoA practice is induction coils at 500 or 1000 Hz and Bartington fluxgates at 10 Hz (the field
@@ -200,10 +218,12 @@ timezone: {timezone}
 # site folders that have no entry and leaves every other line
 generated_by: scripts/new_survey.py
 defaults:
-  dipole_length_ex: 50.0
-  dipole_length_ey: 50.0
-  azimuth_ex: 0.0
-  azimuth_ey: 90.0
+  # the usual dipole lengths (m) and azimuths (degrees from magnetic north, as laid out with a
+  # compass) of the survey; a site that differs has its own keys in its entry
+  dipole_length_ex: {dipole_length}
+  dipole_length_ey: {dipole_length}
+  azimuth_ex: {azimuth_ex}
+  azimuth_ey: {azimuth_ey}
   # LEMI-120 coil response (LEMI-423 sites, and EDL sites with sensor_type lemi120);
   # a relative path resolves against this folder first
   calibration_fn: {calibration_fn}
@@ -533,8 +553,10 @@ def build_entries(facts: dict, recorder: dict, instrument: str, sample_rate: flo
 
     A site recorded on another instrument than the survey's gets its own
     `instrument:` and that instrument's default `channels:` (and
-    `sensor_type:` for an EDL). A site of the survey's instrument at
-    another rate than the survey's gets a note.
+    `sensor_type:` for an EDL). A site recorded at another rate than the
+    survey's gets its own `sample_rate:`, whatever its recorder, since
+    `Survey.sample_rate_of` reads the rate from the entry alone; a LEMI-423
+    site at a rate the instrument does not have also gets a note.
 
     Args:
         facts (dict): {site: facts}, as `read_site` returns them.
@@ -555,21 +577,65 @@ def build_entries(facts: dict, recorder: dict, instrument: str, sample_rate: flo
             entry["sensor_type"] = edl_sensor_for(facts[site]["sample_rate"])
         sites[site] = {k: entry[k] for k in KEY_ORDER if k in entry}
     for site, f in facts.items():
-        # a site of the survey's instrument not at the survey rate gets a note
-        # in its entry, shown in the Metadata table, as well as a console
-        # warning (another recorder has its own rate)
-        if f["sample_rate"] and f["sample_rate"] != sample_rate and site not in own:
-            known = instrument != "lemi423" or f["sample_rate"] in KNOWN_SAMPLE_RATES
-            fault = "" if known else " - not a LEMI-423 rate: instrument fault, exclude from processing"
-            note = f"recorded at {f['sample_rate']:g} Hz, the survey is {sample_rate:g} Hz{fault}"
-            entry = sites[site]
+        if not f["sample_rate"] or f["sample_rate"] == sample_rate:
+            continue
+        entry = dict(sites[site], sample_rate=float(f["sample_rate"]))
+        if recorder[site] == "lemi423" and f["sample_rate"] not in KNOWN_SAMPLE_RATES:
+            note = (f"recorded at {f['sample_rate']:g} Hz, the survey is {sample_rate:g} Hz - not a LEMI-423 rate: "
+                    f"instrument fault, exclude from processing")
             entry["notes"] = "; ".join(t for t in (entry.get("notes", ""), note) if t)
-            sites[site] = {k: entry[k] for k in KEY_ORDER if k in entry}
+        sites[site] = {k: entry[k] for k in KEY_ORDER if k in entry}
     return sites, own
+
+
+def fill_declination(entry: dict) -> dict:
+    """Return the three declination keys of a site from the IGRF, or {} when it has none to get.
+
+    A site needs a latitude, a longitude and a start (`declination.fill`).
+    One that already holds a `declination`, from a site table, keeps it.
+    Only `declination`, `declination_model` and `declination_epoch` are
+    returned: the value is recorded with the products and never applied, so
+    no azimuth and no `layout_north` follows from it.
+
+    Args:
+        entry (dict): The site's entry.
+
+    Returns:
+        dict: The three keys, or {}.
+    """
+    if entry.get("declination") is not None:
+        return {}
+    filled = declination.fill(entry) or {}
+    return {key: filled[key] for key in declination.KEYS if key in filled}
+
+
+def add_declinations(sites: dict) -> None:
+    """Give each entry that can have one its declination keys (`fill_declination`), in the entry's key order."""
+    for site, entry in sites.items():
+        keys = fill_declination(entry)
+        if keys:
+            entry.update(keys)
+            sites[site] = {k: entry[k] for k in KEY_ORDER if k in entry}
+
+
+def declination_line(sites: dict, out: Path) -> str:
+    """Return the summary line on the declinations of new entries, and what to do for the sites with none."""
+    have = sum(1 for entry in sites.values() if entry.get("declination") is not None)
+    todo = ("" if have == len(sites) else
+            f"; {len(sites) - have} site(s) have no position, so no declination: set their latitude and longitude, "
+            f"then run python scripts/declination.py {out} --write")
+    if not have:
+        return "declination: none recorded" + todo
+    models = sorted({str(entry["declination_model"]) for entry in sites.values() if entry.get("declination_model")})
+    return (f"declination ({', '.join(models) or 'no model named'}) recorded for {have} site(s): it is kept with "
+            f"the products and never applied to the data" + todo)
 
 
 def print_sites(sites: dict, facts: dict, recorder: dict, own: dict, channels: list, sample_rate: float) -> None:
     """Print one line per site read (serial, position, span, rate, recorder, columns) and its warnings.
+
+    A site name that an archive cannot take (`check_site_name`) is named
+    with what to do; its entry is written all the same.
 
     Args:
         sites (dict): The entries, as `build_entries` returns them.
@@ -598,7 +664,12 @@ def print_sites(sites: dict, facts: dict, recorder: dict, own: dict, channels: l
             print(f"  WARNING {site}: declared channel(s) {' '.join(missing)} not among the first file's "
                   f"columns ({columns}): ingest has nothing to keep for them")
         if f["sample_rate"] and f["sample_rate"] != sample_rate and site not in own:
-            print(f"  WARNING {site}: recorded at {f['sample_rate']:g} Hz, the survey says {sample_rate:g} Hz")
+            print(f"  WARNING {site}: recorded at {f['sample_rate']:g} Hz, the survey says {sample_rate:g} Hz: its "
+                  f"entry gets its own sample_rate")
+        try:
+            check_site_name(site)
+        except ValueError as exc:
+            print(f"  WARNING {exc}")
 
 
 def print_skipped(data_root: Path, found: dict, workspace: Path) -> None:
@@ -631,7 +702,14 @@ def ignored_arguments(args, config: dict) -> list[str]:
     """
     defaults = config.get("defaults") or {}
     instrument = config.get("instrument", "lemi423")
-    asked = []  # (the argument as typed, its value, the key of survey.yaml, True for a key of defaults:)
+    # (the argument as typed, its value, the key of survey.yaml or the two keys it sets, True for defaults:)
+    asked = []
+    if args.dipole_length is not None:
+        asked.append((f"--dipole-length {args.dipole_length:g}", [args.dipole_length] * 2,
+                      ("dipole_length_ex", "dipole_length_ey"), True))
+    if args.azimuths is not None:
+        asked.append((f"--azimuths {args.azimuths[0]:g} {args.azimuths[1]:g}", list(args.azimuths),
+                      ("azimuth_ex", "azimuth_ey"), True))
     if args.instrument not in (None, "auto"):
         asked.append((f"--instrument {args.instrument}", args.instrument, "instrument", False))
     if args.channels is not None:
@@ -650,6 +728,13 @@ def ignored_arguments(args, config: dict) -> list[str]:
                       "calibration_fn", True))
     lines = []
     for typed, value, key, in_defaults in asked:
+        if isinstance(key, tuple):  # the two dipole lengths, or the two azimuths
+            held = [defaults.get(k) for k in key]
+            if not survey_file.same(value, held):
+                pair = ["no value" if h is None else str(h) for h in held]
+                shown = pair[0] if pair[0] == pair[1] else " and ".join(pair)
+                lines.append(f"ignored on a re-run: {typed} (survey.yaml keeps {shown} in defaults:)")
+            continue
         held = (defaults if in_defaults else config).get(key)
         if key == "workspace" and held is not None:
             held = Path(str(held)).resolve().as_posix()
@@ -723,9 +808,13 @@ def add_sites(args, data_root: Path, out: Path) -> int:
     clock_timezone = str(defaults.get("clock_timezone") or "UTC")
     facts = {site: read_site(folder, recorder[site], clock_timezone) for site, folder in new.items()}
     sites, own = build_entries(facts, recorder, survey.instrument, survey.sample_rate)
-    asked = {}
+    asked, held = {}, {str(name): entry or {} for name, entry in entries.items()}
     if args.site_table:
-        asked = merge_site_table(sites, Path(args.site_table), {str(name): entry for name, entry in entries.items()})
+        asked = merge_site_table(sites, Path(args.site_table), held)
+    add_declinations(sites)
+    for site, values in asked.items():  # a site with an entry that the table gives a position it did not have
+        if {"latitude", "longitude"} & set(values):
+            values.update(fill_declination({**held[site], **values}))
     try:
         result = survey_file.edit(out, add=sites, sites=asked)
     except survey_file.SurveyFileRefused as exc:
@@ -737,6 +826,8 @@ def add_sites(args, data_root: Path, out: Path) -> int:
     print_sites(sites, facts, recorder, own, channels, survey.sample_rate)
     print(f"added {len(added)} site(s): {', '.join(added)}; {left}" if added else
           "nothing to add: every site folder has an entry")
+    if added:
+        print(declination_line(sites, out))
     if changed:
         print(f"changed {len(changed)} site(s) from the site table:")
         for line in result.summary:
@@ -754,8 +845,9 @@ def add_sites(args, data_root: Path, out: Path) -> int:
     if result.written:
         print(f"wrote {out}; the file as it was: {result.previous}")
     if added:
-        print("next: set the dipole lengths and azimuths of the new site(s) that differ from the usual values "
-              "(the GUI's Metadata tab, or --site-table)")
+        print("next: set the dipole lengths and azimuths (degrees from magnetic north) of the new site(s) that "
+              "differ from the usual values, on the GUI's Metadata tab or with --site-table")
+        print(f"next: python scripts/check_survey.py {out}")
     return 0
 
 
@@ -774,6 +866,13 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("data_root", help="the folder holding one subfolder per site")
     parser.add_argument("--name", required=True, help="survey name (also the default folder under surveys/)")
+    parser.add_argument("--dipole-length", type=float, metavar="L", help="the usual dipole length of the survey "
+                        f"in m, for Ex and Ey (default {DEFAULT_DIPOLE_LENGTH:g}); written to defaults:, so only a "
+                        "site that differs needs its own. Refused for a Phoenix survey, whose receivers record "
+                        "their dipole lengths")
+    parser.add_argument("--azimuths", type=float, nargs=2, metavar=("AX", "AY"), help="the usual azimuths of the "
+                        "Ex and Ey dipoles in degrees from magnetic north, as laid out with a compass (default "
+                        f"{DEFAULT_AZIMUTHS[0]:g} {DEFAULT_AZIMUTHS[1]:g}); written to defaults:")
     parser.add_argument("--instrument", choices=["auto", *INSTRUMENTS],
                         help="the survey's instrument (default auto: the most common among the sites' folders)")
     parser.add_argument("--channels", help="the columns that had a sensor, for the survey's instrument: a "
@@ -809,6 +908,8 @@ def main(argv=None) -> int:
             pd.Timestamp.now(tz=zone)  # None reads as no zone
         except Exception:
             parser.error(f"unknown {what} {zone!r} (an IANA name, e.g. {example})")
+    if args.dipole_length is not None and not args.dipole_length > 0:
+        parser.error(f"--dipole-length {args.dipole_length:g}: a length in m above 0 wanted")
     if not data_root.is_dir():
         parser.error(f"no such folder: {data_root}")
     calibration = Path(args.calibration) if args.calibration else DEFAULT_CALIBRATION
@@ -838,6 +939,11 @@ def main(argv=None) -> int:
     recorder = {site: probe.instrument_of(site) for site in found}
     counts = Counter(recorder.values())  # the most common is the survey's; a tie goes to INSTRUMENTS order
     instrument = prefer if args.instrument not in (None, "auto") else max(INSTRUMENTS, key=lambda i: counts[i])
+    if instrument == "phoenix" and args.dipole_length is not None:
+        print(f"ERROR --dipole-length is refused for a Phoenix survey: {PHOENIX_DIPOLES}")
+        return 2
+    dipole_length = DEFAULT_DIPOLE_LENGTH if args.dipole_length is None else args.dipole_length
+    azimuths = DEFAULT_AZIMUTHS if args.azimuths is None else tuple(args.azimuths)
     channels = channels_from_label(args.channels or default_preset(instrument), instrument)
     if not channels:
         parser.error(f"--channels {args.channels!r} names no channel: a preset ("
@@ -863,6 +969,7 @@ def main(argv=None) -> int:
             print(f"timezone from the site table: {zone}" +
                   (f" (command line said {args.timezone})" if args.timezone else ""))
             timezone = zone
+    add_declinations(sites)
 
     out.parent.mkdir(parents=True, exist_ok=True)
     sensor = out.parent / "sensors" / calibration.name
@@ -874,6 +981,8 @@ def main(argv=None) -> int:
         sample_rate=int(sample_rate) if float(sample_rate).is_integer() else sample_rate,
         data_root=scalar(data_root.as_posix()), workspace=scalar(workspace.as_posix()),
         timezone=scalar(timezone),
+        dipole_length=scalar(float(dipole_length)), azimuth_ex=scalar(float(azimuths[0])),
+        azimuth_ey=scalar(float(azimuths[1])),
         calibration_fn=scalar(f"sensors/{calibration.name}"),
         channels="[" + ", ".join(scalar(c) for c in channels) + "]",
         edl_sensor="" if instrument != "edl" else (
@@ -901,10 +1010,16 @@ def main(argv=None) -> int:
     with open(out, "w", encoding="utf-8", newline="\n") as f:
         f.write(head + "sites:\n" + indent(body, "  "))
 
-    print(f"wrote {out}: {len(sites)} sites, sample_rate {sample_rate:g} Hz, coil response {sensor}")
+    print(f"wrote {out}: {len(sites)} sites, sample_rate {sample_rate:g} Hz")
+    print(f"coil response copied: sensors/{calibration.name} " +
+          ("(the Burra LEMI-120 table): check it is this survey's coils" if args.calibration is None else
+           f"(from {calibration})"))
     print(f"workspace (archives, TFs, figures): {workspace}")
     print(f"instrument {instrument}; channels declared (defaults): {preset_label(channels, instrument)} "
           f"= {' '.join(channels)}")
+    if instrument == "orangebox":
+        print(f"logger clocks read on {clock_timezone}" + ("" if args.clock_timezone else
+              " (--clock-timezone not given): check in the field notes which zone the loggers ran on"))
     if instrument == "edl":
         print(f"EDL magnetic sensors (defaults: sensor_type): {edl_sensor_for(sample_rate)}, from the "
               f"{sample_rate:g} Hz rate (UoA: coils at 500/1000 Hz, fluxgates at 10 Hz) - check the field sheet")
@@ -916,10 +1031,11 @@ def main(argv=None) -> int:
         print(f"  {site}: recorder.ini sets channel_n_high_gain=1 for {' '.join(flags)}: informational; "
               f"electric_gain {electric_gain:g} is declared from the field notes, not read from recorder.ini")
     print_sites(sites, facts, recorder, own, channels, sample_rate)
-    print("next: set dipole lengths and azimuths from the field sheet (the GUI's Metadata tab, or "
-          "--site-table); with legacy EDIs, run scripts/match_reference_edis.py <edi_dir> "
-          f"{out}")
-    print(f"next: fill each site's declination from the IGRF: scripts/declination.py {out} --write")
+    print(declination_line(sites, out))
+    print("next: set the dipole lengths and azimuths (degrees from magnetic north) of the sites that differ from "
+          "the usual values, on the GUI's Metadata tab or with --site-table; with legacy EDIs, run "
+          f"scripts/match_reference_edis.py <edi_dir> {out}")
+    print(f"next: python scripts/check_survey.py {out}")
     return 0
 
 

@@ -156,9 +156,53 @@ exists (a re-run), on data roots built as part 1's. **This test fails if**
      `dipole_length_ey: 47.0`, every other line and the typed comment must
      stay, and the output must name both sites with the values changed and
      "left as they are: 2 site(s)"; or the same table run again changes a
-     byte or does not say that the two sites already read as the table.
+     byte or does not say that the two sites already read as the table;
+(22) a first run with `--dipole-length 45 --azimuths 10 100` does not write
+     `defaults:` dipole lengths 45/45 and azimuths 10/100 with every other
+     key of `defaults:` as in (4), read back by `Survey.site`; a re-run with
+     `--dipole-length 50 --azimuths 0 90` does not print one "ignored on a
+     re-run" line for each, naming 45.0 and "10.0 and 100.0" as what
+     `defaults:` keeps, and leave every byte; a re-run with the file's own
+     values prints such a line; or the help text does not say that the
+     azimuths are from magnetic north;
+(23) at a first run a site with a position and a span does not get
+     `declination`, `declination_model` and `declination_epoch`: the model
+     an IGRF, the epoch the decimal year of the middle of its span to 2
+     decimals (worked out here), the declination to 2 decimals between 6.5
+     and 9.0 degrees east (the Flinders Ranges in 2021, about 7.3); or S03,
+     added by a re-run, does not get its three keys;
+(24) the fill of the declination changes anything else: for every site,
+     `Survey.site` read from the file and from the same file with the three
+     declination keys taken out of every entry must differ in those three
+     fields only; no entry may hold an azimuth, a rotation key or
+     `layout_north`, every site must read `layout_north` magnetic and the
+     azimuths of `defaults:`, and the file must not hold the word
+     "geographic";
+(25) the first run does not print "coil response copied: sensors/l120n.rsp
+     (the Burra LEMI-120 table): check it is this survey's coils", a line
+     that says the declination is recorded for 2 sites and never applied to
+     the data, and "next: python scripts/check_survey.py <survey.yaml>" as
+     its last line; or, over site folders named `A.1` and with 29
+     characters, does not write their entries and name each with what to do
+     (rename its folder).
 
-The mutations part 4 catches, each made in a copy of the code: `>` written
+Part 5, sites of another recorder and another rate, on the mixed data root
+of part 3 and on its EDL folder alone. **This test fails if**
+
+(26) in the default mixed survey (lemi423 at 1000 Hz) MBJ21 (1 Hz) and
+     EGFLP02 (10 Hz) do not carry `sample_rate: 1.0` and `10.0` in their own
+     entries, read back by `Survey.sample_rate_of`, or S01 carries one; or
+     EGFLP02, which has no position, gets a declination key;
+(27) a first run over the EDL folder alone (an EDL survey at 10 Hz) does not
+     keep `calibration_fn` and `h_scale` in `defaults:` and the coil table
+     in sensors/; or a re-run after a LEMI-423 folder (S01) and a LEMI-424
+     folder (MBJ21) are put beside it does not give S01 its own
+     `instrument: lemi423`, `channels: [ex, ey, hx, hy]` and `sample_rate:
+     1000.0`, with `Survey.site("S01")` reading `h_scale` -1000.0 and the
+     `calibration_fn` from `defaults:`, and MBJ21 its own `instrument:
+     lemi424` and `sample_rate: 1.0`.
+
+The mutations parts 4 and 5 catch, each made in a copy of the code: `>` written
 as `>=` in `check_survey_name` (the 30-character item of (15) fails); the
 name checked after the site folders are looked for (the first item of (15)
 exits 1); a re-run that writes the file again from the folders ((5) does
@@ -167,7 +211,12 @@ typed comment is lost and every line changes); `--timezone` defaulting to
 Australia/Adelaide again ((16) prints an "ignored" line); `--force`
 accepted ((18)); the data root of the file not compared ((19)); the name
 checked on a re-run ((20)); the table rows of sites that have an entry not
-applied ((21)).
+applied ((21)); `--dipole-length` written to dipole_length_ex only, or not
+compared on a re-run ((22)); the declination not filled for a site added by
+a re-run ((23)); the fill also writing `layout_north: geographic` and the
+site's azimuths turned by the declination ((24)); `sample_rate` written only
+for a site of the survey's own recorder ((26)); `calibration_fn` and
+`h_scale` written only for a LEMI-423 survey ((27)).
 
 Part 2, the real-data check: the script run over the Curnamona Cube raw data
 (E:, read only) into the scratch folder must give D02 and E08 latitudes and
@@ -630,6 +679,17 @@ def test_survey_name() -> None:
           "read, nothing made; a name of 30 characters accepted")
 
 
+DECLINATION_KEYS = ("declination", "declination_model", "declination_epoch")
+
+
+def decimal_year(epoch: float) -> float:
+    """Return an epoch in seconds as a decimal year to 2 decimals, worked out here from the calendar."""
+    when = pd.Timestamp(epoch, unit="s", tz="UTC")
+    start = pd.Timestamp(year=when.year, month=1, day=1, tz="UTC")
+    end = pd.Timestamp(year=when.year + 1, month=1, day=1, tz="UTC")
+    return round(when.year + (when - start) / (end - start), 2)
+
+
 def line_changes(old: str, new: str) -> list[tuple]:
     """Return (tag, first old line, old lines, new lines) for each run of lines that differs."""
     a, b = old.splitlines(keepends=True), new.splitlines(keepends=True)
@@ -666,12 +726,16 @@ def test_rerun() -> None:
     assert abs(s03["latitude"] + 31.3) <= 1e-6 and abs(s03["longitude"] - 138.8) <= 1e-6, s03
     assert (s03["elevation"], s03["serial"], s03["firmware"]) == (300.0, "77", "2.2"), s03
     assert (s03["start"], s03["end"]) == (iso(epoch), iso(epoch + 2 * spacing)), s03
+    assert str(s03.get("declination_model", "")).startswith("IGRF-"), s03
+    assert 6.5 < s03["declination"] < 9.0 and s03["declination_epoch"] == decimal_year(epoch + spacing), s03
     assert sites["S01"]["rot_h"] == 3.0 and comment in added
     assert previous.read_bytes() == typed.encode("utf-8"), "survey.yaml.previous is not the file before the re-run"
     assert "added 1 site(s): S03; left as they are: 2 site(s) with an entry" in again.stdout, again.stdout
     assert "ignored on a re-run" not in again.stdout, again.stdout
     print("(16) re-run: S03 added as one run of lines after the last entry, the typed comment and key and every "
           "other line kept, the file before it in survey.yaml.previous, no head argument compared")
+    print(f"(23) S03, added by the re-run: declination {s03['declination']} ({s03['declination_model']}, "
+          f"{s03['declination_epoch']})")
 
     ignored = "ignored on a re-run: --timezone Australia/Adelaide (survey.yaml keeps timezone: Australia/Perth)"
     other = run(root, "--name", "rerun", "--out", out, "--timezone", "Australia/Adelaide")
@@ -740,6 +804,133 @@ def test_rerun() -> None:
           "not written, S01's latitude kept and the disagreement printed; the same table again changes no byte")
 
 
+def test_head() -> None:
+    """Run checks (22)-(25): the usual dipoles, the declination, the frame and the summary lines."""
+    root = SCRATCH / "raw"
+    build_data_root(root)
+    out = fresh("head_usual")
+    done = run(root, "--name", "head_usual", "--out", out, "--dipole-length", "45", "--azimuths", "10", "100")
+    assert done.returncode == 0, (done.returncode, done.stdout, done.stderr)
+    config = yaml.safe_load(out.read_text(encoding="utf-8"))
+    want = {**EXPECTED_DEFAULTS, "dipole_length_ex": 45.0, "dipole_length_ey": 45.0, "azimuth_ex": 10.0,
+            "azimuth_ey": 100.0}
+    assert config["defaults"] == want, config["defaults"]
+    s01 = Survey.from_yaml(out).site("S01")
+    usual = (s01.dipole_length_ex, s01.dipole_length_ey, s01.azimuth_ex, s01.azimuth_ey)
+    assert usual == (45.0, 45.0, 10.0, 100.0), usual
+    before = out.read_bytes()
+    again = run(root, "--name", "head_usual", "--out", out, "--dipole-length", "50", "--azimuths", "0", "90")
+    ignored = [ln for ln in again.stdout.splitlines() if ln.startswith("ignored on a re-run")]
+    assert again.returncode == 0 and out.read_bytes() == before, (again.returncode, again.stdout)
+    assert ignored == ["ignored on a re-run: --dipole-length 50 (survey.yaml keeps 45.0 in defaults:)",
+                       "ignored on a re-run: --azimuths 0 90 (survey.yaml keeps 10.0 and 100.0 in defaults:)"], ignored
+    same = run(root, "--name", "head_usual", "--out", out, "--dipole-length", "45", "--azimuths", "10", "100")
+    assert same.returncode == 0 and "ignored on a re-run" not in same.stdout, same.stdout
+    help_text = " ".join(run("--help").stdout.split())
+    assert "degrees from magnetic north" in help_text, help_text
+    print(f"(22) --dipole-length 45 --azimuths 10 100: defaults {usual}; on a re-run: {ignored[0]}; {ignored[1]}")
+
+    out = fresh("head_default")
+    done = run(root, "--name", "head_default", "--out", out)
+    assert done.returncode == 0, (done.returncode, done.stdout, done.stderr)
+    text = out.read_text(encoding="utf-8")
+    config = yaml.safe_load(text)
+    for folder, _sub, _serial, _fw, _lat, _lon, _alt, epoch, spacing, n in SITES:
+        e = config["sites"][folder]
+        assert str(e.get("declination_model", "")).startswith("IGRF-"), (folder, e)
+        assert e["declination_epoch"] == decimal_year(epoch + n * spacing / 2), (folder, e["declination_epoch"])
+        assert 6.5 < e["declination"] < 9.0 and round(e["declination"], 2) == e["declination"], (folder, e)
+        print(f"(23) {folder}: declination {e['declination']} ({e['declination_model']}, {e['declination_epoch']})")
+
+    without = yaml.safe_load(text)
+    for entry in without["sites"].values():
+        for key in DECLINATION_KEYS:
+            del entry[key]
+    filled, plain = Survey(config, out.parent), Survey(without, out.parent)
+    for site, entry in config["sites"].items():
+        a, b = vars(filled.site(site)), vars(plain.site(site))
+        differ = sorted(k for k in a if a[k] != b[k])
+        assert differ == sorted(DECLINATION_KEYS), (site, differ)
+        assert a["layout_north"] == "magnetic" and (a["azimuth_ex"], a["azimuth_ey"]) == (0.0, 90.0), (site, a)
+        assert not set(entry) & {"azimuth_ex", "azimuth_ey", "rot_h", "rot_e", "layout_north"}, (site, entry)
+    assert "layout_north" not in text and "geographic" not in text, "the new survey names a layout north"
+    print("(24) the declination keys are the only fields the fill moves; layout_north magnetic, azimuths 0/90")
+
+    lines = done.stdout.splitlines()
+    coil = "coil response copied: sensors/l120n.rsp (the Burra LEMI-120 table): check it is this survey's coils"
+    assert coil in lines, done.stdout
+    recorded = [ln for ln in lines if ln.startswith("declination (IGRF-")]
+    assert len(recorded) == 1 and "recorded for 2 site(s)" in recorded[0], done.stdout
+    assert "never applied to the data" in recorded[0], recorded
+    assert lines[-1] == f"next: python scripts/check_survey.py {out.resolve()}", lines[-1]
+    odd_root, long_site = SCRATCH / "odd_names", "S" * 29
+    shutil.rmtree(odd_root, ignore_errors=True)
+    for name in ("A.1", long_site, "S01"):
+        write_b423(odd_root / name / "1624949744.B423", 36, "2.1", -31.1, 138.6, 100.0, 1624949744)
+    odd_out = fresh("odd_names_survey")
+    odd = run(odd_root, "--name", "odd_names", "--out", odd_out)
+    assert odd.returncode == 0, (odd.returncode, odd.stdout, odd.stderr)
+    assert sorted(yaml.safe_load(odd_out.read_text(encoding="utf-8"))["sites"]) == sorted(["A.1", long_site, "S01"])
+    named = [ln.strip() for ln in odd.stdout.splitlines() if "site name" in ln]
+    assert len(named) == 2 and all("rename its folder" in ln for ln in named), named
+    assert "'A.1' holds characters other than letters, digits, _ and -" in named[0], named
+    assert f"'{long_site}' has 29 characters: 28 at most" in named[1], named
+    print(f"(25) summary: {coil}; {recorded[0]}; {lines[-1]}; {named[0]}")
+
+
+def test_other_recorders() -> None:
+    """Run checks (26)-(27): the own sample_rate of sites at another rate, and other recorders added to an EDL survey."""
+    sys.path.insert(0, str(REPO / "tests"))
+    import instrument_samples as samples
+
+    done = samples.mixed_survey()
+    assert done.returncode == 0, done.stdout + done.stderr
+    sites = yaml.safe_load(samples.MIXED_YAML.read_text(encoding="utf-8"))["sites"]
+    own = {site: entry.get("sample_rate") for site, entry in sites.items()}
+    assert own == {"EGFLP02": 10.0, "MBJ21": 1.0, "S01": None}, own
+    survey = Survey.from_yaml(samples.MIXED_YAML)
+    read = {site: survey.sample_rate_of(site) for site in sites}
+    assert read == {"EGFLP02": 10.0, "MBJ21": 1.0, "S01": 1000.0}, read
+    assert not set(sites["EGFLP02"]) & set(DECLINATION_KEYS), sites["EGFLP02"]
+    assert set(DECLINATION_KEYS) <= set(sites["MBJ21"]) and set(DECLINATION_KEYS) <= set(sites["S01"]), sites
+    print(f"(26) mixed survey at 1000 Hz: own sample_rate {own}, read back {read}; no declination for EGFLP02 "
+          f"(no position), MBJ21 {sites['MBJ21']['declination']}")
+
+    made = samples.make_samples()
+    root, out = SCRATCH / "edl_then_others", fresh("edl_then_others_survey")
+    shutil.rmtree(root, ignore_errors=True)
+    shutil.copytree(made["EGFLP02"], root / "EGFLP02")
+    first = run(root, "--name", "edl_first", "--out", out)
+    assert first.returncode == 0, (first.returncode, first.stdout, first.stderr)
+    config = yaml.safe_load(out.read_text(encoding="utf-8"))
+    assert (config["instrument"], config["sample_rate"]) == ("edl", 10), (config["instrument"], config["sample_rate"])
+    assert config["defaults"]["calibration_fn"] == "sensors/l120n.rsp", config["defaults"]
+    assert config["defaults"]["h_scale"] == -1000.0, config["defaults"]
+    assert (out.parent / "sensors" / "l120n.rsp").read_bytes() == RSP.read_bytes()
+    assert "sample_rate" not in config["sites"]["EGFLP02"], config["sites"]["EGFLP02"]
+    folder, sub, serial, fw, lat, lon, alt, epoch, spacing, n = SITES[0]
+    for k in range(n):
+        write_b423(root / folder / sub / f"{epoch + k * spacing}.B423", serial, fw, lat, lon, alt,
+                   epoch + k * spacing)
+    shutil.copytree(made["MBJ21"], root / "MBJ21")
+    again = run(root, "--name", "edl_first", "--out", out)
+    assert again.returncode == 0, (again.returncode, again.stdout, again.stderr)
+    sites = yaml.safe_load(out.read_text(encoding="utf-8"))["sites"]
+    assert list(sites) == ["EGFLP02", "MBJ21", "S01"], list(sites)
+    s01, mbj = sites["S01"], sites["MBJ21"]
+    assert (s01.get("instrument"), s01.get("channels"), s01.get("sample_rate")) == (
+        "lemi423", ["ex", "ey", "hx", "hy"], 1000.0), s01
+    assert (mbj.get("instrument"), mbj.get("sample_rate")) == ("lemi424", 1.0), mbj
+    assert not {"h_scale", "calibration_fn"} & set(s01), s01
+    survey = Survey.from_yaml(out)
+    merged = survey.site("S01")
+    assert (merged.h_scale, merged.calibration_fn) == (-1000.0, "sensors/l120n.rsp"), merged
+    read = {site: survey.sample_rate_of(site) for site in sites}
+    assert read == {"EGFLP02": 10.0, "MBJ21": 1.0, "S01": 1000.0}, read
+    print(f"(27) an EDL survey at 10 Hz keeps calibration_fn and h_scale; S01 and MBJ21 added by a re-run with "
+          f"their own instrument and sample_rate {read}; S01 reads h_scale {merged.h_scale} from defaults:")
+
+
 def part2() -> None:
     """Run part 2, the real-data check on the Curnamona Cube raw data; skipped when E: is not mounted."""
     if not CURNAMONA_RAW.is_dir():
@@ -776,10 +967,15 @@ def main() -> int:
     test_edl_broadband_sensor_type()
     test_edl_electric_gain()
     print()
-    print(__doc__.split("**This test fails if**")[3].split("Part 2, the real-data check:")[0].strip())
+    print(__doc__.split("**This test fails if**")[3].strip())
     print()
     test_survey_name()
     test_rerun()
+    test_head()
+    print()
+    print(__doc__.split("**This test fails if**")[4].split("Part 2, the real-data check:")[0].strip())
+    print()
+    test_other_recorders()
     part2()
     print("\nPASS  new_survey_unit")
     return 0

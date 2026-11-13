@@ -53,7 +53,8 @@ Usage:
     Australia/Perth) does not write instrument orangebox, serial hfm2 from
     the report HFM0-RPT.TXT ("Number 0" is box 2), start at the first
     header less 8 h, channels ex ey hx hy hz and `clock_timezone:
-    Australia/Perth` under `defaults:`;
+    Australia/Perth` under `defaults:`, or does not print the line
+    "logger clocks read on Australia/Perth";
   - (the `time_base` key) a site declaring `time_base:
     headers` gives an archive that differs from the default's (S2, no key)
     by any sample or any grid time, in either run; or a site declaring
@@ -380,12 +381,18 @@ def test_time_base_key(root: Path) -> None:
 
 
 def test_new_survey(root: Path) -> None:
+    import contextlib
+    import io
+
     import new_survey
 
     out = root / "ns" / "survey.yaml"
-    code = new_survey.main([str(root / "raw"), "--name", "obns", "--instrument", "auto", "--out", str(out),
-                            "--clock-timezone", "Australia/Perth", "--timezone", "Australia/Perth"])
-    assert code == 0, code
+    printed = io.StringIO()
+    with contextlib.redirect_stdout(printed):
+        code = new_survey.main([str(root / "raw"), "--name", "obns", "--instrument", "auto", "--out", str(out),
+                                "--clock-timezone", "Australia/Perth", "--timezone", "Australia/Perth"])
+    assert code == 0, (code, printed.getvalue())
+    assert "logger clocks read on Australia/Perth" in printed.getvalue().splitlines(), printed.getvalue()
     config = yaml.safe_load(out.read_text(encoding="utf-8"))
     assert config["instrument"] == "orangebox", config["instrument"]
     assert config["defaults"]["clock_timezone"] == "Australia/Perth", config["defaults"]
