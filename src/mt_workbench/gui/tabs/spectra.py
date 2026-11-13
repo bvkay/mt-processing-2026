@@ -14,8 +14,9 @@ Two panels share one frequency axis, one per impedance pair (`PANELS`):
 "By-Ex (Zxy)" on top with By blue and Ex red, and "Bx-Ey (Zyx)" below with
 Bx blue and Ey red. With a remote, the remote's coil of the same component
 is drawn grey underneath. Names follow the roles channels play
-(`mt_workbench.gui.channels.roles`): on a LEMI-424 the panels are "By-E1 (Zxy)"
-and "Bx-E2 (Zyx)", with the first two electrics in the roles of Ex and Ey.
+(`mt_workbench.gui.channels.roles`): ex and ey play Ex and Ey when present (a
+LEMI-424's e3, e4 are the extra pair); an older LEMI-424 archive's panels are
+"By-E1 (Zxy)" and "Bx-E2 (Zyx)", its first two electrics in those roles.
 Each panel has one log-log axis, "PSD (units^2/Hz)", with each curve's units
 in the legend. Faint green dashed lines mark the Schumann resonances and
 faint orange ones 50 Hz and its harmonics up to Nyquist, labelled once on
@@ -57,7 +58,7 @@ def panel(key: str, local: dict, remote: dict | None = None) -> tuple[str, list[
         tuple[str, list[str]]: The panel title for the record and the
         channels present (magnetic, electric, remote magnetic), e.g.
         ("By-Ex (Zxy)", ["hy", "ex", "r_hy"]) on a LEMI-423 with a remote,
-        ("By-E1 (Zxy)", ["by", "e1"]) on a LEMI-424 without one.
+        ("By-E1 (Zxy)", ["by", "e1"]) on an older LEMI-424 archive without one.
     """
     b, e = dict(PANELS)[key]
     title = channels.title(f"{{{b}}}-{{{e}}}" + key[key.index(" "):], local)
@@ -124,7 +125,7 @@ class SpectraTab(QWidget):
         self.title_label.setText(PLACEHOLDER)
 
     def _selection_changed(self, selection) -> None:
-        """Clear the panels when nothing is selected."""
+        """Clear the panels when no item is selected."""
         if selection is None:
             self.clear()
 

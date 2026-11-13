@@ -2,8 +2,7 @@
 """
 Fill each site's magnetic declination in survey.yaml from the IGRF
 
-Every product stays in the sensor (geomagnetic) frame and is never rotated
-at processing; the declination is stored with it so a modeller can rotate
+Every product stays in the sensor (geomagnetic) frame; the declination is stored with it so a modeller can rotate
 once, inside the inversion (`mt_workbench.products`). This script computes,
 for each site of a survey.yaml, the declination of the International
 Geomagnetic Reference Field with the ppigrf package (pure Python, its
@@ -24,10 +23,10 @@ A site without a position or a start is skipped and listed.
 elevation, epoch, declination, model and the value survey.yaml holds now.
 --write updates survey.yaml in place by lines: a site's existing
 declination keys are replaced on their own lines, missing ones are added
-after the entry's last line, and every other line is kept byte for byte,
+after the entry's last line, and every other line is kept unchanged,
 comments and line endings included. Before the file is written the new
 text is parsed and compared with the old: every site's other keys and
-every top-level key must be equal, or nothing is written (exit 2).
+every top-level key must be equal, or the file is left as it was (exit 2).
 --check SITE=DEG ... compares the fill of the named sites with the values
 given (e.g. from the NOAA calculator) within --tol degrees (0.05) and exits
 1 when one differs. --self-test runs the script's own check against the

@@ -77,7 +77,7 @@ xy from A_hole alone, the file does not hold EMPTY in ZXXR and ZXYR at
 from A_hole then C over 0.01-1000 s, C's two periods either side of 3.16 s
 are not C's own values, or the x row at 3.16 s is not on the straight line
 in log10 period between them; (9) merged through `main` from a recipe file
-whose header block gives acqby "UM6P, AU" and prosby "Ben Kay, AuScope",
+whose header block gives acqby "UM6P, AU" and prosby "AuScope MT, AU",
 with A_hdr as the first xy source, the file's >HEAD does not hold exactly
 one LON and one LONG line with the same value, ACQBY equal to acqby and
 FILEBY and PROSBY equal to prosby, its >=DEFINEMEAS exactly one REFLON and
@@ -86,7 +86,7 @@ transfer_function.processed_by.author=<prosby>, the sidecar's header is not
 the block, or mt_metadata reading the file does not give acqby, prosby and
 prosby as the station's acquired_by, processed_by and submitter; the same
 merge with `patch_edi_text` disabled (the writer's own text, which holds no
-LONG) does not equal the patched file byte for byte from >FREQ to the end,
+LONG) is not identical to the patched file from >FREQ to the end,
 or read with mt_metadata does not give the same station id, longitude, Z and
 Z errors; the recipe without the header block does not write LON and LONG
 and REFLON and REFLONG with equal values, or does not leave ACQBY and FILEBY
@@ -251,7 +251,7 @@ PRODUCTS = {
               remote="R06", tag="near", masks=[]),
 }
 TIPPER = np.array([0.12 + 0.05j, -0.08 + 0.03j])
-HEADER = {"acqby": "UM6P, AU", "prosby": "Ben Kay, AuScope"}
+HEADER = {"acqby": "UM6P, AU", "prosby": "AuScope MT, AU"}
 SOURCE_CREDITS = {"ACQBY": "Field crew", "FILEBY": "Source filer"}
 TIPPER_ERR = np.array([0.011, 0.023])
 SIDECAR_KEYS = {"local", "remote", "created", "tag", "edi", "xml", "h5", "frame", "site", "recipe", "merge",
@@ -759,7 +759,7 @@ def test_header(module, b: Path) -> None:
     print("      text with LONG and REFLONG only: LON and REFLON added with the same values")
 
     for label, block in (("unknown key", {"acqby": "UM6P, AU", "processedby": "x"}),
-                         ("value holding =", {"prosby": "Ben Kay=AuScope"})):
+                         ("value holding =", {"prosby": "AuScope=MT"})):
         bad = SCRATCH / "recipes_bad_header.yaml"
         bad.write_text(yaml.safe_dump({"header": block, **sites}, sort_keys=False), encoding="utf-8")
         refused = out / "S01_bad_header.edi"

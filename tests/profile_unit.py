@@ -42,7 +42,7 @@ trace on the "mt-workbench phases + counters" track with the stub's `stft` call
 (MainThread) inside the "L0 STFT" span; or the tracemalloc diff table, on
 two snapshots around a retained 16 MiB bytearray, a retained 1 MiB one and
 a freed 32 MiB one, does not put the 16 MiB one first (+16 MiB to 1 kiB in
-two blocks -- the bytearray object and its separate buffer -- at the
+two blocks (the bytearray object and its separate buffer) at the
 allocating line of `_stub_retained`, its caller in the chain) and the 1 MiB
 one (`_stub_small`) second, or lists the freed one at all.
 """

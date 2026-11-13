@@ -22,19 +22,22 @@ Usage:
 **This test fails if** `default_archive_path` gives anything but
 ``<workspace>/mth5/<site>.h5`` (`ignore_filters` is accepted and ignored, kept
 only for old call sites); `ingest_site` applies a site's declared filters, or
-its `replace` entry, to the raw archive at all -- whatever `ignore_filters`
-is, neither is ever touched and the run comment carries nothing about
-filters (only the PR6-24 high-gain note, when there is one, and the dc
-level record) -- or
+its `replace` entry, to the raw archive at all, whatever `ignore_filters`
+is, or writes a line about filters into the run comment (it carries only
+the PR6-24 high-gain note, when there is one, the dc
+level record and the coil-table record "calibration_sha256: ..."); or
 `ignore_filters` changes anything else (the channel keep, the dipole
 polarity, the coil/h_scale steps must still run once per run).
+
+**`b423_files`** returns a record from a subfolder when the site folder itself holds records, or
+returns nothing when the records sit only in a subfolder (a card copied whole).
 
 **`filters_hash`** is not stable for the same list; does not change when the
 same entries are given in a different *order*, or when one entry's parameter
 (a notch's q) changes; or [] and None do not hash the same.
 
 **`build_variant`**, on a small real one-run raw archive, does not write
-hx/hy bit-for-bit equal to `mt_workbench.noise.apply_filters_arrays` run directly on
+hx/hy identical to `mt_workbench.noise.apply_filters_arrays` run directly on
 the same raw arrays for the same notch; does not record `filters hash <hash>`
 then the same provenance line `apply_filters_arrays` returned, in the run's
 comment; or `variant_ready` does not read False before the build and True
@@ -51,10 +54,31 @@ only once every run is written) or off a finished-name file whose later run
 lacks the recorded hash (what an interrupted, non-atomic write could
 otherwise leave behind for a crashed campaign job to pick up as "ready").
 
+**The freshness record** (workbench issue 20): a variant
+must record, after its hash, ``source: <stem> size <bytes> mtime <time>
+sha256_head <hex>`` of its raw archive (computed here from the definition),
+``calibration_sha256: <hex>`` as the raw archive records it and ``donor:
+<identity>`` per `replace` donor, each a piece mt_metadata's EMTF XML
+parser can set; it fails if `variant_ready` reads True after the raw
+archive is rewritten (hx and hy exchanged, the filters hash unchanged),
+after one of its bytes changes under the recorded size and mtime, after the
+coil table it records changes, or after a donor's raw archive is
+rewritten; if a variant without the record (built by an earlier version) does
+not read ready, with a WARNING that it is judged by file time, while newer
+than its raw archive, or reads ready once the raw archive is rewritten
+after it (the Nador P4S7 and P4S8 case); if the
+rebuilt variant does not hold the notch of the rewritten raw hx; if
+`build_variant` and `processing_archive` (variant and raw) do not refuse a
+raw archive whose recorded table has changed; or if the controls do not
+read ready again (the original bytes and mtime back, the original table
+back). A raw archive without the table record gives a variant recording
+"unknown", which a table edit does not make stale. A real LEMI-423 ingest
+with a `calibration_fn` must record the sha256 of that file.
+
 **The LEMI-423 path is unchanged** (the per-instrument dispatch):
 with the same recorders, a LEMI-423 site's one file must reach
-`read_lemi423` exactly as before -- the file itself (not a list), keyword
-arguments exactly {station_id, dipole_length_ex, dipole_length_ey} -- and the
+`read_lemi423` exactly as before (the file itself, not a list, and keyword
+arguments exactly {station_id, dipole_length_ex, dipole_length_ey}), and the
 LEMI-424/EDL reader (`read_run`) must never be called; any call fails the
 test.
 
@@ -79,14 +103,17 @@ them from MBJ21, LEMI-424, and EGFLP02, EDL, into the scratch folder and
 `scripts/new_survey.py` writes the mixed survey over them): `ingest_site`
 into that survey's scratch workspace fails the test if the archive does not
 open read-only with exactly one run, named sr1_0001 (LEMI-424) / sr10_0001
-(EDL), whose channels are exactly the reader's names the survey declares --
-bx by bz e1 e2 e3 e4 (no temperature channel) / ex ey hx hy hz -- at 1.0 /
+(EDL), whose channels are exactly the stored names the survey declares
+(ex ey e3 e4 hx hy hz, no temperature channel / ex ey hx hy hz) at 1.0 /
 10.0 Hz with 3600 / 36000 samples from 2024-10-25T00:00:00 / 2019-01-10T00:00:00
 UTC; if the EDL hx chain is not the reader's Bartington coefficient
-(142.857 nT -> uV) or the LEMI-424 e1 chain is not empty; or if the archive's
-e1 (LEMI-424) or ex (EDL) samples differ from an INDEPENDENT read of the
-sample file with numpy (the 12th column of the text lines; the EX file's
-values) -- the archive must hold what the recorder wrote.
+(142.857 nT -> uV) or the LEMI-424 ex chain is not the one stage
+lemi424_e_sign (gain -1, recorded as applied); or if the archive's ex
+samples differ from an independent read of the sample file with numpy
+(LEMI-424: the 12th column of the text lines, E1, as the logger wrote it,
+and ex divided by its scalar chain gain, `timefreq._scalar_gain`, equal to
+minus that column, the e_sign convention; EDL: the EX file's values): the
+archive must hold what the recorder wrote.
 
 **An EDL stamp missing one channel's file**: on
 seven synthetic 300 s stamps at 10 Hz, the second with no EX file, the fourth
@@ -94,8 +121,8 @@ with a second BX file under old/ (a test recording) and the fifth only
 15 s long (a startup file),
 `_group_contiguous` (with the rate) must give the runs [1], [3], [5], [6, 7] and leave
 the second and fourth out, and every file's stretch of every archived channel must
-equal the file stamped at that stretch's own time (h5py and numpy only) --
-the old grouping made one run in which mt-io's reader put the third EX file
+equal the file stamped at that stretch's own time (h5py and numpy only).
+The old grouping made one run in which mt-io's reader put the third EX file
 at the second stamp's time, and the spacing rule alone ran the 15 s file on into the next.
 
 **EDL files named for another station** than the site's recorder.ini (here
@@ -105,9 +132,9 @@ exactly the own files; a recorder.ini naming no file's station keeps them all.
 
 **A LEMI-423 site with a `calibration_fn`** and `h_scale: -1000`, ingested
 from one synthetic B423 file, must be archived with hx's and hy's chain the
-mt-io fork's, physical to recorded -- the .rsp table (nanoTesla ->
+mt-io fork's, physical to recorded: the .rsp table (nanoTesla ->
 nanoTesla; amplitudes and phases equal to the file read with numpy), the
-reader's linear stage (nanoTesla -> digital counts, gain 1/K) -- then
+reader's linear stage (nanoTesla -> digital counts, gain 1/K), then
 `lemi423_b_scale` (-1000, counts -> counts), each stage's units_in the
 previous stage's units_out, and ex with neither the coil nor the b_scale
 stage. Stock mt-io raises there instead (its coil table's "millivolts").
@@ -122,7 +149,7 @@ a `calibration_fn`, or an unknown sensor_type, must raise instead of ingesting.
 declared from the field notes: a field-notes fact, not a PR6-24 setting), ingested
 from the same synthetic files as the same site with no key (1.0, no filter),
 must be archived with every channel's stored samples identical to the
-other archive's and to the files (the words stay as stored); ex's AND ey's
+other archive's and to the files (the words stay as stored); ex's and ey's
 chain the other's plus one filter, `uoa_electric_gain`, a CoefficientFilter of
 gain 10.0 microVolt -> microVolt whose comment (the archive's HDF5 attribute)
 names "the field notes" and which the default-gain archive lacks, so that
@@ -367,10 +394,11 @@ def test_ingest_site_never_touches_filters() -> None:
 
 
 def test_run_comment_carries_no_filters() -> None:
-    """Check that the raw run's comment is empty whatever `ignore_filters` is.
+    """Check that the raw run's comment records no filters whatever `ignore_filters` is.
 
     The filter provenance is written by `build_variant` into the variant's
-    run comment.
+    run comment. The raw run's comment is exactly the coil-table record,
+    "calibration_sha256: none", since the site declares no `calibration_fn`.
     """
     seen = {}
 
@@ -395,7 +423,7 @@ def test_run_comment_carries_no_filters() -> None:
         return run.run_metadata.comments.value
 
     seen[False], seen[True] = capture(False), capture(True)
-    assert seen[False] == "" and seen[True] == "", seen
+    assert seen[False] == seen[True] == "calibration_sha256: none", seen
     print(f"  run comment, ignore_filters=False and True: both {seen[False]!r} (no filter provenance at ingest any more)")
 
 
@@ -574,7 +602,9 @@ def test_variant_ready_rejects_a_partial_file() -> None:
     import numpy as np
     import pandas as pd
     from mth5.mth5 import MTH5
-    from mt_workbench.ingest import _all_real_run_comments, default_archive_path, filters_hash, variant_path, variant_ready
+    from mt_workbench.ingest import (
+        _all_real_run_comments, archive_identity, default_archive_path, filters_hash, variant_path, variant_ready,
+    )
 
     site = "VPART"
     survey = _variant_survey(site, NOTCH_A)
@@ -582,8 +612,15 @@ def test_variant_ready_rejects_a_partial_file() -> None:
     hx = np.arange(200, dtype="float64")
     _write_raw_archive(raw_path, site, VARIANT_SURVEY_NAME, {"hx": hx}, VARIANT_FS, "2020-01-01T00:00:00+00:00")
     h = filters_hash(NOTCH_A)
-    good_comment = "filters hash {}; ingest filters (in order): notch f0=5 Hz harmonics=2 q=10 passes=1 zero-phase on [hx]".format(h)
+    # the hash and a freshness record that hold for this raw archive, so that only the
+    # missing hash of the second run below can make variant_ready refuse
+    good_comment = (f"filters hash {h}; source: {archive_identity(raw_path)}; calibration_sha256: unknown; "
+                    f"ingest filters (in order): notch f0=5 Hz harmonics=2 q=10 passes=1 zero-phase on [hx]")
     out_path = variant_path(survey, site)
+    _write_raw_archive(out_path, site, VARIANT_SURVEY_NAME, {"hx": hx}, VARIANT_FS, "2020-01-01T00:00:00+00:00",
+                       comment=good_comment)
+    assert variant_ready(survey, site), "control: one run with the hash and a current record must read ready"
+    out_path.unlink()
 
     # a .part file (build_variant mid-write) must not read as the finished variant
     part_path = out_path.with_name(out_path.name + ".part")
@@ -625,6 +662,267 @@ def test_variant_ready_rejects_a_partial_file() -> None:
     print("  variant_ready: a .part file, and a finished-name file whose second run lacks the hash, both refused")
 
 
+# ----------------------------------------- the freshness record (workbench issue 20)
+
+COIL_RSP = REPO / "surveys" / "burra" / "sensors" / "l120n.rsp"
+T0 = "2020-01-01T00:00:00+00:00"
+
+
+def _sha256(path: Path) -> str:
+    """Return a file's sha256 hex digest, computed here."""
+    import hashlib
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def _identity_here(path: Path) -> str:
+    """Compute an archive's ``source:`` identity here from the definition in the issue.
+
+    ``<stem> size <bytes> mtime <UTC, ISO 8601 basic, ns> sha256_head <sha256
+    of the first MiB, then the size in decimal>``.
+    """
+    import hashlib
+    import time
+    st = path.stat()
+    with open(path, "rb") as fh:
+        head = fh.read(1 << 20)
+    digest = hashlib.sha256(head + str(st.st_size).encode("ascii")).hexdigest()
+    sec, ns = divmod(st.st_mtime_ns, 1_000_000_000)
+    stamp = time.strftime("%Y%m%dT%H%M%S", time.gmtime(sec)) + f".{ns:09d}Z"
+    return f"{path.stem} size {st.st_size} mtime {stamp} sha256_head {digest}"
+
+
+def _fresh_survey(sites: dict) -> Survey:
+    """Build a survey at VARIANT_FS with the given site entries, in its own workspace."""
+    config = {"name": VARIANT_SURVEY_NAME, "instrument": "lemi423", "sample_rate": VARIANT_FS,
+              "data_root": str(SCRATCH / "fresh_raw"), "workspace": str(SCRATCH / "fresh_work"), "sites": sites}
+    return Survey(config, SCRATCH)
+
+
+def _table_copy(name: str) -> Path:
+    """Copy the LEMI-120 table into the scratch folder, so the test can edit it."""
+    path = SCRATCH / "fresh_tables" / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(COIL_RSP.read_bytes())
+    return path
+
+
+def _channel(path: Path, site: str, comp: str):
+    """Read one channel of an archive's first run, read-only."""
+    from mth5.mth5 import MTH5
+    m = MTH5()
+    m.open_mth5(path, mode="r")
+    try:
+        run = m.get_station(site, survey=VARIANT_SURVEY_NAME).get_run(f"sr{int(VARIANT_FS)}_0001")
+        return run.get_channel(comp).hdf5_dataset[()]
+    finally:
+        m.close_mth5()
+
+
+def _comments(path: Path) -> list:
+    """Return an archive's real run comments."""
+    from mt_workbench.ingest import _all_real_run_comments
+    return _all_real_run_comments(path)
+
+
+def test_variant_follows_a_rebuilt_raw_archive() -> None:
+    """Check that a variant built from a raw archive is not current once that archive is rewritten.
+
+    **This test fails if** a variant just built is not ready; its run
+    comment is not "filters hash <h>; source: <identity>; calibration_sha256:
+    <the table's sha256>; ingest filters (in order): notch ...", with the
+    identity computed here from the definition, or mt_metadata's EMTF XML
+    run-comment parser cannot set one of its pieces; after the raw archive
+    is rewritten with hx and hy exchanged (newer mtime; the variant's
+    filters hash still matches, so the old hash-only rule kept it)
+    `variant_ready` reads True, or `processing_archive` does not rebuild it
+    into hx equal to the notch of the new raw hx (the old hy); or when the
+    raw archive's bytes change under the recorded size and mtime (restored
+    with os.utime) the variant reads ready, or it does not read ready again
+    once the original bytes and mtime are back.
+    """
+    import os
+    import numpy as np
+    from mt_metadata.transfer_functions.io.emtfxml.metadata import Run as XmlRun
+    from mt_workbench.ingest import build_variant, filters_hash, processing_archive, variant_path, variant_ready
+    from mt_workbench.noise import apply_filters_arrays
+
+    site = "VF01"
+    table = _table_copy("vf01.rsp")
+    survey = _fresh_survey({site: {"filters": NOTCH_A, "calibration_fn": str(table)}})
+    raw = default_archive_path(survey, site)
+    rng = np.random.default_rng(11)
+    hx = rng.normal(size=1500) * 1000 + 4000
+    hy = rng.normal(size=1500) * 700 - 2500
+    cal = f"calibration_sha256: {_sha256(table)}"  # what ingest_site records for this table
+    _write_raw_archive(raw, site, VARIANT_SURVEY_NAME, {"hx": hx, "hy": hy}, VARIANT_FS, T0, comment=cal)
+    out = build_variant(survey, site)
+    assert variant_ready(survey, site), "a variant just built must read ready"
+    pieces = _comments(out)[0].split("; ")
+    want = [f"filters hash {filters_hash(NOTCH_A)}", f"source: {_identity_here(raw)}", cal]
+    assert pieces[:3] == want and pieces[3].startswith("ingest filters (in order): notch"), (pieces, want)
+    xml_run = XmlRun()
+    for piece in _comments(out)[0].split(";"):  # as the EMTF XML writer parses a run comment
+        if piece.count(":") >= 1:
+            key, value = piece.split(":", 1)
+            xml_run.update_attribute(key.strip(), value.strip())
+
+    before = raw.stat().st_mtime_ns
+    _write_raw_archive(raw, site, VARIANT_SURVEY_NAME, {"hx": hy, "hy": hx}, VARIANT_FS, T0, comment=cal)
+    assert raw.stat().st_mtime_ns > before, "premise: the rewrite has a newer mtime"
+    stale_hash = all(c.startswith(f"filters hash {filters_hash(NOTCH_A)}; ") for c in _comments(out))
+    assert stale_hash, "premise: the stale variant's filters hash still matches"
+    assert not variant_ready(survey, site), "a variant of a rewritten raw archive must not read ready"
+    rebuilt = processing_archive(survey, site)
+    assert rebuilt == variant_path(survey, site) and variant_ready(survey, site), rebuilt
+    notched, _lines = apply_filters_arrays({"hx": hy, "hy": hx}, VARIANT_FS, NOTCH_A, tag=site)
+    same = np.array_equal(_channel(rebuilt, site, "hx"), notched["hx"].astype("float32"))
+    assert same, "the rebuilt variant's hx must be the notch of the rewritten raw hx"
+
+    st = raw.stat()
+    original = raw.read_bytes()
+    changed = bytearray(original)
+    changed[len(changed) // 2] ^= 0xFF
+    raw.write_bytes(bytes(changed))
+    os.utime(raw, ns=(st.st_atime_ns, st.st_mtime_ns))
+    assert (raw.stat().st_size, raw.stat().st_mtime_ns) == (st.st_size, st.st_mtime_ns), "premise: size, mtime kept"
+    assert not variant_ready(survey, site), "changed bytes under the recorded size and mtime must not read ready"
+    raw.write_bytes(original)
+    os.utime(raw, ns=(st.st_atime_ns, st.st_mtime_ns))
+    assert variant_ready(survey, site), "control: the original bytes and mtime back must read ready again"
+    print(f"  {site}: ready when built; record {pieces[1][:60]}...; not ready after the raw rewrite (hash "
+          f"unchanged); rebuilt hx = notch(new raw hx); a byte changed under the same size and mtime caught")
+
+
+def test_variant_follows_the_coil_table() -> None:
+    """Check that a variant is not current once the coil table its raw archive records has changed.
+
+    **This test fails if** a variant built from a raw archive recording the
+    table's sha256 is not ready; after one byte is appended to the table it
+    reads ready, or `build_variant`, `processing_archive` and
+    `processing_archive(use_filters=False)` do not refuse with a ValueError
+    asking for a re-ingest (rebuilding the variant from that raw archive
+    would only repeat the old table); with the original table back it does
+    not read ready again; or a variant of a raw archive that records no
+    table (ingested before the record) does not record "unknown" and stay
+    ready through a table edit (nothing to compare against).
+    """
+    import numpy as np
+    from mt_workbench.ingest import build_variant, processing_archive, variant_ready
+
+    site, old = "VF02", "VF03"
+    table = _table_copy("vf02.rsp")
+    entry = {"filters": NOTCH_A, "calibration_fn": str(table)}
+    survey = _fresh_survey({site: dict(entry), old: dict(entry)})
+    data = {"hx": np.linspace(-1.0, 1.0, 800) * 3000}
+    _write_raw_archive(default_archive_path(survey, site), site, VARIANT_SURVEY_NAME, data, VARIANT_FS, T0,
+                       comment=f"calibration_sha256: {_sha256(table)}")
+    _write_raw_archive(default_archive_path(survey, old), old, VARIANT_SURVEY_NAME, data, VARIANT_FS, T0)
+    build_variant(survey, site)
+    old_variant = build_variant(survey, old)
+    assert variant_ready(survey, site) and variant_ready(survey, old), "both variants must read ready when built"
+    assert _comments(old_variant)[0].split("; ")[2] == "calibration_sha256: unknown", _comments(old_variant)[0]
+
+    original = table.read_bytes()
+    table.write_bytes(original + bytes([10]))  # one byte appended
+    try:
+        assert not variant_ready(survey, site), "a variant must not read ready after its coil table changed"
+        for label, call in (("build_variant", lambda: build_variant(survey, site)),
+                            ("processing_archive", lambda: processing_archive(survey, site)),
+                            ("raw processing_archive", lambda: processing_archive(survey, site, use_filters=False))):
+            try:
+                call()
+            except ValueError as exc:
+                assert "re-ingest" in str(exc) and "coil table" in str(exc), (label, exc)
+            else:
+                raise AssertionError(f"{label} did not refuse a raw archive of the old coil table")
+        assert variant_ready(survey, old), "a variant recording an unknown table must not be judged by it"
+    finally:
+        table.write_bytes(original)
+    assert variant_ready(survey, site), "control: the original table back must read ready again"
+    print(f"  {site}: not ready after the table changed; build_variant and processing_archive (variant and raw) "
+          f"refuse, asking for a re-ingest; ready again with the table back; {old} (no record) records unknown")
+
+
+def test_variant_without_the_record() -> None:
+    """Check the grandfather rule for a variant built before the record existed.
+
+    **This test fails if** a variant whose run comment is what
+    `build_variant` wrote before the record existed ("filters hash <h>; ingest
+    filters (in order): ...", the hash current) and whose file is newer
+    than its raw archive does not read ready, or no WARNING line says it is
+    judged by file time; if, once the raw archive is rewritten (now newer
+    than the variant, as Nador's P4S7 and P4S8 raw archives were), it
+    reads ready; or if `processing_archive` does not then rebuild
+    it into a variant that carries the record and reads ready.
+    """
+    import os
+    import time
+    import numpy as np
+    from loguru import logger
+    from mt_workbench.ingest import filters_hash, processing_archive, variant_path, variant_ready
+
+    site = "VF04"
+    survey = _fresh_survey({site: {"filters": NOTCH_A}})
+    raw = default_archive_path(survey, site)
+    data = {"hx": np.cos(np.arange(600) / 7.0) * 2000}
+    _write_raw_archive(raw, site, VARIANT_SURVEY_NAME, data, VARIANT_FS, T0)
+    old = (f"filters hash {filters_hash(NOTCH_A)}; ingest filters (in order): notch f0=5 Hz harmonics=2 q=10 "
+           f"passes=1 zero-phase on [hx]")
+    variant = variant_path(survey, site)
+    _write_raw_archive(variant, site, VARIANT_SURVEY_NAME, data, VARIANT_FS, T0, comment=old)
+    now = time.time_ns()
+    os.utime(raw, ns=(now - 600 * 10**9, now - 600 * 10**9))  # the raw archive ingested first,
+    os.utime(variant, ns=(now - 300 * 10**9, now - 300 * 10**9))  # the variant built from it after
+
+    said = []
+    sink = logger.add(lambda message: said.append(str(message)), level="WARNING")
+    try:
+        ready = variant_ready(survey, site)
+    finally:
+        logger.remove(sink)
+    assert ready, "a record-less variant newer than its raw archive must read ready (the grandfather rule)"
+    warned = [line for line in said if "WARNING" in line and "judged current by file time" in line]
+    assert warned, said
+
+    _write_raw_archive(raw, site, VARIANT_SURVEY_NAME, data, VARIANT_FS, T0)  # rebuilt after the variant
+    assert raw.stat().st_mtime_ns > variant.stat().st_mtime_ns, "premise: the raw archive is now newer"
+    assert not variant_ready(survey, site), "a record-less variant older than its rewritten raw archive is stale"
+    rebuilt = processing_archive(survey, site)
+    assert variant_ready(survey, site) and _comments(rebuilt)[0].split("; ")[1].startswith("source: VF04 size ")
+    print(f"  {site}: record-less and newer than its raw archive: ready, with the warning; older than the "
+          f"rewritten raw archive: not ready; processing_archive rebuilt it with the record")
+
+
+def test_variant_follows_its_donor() -> None:
+    """Check that a variant with a `replace` entry is not current once its donor's raw archive is rewritten.
+
+    **This test fails if** the variant of a site whose hx is replaced from
+    a donor does not record ``donor: <the donor raw archive's identity>``
+    or is not ready when built; reads ready after the donor's raw archive
+    is rewritten; or, rebuilt, does not record the rewritten donor and read
+    ready.
+    """
+    import numpy as np
+    from mt_workbench.ingest import build_variant, processing_archive, variant_ready
+
+    site, donor = "VF05", "VF06"
+    filters = [{"replace": {"hx": donor}}] + NOTCH_A
+    survey = _fresh_survey({site: {"filters": filters}, donor: {}})
+    rng = np.random.default_rng(5)
+    _write_raw_archive(default_archive_path(survey, site), site, VARIANT_SURVEY_NAME,
+                       {"hx": rng.normal(size=700), "hy": rng.normal(size=700)}, VARIANT_FS, T0)
+    donor_raw = default_archive_path(survey, donor)
+    _write_raw_archive(donor_raw, donor, VARIANT_SURVEY_NAME, {"hx": rng.normal(size=700)}, VARIANT_FS, T0)
+    out = build_variant(survey, site)
+    pieces = _comments(out)[0].split("; ")
+    assert f"donor: {_identity_here(donor_raw)}" in pieces and variant_ready(survey, site), pieces[:4]
+    _write_raw_archive(donor_raw, donor, VARIANT_SURVEY_NAME, {"hx": rng.normal(size=700)}, VARIANT_FS, T0)
+    assert not variant_ready(survey, site), "a variant must not read ready after its donor's raw archive changed"
+    rebuilt = processing_archive(survey, site)
+    assert f"donor: {_identity_here(donor_raw)}" in _comments(rebuilt)[0].split("; ") and variant_ready(survey, site)
+    print(f"  {site}: records donor {donor}'s identity; not ready after {donor}.h5 was rewritten; rebuilt and ready")
+
+
 def test_lemi423_reader_call_unchanged() -> None:
     """Check that a LEMI-423 site reaches read_lemi423 with the file and the three keyword arguments."""
     survey, out, calls = run_ingest(FILTERS, ignore_filters=False)
@@ -634,7 +932,7 @@ def test_lemi423_reader_call_unchanged() -> None:
     assert args == (stamp,), args
     assert kwargs == {"station_id": SITE, "dipole_length_ex": 0.0, "dipole_length_ey": 0.0}, kwargs
     assert survey.instrument_of(SITE) == "lemi423"
-    print(f"  read_lemi423({stamp.name}, {kwargs}) -- once, exactly the old call; read_run never called")
+    print(f"  read_lemi423({stamp.name}, {kwargs}): once, exactly the old call; read_run never called")
 
 
 def _independent_column(path: Path, column: int | None) -> "np.ndarray":
@@ -680,8 +978,8 @@ def test_new_instruments_one_hour() -> None:
     survey = Survey.from_yaml(instrument_samples.MIXED_YAML)
     assert survey.workspace.is_relative_to(instrument_samples.SCRATCH), survey.workspace
     cases = (
-        ("MBJ21", "lemi424", "sr1_0001", ["bx", "by", "bz", "e1", "e2", "e3", "e4"], 1.0, 3600,
-         "2024-10-25T00:00:00", "e1", instrument_samples.LEMI424_FILE, 11),
+        ("MBJ21", "lemi424", "sr1_0001", ["ex", "ey", "e3", "e4", "hx", "hy", "hz"], 1.0, 3600,
+         "2024-10-25T00:00:00", "ex", instrument_samples.LEMI424_FILE, 11),
         ("EGFLP02", "edl", "sr10_0001", ["ex", "ey", "hx", "hy", "hz"], 10.0, 36000,
          "2019-01-10T00:00:00", "ex", f"{instrument_samples.EDL_DAY}/{instrument_samples.EDL_STAMP}.EX", None),
     )
@@ -705,11 +1003,13 @@ def test_new_instruments_one_hour() -> None:
             m.close_mth5()
         assert frames[site] == "geomagnetic", (site, frames[site])
         truth = _independent_column(survey.data_root / site / source, column)
+        # E1 stored as ex as the logger wrote it; the e_sign convention (-1.0 unset) is the chain's stage
         assert np.array_equal(data[check], truth), (site, check, data[check][:3], truth[:3])
         if instrument == "edl":
             assert chains["hx"] == [("CoefficientFilter", 1e6 / 7000.0)], chains["hx"]
         else:
-            assert chains["e1"] == [], chains["e1"]
+            assert chains["ex"] == [("CoefficientFilter", -1.0)], chains["ex"]
+            assert np.array_equal(data[check] / chains["ex"][0][1], -truth), (site, "ex / chain gain is not -E1")
         print(f"  {site} ({instrument}): {path.name} in {took:.2f} s, run {run_id}, {comps} at {rate:g} Hz, "
               f"{n} samples from {start}; {check} == the file's own values; chain {chains[check if instrument == 'lemi424' else 'hx']}; "
               f"frame {frames[site]}")
@@ -928,9 +1228,12 @@ def test_edl_files_of_another_station_left_out() -> None:
         for comp, suffix in (("hx", "BX"), ("ex", "EX")):
             assert np.array_equal(station["sr10_0001"][comp][()], np.concatenate(own[suffix])), comp
     (site / "config" / "recorder.ini").write_text(ini.format("RENAMED_"), encoding="utf-8")
-    assert len(record_files(site, "edl")) == 25, "a recorder.ini naming no file's station dropped files"
+    assert len(record_files(site, "edl")) == 15, "a recorder.ini naming no file's station: the folder's own station not kept"
+    nobody = site.rename(site.with_name("SITE_OF_NOBODY"))  # a folder named for no station either
+    assert len(record_files(nobody, "edl")) == 25, "a recorder.ini and a folder naming no file's station dropped files"
     print(f"  PLB03 (a month earlier) and XX (inside the record) left out: {len(files)} files, span {start} to "
-          f"{end}, one run == the own files; recorder.ini naming nobody's station keeps all 25")
+          f"{end}, one run == the own files; recorder.ini naming nobody's station keeps the folder's own 15, and all 25 "
+          f"when the folder is named for nobody too")
 
 
 def test_edl_stamp_missing_a_channel_splits_the_run() -> None:
@@ -974,7 +1277,7 @@ def test_edl_stamp_missing_a_channel_splits_the_run() -> None:
             np.savetxt(site / f"EDLX_{stamp}.{suffix}", values, fmt="%d")
             truth[(stamp, suffix)] = values.astype(float)
     # a test recording kept under old/: a second BX file with a stamp the real files have
-    np.savetxt(site / "old" / f"EDLtest_{stamps[3]}.BX", -np.arange(per_file), fmt="%d")
+    np.savetxt(site / "old" / f"EDLX_{stamps[3]}.BX", -np.arange(per_file), fmt="%d")
     files = record_files(site, "edl")
     got = [sorted({p.stem.split("_")[1] for p in g}) for g in _group_contiguous(files, None, "edl", rate=fs)]
     assert got == [[stamps[0]], [stamps[2]], [stamps[4]], [stamps[5], stamps[6]]], got
@@ -1033,6 +1336,37 @@ def test_apple_double_twins_are_skipped() -> None:
         print("  AppleDouble twin skipped; a folder holding only twins is not a site")
 
 
+def test_stray_subfolder_records_are_left_out() -> None:
+    """Check that a site folder's own records win over records in its subfolders.
+
+    Fails if `select_files` returns a B423 record from a subfolder when the
+    site folder itself holds records (Nador's P2S1: a stray one-hertz card
+    of another logger in ``DATA0034`` beside the site's own files), or
+    returns nothing when the records sit only in a subfolder (a card copied
+    whole), or `Survey.site_dirs` stops recognising that site.
+    """
+    import tempfile
+    from mt_workbench.ingest import b423_files, select_files
+    from mt_workbench.survey import Survey
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        site = root / "P2S1"; site.mkdir()
+        for epoch in (1702458924, 1702464328):
+            (site / f"{epoch}.B423").write_bytes(bytes([120]) * 64)
+        stray = site / "DATA0034"; stray.mkdir()
+        for epoch in (1689762000, 1689767400, 1689772800):
+            (stray / f"{epoch}.B423").write_bytes(bytes([120]) * 64)
+        names = [f.name for f in select_files(site)]
+        assert names == ["1702458924.B423", "1702464328.B423"], names
+        card = root / "P9S9"; card.mkdir()
+        (card / "DATA0001").mkdir()
+        (card / "DATA0001" / "1702458924.B423").write_bytes(bytes([120]) * 64)
+        assert [f.name for f in b423_files(card)] == ["1702458924.B423"], b423_files(card)
+        survey = Survey({"name": "t", "data_root": str(root)}, root)
+        assert list(survey.site_dirs()) == ["P2S1", "P9S9"], list(survey.site_dirs())
+        print("  stray subfolder records left out beside a recording; a card-only subfolder still read")
+
+
 def test_lemi423_coil_chain() -> None:
     """Check the coil chain of a LEMI-423 site with a `calibration_fn` and `h_scale`.
 
@@ -1047,7 +1381,8 @@ def test_lemi423_coil_chain() -> None:
     previous stage's units_out; or if ex carries a coil or b_scale stage.
     This is the mt-io fork's chain with mt-workbench's one stage appended; stock
     mt-io raises before writing anything, since its coil table's "millivolts"
-    is not a unit mt_metadata knows.
+    is not one of mt_metadata's units. It also fails if the run comment does
+    not record "calibration_sha256: <sha256 of the .rsp file, computed here>".
     """
     import shutil
     import numpy as np
@@ -1091,6 +1426,8 @@ def test_lemi423_coil_chain() -> None:
                 assert str(b.units_in) == str(a.units_out), (comp, a.name, a.units_out, b.name, b.units_in)
         ex_names = [f.name for f in chains["ex"]]
         assert not any(n.startswith("lemi_120_") or n == "lemi423_b_scale" for n in ex_names), ex_names
+        recorded = str(run.metadata.comments.value or "").split("; ")
+        assert f"calibration_sha256: {_sha256(rsp)}" in recorded, recorded
     finally:
         m.close_mth5()
     print(f"  LEMI-423 with {rsp.name}, h_scale -1000: hx, hy = {[f.name for f in chains['hx']]} "

@@ -245,7 +245,7 @@ def load_station(
         available = set(st.get_run(first_run[0][0]).groups_list)
         missing = [c for c in comps if c not in available]
         if missing:
-            logger.info(f"{station}: channels {missing} not in the archive -- skipped")
+            logger.info(f"{station}: channels {missing} not in the archive; skipped")
             comps = [c for c in comps if c in available]
         if not comps:
             raise ValueError(f"{station}: none of the requested channels in {mth5_path}")
@@ -281,7 +281,7 @@ def load_station(
                 if abs(drift) > 1e-3:
                     logger.warning(
                         f"{station} {run_id} {comp}: run start is {drift:.3f} samples "
-                        f"off the grid -- placed at the nearest sample"
+                        f"off the grid; placed at the nearest sample"
                     )
                 if gain is None:
                     gain, skipped = _scalar_gain(ch)
@@ -493,7 +493,7 @@ def levels_plan(
         if n_windows < min_windows:
             logger.warning(
                 f"level {level} (periods {lo:.4g}-{hi:.4g} s) needs a {w / 3600:.2f} h "
-                f"window and the record is {record_s / 3600:.2f} h -- ladder stops below it"
+                f"window and the record is {record_s / 3600:.2f} h; ladder stops below it"
             )
             break
         rows.append(
@@ -737,7 +737,7 @@ def decimation_levels(
     for c in channels:
         n_nan = int(np.isnan(arrays[c]).sum())
         if n_nan:
-            logger.warning(f"{c}: {n_nan} NaN outside the run gaps -- zeroed")
+            logger.warning(f"{c}: {n_nan} NaN outside the run gaps; zeroed")
             np.nan_to_num(arrays[c], copy=False)
     fs = float(sample_rate)
     level_gaps = list(gaps)
@@ -939,7 +939,7 @@ def psd_ladder(
     for c in channels:
         n_nan = int(np.isnan(arrays[c]).sum())
         if n_nan:
-            logger.warning(f"{c}: {n_nan} NaN outside the run gaps -- zeroed")
+            logger.warning(f"{c}: {n_nan} NaN outside the run gaps; zeroed")
             np.nan_to_num(arrays[c], copy=False)
         arrays[c] = arrays[c].astype("float64")
 
@@ -950,7 +950,7 @@ def psd_ladder(
         if n_level < min_segments * nperseg:
             logger.info(
                 f"stage {level}: {n_level} samples at {fs:g} Hz is under {min_segments} x "
-                f"{nperseg} -- ladder stops below it"
+                f"{nperseg}; ladder stops below it"
             )
             break
         t0 = time.time()

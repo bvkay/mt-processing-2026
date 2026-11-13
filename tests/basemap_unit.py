@@ -18,16 +18,16 @@ Usage:
 :license: MIT
 
 **This test fails if** (1) for a synthetic survey whose sites span 10 S to
-60 S -- wide enough that a warp linear in latitude would put the middle row
+60 S, wide enough that a warp linear in latitude would put the middle row
 more than 3 source rows away from the Mercator one (checked, so the test can
-tell them apart) -- the warped `basemap.png`, at the latitudes of the centres
+tell them apart), the warped `basemap.png`, at the latitudes of the centres
 of its rows 10 %, 50 % and 90 % of the way down, does not hold in every
 column the source row at the pyproj Mercator y of that latitude (to within
 the 0.5 of the rounding to uint8), or at three longitudes the source column
 at their Mercator x; (2) `basemap.json`'s lon_min, lon_max, lat_min, lat_max
 do not equal (1e-9) the sites' extent computed here from the YAML, padded on
-each side by max(0.15 x span, 0.1 deg) -- for that survey, a copy of the
-curnamona survey and a one-site survey -- or bounds2img was not asked, with
+each side by max(0.15 x span, 0.1 deg) (for that survey, a copy of the
+curnamona survey and a one-site survey), or bounds2img was not asked, with
 ll=True, for exactly that extent from Esri.WorldImagery (the default: imagery,
 no place names) or, when --provider names one, from that provider, with its
 attribution in the JSON; its width and height are not the PNG's or the PNG is
@@ -35,8 +35,8 @@ not RGB; (3) the zoom is not what bounds2img was asked for and the JSON
 records: with `--zoom auto`, three levels finer than min(ceil(log2(720 /
 span))) over the two spans, coarsened one level at a time (never below that
 base) into the provider's zoom range (19 when xyzservices gives none) and
-until the image's longer side -- the extent's Mercator metres from pyproj
-over the tile pixel's 2 pi 6378137 / (256 x 2^zoom) m -- is at most 8000 px,
+until the image's longer side (the extent's Mercator metres from pyproj
+over the tile pixel's 2 pi 6378137 / (256 x 2^zoom) m) is at most 8000 px,
 all computed here; that rule must give 6 for the wide survey (its base 4 +
 2: 7 would be 8194 px tall), 11 for curnamona (its base 8 + 3: 7222 px
 tall), 6 for a survey from 55 S to 80 S (its base + 1: 7 would be 9714 px

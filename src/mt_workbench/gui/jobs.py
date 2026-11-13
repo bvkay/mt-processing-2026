@@ -8,7 +8,7 @@ Processing therefore runs in the scripts, and the queue runs one job at a
 time, so an MTH5 file is open in one process at a time as HDF5 file locking
 requires.
 
-`JobRunner` owns the queue; `queue_table.QueuePanel` shows it as a table of
+`JobRunner` holds the queue; `queue_table.QueuePanel` shows it as a table of
 jobs with their status plus the merged stdout/stderr log. `add` queues a job;
 `run_queue` (the Process tab's Run queue button) runs every queued job in
 turn; `run_now` starts one job immediately and alone, for the utility jobs
@@ -188,7 +188,7 @@ class JobRunner(QObject):
         return -1
 
     def _start_next(self) -> None:
-        """Start the next queued job while Run queue is draining and nothing is running."""
+        """Start the next queued job while Run queue is draining and no job is running."""
         if self._process is not None:
             return  # a job_finished slot has started one already (run_now)
         index = self._next_queued()

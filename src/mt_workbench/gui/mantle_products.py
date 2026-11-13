@@ -18,7 +18,7 @@ regroups its verdicts for drawing: every verdict names a word and the
 frequencies it judged, and the strip on the View EDIs tab shows, per word,
 the period ranges those frequencies cover. `word_counts` reads the sidecar's
 verdict tally and `notes_text` lays the report's summary and notes out as
-plain text. The files are read only; nothing is computed from the data.
+plain text. The files are read only.
 
 @author: ben kay (ben@auscope.org.au)
 

@@ -367,7 +367,8 @@ class PairSummary(QWidget):
         """Recommend a remote for the bar's station, requesting the spans it needs.
 
         The station's declared remote is used when there is one. Otherwise
-        the recommendation is the nearest raw site (by `SiteMap.distance_km`;
+        the recommendation is the nearest recorded site (`State.recorded_sites`:
+        a raw folder, or a declared site with an archive; by `SiteMap.distance_km`;
         sites without a position sort last, then by name) among those whose
         overlap covers at least `ENOUGH_FRACTION` of the station's own record,
         or, failing that, the nearest among those within `TIE_HOURS` of the
@@ -380,7 +381,7 @@ class PairSummary(QWidget):
         if not station:
             return None, ""
         declared = self.state.default_remote(station)
-        candidates = [declared] if declared else sorted(s for s in self.state.raw_sites() if s != station)
+        candidates = [declared] if declared else [s for s in self.state.recorded_sites() if s != station]
         if self.isVisible():  # spans are read only while the summary is visible
             self.bar.read_spans(candidates)
         if declared:
@@ -391,7 +392,7 @@ class PairSummary(QWidget):
         hours = {c: self.hours(station, c) or 0.0 for c in candidates}
         best_hours = max(hours.values(), default=0.0)
         if best_hours <= 0:
-            return None, f"no raw site overlaps {station}"
+            return None, f"no recorded site overlaps {station}"
 
         def distance_key(name: str):
             km = self.site_map.distance_km(station, name)
@@ -407,7 +408,7 @@ class PairSummary(QWidget):
             return best, why
         tied = [c for c in candidates if hours[c] >= best_hours - self.TIE_HOURS]
         best = min(tied, key=distance_key)
-        why = (f"no remote declared and no raw site overlaps {self.ENOUGH_FRACTION:.0%} of "
+        why = (f"no remote declared and no recorded site overlaps {self.ENOUGH_FRACTION:.0%} of "
                f"{station}'s record; the nearest of the {len(tied)} with the longest overlap")
         return best, why
 

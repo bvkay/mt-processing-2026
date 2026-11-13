@@ -168,7 +168,7 @@ class EdiTab(QWidget):
         self.phase_fold_radio.setChecked(True)
         self.phase_fold_radio.setToolTip("mtpy's own fold: yx phase + 180, same quadrant as xy")
         self.phase_unfold_radio.setToolTip(
-            "yx phase as mtpy computes it, unfolded -- a physical yx sits near -135"
+            "yx phase as mtpy computes it, unfolded; a physical yx sits near -135"
         )
         phase_box = QGroupBox("Phase", self)
         phase_layout = QVBoxLayout(phase_box)

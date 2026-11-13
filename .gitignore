@@ -24,12 +24,43 @@ src/mt_workbench/gui/README.md
 !docs/worklog.md
 examples/
 
-# Morocco survey: local-only records (Ben, 2 Oct 2026); the files stay on disk
+# Morocco survey: local-only records (2 Oct 2026); the files stay on disk
 surveys/MT_Morocco_Atlas_Mountains/north_recovery/
 surveys/MT_Morocco_Atlas_Mountains/notes/
 surveys/MT_Morocco_Atlas_Mountains/field_notes_report.md
 surveys/MT_Morocco_Atlas_Mountains/masks_history.yaml
 
-# Morocco survey: the tracked worked examples are lines A, C (round 2) and D (Ben, 2 Oct 2026)
+# Morocco survey: the tracked worked examples are lines A, C (round 2) and D (2 Oct 2026)
 surveys/MT_Morocco_Atlas_Mountains/campaign_lineB.yaml
 surveys/MT_Morocco_Atlas_Mountains/campaign_lineC.yaml
+
+# personal projects for now, not to be shared (4 Oct 2026); the folders stay on disk
+surveys/MT_Morocco_Nador_Geothermal/
+surveys/MT_Kalkaroo/
+
+# survey folders in git (12 Nov 2026): every survey folder stays local, except the six
+# original worked examples and the two Vulcan surveys; inside those, only the declaration
+# files survey.yaml, filters.yaml, reference_edis.yaml and qc_notes.md are tracked, as in
+# curnamona_cube. Notes folders are local in every survey. A file already tracked stays
+# tracked until it is removed from git.
+surveys/*
+!surveys/MT_Morocco_Atlas_Mountains/
+!surveys/burra/
+!surveys/curnamona_cube/
+!surveys/hillside_phase1/
+!surveys/hillside_phase2/
+!surveys/stuart_shelf_2009/
+!surveys/MT_Vulcan_2022/
+!surveys/MT_Vulcan_2024_25/
+surveys/*/*
+!surveys/*/survey.yaml
+!surveys/*/filters.yaml
+!surveys/*/reference_edis.yaml
+!surveys/*/qc_notes.md
+
+# delivered EDI sets and the dated working notes stay local (12 Nov 2026)
+/deliverables/
+/notes/
+
+# repository scratch: test outputs (work/scratch/mt_workbench_tests) (12 Nov 2026)
+/work/

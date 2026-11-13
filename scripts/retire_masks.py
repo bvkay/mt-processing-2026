@@ -30,7 +30,7 @@ scope, channels, reason), then the counts of the site's entries in both
 files before and after the move. `--dry-run` prints the same and moves
 nothing. `--why` is required when retiring; with `--restore` it is
 optional and only printed. Exit status: 0 moved (or would move), 2 when
-nothing is selected or an argument is malformed.
+no entry is selected or an argument is malformed.
 
 Usage:
     python scripts/retire_masks.py <survey.yaml> <site> [--found-by LIST] [--scope LIST]

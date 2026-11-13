@@ -28,11 +28,11 @@ Usage:
 (3) start/end are not the file-name epochs, first to last plus the median
     spacing, as UTC ISO text; sample_rate is not 1000 (the survey-wide value);
     or a direct call to `fast_sample_rate` on S01's first file (written at
-    1000 Hz above) does not return exactly 1000.0 -- the bounded-read scan
-    new_survey.py now uses in place of mt-io's whole-file `read_summary`;
+    1000 Hz above) does not return exactly 1000.0 (the bounded-read scan
+    new_survey.py uses in place of mt-io's whole-file `read_summary`);
 (4) generated_by is not scripts/new_survey.py; the defaults block is not
-    exactly the one asked for (channels [ex, ey, hx, hy] -- the LEMI-423's
-    default preset, with no --channels given -- flip_reversed_dipoles true, h_scale
+    exactly the one asked for (channels [ex, ey, hx, hy], the LEMI-423's
+    default preset, with no --channels given; flip_reversed_dipoles true, h_scale
     -1000.0, calibration_fn sensors/l120n.rsp, 50 m dipoles, azimuths 0/90);
     the processing block differs; a site carries a dipole length or azimuth of
     its own (the defaults must apply until edited), or its notes are not the
@@ -57,8 +57,8 @@ Usage:
     [hx, hy] too;
 (9) --channels "e1,e2,hx,hy" (LEMI-424 electrics on a LEMI-423 survey) does
     not warn, once per site, that e1 and e2 are not among the first file's
-    columns -- or the run fails because of it (a declaration is the crew's
-    word, only warned about).
+    columns, or the run fails because of it (a declaration is only warned
+    about).
 
 Part 3, a mixed data root (`tests/instrument_samples.py`: S01 from part 1's
 synthetic LEMI-423 writer beside one real hour of a LEMI-424, MBJ21, and of
@@ -69,8 +69,8 @@ an EDL, EGFLP02, cut into the scratch folder). **This test fails if**
      site each: the tie goes to the first of `INSTRUMENTS`) or its
      sample_rate not 1000 (the lemi423 sites' own); S01 carries an
      `instrument:` or `channels:` of its own; MBJ21 does not carry
-     `instrument: lemi424` and `channels: [e1, e2, e3, e4, bx, by, bz]` (the
-     LEMI-424 default preset), and EGFLP02 `instrument: edl` and
+     `instrument: lemi424` and `channels: [ex, ey, e3, e4, hx, hy, hz]` (the
+     LEMI-424 default preset, in the stored names), and EGFLP02 `instrument: edl` and
      `channels: [ex, ey, hx, hy, hz]`; `Survey.instrument_of` does not read
      the three back;
 (11) MBJ21's serial and firmware are not "160" and "1.4" (the `.inf` says
@@ -81,14 +81,20 @@ an EDL, EGFLP02, cut into the scratch folder). **This test fails if**
      second); EGFLP02's span is not 2019-01-10T00:00:00Z to 01:00:00Z (the
      stamp plus 36000 samples at recorder.ini's 10 Hz), it has a latitude,
      or its notes do not say the files carry no position; or the summary
-     lines do not read "1 Hz  lemi424  columns bx by bz e1 e2 e3 e4, declared
-     e1 e2 e3 e4 bx by bz" and "10 Hz  edl  columns hx hy hz ex ey, declared
-     ex ey hx hy hz";
+     lines do not read "1 Hz  lemi424  columns hx hy hz ex ey e3 e4, declared
+     ex ey e3 e4 hx hy hz" and "10 Hz  edl  columns hx hy hz ex ey, declared
+     ex ey hx hy hz"; or the default (lemi423) survey's `defaults:` holds
+     an `e_sign` key;
 (12) `--instrument edl` does not make edl the survey's (sample_rate 10) and
      give S01 `instrument: lemi423` with the LEMI-423 default [ex, ey, hx,
      hy] and MBJ21 its LEMI-424 set, EGFLP02 none of its own, with
      `defaults: sensor_type: bartington` (fluxgates at 10 Hz); or the default
      (lemi423) survey does not give EGFLP02 its own `sensor_type: bartington`;
+     `--instrument lemi424` does not write `defaults: e_sign: -1.0` with the
+     comment line "# LEMI-424 sites: E1 and E2 are recorded with the
+     opposite sign ..." right above it and `defaults: channels` [ex, ey, e3,
+     e4, hx, hy, hz], or `Survey.site("MBJ21").e_sign` does not read -1.0
+     back;
 (13) an EDL root whose recorder.ini says 1000 Hz (broadband LEMI-120
      coils) does not get `defaults: sensor_type: lemi120` (read back by
      `Survey.site`), or `--channels "Bx By Ex Ey"` there is not [ex, ey, hx, hy].
@@ -380,7 +386,8 @@ def part3() -> None:
     assert config["instrument"] == "lemi423" and config["sample_rate"] == 1000, (config["instrument"], config["sample_rate"])
     assert not {"instrument", "channels"} & set(sites["S01"]), sites["S01"]
     assert sites["MBJ21"]["instrument"] == "lemi424", sites["MBJ21"]
-    assert sites["MBJ21"]["channels"] == ["e1", "e2", "e3", "e4", "bx", "by", "bz"], sites["MBJ21"]["channels"]
+    assert sites["MBJ21"]["channels"] == ["ex", "ey", "e3", "e4", "hx", "hy", "hz"], sites["MBJ21"]["channels"]
+    assert "e_sign" not in config["defaults"], config["defaults"]
     assert sites["EGFLP02"]["instrument"] == "edl" and sites["EGFLP02"]["channels"] == ["ex", "ey", "hx", "hy", "hz"]
     survey = Survey.from_yaml(samples.MIXED_YAML)
     got = {site: survey.instrument_of(site) for site in sites}
@@ -398,7 +405,7 @@ def part3() -> None:
     assert (e["start"], e["end"]) == ("2019-01-10T00:00:00Z", "2019-01-10T01:00:00Z"), (e["start"], e["end"])
     assert "latitude" not in e and "carry no position" in e["notes"], e
     lines = {ln.split()[0]: ln for ln in done.stdout.splitlines() if ln.strip().startswith(("MBJ21", "EGFLP02"))}
-    assert lines["MBJ21"].endswith("1 Hz  lemi424  columns bx by bz e1 e2 e3 e4, declared e1 e2 e3 e4 bx by bz"), lines
+    assert lines["MBJ21"].endswith("1 Hz  lemi424  columns hx hy hz ex ey e3 e4, declared ex ey e3 e4 hx hy hz"), lines
     assert lines["EGFLP02"].endswith("10 Hz  edl  columns hx hy hz ex ey, declared ex ey hx hy hz"), lines
     print(f"(11) MBJ21 serial {m['serial']} firmware {m['firmware']}, {m['latitude']} {m['longitude']} "
           f"(the line says {lat:.6f} {lon:.6f}), {m['start']} to {m['end']}; EGFLP02 {e['start']} to {e['end']}, "
@@ -415,6 +422,18 @@ def part3() -> None:
     assert config["defaults"]["sensor_type"] == "bartington", config["defaults"]
     print("(12) --instrument edl: survey edl at 10 Hz, defaults sensor_type bartington; S01 lemi423 "
           "[ex, ey, hx, hy], MBJ21 lemi424, EGFLP02 the default")
+    lemi = samples.mixed_survey("--instrument", "lemi424")
+    assert lemi.returncode == 0, lemi.stdout + lemi.stderr
+    text = samples.MIXED_YAML.read_text(encoding="utf-8")
+    config = yaml.safe_load(text)
+    assert config["instrument"] == "lemi424" and config["defaults"]["e_sign"] == -1.0, config["defaults"]
+    rows = text.splitlines()
+    at = rows.index("  e_sign: -1.0")
+    assert rows[at - 1].startswith("  # LEMI-424 sites: E1 and E2 are recorded with the opposite sign"), rows[at - 1]
+    assert config["defaults"]["channels"] == ["ex", "ey", "e3", "e4", "hx", "hy", "hz"], config["defaults"]
+    assert Survey.from_yaml(samples.MIXED_YAML).site("MBJ21").e_sign == -1.0
+    print(f"(12) --instrument lemi424: defaults e_sign -1.0 under its comment, channels "
+          f"{config['defaults']['channels']}; Survey.site reads e_sign -1.0 back")
     again = samples.mixed_survey()  # leave the default survey behind for tests/gui_smoke.py
     assert again.returncode == 0, again.stdout + again.stderr
     mixed = yaml.safe_load(samples.MIXED_YAML.read_text(encoding="utf-8"))

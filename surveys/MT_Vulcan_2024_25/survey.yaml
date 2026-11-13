@@ -1,0 +1,482 @@
+name: MT_Vulcan_2024_25
+instrument: lemi423
+sample_rate: 1000
+data_root: E:/MT_Timeseries_DATA/MT_Vulcan/Data_2024-25
+workspace: D:/MT_DATA/MT_Vulcan_2024_25_Workspace
+# set explicitly: the default <data_root>/work would write onto E:, which stays read-only
+# local time of the field area (IANA name), for display only: every
+# timestamp in the YAML, the archives and the scripts is UTC
+timezone: Australia/Adelaide
+# written by this script from the raw files' headers: re-running it (--force)
+# overwrites every edit made since, the GUI's Metadata tab included
+generated_by: scripts/new_survey.py
+defaults:
+  dipole_length_ex: 50.0
+  dipole_length_ey: 50.0
+  azimuth_ex: 0.0
+  azimuth_ey: 90.0
+  # the north the sensors were laid out to: magnetic at every site on the field sheet, as in 2022
+  # (Liu et al. 2024, p. 4: x = magnetic north); products stay in this frame with each site's IGRF
+  # declination
+  layout_north: magnetic
+  # LEMI-120 coil response (LEMI-423 sites, and EDL sites with sensor_type lemi120);
+  # a relative path resolves against this folder first
+  calibration_fn: sensors/l120n.rsp
+  # LEMI-423 sites: magnetics correction to the lemimt convention, pT to nT and polarity
+  h_scale: -1000.0
+  # true: a 180/270 deg azimuth means the pair was wired reversed and its data are sign-flipped
+  # at ingest; every dipole is declared 0/90 except Vul25_RR1's Ex (azimuth_ex 180)
+  flip_reversed_dipoles: true
+  # the columns that had a sensor attached; ingest drops the rest, e.g. the B423 Bz column,
+  # an open input with no hz coil
+  channels: [ex, ey, hx, hy]
+# lemimt-style even log-period band layout (see mt_workbench.bands.build_band_scheme)
+processing:
+  min_period: 0.005
+  max_period: 5000.0
+  periods_per_decade: 10.0
+  # keep bands clear of mains and its first in-range harmonic
+  notch_frequencies: [50.0, 150.0]
+  # the two lowest bands of every decimation level (harmonics 7-10) are labelled
+  # 4-5 % below their harmonics and read 3-6 % high in rho: start at harmonic 10
+  min_bin: 10
+# site entries: two campaigns in one folder, the 12 Vul24_* sites (Nov 2024) and the 12 Vul25_*
+# sites (Mar 2025); site names are the folder names. Vul24_RR1/Vul25_RR1 and Vul24_RR2/Vul25_RR2
+# are one spot each (1.3 m and 2.9 m apart) and stay separate sites. start/end are the file-name
+# epochs (UTC), first to last plus 5400 s, so end runs up to 1.5 h past the last record
+# Comments inside the sites block are lost when the GUI's Metadata tab saves the file.
+sites:
+  Vul24_013:
+    dipole_length_ex: 48.3
+    dipole_length_ey: 44.3
+    latitude: -30.188151
+    longitude: 137.089487
+    elevation: 115.6
+    serial: '38'
+    firmware: '2.1'
+    start: '2024-11-22T21:24:54Z'
+    end: '2024-11-30T07:54:58Z'
+    notes: campaign Nov 2024 (21-30 Nov 2024 UTC); coils Bx 244, By 245; nearest 2022
+      site F10 at 1940 m
+    declination: 6.48
+    declination_model: IGRF-14
+    declination_epoch: 2024.90
+  Vul24_014:
+    dipole_length_ex: 53.3
+    dipole_length_ey: 45.7
+    latitude: -30.16982
+    longitude: 137.090154
+    elevation: 124.1
+    serial: '43'
+    firmware: '2.1'
+    start: '2024-11-22T22:13:25Z'
+    end: '2024-11-30T08:43:29Z'
+    notes: campaign Nov 2024 (21-30 Nov 2024 UTC); coils Bx 254, By 255; nearest 2022
+      site D10 at 2095 m
+    declination: 6.48
+    declination_model: IGRF-14
+    declination_epoch: 2024.90
+  Vul24_015:
+    dipole_length_ex: 52.7
+    dipole_length_ey: 51.8
+    latitude: -30.152526
+    longitude: 137.089091
+    elevation: 118.0
+    serial: '44'
+    firmware: '2.1'
+    start: '2024-11-23T00:53:43Z'
+    end: '2024-11-30T09:53:47Z'
+    notes: campaign Nov 2024 (21-30 Nov 2024 UTC); coils Bx 246, By 247; nearest 2022
+      site B10 at 2016 m
+    declination: 6.48
+    declination_model: IGRF-14
+    declination_epoch: 2024.90
+  Vul24_017:
+    dipole_length_ex: 50.3
+    dipole_length_ey: 50.8
+    latitude: -30.114413
+    longitude: 137.088903
+    elevation: 109.5
+    serial: '41'
+    firmware: '2.1'
+    start: '2024-11-22T00:37:27Z'
+    end: '2024-11-30T05:07:31Z'
+    notes: 'campaign Nov 2024 (21-30 Nov 2024 UTC); no coil serials on the sheet; sheet:
+      120 mm rain during survey, instrument left running for quite a while; field-app
+      E-E EDIs in the folder (25, against Vul24_RR1 and RR2); nearest 2022 site A10
+      at 3824 m'
+    declination: 6.47
+    declination_model: IGRF-14
+    declination_epoch: 2024.90
+  Vul24_019:
+    # hx, hy borrowed from Vul24_RR1 at ingest: its own magnetics change scale ~1.3e3x from
+    # 2024-11-23T23:14Z; Z of this site is then processed against Vul24_RR2, never RR1
+    h_from: Vul24_RR1
+    channels: [ex, ey]
+    dipole_length_ex: 36.5
+    dipole_length_ey: 47.7
+    latitude: -30.19069
+    longitude: 137.110205
+    elevation: 80.6
+    serial: '35'
+    firmware: '2.1'
+    start: '2024-11-22T23:14:06Z'
+    end: '2024-11-30T08:14:10Z'
+    notes: campaign Nov 2024 (21-30 Nov 2024 UTC); coils Bx 133, By 268; Ex 36.5 m,
+      the shortest dipole of 2024-25; an unusual coil pair; nearest 2022 site F10 at
+      3940 m
+    declination: 6.49
+    declination_model: IGRF-14
+    declination_epoch: 2024.90
+  Vul24_020:
+    dipole_length_ex: 46.9
+    dipole_length_ey: 47.2
+    latitude: -30.169747
+    longitude: 137.111375
+    elevation: 111.2
+    serial: '31'
+    firmware: '2.1'
+    start: '2024-11-23T00:09:35Z'
+    end: '2024-11-30T07:39:39Z'
+    notes: 'campaign Nov 2024 (21-30 Nov 2024 UTC); coils Bx 256, By 257; sheet: Coil
+      numbers might be wrong; nearest 2022 site D10 at 4138 m'
+    declination: 6.49
+    declination_model: IGRF-14
+    declination_epoch: 2024.90
+  Vul24_021:
+    dipole_length_ex: 49.5
+    dipole_length_ey: 42.5
+    latitude: -30.149969
+    longitude: 137.109419
+    elevation: 88.7
+    serial: '40'
+    firmware: '2.1'
+    start: '2024-11-22T04:39:00Z'
+    end: '2024-11-30T07:39:04Z'
+    notes: campaign Nov 2024 (21-30 Nov 2024 UTC); coils Bx 250, By 251; nearest 2022
+      site B10 at 3987 m
+    declination: 6.48
+    declination_model: IGRF-14
+    declination_epoch: 2024.90
+  Vul24_022:
+    dipole_length_ex: 54.4
+    dipole_length_ey: 52.6
+    latitude: -30.132741
+    longitude: 137.109076
+    elevation: 72.0
+    serial: '37'
+    firmware: '2.1'
+    start: '2024-11-22T03:43:20Z'
+    end: '2024-11-30T06:43:24Z'
+    notes: 'campaign Nov 2024 (21-30 Nov 2024 UTC); coils Bx 260, By 265; sheet: Dry
+      creek 100 m to the SouthEast; nearest 2022 site A10 at 4122 m'
+    declination: 6.48
+    declination_model: IGRF-14
+    declination_epoch: 2024.90
+  Vul24_023:
+    dipole_length_ex: 55.4
+    dipole_length_ey: 42.9
+    latitude: -30.110384
+    longitude: 137.106641
+    elevation: 107.9
+    serial: '32'
+    firmware: '2.1'
+    start: '2024-11-22T02:10:51Z'
+    end: '2024-11-30T06:40:55Z'
+    notes: 'campaign Nov 2024 (21-30 Nov 2024 UTC); coils Bx 261, By 262; sheet: Rocky/Silcrete
+      at surface; clay sandy soil; nearest 2022 site A10 at 5241 m'
+    declination: 6.47
+    declination_model: IGRF-14
+    declination_epoch: 2024.90
+  Vul24_024:
+    dipole_length_ex: 46.5
+    dipole_length_ey: 51.2
+    latitude: -30.097786
+    longitude: 137.106363
+    elevation: 105.3
+    serial: '45'
+    firmware: '2.1'
+    start: '2024-11-22T01:20:49Z'
+    end: '2024-11-30T05:50:53Z'
+    notes: 'campaign Nov 2024 (21-30 Nov 2024 UTC); coils Bx 258, By 259; sheet: Cliff
+      100 m SouthEast; nearest 2022 site RR (the 2022 remote) at 5750 m'
+    declination: 6.47
+    declination_model: IGRF-14
+    declination_epoch: 2024.90
+  Vul24_RR1:
+    # tie remote RR1: 115 m WNW of 2022 J1; the same spot as Vul25_RR1
+    dipole_length_ex: 54.6
+    dipole_length_ey: 55.0
+    latitude: -30.226095
+    longitude: 136.97644
+    elevation: 102.5
+    serial: '39'
+    firmware: '2.1'
+    start: '2024-11-21T20:59:38Z'
+    end: '2024-11-30T10:29:42Z'
+    notes: 'campaign Nov 2024 (21-30 Nov 2024 UTC); tie remote RR1: 115 m from 2022
+      J1 (B423 headers), not a same-spot reoccupation; same spot as Vul25_RR1 (1.3 m),
+      left in the ground between the campaigns; coils Bx 656, By 657; sheet: Borefield
+      Track 50 m west running NS; sheet: 120 mm rain during survey; SD card and Batteries
+      collected, but instrument left deployed'
+    declination: 6.45
+    declination_model: IGRF-14
+    declination_epoch: 2024.90
+  Vul24_RR2:
+    # tie remote RR2: 284 m SSE of 2022 A06; the same spot as Vul25_RR2
+    dipole_length_ex: 53.1
+    dipole_length_ey: 47.0
+    latitude: -30.146555
+    longitude: 137.028063
+    elevation: 111.1
+    serial: '10'
+    firmware: '2.0'
+    # logger 10 on firmware 2.0 stamps its samples 1.000 s late; the archive carries recorded time minus 1 s
+    clock_offset_s: -1.0
+    start: '2024-11-21T22:02:53Z'
+    end: '2024-11-30T10:02:58Z'
+    notes: 'campaign Nov 2024 (21-30 Nov 2024 UTC); tie remote RR2: 284 m from 2022
+      A06 (B423 headers), not a same-spot reoccupation; same spot as Vul25_RR2 (2.9
+      m), left in the ground between the campaigns; coils Bx 266, By 269; sheet: Borefield
+      Track 30 m East running NS; sheet: 120 mm rain during survey; SD card and batteries
+      collected but instrument left deployed'
+    declination: 6.45
+    declination_model: IGRF-14
+    declination_epoch: 2024.90
+  Vul25_004:
+    # electric channels only (sheet: no magnetics; Bx an open input at -2^31)
+    channels:
+    - ex
+    - ey
+    # electrics only: hx, hy borrowed at ingest from Vul25_007 (1.97 km), the neighbour lemimt used
+    # for this site's B-replaced impedances
+    h_from: Vul25_007
+    dipole_length_ex: 50.9
+    dipole_length_ey: 54.4
+    latitude: -30.136504
+    longitude: 137.026854
+    elevation: 101.9
+    serial: '31'
+    firmware: '2.1'
+    start: '2025-03-01T20:49:44Z'
+    end: '2025-03-02T20:49:48Z'
+    notes: 'campaign Mar 2025 (28 Feb-3 Mar 2025 UTC); electric channels only: Bx an
+      open input (-2^31 in the first records), declared channels ex ey; sheet: Electric
+      channels only, no magnetics; nearest 2022 site A06 at 858 m'
+    declination: 6.45
+    declination_model: IGRF-14
+    declination_epoch: 2025.17
+  Vul25_005:
+    # electric channels only (sheet: no magnetics; Bx an open input at -2^31)
+    channels:
+    - ex
+    - ey
+    # electrics only: hx, hy borrowed at ingest from Vul25_007 (2.58 km), the neighbour lemimt used
+    # for this site's B-replaced impedances
+    h_from: Vul25_007
+    dipole_length_ex: 53.6
+    dipole_length_ey: 50.1
+    latitude: -30.119369
+    longitude: 137.023794
+    elevation: 103.3
+    serial: '37'
+    firmware: '2.1'
+    start: '2025-03-01T21:24:15Z'
+    end: '2025-03-02T21:24:19Z'
+    notes: 'campaign Mar 2025 (28 Feb-3 Mar 2025 UTC); electric channels only: Bx an
+      open input (-2^31 in the first records), declared channels ex ey; sheet: Electric
+      channels only, no magnetics; nearest 2022 site A06 at 2772 m'
+    declination: 6.44
+    declination_model: IGRF-14
+    declination_epoch: 2025.17
+  Vul25_007:
+    dipole_length_ex: 51.5
+    dipole_length_ey: 52.0
+    latitude: -30.131641
+    longitude: 137.046501
+    elevation: 104.1
+    serial: '44'
+    firmware: '2.1'
+    start: '2025-02-28T21:54:32Z'
+    end: '2025-03-02T23:24:36Z'
+    notes: campaign Mar 2025 (28 Feb-3 Mar 2025 UTC); coils Bx 254, By 255; nearest
+      2022 site A08 at 1367 m
+    declination: 6.45
+    declination_model: IGRF-14
+    declination_epoch: 2025.16
+  Vul25_008:
+    dipole_length_ex: 41.1
+    dipole_length_ey: 49.8
+    latitude: -30.11689
+    longitude: 137.047107
+    elevation: 99.4
+    serial: '40'
+    firmware: '2.1'
+    start: '2025-03-01T00:59:31Z'
+    end: '2025-03-02T21:59:35Z'
+    notes: 'campaign Mar 2025 (28 Feb-3 Mar 2025 UTC); coils Bx 253, By 655; sheet:
+      Very hot; nearest 2022 site A08 at 2999 m'
+    declination: 6.45
+    declination_model: IGRF-14
+    declination_epoch: 2025.16
+  Vul25_009:
+    # electric channels only (sheet: no magnetics; Bx an open input at -2^31)
+    channels:
+    - ex
+    - ey
+    # electrics only: hx, hy borrowed at ingest from Vul25_008 (2.17 km), the neighbour lemimt used
+    # for this site's B-replaced impedances
+    h_from: Vul25_008
+    dipole_length_ex: 51.5
+    dipole_length_ey: 43.0
+    latitude: -30.097419
+    longitude: 137.04673
+    elevation: 104.9
+    serial: '38'
+    firmware: '2.1'
+    start: '2025-03-01T22:01:45Z'
+    end: '2025-03-02T22:01:49Z'
+    notes: 'campaign Mar 2025 (28 Feb-3 Mar 2025 UTC); electric channels only: Bx an
+      open input (-2^31 in the first records), declared channels ex ey; sheet: Ex north
+      electrode close to dry creek, electric channesl only, no magnetics; nearest 2022
+      site RR (the 2022 remote) at 2808 m'
+    declination: 6.45
+    declination_model: IGRF-14
+    declination_epoch: 2025.17
+  Vul25_010:
+    dipole_length_ex: 42.8
+    dipole_length_ey: 47.0
+    latitude: -30.134506
+    longitude: 137.067696
+    elevation: 104.9
+    serial: '36'
+    firmware: '2.1'
+    start: '2025-03-01T00:10:52Z'
+    end: '2025-03-02T22:40:56Z'
+    notes: campaign Mar 2025 (28 Feb-3 Mar 2025 UTC); coils Bx 260, By 265; field-app
+      E-E EDIs in the folder (8, against Vul25_RR2, remote RR1); nearest 2022 site A10
+      at 1040 m
+    declination: 6.46
+    declination_model: IGRF-14
+    declination_epoch: 2025.16
+  Vul25_011:
+    dipole_length_ex: 51.1
+    dipole_length_ey: 51.5
+    latitude: -30.116267
+    longitude: 137.066839
+    elevation: 103.4
+    serial: '35'
+    firmware: '2.1'
+    start: '2025-02-28T22:39:36Z'
+    end: '2025-03-03T00:09:40Z'
+    notes: campaign Mar 2025 (28 Feb-3 Mar 2025 UTC); coils Bx 256, By 257; nearest
+      2022 site A10 at 3063 m
+    declination: 6.46
+    declination_model: IGRF-14
+    declination_epoch: 2025.16
+  Vul25_012:
+    # electric channels only (sheet: no magnetics; Bx an open input at -2^31)
+    channels:
+    - ex
+    - ey
+    # electrics only: hx, hy borrowed at ingest from Vul25_011 (1.45 km), the neighbour lemimt used
+    # for this site's B-replaced impedances
+    h_from: Vul25_011
+    dipole_length_ex: 47.7
+    dipole_length_ey: 56.5
+    latitude: -30.103254
+    longitude: 137.067957
+    elevation: 94.4
+    serial: '32'
+    firmware: '2.1'
+    start: '2025-03-01T23:28:20Z'
+    end: '2025-03-02T21:58:24Z'
+    notes: 'campaign Mar 2025 (28 Feb-3 Mar 2025 UTC); electric channels only: Bx an
+      open input (-2^31 in the first records), declared channels ex ey; sheet: Electric
+      channels only, no magnetics; nearest 2022 site RR (the 2022 remote) at 3623 m'
+    declination: 6.46
+    declination_model: IGRF-14
+    declination_epoch: 2025.17
+  Vul25_016:
+    dipole_length_ex: 48.5
+    dipole_length_ey: 43.5
+    latitude: -30.132179
+    longitude: 137.086167
+    elevation: 109.1
+    serial: '41'
+    firmware: '2.1'
+    start: '2025-02-28T23:30:49Z'
+    end: '2025-03-02T23:30:53Z'
+    notes: campaign Mar 2025 (28 Feb-3 Mar 2025 UTC); coils Bx 261, By 262; nearest
+      2022 site A10 at 2159 m
+    declination: 6.47
+    declination_model: IGRF-14
+    declination_epoch: 2025.16
+  Vul25_018:
+    # electric channels only (sheet: no magnetics; Bx an open input at -2^31)
+    channels:
+    - ex
+    - ey
+    # electrics only: hx, hy borrowed at ingest from Vul25_011 (3.01 km), the neighbour lemimt used
+    # for this site's B-replaced impedances
+    h_from: Vul25_011
+    dipole_length_ex: 49.0
+    dipole_length_ey: 44.1
+    latitude: -30.098229
+    longitude: 137.090116
+    elevation: 99.0
+    serial: '45'
+    firmware: '2.1'
+    start: '2025-03-01T22:51:05Z'
+    end: '2025-03-02T22:51:09Z'
+    notes: 'campaign Mar 2025 (28 Feb-3 Mar 2025 UTC); electric channels only: Bx an
+      open input (-2^31 in the first records), declared channels ex ey; sheet: No magnetics,
+      electric channels only; nearest 2022 site RR (the 2022 remote) at 4471 m'
+    declination: 6.46
+    declination_model: IGRF-14
+    declination_epoch: 2025.17
+  Vul25_RR1:
+    # tie remote RR1: 114 m WNW of 2022 J1; the same spot as Vul24_RR1; sheet: Ex looked
+    # weird at pickup
+    dipole_length_ex: 54.6
+    dipole_length_ey: 55.0
+    # Ex reversed in Mar 2025 (new electrodes), declared as the azimuth so the sign flip happens at
+    # ingest; its Ex is also unusable below about 9 s (response wrong), whatever the sign
+    azimuth_ex: 180.0
+    latitude: -30.226093
+    longitude: 136.976453
+    elevation: 104.2
+    serial: '39'
+    firmware: '2.1'
+    start: '2025-02-28T20:41:20Z'
+    end: '2025-03-03T01:11:24Z'
+    notes: 'campaign Mar 2025 (28 Feb-3 Mar 2025 UTC); tie remote RR1: 114 m from 2022
+      J1 (B423 headers), not a same-spot reoccupation; same spot as Vul24_RR1 (1.3 m),
+      left in the ground between the campaigns; coils Bx 656, By 657; sheet: Site still
+      deployed from 2024, new elctrodes used in same locations; sheet: Ex looked weird
+      when looking at the data via laptop at 1000 Hz'
+    declination: 6.45
+    declination_model: IGRF-14
+    declination_epoch: 2025.16
+  Vul25_RR2:
+    # tie remote RR2: 284 m SSE of 2022 A06; the same spot as Vul24_RR2; sheet: Bx pulled
+    # out of the ground at pickup
+    dipole_length_ex: 53.1
+    dipole_length_ey: 47.0
+    latitude: -30.146542
+    longitude: 137.028089
+    elevation: 106.6
+    serial: '10'
+    firmware: '2.0'
+    # logger 10 on firmware 2.0 stamps its samples 1.000 s late; the archive carries recorded time minus 1 s
+    clock_offset_s: -1.0
+    start: '2025-02-28T21:15:57Z'
+    end: '2025-03-03T00:16:02Z'
+    notes: 'campaign Mar 2025 (28 Feb-3 Mar 2025 UTC); tie remote RR2: 284 m from 2022 A06 (B423
+      headers), not a same-spot reoccupation; same spot as Vul24_RR2 (2.9 m), left in the ground
+      between the campaigns; coils Bx 266, By 269; sheet: Site still in ground from 2024 Dec survey
+      (the data are Nov 2024), new electrodes used; sheet: Bx was pulled out of the ground; field-app
+      E-E EDIs in the folder (7, against Vul25_011)'
+    declination: 6.45
+    declination_model: IGRF-14
+    declination_epoch: 2025.16

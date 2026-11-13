@@ -25,11 +25,20 @@ the dataset (`mt_workbench.dclevel.channel_stats`). Per channel and run:
 
     median   the subsample's median, counts
     MAD      the median absolute deviation from it, counts (unscaled)
-    rail %   the share of samples at the rail: on each side of the median,
-             the samples whose distance from the median is at least 90 % of
-             the largest distance seen on that side, the larger side
-             counted; a channel clipped at a rail piles its samples there,
-             and a flat channel has 100 %
+    rail %   the share of samples at the rail. When the run comment
+             records the channel's input rail (a Phoenix archive: "dc rail
+             (V, 90 % of the input range): ex 2.25, ...", or "(V, 0.9 x the
+             input range)" in an archive built by an earlier version,
+             read back with `mt_workbench.dclevel.parse_level_note`),
+             the samples at or
+             beyond it in magnitude, as the ingest measured them. Else, on
+             each side of the median, the samples whose distance from the
+             median is at least 90 % of the largest distance seen on that
+             side, the larger side counted; a channel clipped at a rail
+             piles its samples there, and a flat channel has 100 %. The
+             record's own rail also counts a drifting electrode: Kalkaroo
+             C10 has ex 9.49 % and ey 11.62 % at it
+             and 0.00 % at the input rail of its comment (upstream issue 78)
     ratio    |median| over the typical level of its channel type, the median
              |median| of every electric (or magnetic) channel and run in the
              report
@@ -45,8 +54,10 @@ Without site names every site of the survey's `sites:` block with an
 archive is checked; derived sites (``derived_from:``) and observatory
 entries (``instrument: intermagnet``) are skipped with a note. The table is
 sorted by verdict (open input?, saturated?, ok), then site, run and channel,
-and ends with a one-line summary of the flagged channels. --csv writes the
-rows, with the subsampling step and the typical levels, to a CSV file.
+and ends with a one-line summary of the flagged channels; the line above
+the table counts the channel runs measured against an input rail. --csv
+writes the rows, with the subsampling step, the typical levels and the
+input rail (empty for the record's own), to a CSV file.
 
 Exit status: 0 with the report, whatever it finds; 2 when the survey file
 is missing, a named site has no archive, or an archive cannot be opened or
@@ -76,13 +87,13 @@ import h5py  # noqa: E402
 
 from mt_workbench.dclevel import (  # noqa: E402
     OK, OPEN, RAIL_LIMIT, RATIO_LIMIT, RUN_RE, SAMPLE_SECONDS, SATURATED, THRESHOLD_COUNTS, VERDICT_ORDER,
-    channel_stats, channel_type, classify, station_group,
+    channel_stats, channel_type, classify, parse_level_note, station_group,
 )
 from mt_workbench.ingest import default_archive_path  # noqa: E402
 from mt_workbench.survey import OBSERVATORY, Survey  # noqa: E402
 
 CSV_COLUMNS = ("site", "run", "channel", "type", "sample_rate", "n_samples", "step", "n_read", "median_counts",
-               "mad_counts", "rail_fraction", "typical_counts", "ratio", "verdict")
+               "mad_counts", "rail_fraction", "rail_level", "typical_counts", "ratio", "verdict")
 
 
 def run_rate(name: str, group: h5py.Group) -> float:
@@ -92,8 +103,32 @@ def run_rate(name: str, group: h5py.Group) -> float:
     return float(RUN_RE.match(name).group(1).replace("p", "."))
 
 
+def comment_rails(group: h5py.Group) -> dict[str, float]:
+    """Return the input rails a run comment records.
+
+    Args:
+        group (h5py.Group): The run group, whose ``comments`` attribute may
+            hold the ingest's dc level record with its "dc rail" line
+            (`mt_workbench.dclevel.level_note`).
+
+    Returns:
+        dict[str, float]: {channel: absolute rail} for the channels the
+        record names a rail for (`mt_workbench.dclevel.parse_level_note`);
+        empty for a run whose comment records none (LEMI, EDL, a Phoenix
+        archive built by an earlier version).
+    """
+    comment = group.attrs.get("comments")
+    if comment is None:
+        return {}
+    text = comment.decode() if isinstance(comment, bytes) else str(comment)
+    return {r["channel"]: r["rail_level"] for r in parse_level_note(text) if r.get("rail_level") is not None}
+
+
 def check_archive(path: Path, survey_name: str, site: str, rate: float, sample_seconds: float) -> tuple[list, list]:
     """Measure the level of every electric and magnetic channel of a site's runs at one rate.
+
+    A channel whose input rail the run comment records (`comment_rails`)
+    is measured against it, any other against its record's own.
 
     Args:
         path (Path): The site's raw archive.
@@ -105,7 +140,8 @@ def check_archive(path: Path, survey_name: str, site: str, rate: float, sample_s
     Returns:
         tuple: (rows, notes). Each row is a dict with ``site``, ``run``,
         ``channel``, ``type``, ``sample_rate`` and the `channel_stats`
-        values; the notes name runs at other rates and empty channels.
+        values (with ``rail_level`` for a channel measured against an input
+        rail); the notes name runs at other rates and empty channels.
 
     Raises:
         OSError: If the archive does not open.
@@ -120,6 +156,7 @@ def check_archive(path: Path, survey_name: str, site: str, rate: float, sample_s
             if abs(fs - rate) > 1e-6 * rate:
                 notes.append(f"{run} at {fs:g} Hz")
                 continue
+            rails = comment_rails(group)
             for comp in sorted(group):
                 dataset = group[comp]
                 if not isinstance(dataset, h5py.Dataset):
@@ -130,7 +167,7 @@ def check_archive(path: Path, survey_name: str, site: str, rate: float, sample_s
                 if dataset.shape[0] == 0:
                     notes.append(f"{run} {comp} empty")
                     continue
-                stats = channel_stats(dataset, fs, sample_seconds)
+                stats = channel_stats(dataset, fs, sample_seconds, rail=rails.get(comp))
                 rows.append(dict(site=site, run=run, channel=comp, type=kind, sample_rate=fs, **stats))
     return rows, notes
 
@@ -159,7 +196,7 @@ def summary_line(rows: list[dict]) -> str:
         items = [f"{site} {comp} ({', '.join(runs)})" for (site, comp), runs in sorted(flagged.items())]
         parts.append(f"{verdict} {'; '.join(items) if items else 'none'}")
     n_flagged = sum(r["verdict"] != OK for r in rows)
-    return f"summary: {n_flagged} of {len(rows)} channel runs flagged -- " + " | ".join(parts)
+    return f"summary: {n_flagged} of {len(rows)} channel runs flagged: " + " | ".join(parts)
 
 
 def write_csv(rows: list[dict], path: Path) -> None:
@@ -260,8 +297,10 @@ def main(argv=None) -> int:
         typical = classify(rows, args.threshold_counts, args.ratio)
         rows.sort(key=lambda r: (VERDICT_ORDER[r["verdict"]], r["site"], r["run"], r["channel"]))
         levels = ", ".join(f"{kind} {level:.3e} counts" for kind, level in typical.items())
+        n_input = sum(r.get("rail_level") is not None for r in rows)
         print(f"typical |median|: {levels}; open input? above {args.threshold_counts:g} counts or {args.ratio:g} x "
-              f"typical, saturated? above {100 * RAIL_LIMIT:g} % at the rail")
+              f"typical, saturated? above {100 * RAIL_LIMIT:g} % at the rail (the input rail of the run comment for "
+              f"{n_input} of {len(rows)} channel runs, else the record's own)")
         print()
         print("\n".join(table_lines(rows)))
         print()

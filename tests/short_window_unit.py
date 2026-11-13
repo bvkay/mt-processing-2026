@@ -7,18 +7,20 @@ Synthetic part (always runs): `band_windows` on an aurora-shaped
 order, as aurora 0.6.2 pairs them (the 10 min C18 rr C19 window's level 6:
 npts 10, 20, 20, 25, 35, 40 on bands of 8, 7, 5, 4, 4, 2 harmonics);
 `drop_short_bands` and `mt_workbench.products.drop_bad_errors` on a TF
-built by hand; `drop_bad_errors` on the TF that scripts/process_rr.py's
+built by hand; the default floor (`MIN_BAND_WINDOWS`, 2) on the same TF
+with level 6 cut to 3 windows, and the periods removed as the TF's
+`dropped_short_bands`; `drop_bad_errors` on the TF that scripts/process_rr.py's
 `merge_rows` builds from two masked runs (rows ex from a run on 1, 2, 4
 and 8 s, rows ey and hz from the base run on 1, 2, 8 and 16 s), written
 as an EDI; `Survey.processing` and `Survey.min_band_windows` on a survey
 whose `processing:` block holds the key.
 
-Real part (skipped when the bench workspace of 2 Oct 2026 is not mounted):
+Real part (skipped when the bench workspace is not mounted):
 `process_station` on the filtered variants C18_fb647033d.h5 and
 C19_f7b05dc48.h5 of `qc/survey/pipeline_bench_20261002/bench_ws/mth5`,
-opened read-only, over the 10 min window 2023-09-23 00:00-00:10 of
-robustness case 3b, with the Morocco survey's band scheme and outputs ex,
-ey. It runs three times: as shipped (floor 5); with the floor 0; and with
+opened read-only, over the 10 min window 2023-09-23 00:00-00:10,
+with the Morocco survey's band scheme and outputs ex,
+ey. It runs three times: as shipped (the default floor, 2); with the floor 0; and with
 the floor 0 and the error guard replaced by a no-op, the control that
 gives aurora's own output.
 
@@ -32,7 +34,10 @@ Usage:
 **This test fails if** `band_windows` does not give 5 windows to every
 band of the reversed level and 1 to every band of a level of 1 window;
 `drop_short_bands` keeps a period below the floor or drops one at or above
-it; `drop_bad_errors` keeps a period with a zero or NaN Z error on every
+it, or the TF's `dropped_short_bands` is not the sorted list it returned (an
+empty list for a floor that drops nothing); `MIN_BAND_WINDOWS` or
+`process_station`'s default floor is not 2, or the default floor drops the
+3-window level (at the old 5 it does, so this trips); `drop_bad_errors` keeps a period with a zero or NaN Z error on every
 row or drops a clean one, touches a Z row that is NaN at every period (not
 estimated), or, where one row alone has a zero error, removes the period
 or changes the other row, or does not make that row's residual-covariance
@@ -45,7 +50,8 @@ survey.yaml's `min_band_windows` reaches `Survey.processing` (the band
 scheme's keywords) or `Survey.min_band_windows` does not read it; or, on
 the bench archives, the 10 min TF as shipped holds a zero or non-finite Z
 error or any period of level 7 (1 window), or holds a period other than
-the control's minus level 7's; with the floor 0 the 45.976 s period (zero
+the control's minus level 7's, or its `dropped_short_bands` is not level 7's
+six periods; with the floor 0 the 45.976 s period (zero
 errors) is written; or the control does not reproduce case 3b's zero
 errors at 45.976 s (then the guards are untested).
 """
@@ -103,11 +109,37 @@ def test_band_windows_and_floor() -> None:
     dropped = drop_short_bands(tf, 5, "C18 (test)")
     assert [round(p, 4) for p in dropped] == [round(p, 4) for p, _, _ in LEVEL7], dropped
     assert np.allclose(tf.period, [p for p, _, _ in LEVEL6]), tf.period
+    assert tf.dropped_short_bands == dropped == sorted(dropped), tf.dropped_short_bands
     tf = _tf(periods)
     assert drop_short_bands(tf, 1, "C18 (test)") == [] and tf.period.size == 12, "a floor of 1 dropped a period"
+    assert tf.dropped_short_bands == [], tf.dropped_short_bands
     assert drop_short_bands(tf, 0, "C18 (test)") == [], "a floor of 0 dropped a period"
+    assert tf.dropped_short_bands == [], tf.dropped_short_bands
     print(f"  band_windows: level 6 -> {got[LEVEL6[0][0]]}, level 7 -> {got[LEVEL7[0][0]]} windows; "
           f"floor 5 dropped {len(dropped)} periods ({dropped[0]:.4g}-{dropped[-1]:.4g} s), floors 1 and 0 none")
+
+
+def test_default_floor() -> None:
+    """Check the default floor of 2: a level of 3 windows is kept, a level of 1 window dropped."""
+    import inspect
+
+    from mt_workbench.process import MIN_BAND_WINDOWS, band_windows, drop_short_bands, process_station
+
+    default = inspect.signature(process_station).parameters["min_band_windows"].default
+    assert MIN_BAND_WINDOWS == 2 and default == 2, (MIN_BAND_WINDOWS, default)
+    periods = [p for p, _, _ in LEVEL6 + LEVEL7]
+    tf = _tf(periods)
+    # level 6 cut to 3 windows: npts scaled by 3/5 on the same bands (30 harmonics, 90 npts)
+    for p, npts, _ in LEVEL6:
+        tf.decimation_dict[f"{p:.10g}"]["npts"] = npts * 3 // 5
+    counts = band_windows(tf)
+    assert {counts[p] for p, _, _ in LEVEL6} == {3} and {counts[p] for p, _, _ in LEVEL7} == {1}, counts
+    dropped = drop_short_bands(tf, MIN_BAND_WINDOWS, "C18 (test)")
+    assert [round(p, 4) for p in dropped] == [round(p, 4) for p, _, _ in LEVEL7], dropped
+    assert np.allclose(tf.period, [p for p, _, _ in LEVEL6]), tf.period
+    assert tf.dropped_short_bands == dropped, tf.dropped_short_bands
+    print(f"  default floor {MIN_BAND_WINDOWS}: the 3-window level kept (6 periods), the 1-window level dropped "
+          f"({len(dropped)} periods, {dropped[0]:.4g}-{dropped[-1]:.4g} s), recorded on the TF")
 
 
 def test_bad_errors_dropped() -> None:
@@ -248,9 +280,12 @@ def test_bench_ten_minutes() -> None:
     scheme = build_band_scheme(1000.0, **survey.processing)
     before = {p: p.stat().st_mtime_ns for p in (local, remote)}
 
+    recorded = []
+
     def run(**kwargs):
         tf = proc.process_station(local, "C18", remote, "C19", band_scheme=scheme, start="2023-09-23 00:00",
                                   end="2023-09-23 00:10", output_channels=["ex", "ey"], **kwargs)
+        recorded.append(list(getattr(tf, "dropped_short_bands", ["absent"])))
         err = np.asarray(tf.impedance_error.data, dtype=float)
         zero = sorted({round(float(p), 3) for p, e in zip(tf.period, err) if not np.all(np.isfinite(e) & (e > 0))})
         return np.asarray(tf.period, dtype=float), zero
@@ -276,6 +311,8 @@ def test_bench_ten_minutes() -> None:
     assert not any(np.isclose(shipped, p, rtol=1e-4).any() for p in level7), "a level 7 (1 window) period was written"
     want = [p for p in control if not any(np.isclose(p, q, rtol=1e-4) for q in level7)]
     assert np.allclose(shipped, want), (shipped, want)
+    assert len(recorded[0]) == len(level7) and np.allclose(recorded[0], sorted(level7), rtol=1e-4), recorded[0]
+    print(f"  bench 10 min as shipped: dropped_short_bands {[round(p, 4) for p in recorded[0]]} (level 7)")
 
 
 if __name__ == "__main__":

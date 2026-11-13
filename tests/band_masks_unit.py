@@ -57,11 +57,11 @@ Usage:
 
 :license: MIT
 
-**This test fails if** (stock aurora; under the fork, 1 and 3 and half of 5 change -- see
+**This test fails if** (stock aurora; under the fork, 1 and 3 and half of 5 change; see
 "under the fork" after each)
 
 1. isolation: (a) leak-free, the band-masked run changes any band but the
-   test band -- every other band's Z (the 2x2) and its error must be
+   test band: every other band's Z (the 2x2) and its error must be
    identical to the unmasked run's; (b) stock aurora, on the test
    band's pair and on a CASCADE pair (a band mask over the white burst in
    level 1's second band, 0.4525 s, whose ex regression exhausts its
@@ -71,14 +71,14 @@ Usage:
    which the mask does not touch), or any other band's row (Zx. from the ex regression, Zy. from
    ey) changed although that regression's Huber-skip state did not flip
    (recorded here by wrapping `MEstimator.apply_huber_regression`); or the
-   cascade pair moves no other row at all -- the leak exists in aurora
+   cascade pair moves no other row at all; the leak exists in aurora
    0.6.2, and when aurora fixes it this fails so the docs saying so change.
    **Under the fork** (aurora 0.6.2+mtproc resets the Huber iteration count
-   before its convergence check, per regression -- the fork's
-   second commit -- so there is no shared state left to leak through): 1b
+   before its convergence check, per regression (the fork's
+   second commit), so there is no shared state left to leak through): 1b
    becomes "no other band moves at all", own band still must change, and
    the leak-free pair must be identical to the stock pair (the
-   test-local reset is now redundant with aurora's own -- asserted, not
+   test-local reset is now redundant with aurora's own, asserted, not
    assumed);
 2. in the test band, in both the stock and the leak-free pair, the masked
    Zxy is not closer to the known Zxy (the band mean of 2 exp(-2 pi i f /
@@ -120,7 +120,7 @@ True, `DecimationLevel` does not round-trip a `window_masks` assignment, or
 STFT a band is cut from, recorded here during the unmasked run, does not
 have dims (time, frequency) with `time` a naive datetime64 whose first
 window at levels 0 and 1 is T0 exactly and whose first window after L's gap
-is T0 + 1600 s (each window's first sample, UTC -- what both paths assume).
+is T0 + 1600 s (each window's first sample, UTC, as both paths assume).
 """
 
 from __future__ import annotations
@@ -471,7 +471,7 @@ def main() -> int:
                                            skip_none, rec.skipped(), masked_period, rec_none)
             if label == "cascade pair":
                 assert moved, ("1b. masking the white burst in the cascade band moved no other band: aurora's shared "
-                               "iteration counter no longer leaks -- update the docs that say it does")
+                               "iteration counter no longer leaks; update the docs that say it does")
             print(f"      {label}: mask on {masked_period:.4f} s moved {len(moved)} other row(s), all on level "
                   f"{TEST_LEVEL}, each with its Huber skip flipped{f' (at most {100 * worst:.1f} % of |Z|)' if moved else ''}: "
                   f"{moved}")

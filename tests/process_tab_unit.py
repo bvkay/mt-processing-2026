@@ -1,13 +1,17 @@
 # -*- coding: utf-8 -*-
 """
-Unit test for the "apply masks.yaml" switch of the Process tab
+Unit test for the "apply masks.yaml" switch and the band controls of the Process tab
 
 Runs headless. A scratch copy of curnamona_cube's survey.yaml, filters.yaml
 and reference_edis.yaml gets its own masks.yaml with MASKS[D02] and
 MASKS[E08] entries. The copy's workspace points at the real work folder,
 which the test only reads; the test also checks that the real survey folder
 still holds no masks.yaml at the end. `MainWindow` is built on the copy, the
-Process tab is selected and the switch is read back.
+Process tab is selected and the switch is read back. The band layout and
+floor controls (window samples, min bin, min band windows) are read on the
+copy as it is (no `window`, `min_bin` or `min_band_windows` in its
+`processing:` block) and again after the copy's block gains all three and
+the survey is reopened; the block is then put back.
 
 Usage:
     QT_QPA_PLATFORM=offscreen python tests/process_tab_unit.py
@@ -49,6 +53,23 @@ contributes H only), changes it; the Cross-powers tab's list of E08's masks
 does not show the columns "channels" and "scope" with "ey" and "both" on
 the ey entry, "all" and "remote" on the remote-scoped one; or any Qt slot
 raised.
+
+The band controls. **This test also fails if**, on the copy without the
+keys, window samples, min bin and min band windows do not start at 128,
+0 shown as "layout's own" and 2 (`MIN_BAND_WINDOWS`) with no flag; moving
+each one alone does not add exactly its own flag (`--window-samples 256`,
+`--min-bin 12`, `--min-band-windows 5`), or the queued argv and the queue
+label lack them; under "mantle" the min band windows control is not
+disabled, `--min-band-windows` is still passed, or window samples or min
+bin is disabled or drops its flag; `reload` does not put all three back
+with no flag; after the block gains `window: 256`, `min_bin: 10` and
+`min_band_windows: 5` the controls do not start at 256, 10 and 5 with no
+flag, or min bin set to 0 does not read "layout's own" and pass
+`--min-bin 0`, or min band windows set to 2 does not pass
+`--min-band-windows 2`. Mutations that trip it: the floor flag emitted
+under MANTLE, a default read from `MIN_BAND_WINDOWS` alone (the survey's
+5 then passes a flag), or "layout's own" taken as no flag over the
+survey's min_bin.
 """
 
 from __future__ import annotations
@@ -161,6 +182,82 @@ def set_remote(tab, name: str) -> None:
     tab.remote_combo.setCurrentIndex(index)
 
 
+def set_processing(copy_yaml: Path, extra: dict | None) -> None:
+    """Add `extra` to the copy's `processing:` block, or take the three band-control keys out when None."""
+    config = yaml.safe_load(copy_yaml.read_text(encoding="utf-8"))
+    block = {k: v for k, v in (config.get("processing") or {}).items()
+             if k not in ("window", "min_bin", "min_band_windows")}
+    config["processing"] = {**block, **(extra or {})}
+    copy_yaml.write_text(yaml.safe_dump(config, sort_keys=False, allow_unicode=True), encoding="utf-8")
+
+
+def check_band_controls(app, window, tab, copy_yaml: Path) -> None:
+    """Check the window samples, min bin and min band windows controls; leave D02 rr E08 selected on the copy."""
+    from mt_workbench.process import MIN_BAND_WINDOWS
+
+    options = tab.options
+    win, low, floor = options.window_spin, options.min_bin_spin, options.floor_spin
+    assert (win.value(), low.value(), floor.value()) == (128, 0.0, MIN_BAND_WINDOWS) and MIN_BAND_WINDOWS == 2, \
+        (win.value(), low.value(), floor.value())
+    assert low.text() == "layout's own", low.text()
+    assert options.flags() == [], options.flags()
+    for spin, value, want in ((win, 256, ["--window-samples", "256"]), (low, 12.0, ["--min-bin", "12"]),
+                              (floor, 5, ["--min-band-windows", "5"])):
+        start = spin.value()
+        spin.setValue(value)
+        assert options.flags() == want, (want, options.flags())
+        spin.setValue(start)
+    win.setValue(256)
+    low.setValue(12.0)
+    floor.setValue(5)
+    flags = options.flags()
+    assert flags == ["--window-samples", "256", "--min-bin", "12", "--min-band-windows", "5"], flags
+    argv = tab.queue_process()
+    label = tab.runner.jobs[-1].label
+    assert argv is not None and argv[-6:] == flags, argv
+    assert label.endswith(" ".join(flags)), label
+    print(f"  band controls: 128, layout's own, {MIN_BAND_WINDOWS} with no flag; each moved alone passes its own "
+          f"flag; all three queued: label {label!r}")
+
+    options.engine_combo.setCurrentText("mantle")
+    pump(app)
+    assert not floor.isEnabled() and win.isEnabled() and low.isEnabled(), \
+        (floor.isEnabled(), win.isEnabled(), low.isEnabled())
+    flags = options.flags()
+    assert "--min-band-windows" not in flags, flags
+    assert flags[:4] == ["--window-samples", "256", "--min-bin", "12"] and flags[-2:] == ["--engine", "mantle"], flags
+    options.engine_combo.setCurrentText("aurora")
+    pump(app)
+    assert floor.isEnabled() and "--min-band-windows" in options.flags(), options.flags()
+    print(f"  mantle: min band windows disabled and not passed, window samples and min bin kept ({flags})")
+
+    options.reload()
+    assert (win.value(), low.value(), floor.value()) == (128, 0.0, 2) and options.flags() == [], \
+        (win.value(), low.value(), floor.value(), options.flags())
+    print("  reload: 128, layout's own, 2, no flag")
+
+    set_processing(copy_yaml, {"window": 256, "min_bin": 10, "min_band_windows": 5})
+    window.open_survey(copy_yaml)
+    pump(app)
+    assert (win.value(), low.value(), floor.value()) == (256, 10.0, 5) and options.flags() == [], \
+        (win.value(), low.value(), floor.value(), options.flags())
+    low.setValue(0.0)
+    assert low.text() == "layout's own" and options.flags() == ["--min-bin", "0"], (low.text(), options.flags())
+    low.setValue(10.0)
+    floor.setValue(2)
+    assert options.flags() == ["--min-band-windows", "2"], options.flags()
+    print("  survey window 256, min_bin 10, min_band_windows 5: taken with no flag; min bin 0 -> --min-bin 0 "
+          "(layout's own); min band windows 2 -> --min-band-windows 2")
+
+    set_processing(copy_yaml, None)
+    window.open_survey(copy_yaml)
+    pump(app)
+    tab.select_station("D02")
+    set_remote(tab, "E08")
+    pump(app)
+    assert options.flags() == [], options.flags()
+
+
 def main() -> int:
     """Run the test sequence on the Process tab and return 0 on success."""
     print(__doc__.split("**This test fails if**")[1].strip())
@@ -213,6 +310,9 @@ def main() -> int:
     assert options.flags() == [] and box.isEnabled() and box.isChecked(), (options.flags(), box.isEnabled())
     assert options.advanced.isEnabled() and "engine mantle" not in tab.status_label.text(), tab.status_label.text()
     print(f"  back to aurora: flags {options.flags()}, switch enabled again")
+
+    check_band_controls(app, window, tab, copy_yaml)
+    assert box.text() == "apply masks.yaml (D02: 3, E08: 2)" and box.isChecked(), box.text()
 
     set_remote(tab, "A07")
     pump(app)
@@ -283,7 +383,7 @@ def main() -> int:
     window.open_survey(copy_yaml)
     pump(app)
     assert window.state.raw_sites() == {}, "data_root is expected to be unreadable"
-    # the station list is the raw sites, empty now: the label rule is called directly
+    # the label rule is called directly, whatever the station list holds (tests/process_station_list_unit.py)
     options.describe_masks("D02", "E08")
     assert box.text() == "apply masks.yaml (D02: 3, E08: 2)", box.text()
     print(f"  data_root unmounted, D02 rr E08: {box.text()!r}")

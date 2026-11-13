@@ -683,14 +683,14 @@ class CrossPowerTab(QWidget):
     # -------------------------------------------------- remotes and windows
 
     def _recommended(self, site: str) -> str | None:
-        """Return the declared remote, else PairSummary's rule over the archived raw sites.
+        """Return the declared remote, else PairSummary's rule over the archived recorded sites.
 
         None while spans are being read.
         """
         declared = self.state.default_remote(site)
         if declared and self.state.has_archive(declared):
             return declared
-        candidates = [s for s in self.state.raw_sites() if s != site and self.state.has_archive(s)]
+        candidates = [s for s in self.state.recorded_sites() if s != site and self.state.has_archive(s)]
         if any(not self.spans.known(s) for s in (site, *candidates)):
             return None
         own = self.spans.span(site)

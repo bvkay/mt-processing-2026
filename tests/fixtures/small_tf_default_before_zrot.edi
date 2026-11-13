@@ -1,0 +1,233 @@
+>HEAD
+	ACQBY=
+	ACQDATE=1980-01-01T00:00:00+00:00
+	COORDINATE_SYSTEM=geomagnetic
+	DATAID=FR05L
+	DATUM=WGS 84
+	DECLINATION=7.21
+	DECLINATION.MODEL=IGRF-14
+	DECLINATION.EPOCH=2013.80
+	DECLINATION.VALUE=7.21
+	ELEV=0.000
+	EMPTY=1e+32
+	ENDDATE=1980-01-01T00:00:00+00:00
+	FILEBY=
+	FILEDATE=2026-11-08T05:19:21.107239+00:00
+	LAT=-31:08:24.000000
+	LOC=
+	LON=138:41:24.000000
+	PROGDATE=2021-12-01T00:00:00+00:00
+	PROGNAME=mt_metadata
+	PROGVERS=1.0.10
+	PROJECT=
+	STDVERS=SEG 1.0
+	SURVEY=0
+	UNITS=milliVolt per kilometer per nanoTesla
+
+>INFO
+	survey.summary = 
+	original_program.version=0.1.6
+    survey.datum=WGS 84
+    survey.id=0
+    survey.release_license=CC-BY-4.0
+    transfer_function.coordinate_system=geomagnetic
+    transfer_function.processing_parameters.mt_workbench.frame=sensor frame, x-axis at azimuth 7.21 deg clockwise from geographic north
+    transfer_function.processing_parameters.mt_workbench.rotation=data not rotated; ZROT and TROT state this azimuth, the declination below
+    transfer_function.processing_parameters.mt_workbench.declination=7.21
+    transfer_function.processing_parameters.mt_workbench.declination_model=IGRF-14
+    transfer_function.processing_parameters.mt_workbench.declination_epoch=2013.80
+    transfer_function.remote_references=[]
+    transfer_function.runs_processed=[]
+    transfer_function.sign_convention=+
+    transfer_function.units=milliVolt per kilometer per nanoTesla
+    0.channels_recorded_auxiliary=[]
+    0.channels_recorded_electric=[ex, ey]
+    0.channels_recorded_magnetic=[hx, hy, hz]
+    0.data_logger.power_source.voltage.end=0.0
+    0.data_logger.power_source.voltage.start=0.0
+    0.data_logger.timing_system.drift=0.0
+    0.data_logger.timing_system.type=GPS
+    0.data_logger.timing_system.uncertainty=0.0
+    0.data_type=BBMT
+    0.id=0
+    0.sample_rate=0.0
+    0.ex.ac.end=0.0
+    0.ex.ac.start=0.0
+    0.ex.channel_number=0
+    0.ex.component=ex
+    0.ex.contact_resistance.end=0.0
+    0.ex.contact_resistance.start=0.0
+    0.ex.dc.end=0.0
+    0.ex.dc.start=0.0
+    0.ex.dipole_length=0.0
+    0.ex.filters=[]
+    0.ex.measurement_azimuth=0.0
+    0.ex.measurement_tilt=0.0
+    0.ex.negative.datum=WGS 84
+    0.ex.negative.elevation_uncertainty=0.0
+    0.ex.negative.latitude_uncertainty=0.0
+    0.ex.negative.longitude_uncertainty=0.0
+    0.ex.negative.x_uncertainty=0.0
+    0.ex.negative.y_uncertainty=0.0
+    0.ex.negative.z_uncertainty=0.0
+    0.ex.positive.datum=WGS 84
+    0.ex.positive.elevation_uncertainty=0.0
+    0.ex.positive.latitude_uncertainty=0.0
+    0.ex.positive.longitude_uncertainty=0.0
+    0.ex.positive.x_uncertainty=0.0
+    0.ex.positive.y_uncertainty=0.0
+    0.ex.positive.z_uncertainty=0.0
+    0.ex.type=electric
+    0.ey.ac.end=0.0
+    0.ey.ac.start=0.0
+    0.ey.channel_number=0
+    0.ey.component=ey
+    0.ey.contact_resistance.end=0.0
+    0.ey.contact_resistance.start=0.0
+    0.ey.dc.end=0.0
+    0.ey.dc.start=0.0
+    0.ey.dipole_length=0.0
+    0.ey.filters=[]
+    0.ey.measurement_azimuth=0.0
+    0.ey.measurement_tilt=0.0
+    0.ey.negative.datum=WGS 84
+    0.ey.negative.elevation_uncertainty=0.0
+    0.ey.negative.latitude_uncertainty=0.0
+    0.ey.negative.longitude_uncertainty=0.0
+    0.ey.negative.x_uncertainty=0.0
+    0.ey.negative.y_uncertainty=0.0
+    0.ey.negative.z_uncertainty=0.0
+    0.ey.positive.datum=WGS 84
+    0.ey.positive.elevation_uncertainty=0.0
+    0.ey.positive.latitude_uncertainty=0.0
+    0.ey.positive.longitude_uncertainty=0.0
+    0.ey.positive.x_uncertainty=0.0
+    0.ey.positive.y_uncertainty=0.0
+    0.ey.positive.z_uncertainty=0.0
+    0.ey.type=electric
+    0.hx.channel_number=0
+    0.hx.component=hx
+    0.hx.filters=[]
+    0.hx.h_field_max.end=0.0
+    0.hx.h_field_max.start=0.0
+    0.hx.h_field_min.end=0.0
+    0.hx.h_field_min.start=0.0
+    0.hx.location.datum=WGS 84
+    0.hx.measurement_azimuth=0.0
+    0.hx.measurement_tilt=0.0
+    0.hx.type=magnetic
+    0.hy.channel_number=0
+    0.hy.component=hy
+    0.hy.filters=[]
+    0.hy.h_field_max.end=0.0
+    0.hy.h_field_max.start=0.0
+    0.hy.h_field_min.end=0.0
+    0.hy.h_field_min.start=0.0
+    0.hy.location.datum=WGS 84
+    0.hy.measurement_azimuth=0.0
+    0.hy.measurement_tilt=0.0
+    0.hy.type=magnetic
+    0.hz.channel_number=0
+    0.hz.component=hz
+    0.hz.filters=[]
+    0.hz.h_field_max.end=0.0
+    0.hz.h_field_max.start=0.0
+    0.hz.h_field_min.end=0.0
+    0.hz.h_field_min.start=0.0
+    0.hz.location.datum=WGS 84
+    0.hz.measurement_azimuth=0.0
+    0.hz.measurement_tilt=0.0
+    0.hz.type=magnetic
+
+>=DEFINEMEAS
+    MAXCHAN=5
+    MAXRUN=999
+    MAXMEAS=7
+    REFLOC=FR05L
+    REFLAT=-31:08:24.000000
+    REFLON=138:41:24.000000
+    REFELEV=0.0
+    REFTYPE=cartesian
+    UNITS=meter
+
+>EMEAS ID=1.0 CHTYPE=ex X=0.00 Y=0.00 Z=0.00 X2=0.00 Y2=0.00 Z2=0.00 AZM=0.00 ACQCHAN=1.0
+>EMEAS ID=2.0 CHTYPE=ey X=0.00 Y=0.00 Z=0.00 X2=0.00 Y2=0.00 Z2=0.00 AZM=0.00 ACQCHAN=2.0
+>HMEAS ID=3.0 CHTYPE=hx X=0.00 Y=0.00 Z=0.00 AZM=0.00 DIP=0.00 ACQCHAN=3.0
+>HMEAS ID=4.0 CHTYPE=hy X=0.00 Y=0.00 Z=0.00 AZM=0.00 DIP=0.00 ACQCHAN=4.0
+>HMEAS ID=5.0 CHTYPE=hz X=0.00 Y=0.00 Z=0.00 AZM=0.00 DIP=0.00 ACQCHAN=5.0
+
+>=MTSECT
+    NFREQ=7
+    SECTID=FR05L
+    NCHAN=5
+    MAXBLOCKS=999
+
+>!****FREQUENCIES****!
+>FREQ // 7
+   1.000000e-01   4.641589e-02   2.154435e-02   1.000000e-02   4.641589e-03   2.154435e-03
+   1.000000e-03
+>!****IMPEDANCE ROTATION ANGLES****!
+>ZROT // 7
+   7.210000e+00   7.210000e+00   7.210000e+00   7.210000e+00   7.210000e+00   7.210000e+00
+   7.210000e+00
+>!****IMPEDANCES****!
+>ZXXR ROT=ZROT // 7
+   5.000000e-01   3.406460e-01   2.320794e-01   1.581139e-01   1.077217e-01   7.338996e-02
+   5.000000e-02
+>ZXXI ROT=ZROT // 7
+   5.000000e-01   3.406460e-01   2.320794e-01   1.581139e-01   1.077217e-01   7.338996e-02
+   5.000000e-02
+>ZXX.VAR ROT=ZROT // 7
+   1.250071e-03   5.802468e-04   2.693372e-04   1.250224e-04   5.803510e-05   2.694081e-05
+   1.250707e-05
+>ZXYR ROT=ZROT // 7
+   5.000000e+00   3.406460e+00   2.320794e+00   1.581139e+00   1.077217e+00   7.338996e-01
+   5.000000e-01
+>ZXYI ROT=ZROT // 7
+   5.000000e+00   3.406460e+00   2.320794e+00   1.581139e+00   1.077217e+00   7.338996e-01
+   5.000000e-01
+>ZXY.VAR ROT=ZROT // 7
+   1.250007e-01   5.802034e-02   2.693076e-02   1.250022e-02   5.802138e-03   2.693147e-03
+   1.250071e-03
+>ZYXR ROT=ZROT // 7
+  -5.000000e+00  -3.406460e+00  -2.320794e+00  -1.581139e+00  -1.077217e+00  -7.338996e-01
+  -5.000000e-01
+>ZYXI ROT=ZROT // 7
+  -5.000000e+00  -3.406460e+00  -2.320794e+00  -1.581139e+00  -1.077217e+00  -7.338996e-01
+  -5.000000e-01
+>ZYX.VAR ROT=ZROT // 7
+   1.250007e-01   5.802034e-02   2.693076e-02   1.250022e-02   5.802138e-03   2.693147e-03
+   1.250071e-03
+>ZYYR ROT=ZROT // 7
+  -5.000000e-01  -3.406460e-01  -2.320794e-01  -1.581139e-01  -1.077217e-01  -7.338996e-02
+  -5.000000e-02
+>ZYYI ROT=ZROT // 7
+  -5.000000e-01  -3.406460e-01  -2.320794e-01  -1.581139e-01  -1.077217e-01  -7.338996e-02
+  -5.000000e-02
+>ZYY.VAR ROT=ZROT // 7
+   1.250071e-03   5.802468e-04   2.693372e-04   1.250224e-04   5.803510e-05   2.694081e-05
+   1.250707e-05
+>!****TIPPER ROTATION ANGLES****!
+>TROT // 7
+   7.210000e+00   7.210000e+00   7.210000e+00   7.210000e+00   7.210000e+00   7.210000e+00
+   7.210000e+00
+>!****TIPPER****!
+>TXR.EXP ROT=TROT // 7
+   1.000000e-01   1.000000e-01   1.000000e-01   1.000000e-01   1.000000e-01   1.000000e-01
+   1.000000e-01
+>TXI.EXP ROT=TROT // 7
+   5.000000e-02   5.000000e-02   5.000000e-02   5.000000e-02   5.000000e-02   5.000000e-02
+   5.000000e-02
+>TXVAR.EXP ROT=TROT // 7
+   1.000000e-04   1.000000e-04   1.000000e-04   1.000000e-04   1.000000e-04   1.000000e-04
+   1.000000e-04
+>TYR.EXP ROT=TROT // 7
+  -2.000000e-01  -2.000000e-01  -2.000000e-01  -2.000000e-01  -2.000000e-01  -2.000000e-01
+  -2.000000e-01
+>TYI.EXP ROT=TROT // 7
+   2.000000e-02   2.000000e-02   2.000000e-02   2.000000e-02   2.000000e-02   2.000000e-02
+   2.000000e-02
+>TYVAR.EXP ROT=TROT // 7
+   1.000000e-04   1.000000e-04   1.000000e-04   1.000000e-04   1.000000e-04   1.000000e-04
+   1.000000e-04
+>END

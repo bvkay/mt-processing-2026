@@ -16,7 +16,10 @@ scratch survey's MBJ21.h5 and EGFLP02.h5. `JobRunner.run_now` is wrapped at
 the class level before the window is built: a call naming fetch_basemap.py
 or ingest_site.py is recorded (`DIVERTED`) instead of started, and every
 other call (New survey's) runs as usual, so the test runs offline and writes
-no archive. The filter, metadata and mask round trips write to a copy of
+no archive. build_stack.py and process_intersite.py are diverted the same
+way as a guard, and the test fails if either is ever diverted: the GUI
+queues them on the shared runner and never starts them through run_now.
+The filter, metadata and mask round trips write to a copy of
 the survey folder in the scratch directory, the New survey check writes
 under the scratch directory too, and the files written into
 `surveys/curnamona_cube/work/qc/` are PNGs.
@@ -30,30 +33,30 @@ Usage:
 
 **This test fails if**
 
-(1)  the window cannot be built, or its tabs are not, in order, Metadata,
-     Time Series, Spectra, Spectrogram, Coherence, Filter Data, Cross-powers,
-     Process, View EDIs; or the Metadata table does not show 61 sites with a
-     `remote` column reading E08 for D02, and a `channels` column reading
-     "Ex Ey Bx By" (the survey default [ex, ey, hx, hy] as its preset's
-     label) for D02 and for A07 (both archived, so both cells drawn in the
-     disabled grey #7a7a7a with the tooltip "archive built with the old set -
-     Delete archive then Build MTH5 to change it") and for A02 (no archive)
-     with no tooltip and not in that grey; or its `dc level` column does not
-     follow `archive`, or reads other than "-" for A02 (no tooltip) and, with
-     the tooltip `metadata.NO_RECORD_TIP`, for D02 and A07 when their
-     archives' run comments (read here with h5py) hold no "dc level (" record;
-     or the tab's dc level cell of an archive written here with h5py, two
-     runs whose comments record hx +4.300e+07, hy +3.900e+07 and ex
+(1)  the window cannot be built, or its tabs are not, in order, Metadata, Time
+     Series, Spectra, Spectrogram, Coherence, Filter Data, Cross-powers,
+     Stacks, Process, View EDIs; or the Metadata table does not show 61 sites
+     with a `remote` column reading E08 for D02, and a `channels` column
+     reading "Ex Ey Bx By" (the survey default [ex, ey, hx, hy] as its
+     preset's label) for D02 and for A07 (both archived, so both cells drawn
+     in the disabled grey #7a7a7a with the tooltip "archive built with the old
+     set - Delete archive then Build MTH5 to change it") and for A02 (no
+     archive) with no tooltip and not in that grey; or its `dc level` column
+     does not follow `archive`, or reads other than "-" for A02 (no tooltip)
+     and, with the tooltip `metadata.NO_RECORD_TIP`, for D02 and A07 when
+     their archives' run comments (read here with h5py) hold no "dc level ("
+     record; or the tab's dc level cell of an archive written here with h5py,
+     two runs whose comments record hx +4.300e+07, hy +3.900e+07 and ex
      +2.000e+07 ok in both and ey +1.600e+09 open input? in the first and
      -3.000e+07 ok in the second, does not read "hx ok 4.30e7, hy ok 3.90e7,
      ex ok 2.00e7, ey open input? 1.60e9 in 1 of 2 runs" in #ef5350
      (`theme.BAD_COLOUR`), sort first (key 0) and list the eight channel runs
-     in its tooltip; or the dark theme is not on: the
-     application palette's Window colour is not #2b2b2b (`theme.WINDOW`),
-     its Base not #1f1f1f, or the style not Fusion (behind the theme's
-     proxy); or an unticked, unlabelled QCheckBox has no pixel at least 64
-     lightness levels above the window grey (Fusion alone draws its outline
-     from the window grey, darkened, and the box disappears);
+     in its tooltip; or the dark theme is not on: the application palette's
+     Window colour is not #2b2b2b (`theme.WINDOW`), its Base not #1f1f1f, or
+     the style not Fusion (behind the theme's proxy); or an unticked,
+     unlabelled QCheckBox has no pixel at least 64 lightness levels above the
+     window grey (Fusion alone draws its outline from the window grey,
+     darkened, and the box disappears);
 (2)  the Time Series tree does not have 61 site rows, bold and collapsed, of
      which exactly five (A07, D02, D02L, E08, E08L, the archived ones; D02L
      and E08L are the 1 Hz sites scripts/decimate_site.py derives from D02
@@ -217,17 +220,15 @@ Usage:
      the taper set to hamming (hann is the in-use default, so it emits no
      flag) and r0 to 2.0, exactly `--taper hamming --r0 2.0` at the end of
      the argv and "--taper hamming --r0 2.0" in the row's Options, and none
-     again once they are put back; the row-3 "Build stack" button must
-     record a build_stack.py argv naming the survey, the default stack name
-     STKD02, the window and both chosen members (A02, A03), which the map
-     then paints orange; "Reset queue" must leave the table with no rows and
-     the runner with no jobs; then, with the runner real again and D02/E08
-     still the pair, queuing a trivial job through the tab's own `_queue()`
-     (what every button, including Add to queue, calls) must leave it
-     "queued" and the runner idle (`status_label` reading "1 job(s) queued -
-     press Run queue") until "Run queue" is pressed, after which it runs to
-     completion; a trivial job whose argv names fetch_basemap.py, run for
-     real, must make the map load the basemap again (a new ImageItem) when
+     again once they are put back (the stack builder is the recipe picker,
+     checked in tests/stacks_tab_unit.py); "Reset queue" must leave the table
+     with no rows and the runner with no jobs; then, with the runner real
+     again and D02/E08 still the pair, queuing a trivial job through the tab's
+     own `_queue()` (what every button, including Add to queue, calls) must
+     leave it "queued" and the runner idle (`status_label` reading "1 job(s)
+     queued - press Run queue") until "Run queue" is pressed, after which it
+     runs to completion; a trivial job whose argv names fetch_basemap.py, run
+     for real, must make the map load the basemap again (a new ImageItem) when
      it finishes (skipped with the basemap check); and for E08, which
      declares no remote, the recommendation must be the nearest
      (`distance_km`, computed here by the law of cosines) among the raw
@@ -476,17 +477,19 @@ Usage:
      (1.0 h)" (a one-hour record under the 24 h window `window_hours` gives
      both 1 Hz and 10 Hz);
 (30) a click on MBJ21's window does not, within 60 s, draw seven panels,
-     bx by bz e1 e2 e3 e4 top to bottom, left labels starting "Bx (", "By (",
-     "Bz (", "E1 (", "E2 (", "E3 (", "E4 (", pens #4fc3f7 on the three
-     magnetics and #ff5252 on the four electrics, whose E1 curve equals
-     (atol 1e-6 of its spread) the 12th column of the sample file read here
-     with numpy (a LEMI-424 has no filter chain, so the archive holds the
-     recorded values); or its `qc_ready` does not follow within 60 s with the
-     Spectra panels titled "By-E1 (Zxy)" and "Bx-E2 (Zyx)", each holding
+     hx hy hz ex ey e3 e4 top to bottom, left labels starting "Bx (", "By (",
+     "Bz (", "Ex (", "Ey (", "E3 (", "E4 (", pens #4fc3f7 on the three
+     magnetics and #ff5252 on the four electrics, whose Ex curve equals
+     (atol 1e-6 of its spread) minus the 12th column (E1) of the sample file
+     read here with numpy, while the archive's ex samples equal that column
+     itself (the logger's words; the e_sign convention -1 is the stage
+     lemi424_e_sign in ex's chain, which the Time Series scale divides
+     out); or its `qc_ready` does not follow within 60 s with the
+     Spectra panels titled "By-Ex (Zxy)" and "Bx-Ey (Zyx)", each holding
      finite positive curves in exactly one magnetic and one electric pen (no
-     remote), the Coherence tab's local panels labelled "By-E1 (Zxy)",
-     "Bx-E2 (Zyx)", "Bx-By (magnetic)" and "E1-E2 (electric)", and the
-     Spectrogram tab one image per channel, bx .. e4, labelled by `label`;
+     remote), the Coherence tab's local panels labelled "By-Ex (Zxy)",
+     "Bx-Ey (Zyx)", "Bx-By (magnetic)" and "Ex-Ey (electric)", and the
+     Spectrogram tab one image per channel, hx .. e4, labelled by `label`;
 (31) a click on EGFLP02's window does not draw five panels, hx hy hz ex ey,
      labelled "Bx (", "By (", "Bz (", "Ex (", "Ey (", pens blue, blue, blue,
      red, red, whose Ex curve equals the sample's EX file (recorded
@@ -715,8 +718,8 @@ Usage:
      its file name alone; or quick view on the mantle row, with the D02 pair
      of (12) still ticked, does not draw exactly one verdict strip axes
      (label `tf_plot.VERDICT_STRIP`) under each of the two resistivity axes
-     -- sharing its log period axis, its top `STRIP_GAP` below that axes'
-     bottom and its bottom above the phase axes -- with the row labels
+     (sharing its log period axis, its top `STRIP_GAP` below that axes'
+     bottom and its bottom above the phase axes) with the row labels
      ["ok", "snr_limited"] top to bottom, one bar collection per row whose
      period extent equals the shortest and longest period of that word's
      `freq_hz` scopes pooled over the report's verdicts (read here from
@@ -727,7 +730,7 @@ Usage:
      sidecar's engine_config.verdict_words ("ok 1, snr_limited 8") and
      "snr gate ran: True"; or "MANTLE notes..." is not enabled and does not
      open a visible dialog whose text carries "site D02" and the report's
-     first note verbatim; or quick view moved to the aurora row does not
+     first note in full; or quick view moved to the aurora row does not
      leave the figure without a strip, the label empty and the button
      disabled; the tab shot to work/qc/gui_edis_mantle.png on the mantle row.
 """
@@ -793,7 +796,7 @@ MAINS = [50.0 * k for k in range(1, 11)]  # to Nyquist at 1000 Hz
 Y_EXTENT_HZ = (0.003, 400.0)  # below the anti-alias roll-off, psd_qc.py's rule
 WINDOW_MIN = 120.0  # the QC window in minutes, the Spectrogram and Coherence x unit
 EXPECTED_TABS = ["Metadata", "Time Series", "Spectra", "Spectrogram", "Coherence",
-                 "Filter Data", "Cross-powers", "Process", "View EDIs"]
+                 "Filter Data", "Cross-powers", "Stacks", "Process", "View EDIs"]
 WINDOW_SAMPLES = 7_200_000
 WINDOW_INDEX = 3  # the fourth window of D02
 N_WINDOWS_D02 = 21
@@ -804,7 +807,6 @@ LOCAL_ORDER = [(("hy", "ex"), "By-Ex (Zxy)"), (("hx", "ey"), "Bx-Ey (Zyx)"),
                (("hx", "hy"), "Bx-By (magnetic)"), (("ex", "ey"), "Ex-Ey (electric)")]
 REMOTE_ORDER = [(("ex", "r_hy"), "rBy-Ex (Zxy, remote)"), (("ey", "r_hx"), "rBx-Ey (Zyx, remote)"),
                 (("hx", "r_hx"), "Bx-rBx"), (("hy", "r_hy"), "By-rBy")]
-STACK_MEMBERS = ["A02", "A03"]
 RECOMMENDED = "E08"  # the Process tab's recommendation for D02: its declared `remote:`
 PARTIAL = "D08"  # a raw site whose recorded span ends inside D02's: the amber and red lamps
 ROW3_BUTTONS = ["Add to queue", "Run queue", "Reset queue", "Build stack"]
@@ -864,8 +866,9 @@ MANTLE_NOTE = "engine mantle: the aurora estimator options above do not reach it
 SLOT_ERRORS: list[str] = []
 REAL_YAML = b""  # surveys/curnamona_cube/survey.yaml as the test found it
 
-# offline, with no archive written: these two scripts are recorded, not run
-NEVER_RUN = {"fetch_basemap.py", "ingest_site.py"}
+# offline, with no archive written: these scripts are recorded, not run; the
+# stack scripts are a guard (both are queued, never started through run_now)
+NEVER_RUN = {"fetch_basemap.py", "ingest_site.py", "build_stack.py", "process_intersite.py"}
 DIVERTED: list[list[str]] = []
 _real_run_now = JobRunner.run_now
 
@@ -1148,12 +1151,24 @@ def make_survey_copy() -> Path:
 
 # (30)/(31): the panels a LEMI-424 and an EDL window must draw, stated here rather than taken from the GUI
 MIXED_SITES = {"S01": "lemi423", "MBJ21": "lemi424", "EGFLP02": "edl"}
-LEMI424_PANELS = [("bx", "Bx", theme.B_COLOUR), ("by", "By", theme.B_COLOUR), ("bz", "Bz", theme.B_COLOUR),
-                  ("e1", "E1", theme.E_COLOUR), ("e2", "E2", theme.E_COLOUR), ("e3", "E3", theme.E_COLOUR),
+LEMI424_PANELS = [("hx", "Bx", theme.B_COLOUR), ("hy", "By", theme.B_COLOUR), ("hz", "Bz", theme.B_COLOUR),
+                  ("ex", "Ex", theme.E_COLOUR), ("ey", "Ey", theme.E_COLOUR), ("e3", "E3", theme.E_COLOUR),
                   ("e4", "E4", theme.E_COLOUR)]
 EDL_PANELS = [("hx", "Bx", theme.B_COLOUR), ("hy", "By", theme.B_COLOUR), ("hz", "Bz", theme.B_COLOUR),
               ("ex", "Ex", theme.E_COLOUR), ("ey", "Ey", theme.E_COLOUR)]
 EDL_EX_GAIN = -50.0 * 10.0  # the reader's dipole filter (-L, L = 50 m) times the x10 terminal box
+
+
+def archive_samples(path, station, comp) -> np.ndarray:
+    """Return the samples of the one `comp` dataset under a station of an archive, read with h5py."""
+    import h5py
+
+    found = []
+    with h5py.File(path, "r") as f:
+        f.visititems(lambda name, obj: found.append(obj[()]) if isinstance(obj, h5py.Dataset)
+                     and name.split("/")[-1] == comp and f"/Stations/{station}/" in f"/{name}" else None)
+    assert len(found) == 1, (path, station, comp, len(found))
+    return found[0]
 
 
 def check_panels(app, ts, look, truth_comp, truth) -> None:
@@ -1221,10 +1236,10 @@ def mixed_instruments(app, window) -> None:
     store.qc_ready.connect(results.append)
     sample = instrument_samples.MIXED_ROOT
     cases = (
-        ("MBJ21", LEMI424_PANELS, "e1",
-         np.loadtxt(sample / "MBJ21" / instrument_samples.LEMI424_FILE, usecols=11),
-         ["By-E1 (Zxy)", "Bx-E2 (Zyx)"],
-         ["By-E1 (Zxy)", "Bx-E2 (Zyx)", "Bx-By (magnetic)", "E1-E2 (electric)"], "lemi424"),
+        ("MBJ21", LEMI424_PANELS, "ex",
+         -np.loadtxt(sample / "MBJ21" / instrument_samples.LEMI424_FILE, usecols=11),
+         ["By-Ex (Zxy)", "Bx-Ey (Zyx)"],
+         ["By-Ex (Zxy)", "Bx-Ey (Zyx)", "Bx-By (magnetic)", "Ex-Ey (electric)"], "lemi424"),
         ("EGFLP02", EDL_PANELS, "ex",
          np.loadtxt(sample / "EGFLP02" / instrument_samples.EDL_DAY / f"{instrument_samples.EDL_STAMP}.EX")
          / EDL_EX_GAIN,
@@ -1236,6 +1251,9 @@ def mixed_instruments(app, window) -> None:
         click(app, tree, tree.window_items(site)[0])
         wait_until(app, lambda s=site: loaded and loaded[-1].station == s, 60, f"segment_loaded for {site}")
         load_s = time.time() - t0
+        if site == "MBJ21":  # the archive holds E1 as written; only the chain's e_sign stage makes the curve -E1
+            stored = archive_samples(instrument_samples.ensure_archives(("MBJ21",))["MBJ21"], "MBJ21", "ex")
+            assert np.array_equal(stored, -truth), "the archive's ex is not the file's E1 column"
         check_panels(app, ts, look, truth_comp, truth)
         shot = instrument_samples.SCRATCH / f"gui_{tag}_timeseries.png"
         ts.grab().save(str(shot))
@@ -1657,7 +1675,7 @@ def crosspower_check(app, window) -> None:
           f"xy {ratios['xy']:.3f}, yx {ratios['yx']:.3f}")
 
     # a window picked while a compute runs: the compute that returns is drawn over the combo's window or dropped.
-    # Nothing is pumped between the picks, so the compute's result (a queued signal) arrives after both
+    # The event loop is not pumped between the picks, so the compute's result (a queued signal) arrives after both
     qc_store, computes = tab.store, tab.computes
     combo.setCurrentIndex(0)  # the whole overlap, outside the QC store: computed by itself
     combo.setCurrentIndex(qc_index())  # picked while it runs: regrouped from the QC store at once
@@ -2699,22 +2717,6 @@ def main() -> int:
               f"nothing), label {mantle_job.label!r}, Options {mantle_job.options!r}, status line {status!r}; "
               f"back to aurora: block enabled, no note, no flag")
 
-        for name in STACK_MEMBERS:
-            items = process.stack_builder.list.findItems(name, Qt.MatchExactly)
-            assert items, f"{name} is not a stack candidate"
-            items[0].setSelected(True)
-        pump(app, 0.2)
-        process.build_button.click()
-        pump(app)
-        stack_argv = recorded[-1]
-        assert stack_argv[1].endswith("build_stack.py"), stack_argv[1]
-        assert stack_argv[3] == f"STK{SITE}", stack_argv[3]
-        assert stack_argv[-2:] == STACK_MEMBERS, stack_argv[-2:]
-        assert stack_argv[4:6] == [set_lo.strftime(WINDOW_FMT), set_hi.strftime(WINDOW_FMT)], stack_argv[4:6]
-        for name in STACK_MEMBERS:
-            assert site_map.colours[name] == site_map.MEMBER, (name, site_map.colours[name])
-        print(f"  Build stack: {' '.join(Path(a).name if a.endswith('.py') else a for a in stack_argv[1:])}; "
-              f"{', '.join(STACK_MEMBERS)} painted orange on the map")
         print(f"  queue table: {table.rowCount()} rows, last {table_row(table, table.rowCount() - 1)}")
         shoot(app, window, "process", process)  # with the queued rows still in the table
         map_h, builder_h = process.site_map.height(), process.stack_builder.height()
@@ -3870,6 +3872,10 @@ def main() -> int:
     assert not SLOT_ERRORS, (
         f"{len(SLOT_ERRORS)} exception(s) were raised inside Qt slots:\n" + "".join(SLOT_ERRORS))
     print("  no exception escaped a Qt slot")
+    started = [argv for argv in DIVERTED if any(Path(a).name in ("build_stack.py", "process_intersite.py")
+                                                for a in argv)]
+    assert not started, f"build_stack.py or process_intersite.py went through run_now: {started}"
+    print("  build_stack.py and process_intersite.py never went through run_now")
     print("\nPASS  gui_smoke")
     window.close()
     return 0

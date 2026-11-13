@@ -3,8 +3,9 @@
 Start a survey.yaml from a folder of site folders and their recorders' files
 
 For a new survey that has its raw data and paper field sheets: one subfolder
-per site with LEMI-423 ``*.B423``, LEMI-424 ``YYYYMMDDhhmm.txt`` or Earth
-Data PR6-24 ``{station}YYMMDDhhmmss.{BX,..,EY}`` files anywhere under it.
+per site with LEMI-423 ``*.B423``, LEMI-424 ``YYYYMMDDhhmm.txt``, Earth
+Data PR6-24 ``{station}YYMMDDhhmmss.{BX,..,EY}``, Phoenix or Orange Box
+``HFM<n>-NNN.BIN`` or ``LP<n>-NNN.BIN`` files anywhere under it.
 
 Sites are found by the rule of `mt_workbench.survey.Survey.site_dirs` (a subfolder
 of data_root with any of those files anywhere under it; site name = folder
@@ -59,6 +60,20 @@ differs gets its own `channels:` on the GUI's Metadata tab. The summary
 prints, per site, the columns mt-io reads from the first file (the B423
 record's Bx By Bz Ex Ey, stored as hx hy hz ex ey) next to the declared set,
 and warns when a declared channel is not among them.
+
+For an Orange Box site the facts are the box named by the logger report
+(``HFM<n>-RPT.TXT``, "High Frequency Magnetometer Number <n>", box 2 for
+number 0, written as serial "hfm2"), the span from the first header to the
+last end stamp read on the logger clock's zone (--clock-timezone, default
+UTC), the archive's 10 Hz rate and no position. An Orange Box survey's
+`defaults:` gets `clock_timezone:` and the two full scales as comments to
+set (`electric_full_scale_uv`, `magnetic_full_scale_nt`: ingest refuses a
+site without them); each site's `clock_drift_s` comes from the field sheet.
+
+For a LEMI-424 survey the `defaults:` block also gets `e_sign: -1.0` with a
+one-line comment: the logger records E1 and E2 with the opposite sign to the
+x-north, y-east frame, and ingest multiplies them by it
+(`mt_workbench.survey.SiteConfig.e_sign`).
 
 --electric-gain names the extra gain of an Earth Data PR6-24 site's electric
 chain between the dipoles and the recorded values, beyond what the reader
@@ -173,7 +188,7 @@ defaults:
   calibration_fn: {calibration_fn}
   # LEMI-423 sites: magnetics correction to the lemimt convention, pT to nT and polarity
   h_scale: -1000.0
-  # how to read a 180/270 deg dipole azimuth on the field sheet. true: the pair
+{e_sign}  # how to read a 180/270 deg dipole azimuth on the field sheet. true: the pair
   # was wired reversed, so its data are sign-flipped at ingest. false: the
   # azimuth only records the layout direction and the logger's terminals fix
   # polarity, so nothing is flipped. Check the impedance
@@ -191,6 +206,72 @@ processing:
   # keep bands clear of mains and its first in-range harmonic
   notch_frequencies: [50.0, 150.0]
 """
+
+
+# the 150 Hz shortest period whose band edges fall on the 24 kHz burst layout's (4**(22/6)/6000 s):
+# scripts/merge_tensor_bands.py stitches the two products only when they share band edges
+PHOENIX_MIN_PERIOD = 4 ** (22 / 6) / 6000
+
+
+def phoenix_defaults(head: str) -> str:
+    """Return the survey.yaml head with the defaults a Phoenix survey needs.
+
+    The receiver metadata (empower_recmeta.json, as mt-io reads it) holds
+    each dipole's length, and a non-zero `dipole_length_ex/ey` would
+    override it at every site, so the defaults are 0.0. The receivers' and
+    coils' calibration JSON files come from `calibration_dir`, and the
+    shortest period is `PHOENIX_MIN_PERIOD`, so that a 150 Hz product can be
+    stitched to its bursts' (scripts/merge_tensor_bands.py).
+
+    Args:
+        head (str): The formatted `HEAD`.
+
+    Returns:
+        str: The head with those three settings.
+    """
+    old = "  dipole_length_ex: 50.0\n  dipole_length_ey: 50.0\n"
+    new = ("  # Phoenix: 0.0 takes each recording's dipole lengths from empower_recmeta.json (as mt-io\n"
+           "  # reads it); a site's own non-zero value (the taped length) overrides it\n"
+           "  dipole_length_ex: 0.0\n  dipole_length_ey: 0.0\n"
+           "  # Phoenix: the folder of the receivers' <receiver>_*.rxcal.json and the coils'\n"
+           "  # <serial>_*.scal.json files; a relative path resolves against this folder first\n"
+           "  calibration_dir: sensors\n")
+    if old not in head:
+        raise ValueError("the defaults block has changed: update phoenix_defaults")
+    head = head.replace(old, new)
+    period = "  min_period: 0.005\n"
+    if period not in head:
+        raise ValueError("the processing block has changed: update phoenix_defaults")
+    return head.replace(period, f"  # 4**(22/6)/6000: the 150 Hz band edges fall on the 24 kHz bursts' (merge_tensor_bands.py)\n"
+                                f"  min_period: {PHOENIX_MIN_PERIOD!r}\n")
+
+
+def orangebox_defaults(head: str, clock_timezone: str) -> str:
+    """Return the survey.yaml head with the defaults an Orange Box survey needs.
+
+    The logger clock's zone is written as `clock_timezone`; the two full
+    scales are written as comments to set, since ingest refuses an Orange
+    Box site without them and the files do not tell them.
+
+    Args:
+        head (str): The formatted `HEAD`.
+        clock_timezone (str): The --clock-timezone value.
+
+    Returns:
+        str: The head with those settings after `channels:`.
+    """
+    anchor = "  channels: "
+    at = head.index(anchor)
+    at = head.index("\n", at) + 1
+    block = ("  # Orange Box chain (docs/upstream_issues.md 13, 14): no default, ingest refuses a site without\n"
+             "  # them. Electric: 25000 uV for the +/-2.5 V boxes before July 2010, 100000 for the +/-10 V ones;\n"
+             "  # magnetic: 70000 or 100000 nT, the Bartington sensor's\n"
+             "  # electric_full_scale_uv: 25000.0\n"
+             "  # magnetic_full_scale_nt: 70000.0\n"
+             "  # the zone the loggers' real-time clocks ran on (their stamps are read as UTC with it);\n"
+             "  # each site's clock_drift_s (GPS minus logger at recovery) comes from the field sheet\n"
+             f"  clock_timezone: {scalar(clock_timezone)}\n")
+    return head[:at] + block + head[at:]
 
 
 def scalar(value) -> str:
@@ -239,7 +320,7 @@ def fast_sample_rate(path: Path, n_records: int = SAMPLE_RATE_RECORDS) -> float 
         # an unknown rate: report what was measured rather than the nearest
         # known value (a file at 1 record/s would otherwise snap to 250 Hz)
         print(f"  WARNING {path.name}: derived sample rate {derived} records/s is {off:.1%} off "
-              f"the nearest LEMI-423 rate ({nearest:g} Hz) -- kept as measured: not a LEMI-423 rate, an instrument fault or dropped samples")
+              f"the nearest LEMI-423 rate ({nearest:g} Hz); kept as measured: not a LEMI-423 rate, an instrument fault or dropped samples")
         return float(derived)
     return nearest
 
@@ -263,12 +344,14 @@ def file_columns(path: Path) -> list[str]:
     return [READER_CHANNELS[name] for name in record.names if name in READER_CHANNELS]
 
 
-def read_other_site(site_dir: Path, instrument: str) -> dict:
-    """Read the facts of a LEMI-424 or EDL site.
+def read_other_site(site_dir: Path, instrument: str, clock_timezone: str = "UTC") -> dict:
+    """Read the facts of a LEMI-424, EDL, Phoenix or Orange Box site.
 
     Args:
         site_dir (Path): The site's folder.
-        instrument (str): "lemi424" or "edl".
+        instrument (str): "lemi424", "edl", "phoenix" or "orangebox".
+        clock_timezone (str): Orange Box only: the zone its logger clock
+            ran on, with which the span is read as UTC.
 
     Returns:
         dict: files, start, end, sample_rate, problem and columns, updated
@@ -276,7 +359,7 @@ def read_other_site(site_dir: Path, instrument: str) -> dict:
         recorded in "problem".
     """
     files = record_files(site_dir, instrument)
-    start, end, n = span(site_dir, instrument, files)
+    start, end, n = span(site_dir, instrument, files, clock_timezone=clock_timezone)
     facts = {"files": n, "start": start, "end": end, "sample_rate": None, "problem": None, "columns": None}
     try:
         facts.update(header_facts(site_dir, instrument, files))
@@ -285,7 +368,7 @@ def read_other_site(site_dir: Path, instrument: str) -> dict:
     return facts
 
 
-def read_site(site_dir: Path, instrument: str = "lemi423") -> dict:
+def read_site(site_dir: Path, instrument: str = "lemi423", clock_timezone: str = "UTC") -> dict:
     """Read the facts of one site's files.
 
     For a LEMI-423 site: the header and a bounded scan of the first B423
@@ -295,13 +378,14 @@ def read_site(site_dir: Path, instrument: str = "lemi423") -> dict:
     Args:
         site_dir (Path): The site's folder.
         instrument (str): The site's instrument.
+        clock_timezone (str): Orange Box only (`read_other_site`).
 
     Returns:
         dict: files, start, end, sample_rate, problem and columns, plus
         serial, firmware and the GPS position when the header has them.
     """
     if instrument != "lemi423":
-        return read_other_site(site_dir, instrument)
+        return read_other_site(site_dir, instrument, clock_timezone)
     files = select_files(site_dir)
     epochs = np.array([int(f.stem) for f in files], dtype="int64")
     spacing = int(np.median(np.diff(epochs))) if epochs.size > 1 else DEFAULT_FILE_SECONDS
@@ -433,6 +517,8 @@ def main(argv=None) -> int:
                         "chain beyond the reader's own (the x10 terminal box), declared from the field "
                         "notes, e.g. 10; written as defaults: electric_gain")
     parser.add_argument("--timezone", default="Australia/Adelaide", help="IANA name, for display only")
+    parser.add_argument("--clock-timezone", default="UTC", help="Orange Box sites: the IANA name of the zone the "
+                        "loggers' real-time clocks ran on, with which their stamps are read as UTC")
     parser.add_argument("--out", help="survey.yaml to write (default surveys/<name>/survey.yaml)")
     parser.add_argument("--workspace", help="archives, TFs and figures (default <data_root>/work)")
     parser.add_argument("--calibration", default=str(DEFAULT_CALIBRATION), help="coil response file")
@@ -449,6 +535,10 @@ def main(argv=None) -> int:
         pd.Timestamp.now(tz=args.timezone)
     except Exception:
         parser.error(f"unknown timezone {args.timezone!r} (an IANA name, e.g. Australia/Adelaide)")
+    try:
+        pd.Timestamp.now(tz=args.clock_timezone)
+    except Exception:
+        parser.error(f"unknown clock timezone {args.clock_timezone!r} (an IANA name, e.g. Australia/Perth)")
     if not data_root.is_dir():
         parser.error(f"no such folder: {data_root}")
     if not calibration.is_file():
@@ -482,7 +572,7 @@ def main(argv=None) -> int:
     electric_gain = args.electric_gain if args.electric_gain is not None else 1.0
     if args.electric_gain is not None and "edl" not in recorder.values():
         parser.error("--electric-gain is an Earth Data PR6-24 electric-chain setting, and no site here is an EDL")
-    facts = {site: read_site(folder, recorder[site]) for site, folder in found.items()}
+    facts = {site: read_site(folder, recorder[site], args.clock_timezone) for site, folder in found.items()}
     # the survey's rate: the most common among its own instrument's sites
     rates = Counter(f["sample_rate"] for site, f in facts.items()
                     if f["sample_rate"] and recorder[site] == instrument)
@@ -534,12 +624,20 @@ def main(argv=None) -> int:
             "  # bartington = Mag-03 fluxgates, long period. Set from the survey's rate (UoA:\n"
             "  # coils at 500/1000 Hz, fluxgates at 10 Hz): check the field sheet\n"
             f"  sensor_type: {edl_sensor_for(sample_rate)}\n"),
+        e_sign="" if instrument != "lemi424" else (
+            "  # LEMI-424 sites: E1 and E2 are recorded with the opposite sign to the x-north, y-east frame;"
+            " -1.0 negates them at ingest\n"
+            "  e_sign: -1.0\n"),
         edl_gain="" if args.electric_gain is None else (
             "  # extra gain of the electric chain between the dipoles and the recorded values, beyond\n"
             "  # what the reader already models (the x10 terminal box): hardwired at the field terminal\n"
             "  # junction box, declared from the field notes (EDL sites only)\n"
             f"  electric_gain: {scalar(args.electric_gain)}\n"),
     )
+    if instrument == "phoenix":
+        head = phoenix_defaults(head)
+    if instrument == "orangebox":
+        head = orangebox_defaults(head, args.clock_timezone)
     # the sites block as burra_notes_to_yaml.py's write_sites_block and the GUI's
     # Save write it, so a later save rewrites it without reflowing anything
     body = yaml.safe_dump(sites, sort_keys=False, allow_unicode=True, default_flow_style=False)
@@ -558,7 +656,7 @@ def main(argv=None) -> int:
               ("" if args.electric_gain is not None else
                " (--electric-gain not given) - check the field notes"))
     for site, flags in ini_flags.items():
-        print(f"  {site}: recorder.ini sets channel_n_high_gain=1 for {' '.join(flags)} -- informational, "
+        print(f"  {site}: recorder.ini sets channel_n_high_gain=1 for {' '.join(flags)}: informational; "
               f"electric_gain {electric_gain:g} is declared from the field notes, not read from recorder.ini")
     for site, f in facts.items():
         entry = sites[site]

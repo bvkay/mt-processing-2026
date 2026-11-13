@@ -33,7 +33,7 @@ planted fraction of plateau samples in any of the first three windows
 ones, 240/1200 = 0.2 for the 120 s ones) or exceeds 0.002 in the fourth;
 `step_ey` differs by more than 0.005 from 0.0667 in the first window or
 exceeds 0.002 in the fourth; `step_ex` or `shift_ex` exceeds 0.002 in any
-window (nothing is planted in ex); `burst_hx` differs by more than 0.002
+window (no step or shift is planted in ex); `burst_hx` differs by more than 0.002
 from the planted 40/1200 = 0.0333 in the first window (the burst samples
 that stay under the threshold and the band-pass ringing past each burst
 edge move it in opposite directions, each by less than that) or exceeds

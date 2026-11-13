@@ -16,7 +16,7 @@ Usage:
 
 **This test fails if** `narrow_lines` misses 37.4 or 62.55 Hz (within 0.1 Hz);
 reports the wandering line as a single narrow line above 6 dB (checked as:
-the number of reported lines in the 43.5-46.5 Hz band is exactly 1 -- 0 or
+the number of reported lines in the 43.5-46.5 Hz band is exactly 1; 0 or
 >=2 both pass, since either means the wander was not conflated into one
 narrow tone; this test also fails if it comes back *empty*, which would just
 mean the calibration is too weak to test anything at all); does not flag
@@ -33,7 +33,7 @@ not the sinusoid's amplitude relative to the noise's time-domain variance,
 since that variance is spread very unevenly across a 0.05 Hz-resolution
 5-500 Hz band. The AMP_* constants were derived with a calibration script:
 inject a unit-amplitude tone, read back the excess from `narrow_lines` with
-`min_db=-1e9` so nothing is filtered, then scale by the `20*log10(amp)` the
+`min_db=-1e9` so no line is filtered out, then scale by the `20*log10(amp)` the
 excess must move by. They were derived against the NOISE_SEED pink-noise
 draw of this file and are hardcoded, so the test makes no extra
 `narrow_lines` calls and stays fast and deterministic.
@@ -157,16 +157,16 @@ def test_detects_stable_lines_and_flags_mains() -> None:
 
     print(
         f"  50 Hz {hit_50[1]:+.1f} dB (mains), 37.4 Hz {hit_374[1]:+.1f} dB, "
-        f"62.55 Hz {hit_6255[1]:+.1f} dB -- all within 0.1 Hz, mains flag correct"
+        f"62.55 Hz {hit_6255[1]:+.1f} dB; all within 0.1 Hz, mains flag correct"
     )
 
 
 def test_wandering_line_not_reported_as_a_single_line() -> None:
     lines = narrow_lines(SIGNAL, FS, 5.0, 500.0, min_db=MIN_DB)
     wander_hits = [line for line in lines if 43.5 <= line[0] <= 46.5]
-    assert wander_hits, "wandering 44-46 Hz line not detected at all -- calibration too weak to test"
+    assert wander_hits, "wandering 44-46 Hz line not detected at all; calibration too weak to test"
     assert len(wander_hits) != 1, (
-        f"wandering line reported as a single narrow line: {wander_hits} -- "
+        f"wandering line reported as a single narrow line: {wander_hits}; "
         f"a 44->46 Hz sweep should be smeared into several weaker lines or none, not one"
     )
     print(f"  wandering line -> {len(wander_hits)} reported line(s) (not 1): {wander_hits}")
@@ -193,7 +193,7 @@ def test_narrow_lines_falsifies_with_min_db_30() -> None:
     """
     lines = narrow_lines(SIGNAL, FS, 5.0, 500.0, min_db=30.0)
     hit_374 = _near(lines, 37.4)
-    assert hit_374 is None, f"37.4 Hz survived min_db=30 -- min_db is not filtering: {hit_374}"
+    assert hit_374 is None, f"37.4 Hz survived min_db=30; min_db is not filtering: {hit_374}"
     hit_50 = _near(lines, 50.0)
     assert hit_50 is not None, "50 Hz (+40 dB) should still survive min_db=30"
     print(f"  min_db=30: 37.4 Hz correctly dropped, 50 Hz survives ({hit_50[1]:+.1f} dB)")

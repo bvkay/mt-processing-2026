@@ -4,8 +4,7 @@ Unit test for an unknown declination in the products (mt_workbench.products)
 
 A transfer function is built two ways, as an aurora run returns one: with
 the archive's unset declination (mt_metadata's default, 0.0 and "IGRF" with
-no epoch: neither survey.yaml nor the archive holds one, robustness case
-8c of 3 Oct 2026) and with a declared one (-0.36, IGRF-14, 2023.73, C18's).
+no epoch: neither survey.yaml nor the archive holds one) and with a declared one (-0.36, IGRF-14, 2023.73, C18's).
 For each, `frame_record` gives the sidecar's frame keys and `write_xml`
 writes the EMTF XML, whose raw text is searched for the Site Location
 Declination element and which mt_metadata reads back. `write_edi` writes

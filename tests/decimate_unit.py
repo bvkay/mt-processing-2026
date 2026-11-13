@@ -32,7 +32,7 @@ its amplitude there; a derived run does not start on a whole second, 12 s
 (the 11.1 s reach of the 10 x 10 x 10 FIR stages, rounded up to the second)
 after its source run's first whole second, or ends within 11.1 s of the
 source run's end; the run comment does not name the filtered variant it
-was decimated from; a derived run group's `mth5_type` attribute is not
+was decimated from (", from <variant> <run> ("); a derived run group's `mth5_type` attribute is not
 exactly "Run", the source's (MANTLE's reader matches it case-sensitively),
 after the first build or after --force; any source channel's metadata other than sample rate
 and time period (dipole length, azimuth, units, the applied-filter list)
@@ -42,7 +42,19 @@ units, and the coil table's frequencies, amplitudes and phases), or
 the source; `processing_archive` does not return S01L.h5 itself for S01L;
 a second run without --force does not keep the archive (mtime unchanged,
 "kept" printed) or a run with --force does not rebuild it (mtime moved, the
-same samples); survey.yaml does not read back, through `Survey`, an S01L
+same samples); after S01's raw archive is re-ingested (its variant's
+filters hash unchanged, which the hash-only rule took as current), a run
+without --force does not say the archive is out of date and rebuild both
+the variant and S01L, or S01L's runs do not record ``source: `` with the
+rebuilt variant's identity (`mt_workbench.ingest.archive_identity`); once
+S01L's runs lose their own ``source: `` piece (the quoted source run
+comment keeps the variant's), a run without --force does not keep it with
+a warning that it is judged by file time while it is newer than the
+variant, does not rebuild it once its mtime is set before the variant's,
+or the next run does not keep it (workbench issue 20); a derived run
+comment does not start "derived_by: decimate_site " or a piece of it
+cannot be set by mt_metadata's EMTF XML run-comment parser (upstream issue
+48); survey.yaml does not read back, through `Survey`, an S01L
 with derived_from S01, sample_rate 1.0, S01's position, dipoles and
 azimuths and the derived record's start, `instrument_of` lemi423 and no raw
 folder, while the text outside the `sites:` block and S01's entry stay as
@@ -307,7 +319,49 @@ def metadata_of(path: Path, station: str) -> dict:
         m.close_mth5()
 
 
+def run_comments(path: Path) -> list[str]:
+    """Return the comment of every run group (mth5_type "Run") of an archive, read with h5py."""
+    import h5py
+
+    found = []
+
+    def visit(_name, obj):
+        if isinstance(obj, h5py.Group) and str(obj.attrs.get("mth5_type", "")) == "Run":
+            value = obj.attrs.get("comments", "")
+            found.append(value.decode() if isinstance(value, bytes) else str(value))
+
+    with h5py.File(path, "r") as fh:
+        fh.visititems(visit)
+    return found
+
+
+def drop_own_source(path: Path) -> int:
+    """Remove the first ``source: `` piece of every run comment of a derived archive, with h5py.
+
+    The source run comment quoted after it keeps its own ``source: `` piece.
+
+    Returns:
+        int: The number of runs changed.
+    """
+    import h5py
+
+    changed = []
+
+    def visit(_name, obj):
+        if isinstance(obj, h5py.Group) and str(obj.attrs.get("mth5_type", "")) == "Run":
+            value = obj.attrs["comments"]
+            pieces = (value.decode() if isinstance(value, bytes) else str(value)).split("; ")
+            first = next(i for i, p in enumerate(pieces) if p.startswith("source: "))
+            obj.attrs["comments"] = "; ".join(pieces[:first] + pieces[first + 1:])
+            changed.append(_name)
+
+    with h5py.File(path, "r+") as fh:
+        fh.visititems(visit)
+    return len(changed)
+
+
 def main() -> None:
+    from mt_metadata.transfer_functions.io.emtfxml.metadata import Run as XmlRun
     from mt_workbench.timefreq import load_station
 
     yaml_path, survey = build()
@@ -328,7 +382,13 @@ def main() -> None:
         assert run["start"] == first_second + pd.Timedelta(seconds=12), (rid, run["start"], srun["start"])
         assert run["start"] == run["start"].floor("s"), f"{rid} does not start on a whole second"
         assert run["end"] <= srun["end"] - pd.Timedelta(seconds=REACH_S), (rid, run["end"], srun["end"])
-        assert f"decimated from {source.name} {sid}" in run["comment"], run["comment"]
+        assert run["comment"].startswith("derived_by: decimate_site "), run["comment"]
+        assert f", from {source.name} {sid} (" in run["comment"], run["comment"]
+        xml_run = XmlRun()
+        for piece in run["comment"].split(";"):  # as the EMTF XML writer parses a run comment (upstream 48)
+            if piece.count(":") >= 1:
+                key, value = piece.split(":", 1)
+                xml_run.update_attribute(key.strip(), value.strip())
         print(f"  {rid} <- {sid}: source starts {srun['start']}, derived {run['start']} (+12 s from the "
               f"second), ends {run['end']} (source {srun['end']})")
     types, source_types = run_types(out_path, DERIVED), run_types(source, SITE)
@@ -383,6 +443,35 @@ def main() -> None:
             assert np.array_equal(y, derived[rid]["channels"][comp]), (rid, comp)
     assert run_types(out_path, DERIVED) == types, run_types(out_path, DERIVED)
     print("  kept without --force (mtime unchanged); rebuilt with --force, the same samples and run types")
+
+    # the source rebuilt (workbench issue 20): S01 re-ingested, so its variant and S01L are stale
+    from mt_workbench.ingest import archive_identity
+    mtime, variant_mtime = out_path.stat().st_mtime_ns, source.stat().st_mtime_ns
+    ingest_site(Survey.from_yaml(yaml_path), SITE, overwrite=True)
+    assert all(c.startswith("filters hash ") for c in run_comments(source)), "premise: the variant's hash holds"
+    stale = run_script(yaml_path)
+    said = stale.stdout + stale.stderr
+    assert stale.returncode == 0 and "is out of date" in stale.stdout and "kept" not in stale.stdout, said
+    assert out_path.stat().st_mtime_ns != mtime and source.stat().st_mtime_ns != variant_mtime, "not rebuilt"
+    record = f"source: {archive_identity(source)}"
+    assert all(record in c.split("; ") for c in run_comments(out_path)), (record, run_comments(out_path))
+    print(f"  S01 re-ingested: decimate_site.py rebuilt the variant and S01L; S01L records {record[:50]}...")
+    import os
+    dropped = drop_own_source(out_path)  # written in place, so S01L is now newer than its source
+    assert dropped == 2, dropped
+    grandfathered = run_script(yaml_path)
+    said = grandfathered.stdout + grandfathered.stderr
+    warned = [ln for ln in said.splitlines() if "WARNING" in ln and "judged current by file time" in ln]
+    assert "kept" in grandfathered.stdout and warned, said  # loguru writes to stdout once mth5 is imported
+    older = source.stat().st_mtime_ns - 60 * 1_000_000_000  # as if the source were rebuilt after S01L was cut
+    os.utime(out_path, ns=(older, older))
+    unrecorded = run_script(yaml_path)
+    out = unrecorded.stdout
+    assert "is out of date" in out and "records no source archive" in out, out
+    kept_again = run_script(yaml_path)
+    assert "kept" in kept_again.stdout, kept_again.stdout + kept_again.stderr
+    print("  S01L without its own source piece: kept by file time while newer than its source (warning); "
+          "rebuilt once older; the next run kept it")
 
     # process_rr.py at the derived rate
     def dry(local, *extra):

@@ -16,8 +16,8 @@ Usage:
 **This test fails if** stage 0 of the ladder on random 1000 Hz arrays (three
 channels, 30 min, two gaps) is not identical (`numpy.array_equal`, freqs
 and every channel's psd) to a direct `scipy.signal.welch` call with the same
-parameters on the same gap-zeroed float64 samples -- which is what the moved
-`scripts/psd_qc.py` code did; or the early stop does not follow the rule "a
+parameters on the same gap-zeroed float64 samples (the computation the
+ladder took over from `scripts/psd_qc.py`); or the early stop does not follow the rule "a
 stage runs while its array holds at least `min_segments * nperseg` samples":
 a 30 min array must give exactly one stage with the default of 4 (1.8 M
 samples at 1000 Hz, then 180 k at 100 Hz, under 4 x 65 536 = 262 144), a 1 h

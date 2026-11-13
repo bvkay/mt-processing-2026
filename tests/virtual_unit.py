@@ -66,8 +66,8 @@ Usage:
 10. a member whose run starts half a sample (0.5 ms) after the others' does
     not raise the "sample grid does not align ... GPS timing assumption
     violated" ValueError;
-11. with a member P archived as two runs -- the first 500 s, then a gap,
-    then from 700 s to 300 s before the others' end -- the stack of A1, A2
+11. with a member P archived as two runs (the first 500 s, then a gap,
+    then from 700 s to 300 s before the others' end), the stack of A1, A2
     and P does not start 700 s after the others, is not N - 1 000 000
     samples long, or its hx/hy bytes differ from the numpy mean of the three
     aligned slices (P's second run is the larger overlap, so it must be the
@@ -302,8 +302,10 @@ def main() -> None:
             check(none[c].tobytes() == ref.tobytes(), f"1. weighting='none' {c}: bytes identical to the frozen mean")
             check(coh[c].tobytes() != ref.tobytes(), f"1. control: the weighted {c} is not identical to the mean")
         want = (f"synthetic remote: mean of raw hx/hy counts from {', '.join(sorted(MEMBERS))}; "
-                f"uncalibrated by design (RR estimator is calibration-invariant)")
-        check(default["station_comment"] == want, "1. default station comment unchanged")
+                f"uncalibrated: the members carry no filter chain (the remote-reference estimate is invariant to "
+                f"the remote's calibration, its errors are not: upstream issue 111)")
+        check(default["station_comment"] == want,
+              "1. default station comment: the no-chain wording of 4 Nov 2026 (members with no filter chain)")
         check(not w_def and default["run_comment"] in ("", "None"), "1. default: no weights, no run comment")
 
         # 2-4. the weights

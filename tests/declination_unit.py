@@ -23,8 +23,8 @@ the model is not named as ppigrf's coefficient file (IGRF-14 in ppigrf
 2.1.0).
 
 And the write, on copies of surveys/MT_Morocco_Atlas_Mountains/survey.yaml:
-with every declination line removed, --write does not give back the filled
-file in the repository byte for byte (every other line kept, the three keys
+with every declination line removed, --write does not give back a file
+identical to the filled file in the repository (every other line kept, the three keys
 after each entry's last line); the diff against the stripped copy is not
 exactly three added lines per site and no removed line; the same with CRLF line
 endings does not keep CRLF on every line; a second --write is not a no-op;
@@ -129,7 +129,7 @@ def test_line_preserving_write() -> None:
 
         assert declination.main([str(copy), "--check", "B03=-1.07"]) == 0
         assert declination.main([str(copy), "--check", "B03=1.07"]) == 1, "control: the flipped sign passed"
-    print(f"  {n_sites} sites: stripped copy rewritten to the filled file byte for byte, {len(added)} lines added, "
+    print(f"  {n_sites} sites: stripped copy rewritten identical to the filled file, {len(added)} lines added, "
           f"none removed; CRLF kept; second write a no-op; hand values replaced in place; guard trips on a "
           f"changed key; --check B03=-1.07 passes, B03=+1.07 fails")
 

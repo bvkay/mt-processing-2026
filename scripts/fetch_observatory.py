@@ -150,7 +150,7 @@ def main(argv=None) -> int:
     if start is None or end is None:
         span = survey_span(sites, code)
         if span is None:
-            parser.error("no site in survey.yaml has a start: and an end: -- give start and end")
+            parser.error("no site in survey.yaml has a start: and an end; give start and end")
         start, end = start or span[0], end or span[1]
     cache = Path(args.cache).resolve() if args.cache else survey.workspace / "observatory"
     archive = default_archive_path(survey, code)
@@ -175,7 +175,7 @@ def main(argv=None) -> int:
     except observatory.GINError as exc:
         new = sum(1 for p in observatory.coverage(code, start, end, cache).path if p.exists() and p not in before)
         kept = "the cache is as it was" if not new else f"the {new} day(s) fetched before it are kept, whole"
-        print(f"ERROR {exc} -- {kept}", file=sys.stderr)
+        print(f"ERROR {exc}; {kept}", file=sys.stderr)
         return 1
     missing = [r.day for r in observatory.coverage(code, start, end, cache).itertuples() if not r.cached]
     if missing:

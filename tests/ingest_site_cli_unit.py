@@ -11,6 +11,11 @@ Unit test for the batch mode of scripts/ingest_site.py
 - (e) S04's row is not failed with its ValueError's first line, the same in both batches, or an S04.h5 is left behind;
 - (f) a single-site call prints other script lines than the single-site script printed before the batch mode, on the same calls;
 - (g) a single-site call on S05, whose ey sits at 1.6e9 counts (the level of the Morocco survey's C05 ey and C13 ey) and ex, hx, hy at +2e7, +4.3e7, +3.9e7 counts with noise, exits other than 0, prints other flagged lines than exactly "S05 sr1000_0001 ey: median 1.60e9 counts, open input?", prints it before its "archive:" line, or prints other script lines than (f)'s;
+- (h) after S02's raw archive is rebuilt with `swap_h` declared (`--raw --force`), `S02 --variant` prints "(already current)" instead of rebuilding the variant ("building S02's variant ..." and "variant: <variant>", mtime moved), the rebuilt variant does not record the new raw archive's size, or a second `--variant` does not keep it; the premise is that the stale variant's run comments still carry the declared filters hash, which a hash-only check takes as current;
+- (i) a single-site call on the burst site G5H (`bursts_of: G5`, upstream issue 72) does not exit 0, does not print "ingesting G5H (phoenix) from <G5's raw folder> ..." naming the bursts of G5 and then "archive: <G5H.h5>", or the archive does not hold one run per burst of the cut's `.td_24k` files (12);
+- (j) the script's read-back of a flagged level of the Phoenix site G5H (`recorded_levels` and `ingest_site` stubbed in a process of their own) does not print "G5H sr24000_00001 hx: median -1.13e-3 V, 1.05 % at the rail, saturated?", in volts, not counts;
+- (k) `--all --raw` on the burst survey names G5H as skipped, or its summary does not list G5 built and G5H kept (its archive from (i), mtime unchanged);
+- (l) a burst site whose recorded site G7 has no raw folder does not exit 1 with "ERROR G7H: no folder of raw files (B423, LEMI-424 .txt, EDL, Phoenix) for G7 (bursts_of) under <data root>";
 - (mutations) (a) and (b) pass a batch given --force, which rebuilds S01, or (d) and (e) pass a script that lets S04's error end the batch.
 
 The survey is written into a scratch folder: three LEMI-423 sites S01, S02
@@ -24,6 +29,15 @@ environment (aurora, mth5, mt-io).
 
 S05 of (g) is a survey of its own, one B423 file of 4 s written with
 those levels (`_write_b423`'s `levels`).
+
+The burst survey of (i)-(l) is a Phoenix survey of its own (instrument
+phoenix, 150 Hz, the Kalkaroo test folder's sensors as `calibration_dir`):
+G5, a cut of the real MTU-8A recording G5 copied read-only from
+the Kalkaroo test folder (`PHOENIX_SOURCE`: its JSON files, backend.log,
+config.json and the first `.td_150` and `.td_24k` file of every channel
+folder), G5H declared `bursts_of: G5`, and G7H declared `bursts_of: G7`
+with G7 declared and no folder. Without the test folder (i)-(l) are
+skipped, said so.
 
 The lines of (f) are those the single-site script printed on the same calls
 before the batch mode: "ingesting <site> (lemi423) from <raw folder>
@@ -89,6 +103,12 @@ EXPECTED_NAMED = {"S01": EXPECTED_ALL["S01"], "S02": EXPECTED_ALL["S02"]}
 S05_LEVELS = {"Ex": (2.0e7, 2.0e6), "Ey": (1.6e9, 1.0e3), "Bx": (4.3e7, 2.0e6), "By": (3.9e7, 2.0e6)}
 FLAGGED = re.compile(r"^\S+ sr\d+_\d+ \S+: median ")  # a flagged channel run's line
 MUTATION = ("        except (Exception, SystemExit) as exc:\n", "        except SystemExit as exc:\n")
+# (i)-(l): the Phoenix cut and its burst site
+PHOENIX_SOURCE = Path(r"D:\MT_DATA\MT_Kalkaroo_Phoenix_TEST")
+PHOENIX_FILES = ("empower_recmeta.json", "recmeta.json", "backend.log", "config.json")
+G5_BURSTS = 12  # bursts of the first .td_24k file of each G5 channel folder (2 s every 30 s, 6 min)
+G5H_FLAG = dict(site="G5H", run="sr24000_00001", channel="hx", median_counts=-1.13e-3, rail_fraction=0.0105,
+                verdict="saturated?")
 
 
 def make_survey(name: str, unreadable: bool = False) -> Path:
@@ -297,6 +317,54 @@ def test_f_single_site() -> None:
           f"{script_lines(second.stdout)[-1]!r}")
 
 
+def run_comments(path: Path) -> list[str]:
+    """Return the comment of every run group (mth5_type "Run") of an archive, read with h5py."""
+    import h5py
+
+    found = []
+
+    def visit(_name, obj):
+        if isinstance(obj, h5py.Group) and str(obj.attrs.get("mth5_type", "")) == "Run":
+            value = obj.attrs.get("comments", "")
+            found.append(value.decode() if isinstance(value, bytes) else str(value))
+
+    with h5py.File(path, "r") as fh:
+        fh.visititems(visit)
+    return found
+
+
+def test_h_variant_of_a_rebuilt_raw_archive() -> None:
+    premise()
+    survey_yaml = make_survey("rebuilt_raw")
+    s02 = archive(survey_yaml, "S02")
+    built = run(survey_yaml, "S02")
+    assert built.returncode == 0, built.stdout[-2000:] + built.stderr[-2000:]
+    variant = next(s02.parent.glob("S02_f*.h5"))
+    kept = run(survey_yaml, "S02", "--variant")
+    assert script_lines(kept.stdout) == [f"variant: {variant} (already current)"], script_lines(kept.stdout)
+
+    config = yaml.safe_load(survey_yaml.read_text(encoding="utf-8"))
+    config["sites"]["S02"] = {"swap_h": True}
+    survey_yaml.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+    raw = run(survey_yaml, "S02", "--raw", "--force")
+    said = raw.stdout[-2000:] + raw.stderr[-2000:]
+    assert raw.returncode == 0 and f"archive: {s02}" in script_lines(raw.stdout), said
+    stale = all(c.startswith("filters hash ") for c in run_comments(variant))
+    assert stale, "(h) premise: the stale variant's runs carry the filters hash"
+    before = variant.stat().st_mtime_ns
+
+    rebuilt = run(survey_yaml, "S02", "--variant")
+    want = [f"building S02's variant (1 declared filter(s)) -> {variant}", f"variant: {variant}"]
+    got = script_lines(rebuilt.stdout)
+    assert rebuilt.returncode == 0 and got == want, f"(h) {got} {rebuilt.stderr[-2000:]}"
+    assert variant.stat().st_mtime_ns != before, "(h) the variant file was not rewritten"
+    size = f"; source: S02 size {s02.stat().st_size} mtime "
+    assert all(size in c for c in run_comments(variant)), f"(h) {run_comments(variant)[0][:200]}"
+    again = run(survey_yaml, "S02", "--variant")
+    assert script_lines(again.stdout) == [f"variant: {variant} (already current)"], script_lines(again.stdout)
+    print(f"  (h) S02 raw rebuilt with swap_h: --variant rebuilt the stale variant ({got[0]}), then kept it")
+
+
 def test_g_dc_level_line() -> None:
     premise()
     root = SCRATCH / "dc_level"
@@ -347,6 +415,134 @@ def test_mutation_escape_trips_d_e() -> None:
     assert not ok, f"(d)(e) passed the mutant that lets S04's exception end the batch: {detail}"
     print(f"  (mutation) exception let through: (d)(e) trip ({detail}; S03.h5 exists "
           f"{archive(survey_yaml, 'S03').exists()})")
+
+
+@lru_cache(maxsize=None)
+def burst_survey() -> Path | None:
+    """Write the burst survey of the module docstring into scratch; None without the Phoenix test folder.
+
+    Returns:
+        Path | None: The survey.yaml.
+    """
+    if not (PHOENIX_SOURCE / "G5").is_dir():
+        return None
+    root = SCRATCH / "bursts"
+    shutil.rmtree(root, ignore_errors=True)
+    src, dst = PHOENIX_SOURCE / "G5", root / "raw" / "G5"
+    dst.mkdir(parents=True)
+    for name in PHOENIX_FILES:
+        if (src / name).exists():
+            shutil.copy2(src / name, dst / name)
+    for folder in sorted(p for p in src.iterdir() if p.is_dir() and p.name.isdigit()):
+        (dst / folder.name).mkdir()
+        for ext in (".td_150", ".td_24k"):
+            first = min(folder.glob(f"*{ext}"), key=lambda f: int(f.stem.split("_")[3], 16))
+            shutil.copy2(first, dst / folder.name / first.name)
+    config = {"name": "PHOENIX_TEST", "instrument": "phoenix", "sample_rate": 150,
+              "data_root": str(root / "raw"), "workspace": str(root / "work"),
+              "defaults": {"calibration_dir": str(PHOENIX_SOURCE / "sensors"), "channels": ["ex", "ey", "hx", "hy"]},
+              "sites": {"G5": {}, "G5H": {"bursts_of": "G5", "sample_rate": 24000},
+                        "G7": {}, "G7H": {"bursts_of": "G7", "sample_rate": 24000}}}
+    (root / "survey.yaml").write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+    return root / "survey.yaml"
+
+
+def run_groups(path: Path) -> list[str]:
+    """Return the names of the groups of an archive whose mth5_type is "Run", read with h5py."""
+    import h5py
+
+    found = []
+
+    def visit(name, obj):
+        if isinstance(obj, h5py.Group) and str(obj.attrs.get("mth5_type", "")) == "Run":
+            found.append(name.rsplit("/", 1)[-1])
+
+    with h5py.File(path, "r") as fh:
+        fh.visititems(visit)
+    return found
+
+
+def test_i_burst_site() -> None:
+    premise()
+    survey_yaml = burst_survey()
+    if survey_yaml is None:
+        print(f"  (i) SKIPPED: no {PHOENIX_SOURCE / 'G5'}")
+        return
+    g5h = archive(survey_yaml, "G5H")
+    g5h.unlink(missing_ok=True)
+    done = run(survey_yaml, "G5H")
+    said = done.stdout[-2000:] + done.stderr[-2000:]
+    assert done.returncode == 0, f"(i) exit {done.returncode}: {said}"
+    lines = script_lines(done.stdout)
+    want = (f"ingesting G5H (phoenix) from {survey_yaml.parent / 'raw' / 'G5'} (LEMI-423 runs of at most "
+            f"{MAX_RUN_FILES} files) -> {g5h}; the bursts of G5 (bursts_of)")
+    assert lines[:2] == [want, f"archive: {g5h}"], f"(i) script lines {lines}"
+    runs = run_groups(g5h)
+    assert len(runs) == G5_BURSTS, f"(i) {len(runs)} runs in G5H.h5, expected {G5_BURSTS}"
+    print(f"  (i) G5H through the script: exit 0, {lines[0]!r}, {len(runs)} burst runs")
+
+
+def test_j_burst_flag_in_volts() -> None:
+    premise()
+    survey_yaml = burst_survey()
+    if survey_yaml is None:
+        print(f"  (j) SKIPPED: no {PHOENIX_SOURCE / 'G5'}")
+        return
+    driver = SCRATCH / "flag_driver.py"
+    driver.write_text("\n".join([
+        "import sys",
+        "from pathlib import Path",
+        f"sys.path[:0] = [{str(REPO / 'src')!r}, {str(REPO / 'scripts')!r}]",
+        "import ingest_site as script",
+        f"script.ingest_site = lambda survey, site, **kw: Path({str(archive(survey_yaml, 'G5H'))!r})",
+        f"script.recorded_levels = lambda path, survey_name, site: {{'sr24000_00001': [{G5H_FLAG!r}]}}",
+        f"sys.exit(script.main([{str(survey_yaml)!r}, 'G5H', '--raw', '--force']))",
+        ""]), encoding="utf-8")
+    env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
+    done = subprocess.run([PY, str(driver)], capture_output=True, text=True, encoding="utf-8", errors="replace",
+                          env=env, timeout=600)
+    flagged = [line for line in done.stdout.splitlines() if FLAGGED.match(line)]
+    want = "G5H sr24000_00001 hx: median -1.13e-3 V, 1.05 % at the rail, saturated?"
+    assert done.returncode == 0 and flagged == [want], (f"(j) exit {done.returncode}, flagged {flagged}: "
+                                                        f"{done.stderr[-1500:]}")
+    print(f"  (j) G5H's flagged level read back: {flagged[0]!r}")
+
+
+def test_k_all_with_a_burst_site() -> None:
+    premise()
+    survey_yaml = burst_survey()
+    if survey_yaml is None:
+        print(f"  (k) SKIPPED: no {PHOENIX_SOURCE / 'G5'}")
+        return
+    g5h = archive(survey_yaml, "G5H")
+    if not g5h.exists():
+        built = run(survey_yaml, "G5H")
+        assert built.returncode == 0, f"(k) premise: G5H not built: {built.stderr[-1500:]}"
+    before = g5h.stat().st_mtime_ns
+    archive(survey_yaml, "G5").unlink(missing_ok=True)
+    done = run(survey_yaml, "--all", "--raw")
+    assert "skipping G5H" not in done.stdout, f"(k) {[ln for ln in done.stdout.splitlines() if 'G5H' in ln]}"
+    rows = summary(done.stdout)
+    got = {site: rows[site]["status"] for site in rows}
+    assert got == {"G5": "built", "G5H": "kept"}, f"(k) summary {got}\n{done.stdout[-2000:]}{done.stderr[-2000:]}"
+    ok, detail = check_kept(g5h, before)
+    assert ok, f"(k) {detail}"
+    print(f"  (k) --all --raw: G5 built, G5H kept ({detail}); skipped "
+          f"{[ln for ln in done.stdout.splitlines() if ln.startswith('skipping ')]}")
+
+
+def test_l_burst_site_without_its_folder() -> None:
+    premise()
+    survey_yaml = burst_survey()
+    if survey_yaml is None:
+        print(f"  (l) SKIPPED: no {PHOENIX_SOURCE / 'G5'}")
+        return
+    done = run(survey_yaml, "G7H")
+    want = (f"ERROR G7H: no folder of raw files (B423, LEMI-424 .txt, EDL, Phoenix) for G7 (bursts_of) under "
+            f"{survey_yaml.parent / 'raw'}")
+    assert done.returncode == 1 and want in done.stderr.splitlines(), (f"(l) exit {done.returncode}: "
+                                                                       f"{done.stderr[-800:]}")
+    print(f"  (l) G7H: exit 1, {want!r}")
 
 
 if __name__ == "__main__":

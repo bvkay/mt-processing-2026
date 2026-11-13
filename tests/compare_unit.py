@@ -25,7 +25,7 @@ Usage:
     fewer than five periods;
 
 (2) negating Zxy (one mode 180 deg out) does not make xy_ok False while
-    yx_ok stays True -- and the same with Zyx negated and xy -- in the
+    yx_ok stays True (and the same with Zyx negated and xy) in the
     default window;
 
 (3) over 200 seeds of the noisy short band, the default window raises any
@@ -37,8 +37,8 @@ Usage:
 
 (4) a mode with only four finite periods in 0.1-10 s (the rest NaN, or an
     exact zero, which np.angle would read as a finite 0 deg) is judged at
-    all -- it must come back not ok, with its count 4 and a `reason` naming
-    it -- or the other mode's judgement changes;
+    all (it must come back not ok, with its count 4 and a `reason` naming
+    it), or the other mode's judgement changes;
 
 (5) phases straddling np.angle's +-180 cut are misjudged: a physical yx that
     alternates -172 and -184 deg (read as +176) must be ok with its median

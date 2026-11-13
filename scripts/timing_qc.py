@@ -294,7 +294,7 @@ def main(argv=None) -> int:
             print(f"  {name}: none")
             continue
         for a in anom:
-            tag = f" -- {a['note']}" if a["note"] else ""
+            tag = f"; {a['note']}" if a["note"] else ""
             print(f"  {name}: {a['time']} spacing {a['spacing']} s{tag}")
 
     # --- (b)+(c) clock offset and GPS status, N files spread across the deployment ---
@@ -305,7 +305,7 @@ def main(argv=None) -> int:
         try:
             rows.append(clock_offset_row(f, remote_dir))
         except Exception as e:
-            logger.warning(f"{args.local}/{f.name}: clock-offset check failed -- {e!r}")
+            logger.warning(f"{args.local}/{f.name}: clock-offset check failed: {e!r}")
             rows.append({"file": f.stem, "utc_start": pd.Timestamp(int(f.stem), unit="s", tz="UTC")})
 
     table = pd.DataFrame(rows)
@@ -357,8 +357,8 @@ def main(argv=None) -> int:
 
     print()
     if spacing_fail:
-        print("WARN (a): file-start spacing other than 5400 s found after the first file (see above) "
-              "-- ingest splits runs there, so this is informational unless (b) also fails")
+        print("WARN (a): file-start spacing other than 5400 s found after the first file (see above)"
+              "; ingest splits runs there, so this is informational unless (b) also fails")
     if lag_fail:
         print(f"FAIL (b): a cross-correlation peak is more than {LAG_FAIL_MS:.0f} ms from zero lag "
               f"(worst |lag| = {worst_lag:.0f} ms)")

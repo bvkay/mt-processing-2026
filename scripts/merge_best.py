@@ -53,19 +53,25 @@ line, when there is one, and the sidecar); the report changes no value.
 The station metadata, location and header come from the first xy source,
 and with them its frame: the declination (value, model, epoch), the
 reference frame, the coordinate system and every channel's measurement
-azimuth, as mt_metadata reads them back from its EDI. Nothing is rotated.
+azimuth, as mt_metadata reads them back from its EDI. The merge applies no rotation.
 The merged EDI's ZROT and TROT and its ``mt_workbench.frame``,
 ``mt_workbench.rotation`` and ``mt_workbench.declination*`` INFO lines
 follow that frame (`mt_workbench.products.edi_copy`: the declination for a
 geomagnetic frame with one, else 0). When that source lacks a declination or has hy at hx's azimuth (an EDI
-written before mt_metadata's frame fix of 2 Oct 2026), a WARNING line says
+written by an mt_metadata older than fork commit 405e7ff), a WARNING line says
 so and the merged products repeat it. Its
 INFO block's processing parameters are replaced by ``mt_workbench.*`` lines naming
 the recipe, each source and its range, and under ``grid: first`` a
 ``mt_workbench.grid`` line (first, the lattice's first source, the number of grid
 periods and the number of distinct periods left out of any source). The
 station ids of all sources must agree (--force merges them regardless);
-their remotes may differ.
+their remotes may differ. The instrument registry DOIs a source's INFO
+block carries (``mt_workbench.instrument_pid_*``, scripts/process_rr.py) are
+kept for the first xy source, and added for each other source a period was
+taken from, where they differ, as ``mt_workbench.instrument_pid_src<k>_*``
+(k the source's place in the sidecar's ``sources``); the sidecar records
+them as ``instrument_pids`` and the XML's Notes name them
+(`source_pids`). A merge of sources without them writes none.
 
 The text mt_metadata's writer produces is then patched in three blocks
 (`patch_edi_text`); the data from >FREQ to the end stay as written. The
@@ -112,8 +118,13 @@ unless the candidate holding the band below is within PREFER of it. Runs of
 bands with one winner become one recipe entry spanning the winner's periods
 there, and a comment per band names the runner-up and the margin.
 
+The ZROT rule (survey.yaml ``products: {zrot: declination | zero}``,
+`mt_workbench.products.zrot_rule_of`) is the survey's with --survey
+<survey.yaml>, as scripts/process_rr.py takes it; without it the first xy
+source's rule line is kept.
+
 Usage:
-    python scripts/merge_best.py OUT.edi --recipe recipes.yaml --site D03 [--tag TAG] [--force]
+    python scripts/merge_best.py OUT.edi --recipe recipes.yaml --site D03 [--tag TAG] [--force] [--survey Y]
     python scripts/merge_best.py --auto --site D03 --candidates A.edi B.edi ... --propose recipe_out.yaml
 
 @author: ben kay (ben@auscope.org.au)
@@ -141,8 +152,10 @@ import yaml  # noqa: E402
 from mt_metadata.transfer_functions.core import TF  # noqa: E402
 
 import mt_workbench  # noqa: E402
-from mt_workbench.products import (edi_copy, frame_gaps, frame_note, frame_record,  # noqa: E402
-                                   match_coordinate_system, product_names, product_paths, write_h5, write_xml)
+from mt_workbench.products import (PID_INFO_KEY, edi_copy, frame_gaps, frame_note, frame_record,  # noqa: E402
+                                   hyphenated_station_ids, match_coordinate_system, product_names, product_paths,
+                                   set_zrot_rule, tf_instrument_pids, tf_zrot_rule, write_h5, write_xml,
+                                   zrot_rule_of)
 from mt_workbench.quality import MODES as QUALITY_MODES, curves, in_quadrant  # noqa: E402
 from merge_modes import (ISO, LOG_TOL, X_ROW, Y_ROW, read_sidecar, read_tf, row_of, row_on_grid,  # noqa: E402
                          source_entry, usable)
@@ -692,6 +705,43 @@ def info_lines(side: dict) -> list[str]:
     return lines
 
 
+def source_pids(paths: list[Path], tfs: dict, modes: dict, first: Path) -> tuple[list[str], dict | None]:
+    """Return the merged EDI's instrument registry INFO lines and the sidecar's `instrument_pids`.
+
+    The base (the first xy source) keeps its lines
+    (`mt_workbench.products.tf_instrument_pids`, as its EDI reads back:
+    ``mt_workbench.instrument_pid_<path>=<doi>``). Each other source from
+    which a mode took a period adds the DOIs the base does not carry under
+    the same path, as ``mt_workbench.instrument_pid_src<k>_<path>=<doi>``,
+    k its place (from 1) in the sidecar's ``sources``.
+
+    Args:
+        paths (list[Path]): The distinct sources, in the sidecar's order.
+        tfs (dict): Source path to its TF, read from its EDI.
+        modes (dict): Mode to `mode_block`.
+        first (Path): The first xy source.
+
+    Returns:
+        tuple: ``(lines, record)``; record ``{"base": {"edi", "pids"},
+        "sources": {k: {"edi", "pids"}}}``, None (and no line) when no
+        source carries a DOI.
+    """
+    base = tf_instrument_pids(tfs[first])
+    used = {e["source"] for block in modes.values() for e in block["entries"] if e["copied"] or e["interpolated"]}
+    lines = [f"mt_workbench.{PID_INFO_KEY}{path}={value}" for path, value in base.items()]
+    sources = {}
+    for k, path in enumerate(paths, start=1):
+        if path == first or k - 1 not in used:
+            continue
+        extra = {p: v for p, v in tf_instrument_pids(tfs[path]).items() if base.get(p) != v}
+        if extra:
+            sources[str(k)] = {"edi": path.name, "pids": extra}
+            lines += [f"mt_workbench.{PID_INFO_KEY}src{k}_{p}={v}" for p, v in extra.items()]
+    if not base and not sources:
+        return [], None
+    return lines, {"base": {"edi": first.name, "pids": base}, "sources": sources}
+
+
 def resolve_plan(recipe_for_site: dict, base: Path) -> tuple[dict, list[str]]:
     """Check a site's recipe and resolve its EDI paths.
 
@@ -765,7 +815,8 @@ def mode_block(mode: str, entries: list[dict], taken: tuple, grid: np.ndarray, p
 
 def merge_files(out, recipe_for_site: dict, tag: str | None = None, force: bool = False,
                 argv: list[str] | None = None, site: str | None = None, recipe_path=None,
-                header: dict | None = None) -> int:
+                header: dict | None = None, extra_info: list[str] | None = None,
+                extra: dict | None = None, zrot_rule: str | None = None) -> int:
     """Write the merged EDI and its sidecar from one site's recipe, printing what was taken from each source.
 
     Args:
@@ -788,6 +839,12 @@ def merge_files(out, recipe_for_site: dict, tag: str | None = None, force: bool 
         header (dict | None): The recipe's header block, ``acqby`` and
             ``prosby`` both optional, applied by `patch_edi_text` and
             recorded in the sidecar.
+        extra_info (list[str] | None): Further ``mt_workbench.*`` INFO lines
+            a caller adds after the merge's own (scripts/merge_windows.py
+            names its rule and crossover so); none when None.
+        extra (dict | None): Further sidecar keys a caller adds (its own
+            record, e.g. ``window_merge``); a key the merge writes itself is
+            refused (exit 2).
 
     Returns:
         int: 0 when written, 2 when a recipe entry lacks edi, pmin or pmax,
@@ -800,6 +857,9 @@ def merge_files(out, recipe_for_site: dict, tag: str | None = None, force: bool 
     recipe_path = None if recipe_path is None else Path(recipe_path).resolve()
     plan, errors = resolve_plan(recipe_for_site, recipe_path.parent if recipe_path else Path.cwd())
     errors += check_header(header)
+    errors += [f"extra sidecar key {k!r} is one the merge writes itself" for k in (extra or {})
+               if k in ("local", "remote", "created", "tag", "edi", "xml", "h5", "site", "recipe", "header", "merge",
+                        "sources", "forced", "mismatches", "argv", "versions", "engine", "frame", "instrument_pids")]
     for line in errors:
         print(f"ERROR {line}", file=sys.stderr)
     if errors:
@@ -861,8 +921,8 @@ def merge_files(out, recipe_for_site: dict, tag: str | None = None, force: bool 
 
     gaps = frame_gaps(tfs[first_path])
     if gaps:
-        print(f"WARNING frame: the first xy source {first_path.name} has {' and '.join(gaps)} (an EDI written before "
-              f"mt_metadata's frame fix of 2 Oct 2026); the merged products repeat its frame metadata")
+        print(f"WARNING frame: the first xy source {first_path.name} has {' and '.join(gaps)} (an EDI written by an "
+              f"mt_metadata older than fork commit 405e7ff); the merged products repeat its frame metadata")
 
     sidecars = {path: read_sidecar(path) for path in paths}
     modes = {mode: mode_block(mode, entries, taken[mode], grid, paths) for mode, entries in plan.items()}
@@ -890,12 +950,22 @@ def merge_files(out, recipe_for_site: dict, tag: str | None = None, force: bool 
     if found_sides:
         side["engine"] = _joined([s.get("engine") or "aurora" for s in found_sides])
     tf = build_tf(tfs[first_path], grid, taken)
+    # the ZROT rule: the survey's products.zrot when given (--survey), else the first xy source's
+    # (its INFO line, which the INFO rebuilt below would otherwise drop, writing ZROT = D under a zero rule)
+    rule = zrot_rule or tf_zrot_rule(tfs[first_path])
+    set_zrot_rule(tf, rule)
     match_coordinate_system(tf)
     side["frame"] = frame_record(tf, f"first xy source {first_path.name}")
-    tf.station_metadata.transfer_function.processing_parameters = info_lines(side)
+    pid_lines, pid_record = source_pids(paths, tfs, modes, first_path)
+    if pid_record is not None:  # the instruments' registry DOIs of the base and of the other sources used
+        side["instrument_pids"] = pid_record
+    side.update(extra or {})
+    tf.station_metadata.transfer_function.processing_parameters = info_lines(side) + list(extra_info or []) + pid_lines
+    set_zrot_rule(tf, rule)
     out.parent.mkdir(parents=True, exist_ok=True)
     tmp = out.with_name(out.stem + "_part.edi")
-    edi_copy(tf).write(fn=str(tmp), file_type="edi")
+    with hyphenated_station_ids():  # a station id with a hyphen (upstream issue 86)
+        edi_copy(tf).write(fn=str(tmp), file_type="edi")
     # mt_metadata's writer opens its file with the locale's encoding: read and write it back the same way
     with open(tmp, encoding="locale", newline="") as handle:
         text = handle.read()
@@ -1135,6 +1205,9 @@ def main(argv=None) -> int:
     parser.add_argument("--auto", action="store_true", help="propose a recipe from --candidates into --propose")
     parser.add_argument("--candidates", nargs="+", help="candidate EDIs for --auto")
     parser.add_argument("--propose", help="recipe YAML written by --auto")
+    parser.add_argument("--survey", default=None, metavar="SURVEY_YAML",
+                        help="take the ZROT rule from this survey.yaml's products.zrot (as process_rr.py); "
+                             "without it the first xy source's rule is kept")
     args = parser.parse_args(argv)
     if args.auto:
         if not args.candidates or not args.propose:
@@ -1147,9 +1220,13 @@ def main(argv=None) -> int:
     if args.site not in recipe:
         print(f"ERROR site {args.site} is not in {args.recipe}", file=sys.stderr)
         return 2
+    rule = None
+    if args.survey:
+        from mt_workbench.survey import Survey
+        rule = zrot_rule_of(Survey.from_yaml(args.survey))
     return merge_files(args.out, recipe[args.site], tag=args.tag, force=args.force,
                        argv=["merge_best.py", *(sys.argv[1:] if argv is None else argv)], site=args.site,
-                       recipe_path=args.recipe, header=header)
+                       recipe_path=args.recipe, header=header, zrot_rule=rule)
 
 
 if __name__ == "__main__":

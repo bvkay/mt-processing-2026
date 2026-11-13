@@ -26,8 +26,8 @@ Usage:
 (a) `parse_iaga2002` of the 2023-09-20 text does not give exactly 1200 rows whose unix times are
     1695168000 + k for k = 0..599 and 1800..2399, whose x, y, z equal the formulas above to 1e-9 nT
     except NaN in exactly the 30 rows k = 300..329, and whose f is NaN in every row; or
-    `header_position` of its header is not (36.665, -5.942, 111.0) -- the longitude turned from
-    354.058 E into -180..180;
+    `header_position` of its header is not (36.665, -5.942, 111.0) (the longitude turned from
+    354.058 E into -180..180);
 (b) after `load` over that day (max_gap_s 600) x, y, z at k = 300..329 are not the straight line
     between k = 299 and 330 (here the formulas, to 1e-9 nT), or anything in the 1200 s gap
     (k = 600..1799) or after k = 2399 is finite; or the archive `to_mth5` writes, read back with

@@ -126,7 +126,7 @@ N_STAGES = 4
 # (0.002-0.02 Hz). welch needs one whole segment to run at the stated nperseg.
 MIN_SEGMENTS = 1
 # stage index -> (low Hz, high Hz) plotted; must run high-to-low and join
-# seamlessly (each entry's low edge is the next entry's high edge)
+# without a gap (each entry's low edge is the next entry's high edge)
 BANDS_HZ = ((2.0, 500.0), (0.2, 2.0), (0.02, 0.2), (0.002, 0.02))
 XLIM_HZ = (0.002, 500.0)
 LINES_HZ = (50.0, 100.0, 150.0)
@@ -438,7 +438,7 @@ def print_before_diagnostics(stages, stages_before, channels, below_hz: float = 
             with np.errstate(divide="ignore", invalid="ignore"):
                 ratio_db = 10.0 * np.log10(pa / pb)
             parts.append(f"{label} {ratio_db:+.2f} dB")
-        print(f"CHECK       {c}: archived/before-filters power ratio -- " + ", ".join(parts))
+        print(f"CHECK       {c}: archived/before-filters power ratio: " + ", ".join(parts))
 
 
 # ---------------------------------------------------------------- figure
@@ -658,7 +658,7 @@ def main(argv=None) -> None:
     fs0, freqs0, psd0 = stages[0]
     for c in all_channels:
         parts = " ".join(f"{f0:g} Hz {line_excess(freqs0, psd0[c], f0):+.1f} dB" for f0 in LINES_HZ)
-        print(f"CHECK       {c}: narrow-line excess over the local floor -- {parts}")
+        print(f"CHECK       {c}: narrow-line excess over the local floor: {parts}")
 
     print()
     ok = check_boundary_continuity(stages, all_channels)

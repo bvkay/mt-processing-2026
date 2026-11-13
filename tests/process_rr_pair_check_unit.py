@@ -8,7 +8,7 @@ and an archive file in the workspace), D (recorded three days before A
 and B) and E (no
 start or end in survey.yaml; its archive, written with h5py, holds one run
 three days before A's). process_rr.py is run on the command line with
---dry-run, as robustness cases 9a, 9b and 4 of 3 Oct 2026 ran it, and its
+--dry-run (cases 9a, 9b and 4 below), and its
 exit status, stdout and stderr are read.
 
 Usage:

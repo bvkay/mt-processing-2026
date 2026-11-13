@@ -209,7 +209,7 @@ class FiltersTab(QWidget):
             names = cfg.channels or INSTRUMENTS[survey.instrument_of(site)]["channels"]  # the forms' boxes
         for form in self.forms.values():
             form.set_channels(names)
-        self.forms["replace"].set_donors([s for s in sorted(self.state.raw_sites()) if s != site])
+        self.forms["replace"].set_donors([s for s in self.state.recorded_sites() if s != site])
         self._refill_list(0 if self.entries else -1)
         self._update_archive_note()
         self._window_changed()

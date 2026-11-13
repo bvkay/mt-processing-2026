@@ -41,10 +41,11 @@ def rho_phi(tf_or_path):
     """
     from mt_metadata.transfer_functions.core import TF
 
+    from mt_workbench.products import read_tf
+
     tf = tf_or_path
     if not isinstance(tf, TF):
-        tf = TF(fn=str(tf_or_path))
-        tf.read()
+        tf = read_tf(tf_or_path)  # a station id with a hyphen reads (upstream issue 86)
     period = np.asarray(tf.period, dtype=float)
     z = np.asarray(tf.impedance.data)  # mV/km/nT
     az = np.abs(z)

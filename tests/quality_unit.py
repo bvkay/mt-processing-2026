@@ -54,11 +54,10 @@ Usage:
     0 deg; with the 8-per-decade TF, counts periods that do not coincide:
     both grids start at 0.005 s, so they share every half decade (10/decade
     index 5j = 8/decade index 4j), 13 periods; the nearest pair that does not
-    coincide is 5.9 % apart, outside the 2 % match (first written as "seven,
-    the decade points" -- an arithmetic slip, corrected, not a behaviour);
+    coincide is 5.9 % apart, outside the 2 % match;
 
-(8) `pairwise_spread` of three TFs -- two identical, the third 0.5 dex higher
-    over 1-10 s only -- is not 0.5 dex over 1-10 s and 0 elsewhere (the median
+(8) `pairwise_spread` of three TFs (two identical, the third 0.5 dex higher
+    over 1-10 s only) is not 0.5 dex over 1-10 s and 0 elsewhere (the median
     of the pairs 0, 0.5, 0.5), or reports anything but 3 valid TFs per period.
 """
 

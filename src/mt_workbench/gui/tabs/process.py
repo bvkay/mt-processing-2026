@@ -3,9 +3,9 @@
 Process tab
 
 Selects a station, a remote and a window, and queues the scripts that make
-the products. Processing runs in `scripts/process_rr.py` and
-`scripts/build_stack.py`; this tab builds their command lines and queues
-them. The tab is laid out in rows, top to bottom:
+the products. Processing runs in `scripts/process_rr.py`,
+`scripts/build_stack.py` and `scripts/process_intersite.py`; this tab builds
+their command lines and queues them. The tab is laid out in rows, top to bottom:
 
 1. Station, remote and the pair summary (`site_map.PairSummary`).
 2. The window bar, full width (`window_bar.WindowBar`), with the start field
@@ -13,22 +13,41 @@ them. The tab is laid out in rows, top to bottom:
    above between two lamps.
 3. Add to queue, Run queue, Reset queue and Build stack.
 4. The run options (`stack_builder.RunOptions`): the engine, the bands,
-   filters, masks, tag and the aurora estimator block.
+   the band layout (window samples, min bin) and the min band windows
+   floor, filters, masks, tag and the aurora estimator block.
 5. The queue table over the script log (`queue_table.QueuePanel`).
 
-Beside rows 3-5 are the site map (`site_map.SiteMap`), the stack builder and
-the Products list. The timing check and site QC figures are run from the
-command line, and the basemap is fetched when a survey is opened.
+The station combo lists `State.station_choices`: every raw folder under
+`data_root`, and every declared site that has an archive in
+`<workspace>/mth5` (a derived or burst site too, not an observatory). A
+site whose raw folder is not found is labelled with its kind, as
+"A01  (archive)", and is processed from its archive: process_rr.py
+ingests a site only when its archive is missing
+(`mt_workbench.ingest.ingest_site`). So a survey whose `data_root` is
+stale, or on a drive not plugged in, still lists the sites it has
+archives of.
+
+Beside rows 3-5 are the site map (`site_map.SiteMap`), the stack recipe
+picker (`stack_builder.StackBuilder`) and the Products list. The timing
+check and site QC figures are run from the command line, and the basemap is
+fetched when a survey is opened.
 
 Each button runs one command line from the README's table through
 `mt_workbench.gui.jobs.JobRunner`, from the repo root::
 
     Add to queue     scripts/process_rr.py <survey.yaml> <station> <remote> [start] [end]
-                                           [--min-period ...] [--no-filters] [--no-masks] [--tag ...]
-    Build stack      scripts/build_stack.py <survey.yaml> <name> <start> <end> <members...>
+                                           [--min-period ...] [--window-samples N] [--min-bin N]
+                                           [--min-band-windows N] [--no-filters] [--no-masks] [--tag ...]
+    Build stack      scripts/build_stack.py <survey.yaml> --recipe NAME --overwrite
+    Queue intersite  scripts/process_intersite.py <survey.yaml> <station> <start> <end> --kind KIND
+                                           --remote <remote> --stack NAME [--no-filters]
 
 A band option is passed only when it differs from the survey's
-`processing:` block, so a default run has the default command line.
+`processing:` block, so a default run has the default command line. Min
+bin reads "layout's own" at 0, its default when the survey gives no
+`min_bin:`; min band windows starts at the survey's `min_band_windows:`,
+else `mt_workbench.process.MIN_BAND_WINDOWS`, and is disabled under
+"mantle".
 `process_rr.py` also performs the raw ingest (as the Time Series tab's Build
 MTH5 does for one site) and builds each site's filtered variant from it
 (`mt_workbench.ingest.processing_archive`) unless "use declared filters" is off,
@@ -48,7 +67,15 @@ archives and window, the queue label carries "[mantle]", the aurora
 estimator block is disabled, and `--no-masks` goes with it whenever the pair
 declares masks, which the status line says (`_engine_note`).
 
-Add to queue and Build stack add jobs with `JobRunner.add` (`_queue`)
+The picker lists the recipes of the survey's stacks.yaml, declared on the
+Stacks tab. Build stack queues a time recipe's archive; when it finishes the
+archive becomes the remote, unless the station is one of its members (it
+would share the station's noise). Queue intersite runs a `use: base` band
+recipe for the station with the remote as the reference; the run options
+apply to process_rr.py only. `use_recipe` (the Stacks tab's Use in Process)
+chooses a recipe and puts its window on the bar.
+
+Add to queue, Build stack and Queue intersite add jobs with `JobRunner.add` (`_queue`)
 without starting them; Run queue runs them, so adding a job and running the
 queue are separate steps. While jobs wait and the queue
 is idle, `status_label` reads "N job(s) queued - press Run queue"
@@ -80,7 +107,7 @@ from mt_workbench.gui.jobs import QUEUED
 from mt_workbench.gui.queue_table import ProductList, QueuePanel
 from mt_workbench.gui.site_map import PairSummary, SiteMap
 from mt_workbench.gui.stack_builder import RunOptions, StackBuilder
-from mt_workbench.gui.window_bar import WindowBar
+from mt_workbench.gui.window_bar import UTC_FMT, WindowBar
 
 
 class ProcessTab(QWidget):
@@ -98,6 +125,7 @@ class ProcessTab(QWidget):
         self.state = state
         self.runner = state.runner  # the window's queue, owned by State
         self._remote_station = None
+        self._remote_note = ""  # why a kept remote was dropped on a station change
         self._stack_jobs: dict[int, str] = {}
 
         self.station_combo = QComboBox(self, minimumWidth=140)
@@ -112,6 +140,7 @@ class ProcessTab(QWidget):
         self.stack_builder = StackBuilder(state, self.window_bar, self)
         self.stack_builder.members_changed.connect(lambda _m: self._paint_map())
         self.stack_builder.build_requested.connect(self.queue_stack)
+        self.stack_builder.intersite_requested.connect(self.queue_intersite)
 
         self.add_button = self._button("Add to queue", self.queue_process,
                                        "process_rr.py: ingest both sites, remote-referenced TF, EDI")
@@ -119,7 +148,7 @@ class ProcessTab(QWidget):
         self.reset_button = self._button("Reset queue", self.reset_queue,
                                          "cancel the running job, clear the queue and the log")
         self.build_button = self._button("Build stack", self.stack_builder.build,
-                                         "build_stack.py: the stacked remote set up on the right")
+                                         "build_stack.py --recipe: the time recipe chosen on the right")
         self.status_label = QLabel("", self, wordWrap=True)
 
         self.job_panel = QueuePanel(self.runner, self)
@@ -197,16 +226,16 @@ class ProcessTab(QWidget):
         self.options.reload()
         self.station_combo.blockSignals(True)
         self.station_combo.clear()
-        for name in sorted(self.state.raw_sites()):
-            self.station_combo.addItem(name, name)
+        for display, name in self.state.station_choices():
+            self.station_combo.addItem(display, name)
         self.station_combo.blockSignals(False)
         self.site_map.reload()
         self.window_bar.reload()
         self._remote_station = None
+        self.stack_builder.reload()  # before the remotes: a recipe archive holding the station is not kept
         if self.state.site:
             self.select_station(self.state.site)
         self._fill_remotes()
-        self.stack_builder.set_station(self.station_combo.currentData())
         self._sites_changed()
 
     def _fill_remotes(self) -> None:
@@ -214,6 +243,9 @@ class ProcessTab(QWidget):
 
         On a new station the declared `remote:` in survey.yaml is selected;
         while the station stays the same, the remote chosen by the user is kept.
+        A kept remote that is a time recipe's archive holding the new station
+        is dropped for the declared remote (or none), and the status line
+        says why: it would share the station's noise (design 8.1 item 8).
         """
         station = self.station_combo.currentData()
         previous = self.remote_combo.currentData()
@@ -223,31 +255,41 @@ class ProcessTab(QWidget):
             self.remote_combo.addItem(display, name)
         # on a new station the site's declared `remote:` is the default; while
         # the station stays the same, a remote picked by the user is kept
-        declared = self.state.default_remote(station) if station != self._remote_station else None
+        new_station = station != self._remote_station
+        default = self.state.default_remote(station) if new_station else None
         self._remote_station = station
-        wanted = declared or previous
-        if wanted is not None:
-            index = self.remote_combo.findData(wanted)
-            if index >= 0:
-                self.remote_combo.setCurrentIndex(index)
+        wanted = default or previous
+        if new_station:
+            self._remote_note = ""
+        if wanted is not None and self.stack_builder.holds(wanted, station):
+            declared = self.state.default_remote(station)
+            self._remote_note = (f"{wanted} holds {station}, so it is not {station}'s remote: "
+                                 + (f"{declared}, the declared remote, is chosen" if declared else "choose a remote"))
+            wanted = None if declared is None or self.stack_builder.holds(declared, station) else declared
+        index = self.remote_combo.findData(wanted) if wanted is not None else -1
+        if index >= 0:
+            self.remote_combo.setCurrentIndex(index)
+        elif wanted is None and self._remote_note:
+            self.remote_combo.setCurrentIndex(-1)
         self.remote_combo.blockSignals(False)
 
     def _station_changed(self, _index: int) -> None:
-        """Refill the remotes and the stack candidates and set `State.site`."""
+        """Refill the remotes and set `State.site`."""
         station = self.station_combo.currentData()
         self._fill_remotes()
-        self.stack_builder.set_station(station)
         self._sites_changed()
         if station:
             self.state.set_site(station)
 
     def _remote_changed(self, _index: int) -> None:
         """Update the views for the new pair."""
+        self._remote_note = ""
         self._sites_changed()
 
     def _sites_changed(self) -> None:
         """Update the map, spans, summary, buttons, filter line and masks switch for the current pair."""
         station, remote = self.station_combo.currentData(), self.remote_combo.currentData()
+        self.stack_builder.set_pair(station, remote)
         self._paint_map()
         self.window_bar.set_sites(station, remote)
         self.summary.refresh()
@@ -256,9 +298,10 @@ class ProcessTab(QWidget):
         self._describe_masks()
 
     def showEvent(self, event) -> None:
-        """Recount the masks on show, since they are saved on the Cross-powers tab."""
+        """Recount the masks and re-read the stack recipes on show: both are saved on other tabs."""
         super().showEvent(event)
         self._describe_masks()
+        self.stack_builder.reload()
 
     def _describe_masks(self) -> None:
         """Count the pair's masks on the switch, at once when masks.yaml is parsed as it is now.
@@ -308,7 +351,7 @@ class ProcessTab(QWidget):
 
     def _refresh_status(self) -> None:
         """Show the queued-jobs notice and the engine note, or else the station and remote reminder when either is missing."""
-        parts = [text for text in (self._queue_status(), self._engine_note()) if text]
+        parts = [text for text in (self._remote_note, self._queue_status(), self._engine_note()) if text]
         ready = bool(self.station_combo.currentData()) and bool(self.remote_combo.currentData())
         if not parts and not ready:
             parts = ["A station and a remote are both required: every product here is "
@@ -373,6 +416,10 @@ class ProcessTab(QWidget):
         if window is None:
             return None
         survey_yaml, station, remote = pair
+        if self.stack_builder.holds(remote, station):
+            QMessageBox.warning(self, "Remote", f"{remote} is a stack of {station} among others: as {station}'s "
+                                                f"remote it would share {station}'s noise. Pick another remote.")
+            return None
         options = self.options.flags()
         engine = self.options.engine()
         argv = [self.state.python_exe, self.state.script("process_rr.py"),
@@ -384,11 +431,89 @@ class ProcessTab(QWidget):
                     remote=remote, window=shown, options=" ".join(options) or "defaults")
         return argv
 
-    def queue_stack(self, argv) -> None:
-        """Queue scripts/build_stack.py from the StackBuilder; the stack becomes the remote when it finishes."""
-        name = argv[3]
-        index = self._queue(f"build_stack {name} <- {', '.join(argv[6:])}", argv)
+    def queue_stack(self, argv) -> int:
+        """Queue a time recipe's scripts/build_stack.py; the archive becomes the remote when it finishes.
+
+        Called by the picker's Build stack and the Stacks tab's Build
+        archive. When the job finishes, `_job_finished` selects the archive
+        as the remote unless the station is one of the recipe's members.
+
+        Args:
+            argv (list[str]): ``[python, build_stack.py, survey.yaml,
+                --recipe, NAME, --overwrite]`` (`stacks.build_argv`).
+
+        Returns:
+            int: The job's index in the queue.
+        """
+        name = argv[argv.index("--recipe") + 1]
+        self.stack_builder.reload()  # a recipe saved on the Stacks tab since the last look
+        recipe = self.stack_builder.recipe_named(name)
+        window = (f"{recipe.start:%Y-%m-%d %H:%M} to {recipe.end:%Y-%m-%d %H:%M}"
+                  if recipe is not None and recipe.start is not None else "-")
+        index = self._queue(f"build_stack {name} (recipe)", argv, station=name, window=window,
+                            options=" ".join(argv[argv.index("--recipe") + 2:]) or "-")
         self._stack_jobs[index] = name
+        return index
+
+    def queue_intersite(self, argv) -> int:
+        """Queue a base band recipe's scripts/process_intersite.py run from the picker's Queue intersite.
+
+        Args:
+            argv (list[str]): ``[python, process_intersite.py, survey.yaml,
+                station, start, end, --kind, KIND, --remote, REMOTE, --stack,
+                NAME, ...]`` (`stacks.intersite_argv`).
+
+        Returns:
+            int: The job's index in the queue; Run queue starts it.
+        """
+        local, kind_at = argv[3], argv.index("--kind")
+        name = argv[argv.index("--stack") + 1]
+        remote = argv[argv.index("--remote") + 1] if "--remote" in argv else None
+        positionals = argv[4:kind_at]
+        window = " to ".join(positionals) if len(positionals) == 2 else "the recipe's"
+        return self._queue(f"process_intersite {local} --stack {name}", argv, station=local, remote=remote,
+                           window=window, options=f"--stack {name}")
+
+    def use_recipe(self, name: str) -> str:
+        """Choose a recipe in the picker and put its window on the bar (the Stacks tab's Use in Process).
+
+        A time recipe's archive is also selected as the remote when it is
+        built and the station is not one of its members; for a base band
+        recipe Queue intersite is then one click.
+
+        Args:
+            name (str): The recipe.
+
+        Returns:
+            str: What was done, as the status line says it.
+        """
+        builder = self.stack_builder
+        builder.reload()
+        if not builder.select_recipe(name):
+            note = f"{name}: no valid recipe of that name in stacks.yaml"
+            self.status_label.setText(note)
+            return note
+        recipe = builder.recipe()
+        if recipe.start is not None:
+            self.window_bar.set_window(recipe.start.strftime(UTC_FMT), recipe.end.strftime(UTC_FMT))
+        station = self.station_combo.currentData()
+        if recipe.engine == "time":
+            if station in recipe.members:
+                note = f"{name} holds {station}: not its remote"
+            elif not self.state.has_archive(name):
+                note = f"{name}: no archive yet: Build stack, then Run queue"
+            else:
+                self._fill_remotes()
+                position = self.remote_combo.findData(name)
+                if position >= 0:
+                    self.remote_combo.setCurrentIndex(position)
+                note = f"{name} is the remote of {station}"
+        else:
+            note = (f"{name}: Queue intersite runs {station} on it" if builder.intersite_button.isEnabled()
+                    else f"{name}: {builder.hint.text().splitlines()[0]}")
+        self._sites_changed()
+        self.status_label.setText(note)
+        return note
 
     def reset_queue(self) -> None:
         """Cancel the running job and clear the queue and the log (`JobRunner.reset`), confirming first if a job runs."""
@@ -404,7 +529,7 @@ class ProcessTab(QWidget):
         self.status_label.setText("queue reset")
 
     def _job_finished(self, index: int, ok: bool) -> None:
-        """Report a finished job; a successfully built stack becomes the selected remote."""
+        """Report a finished job; a built stack becomes the selected remote unless the station is a member."""
         job = self.runner.jobs[index]
         self.status_label.setText(self._queue_status() or f"{job.label}: {job.status}")
         name = self._stack_jobs.pop(index, None)
@@ -412,7 +537,13 @@ class ProcessTab(QWidget):
             # a stack is an archive with no raw folder, and `State.archived_sites`
             # globs the folder on every call, so the new stack is listed
             self._fill_remotes()
-            position = self.remote_combo.findData(name)
-            if position >= 0:
-                self.remote_combo.setCurrentIndex(position)
+            recipe = self.stack_builder.recipe_named(name)
+            station = self.station_combo.currentData()
+            if recipe is not None and recipe.members and station in recipe.members:
+                # it would share the station's noise
+                self.status_label.setText(f"{name} built; it holds {station}, so it is not made its remote")
+            else:
+                position = self.remote_combo.findData(name)
+                if position >= 0:
+                    self.remote_combo.setCurrentIndex(position)
             self._sites_changed()

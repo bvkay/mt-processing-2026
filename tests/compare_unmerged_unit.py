@@ -16,13 +16,13 @@ Usage:
 **This test fails if**
 
 (1) site-name normalisation does not treat "D07", "D7", "d07" and "D007" as
-    the same site "D7", or "R06" as "R6" -- lemimt drops leading zeros after
-    the letter(s), the survey convention keeps them, and matching must be
-    case-insensitive;
+    the same site "D7", or "R06" as "R6" (lemimt drops leading zeros after
+    the letter(s), the survey convention keeps them, and matching is
+    case-insensitive);
 
-(2) given two tiny synthetic lemimt EDIs in one folder -- each built with
+(2) given two tiny synthetic lemimt EDIs in one folder (each built with
     `mt_metadata`'s own `TF` (three periods, a 2x2 impedance), written as
-    ``MT-D7_RR-D9_1000Hz_1.edi`` and ``MT-D7_RR-D9_125Hz.edi`` -- plus an
+    ``MT-D7_RR-D9_1000Hz_1.edi`` and ``MT-D7_RR-D9_125Hz.edi``), plus an
     "aurora" EDI that is an identical copy of the 1000 Hz file, running
     the script (site ``D07``, so normalisation is exercised too) does not
     exit 0, does not write the output PNG, or does not print a table whose
@@ -32,7 +32,7 @@ Usage:
 
 (3) a third, corrupt file that still matches the naming pattern
     (``MT-D7_RR-D9_63Hz.edi``, garbage text) is not skipped with a printed
-    warning naming it -- the run must still exit 0 and still produce the
+    warning naming it, or the run does not exit 0 and produce the
     PNG and table from the two good files.
 """
 

@@ -23,14 +23,34 @@ process_rr.py calls it before every run. Stages:
   not compared. The check is informational and does not block a run.
 1 remotes: every site rr every eligible remote with the defaults (Hann). A
   remote is any plan site whose record overlaps the local's (survey.yaml
-  start/end) by >= `overlap.min_fraction` of the local record or
-  >= `overlap.min_hours`; nearest first.
-2 stacks: per site, the leave-one-out stack of the other members of its
-  group that are eligible remotes, over the site's record (the builder
-  intersects the members' runs), one per weighting (STK_<site>u: none,
-  STK_<site>w: coherence) with scripts/build_stack.py; then the site rr each
-  stack. A group with fewer than two such members borrows the other
-  group whose eligible members share the longest common span with the site.
+  start/end) by >= `overlap.min_fraction` of the local record and
+  >= `overlap.min_hours`; nearest first. A
+  site that overlaps but falls under either floor is refused before any
+  run: the dry run and runs.log name the count and the nearest per site,
+  and <campaign>/refused_remotes.csv lists every refused pair.
+2 stacks: per site, the leave-one-out stack of its eligible remotes chosen
+  by their runs, over the site's record, one per weighting (STK_<site>u:
+  none, STK_<site>w: coherence) with scripts/build_stack.py; then the site
+  rr each stack. A member is chosen by its best run, the run overlapping
+  the local's record most (`stack_plan`): its coverage, the fraction of
+  the local's record that run overlaps, must be at least 70 %
+  (`STACK_COVER`); of those, the 8 nearest (`STACK_MAX_MEMBERS`) are the
+  members. With fewer than 2, the floor is 50 % (`STACK_COVER_MIN`) and
+  the row's note says so; with fewer than 2 then, no stack. The builder
+  runs per piece (`--min-piece-h 6`, `STACK_MIN_PIECE_H`): every stretch
+  of the local's record in which every member is inside one of its runs
+  becomes one run of the stack archive when it lasts 6 h or more
+  (`run_pieces`), so a member's gap or restart costs the stack that gap,
+  not the stretch beyond it. The runs are read from the raw archives' run
+  attributes (a site whose archive cannot be read counts as one run over
+  its survey.yaml span), the sites named in the plan's
+  `stages.stacks.exclude_members` are never members, and the note (and
+  the dry run) gives the span the build will get from the runs, with the
+  number of pieces when more than one, beside the survey spans' one. A
+  build whose pieces are not the span one run per member gives carries
+  ";pieces <n> (<hours> h)" in its inputs (`piece_marker`), so a stack
+  built before the piece rule is built again where the pieces change it,
+  and the stacks the rule leaves as they were are not.
 3 options: per site, on its best stage 1 remote (highest mt_workbench.quality
   score over the scoring window; among remotes within `tie_tolerance` of the
   top, the one agreeing best with the others, lowest median |dlog10 rho|),
@@ -59,6 +79,76 @@ process_rr.py calls it before every run. Stages:
   or every channel for its remote (no entry for either under
   `--mask-scope union`), since the run would repeat the default.
 
+Remote-only sites: a top-level `remote_only: [SITE, ...]` names sites
+that are remotes and stack members but never locals, such as an
+observatory beside derived 1 Hz sites (INTERMAGNET CNB): they are in
+survey.yaml but not in `sites:` or a group, and have no run of their own
+as the local. Stage 0 checks their variants beside the plan's sites;
+stage 1 makes each a remote of every local whose record it overlaps by
+the plan's overlap rule; in stage 2 a site whose stack exists gets, per
+weighting, a second stack STK_<site>R<suffix> of the same members and
+every eligible remote-only site whose run coverage passes the floor the
+site's members met, so each weighting is built, run and scored with and
+without them (a remote-only site under that floor gives no R stack, and
+the run log says so); `remotes:` may name one. A plan without the key
+runs as before.
+
+The floor on STFT windows per band: a top-level `min_band_windows: N` (a
+whole number, 0 or more) adds `--min-band-windows N` to every aurora rr
+job of the campaign (stages 1, 2 and 3, the `windows:` runs included),
+after the runner's `--no-masks` and before a config's own flags, so a
+stage 3 config that carries `--min-band-windows` itself wins (the later
+flag wins on the process_rr command line). A MANTLE config gets none,
+since process_rr.py refuses the flag with that engine. The dry run lists
+the flag with each job's options and prints the floor with the plan's
+line, the run logs it at start, and summary.md states it. N is part of a
+job's inputs (";min_band_windows N") unless its config gives its own
+floor, so changing it makes those rows stale and they re-run; a plan
+without the key adds nothing to the inputs, and its runs take the floor
+of survey.yaml or process_rr.py's default.
+
+Stage flags: `stages.remotes.flags` and `stages.stacks.flags`, lists of
+process_rr.py flags (`[--window-samples, "256", --overlap, "75"]`, a
+256-sample window at 75 % overlap), go on every rr run
+of stage 1 and on every rr run on a stack in stage 2 (not on the stack
+builds), after the plan's `--min-band-windows` and before `--tag`. A
+`windows:` run of stage 3 takes the flags of the full-record run its merge
+pairs it with: the remotes' on a site remote, the stacks' on a stack; a
+stage 3 config takes none (its own flags say what it is). `load_plan`
+checks them with process_rr.py's own parser and refuses a flag it does not
+take, a bad value, a positional item, and --tag, --dry-run and --engine.
+They are part of the row's inputs (";flags <flags>"), so a resume re-runs
+the rows whose flags changed, and a plan without the keys adds nothing to the
+inputs; the dry run lists them with each row's options and the ledger's
+`cmd` holds them.
+
+Plan-wide rr flags: a top-level `rr_flags: [...]` (process_rr.py flags, checked
+as the stage flags are) goes on every rr run of the plan: stage 1, the stage 2
+runs on stacks, the stage 3 config runs and the `windows:` runs, after the
+plan's `--min-band-windows` and before the stage flags and a config's own flags
+(the later flag wins). The stage flags do not reach a stage 3 config run, so
+a plan uses this key (`rr_flags: [--min-period, "0.2", --notch, "1,2"]`) to keep
+stage 1, stage 3 and the window runs on one lattice. Part of each
+rr row's inputs (";rr_flags <flags>"); a plan without the key adds nothing.
+
+The remote exclusion keys: `never_remote: [SITE, ...]`
+names plan sites that are locals only (a site with `h_from`: its H is the
+lender's): no local is offered one as a remote, they are not listed as refused,
+and the stage 1 line counts the concurrent ones left out. The same-H rule needs
+no key: a local's survey.yaml `h_from` lender and `derived_from` parent (followed
+transitively, `same_h_sources`) are never its remote (`is_eligible`; refused
+with floor "same H source"). The twin rule needs no key either: two
+candidate sites within TWIN_KM (100 m) of each other
+are never each other's remote (`read_twins`, `is_eligible`; refused with floor
+"twin within 100 m"): co-located loggers share noise coherent over tens of
+metres, which remote referencing passes. `stages.remotes.max_candidates: N` keeps
+the N nearest eligible remotes per local in stage 1 (by km, ties by name, after
+the overlap gate); the rest are "beyond the nearest N", not refused, listed in
+<campaign>/beyond_cap_remotes.csv at plan time (a dry run included) and never
+candidates for the stage 3 remote, whatever the ledger holds; absent, no cap.
+`stages.stacks: {weightings: {}}` (an empty map) means no stacks: stage 2 has
+no job; an absent stacks block keeps the u and w stacks.
+
 Per-site decisions in the plan: `remotes: {SITE: REMOTE}` makes REMOTE (a
 plan site or a stack) the site's stage 3 remote in place of the best stage
 1 remote; it is scored, drawn and reported as the best is, the stored
@@ -77,6 +167,45 @@ default run on that remote (stage 1, or stage 2 for a stack), the window
 mode's row from the window run. summary.md shows the merged product's
 score as the site's default, with a note, and compares the stacks and the
 options with the full-record default.
+
+Windows from the health table: `windows: health_windows.yaml` (a file name,
+relative to the plan's folder; scripts/health_windows.py writes it from
+health_table.py's health_weeks.csv) gives each site listed in it, per mode,
+"whole" (every week sound), null (no sound week) or [start, end] (UTC, the
+longest run of weeks with that line and H sound), and a `reason`. Stage 3
+then runs the site once per distinct window on its stage 3 remote (config
+`default-xywin`, `default-yxwin`, or `default-xyyxwin` when both modes share
+one window) and, when the two modes come from different runs, merges them
+(config `default-merged`, scripts/merge_modes.py): each mode's row from its
+window run, or from the full-record default run on that remote (stage 1, or
+stage 2 for a stack) for a whole-record mode. A mode with no sound week is not
+produced: no run, no merge, and the run log says so. A site whose modes are
+both whole gets nothing beyond the full-record default, which every site
+keeps. The window runs take the stage flags of the
+full-record run they pair with. Entries naming no plan site are left out;
+plan sites without an entry run as before.
+
+The window merge: a top-level
+`window_merge: {short: <family>, long: <family>, rule: <rule>}` gives every plan
+site one more stage 3 job (config `windows-merged`, kind merge, after the
+`windows:` runs) that writes, with scripts/merge_windows.py, the short
+family's rows up to the crossover and the long family's above it, per part
+(x row, y row, tipper). A family is `default` (the full-record default run of
+stage 1, or of stage 2 on a stack, with the stage flags: the 256 / 75 %
+window when `stages.remotes.flags` carries it) or a stage 3 config (e.g.
+`d128: [--window-samples, "128", --overlap, "25"]`, aurora's default
+window). The rule is merge_windows.py's: `fixed:<s>`, `longest:<floor s>` or
+`contiguous:<floor s>`, the crossover capped at the short source's last
+populated period. The per-mode health windows apply to both families: a
+mode with a window takes each family's run over that window (the default
+family's `default-<modes>win` run; for a config family a run
+`<config>-<modes>win` with that config's flags and no stage flags, added to
+stage 3 beside the default window runs), a whole-record mode, a mode with no
+sound week (its rows are the whole record's, not blanked, and the merged
+product's INFO says so) and the tipper take each family's full-record run.
+The merge waits for its sources, is done while its sources and the rule are
+those it was built with (the ledger's `cmd`), and is scored as a product. A
+plan without the key runs as before.
 
 Readiness: before each stage the runner checks, in a fresh child process,
 that mt_workbench.ingest has processing_archive or build_variant (stage 0), that
@@ -196,7 +325,8 @@ try:  # optional: without the variant API the campaign runs and waits for it
 except ImportError:
     _api_filters_hash = _api_variant_path = _api_variant_ready = None
 from mt_workbench.mantle_window import clip_text  # noqa: E402
-from mt_workbench.quality import MODES, PERIOD_RTOL, agreement, curves, flat_quality, pairwise_spread, tf_quality  # noqa: E402
+from mt_workbench.quality import (MODES, PERIOD_RTOL, SCORE_FORMS, agreement, curves, flat_quality,  # noqa: E402
+                                  pairwise_spread, tf_quality)
 from mt_workbench.survey import Survey, distance_km  # noqa: E402
 
 PY = sys.executable
@@ -205,6 +335,11 @@ MB = 1024.0**2
 GB = 1024.0**3
 MANTLE_MAX_HOURS = 24.0  # process_rr.py's --mantle-max-hours when a config gives none
 MANTLE_GB_PER_HOUR = 1.25  # runner.mantle_gb_per_hour when the plan gives none
+STACK_COVER = 0.70  # a stack member's best run covers at least this fraction of the local's record
+STACK_COVER_MIN = 0.50  # the floor when fewer than STACK_MIN_MEMBERS reach STACK_COVER
+STACK_MIN_MEMBERS = 2
+STACK_MAX_MEMBERS = 8  # the nearest of the members that pass the floor
+STACK_MIN_PIECE_H = 6.0  # build_stack.py --min-piece-h: a stretch shared by every member shorter than this is left out
 POLL_S = 2.0
 WAIT_LOG_S = 300.0
 API_POLL_S = 300.0
@@ -212,6 +347,9 @@ STAGES = {0: "variants", 1: "remotes", 2: "stacks", 3: "options"}
 KINDS = ("variant", "stack", "rr", "merge")
 WINDOW_CONFIG = "default-{mode}win"  # a site's default run over one mode's window
 MERGED_CONFIG = "default-merged"  # the product merged from that run and the full-record default
+WMERGE_CONFIG = "windows-merged"  # the window merge (`window_merge`): short family below the crossover, long above
+WINDOW_MERGE_KEYS = ("short", "long", "rule")
+NO_SOUND_WEEK = "no sound week: whole record, NOT blanked"  # a null mode's sources in the window merge
 LEDGER_COLUMNS = [
     "run_id", "stage", "kind", "group", "local", "remote", "config", "tag", "engine", "status", "exit_code",
     "started", "finished", "seconds", "peak_rss_mb", "edi", "sidecar", "figure", "archive", "size_mb",
@@ -220,6 +358,9 @@ LEDGER_COLUMNS = [
 NAME_RE = re.compile(r"^[A-Za-z0-9_]+(-[A-Za-z0-9_]+)*$")
 FILTER_PREFIX = "ingest filters (in order): "
 VARIANT_HASH_PREFIX = "filters hash "
+# the freshness record a build_variant comment carries between the hash and FILTER_PREFIX
+# (mt_workbench.ingest._variant_record: source, calibration_sha256, donor pieces)
+VARIANT_RECORD = re.compile(r"^(?:(?:source|calibration_sha256|donor): [^;]*; )+")
 VARIANT_FUNCS = ("processing_archive", "build_variant")
 # what a child runs for stage 0: the variant API's call, printing the archive it returns
 VARIANT_CODE = (
@@ -292,6 +433,15 @@ def mode_score(q: dict, modes=None) -> float:
 
 
 @lru_cache(maxsize=1)
+def merge_windows_module():
+    """Import scripts/merge_windows.py, whose `merge_windows` writes the window merge (`window_merge`)."""
+    spec = importlib.util.spec_from_file_location("merge_windows", REPO / "scripts" / "merge_windows.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+@lru_cache(maxsize=1)
 def merge_modes_module():
     """Import scripts/merge_modes.py, whose `merge_files` writes the merged products."""
     spec = importlib.util.spec_from_file_location("merge_modes", REPO / "scripts" / "merge_modes.py")
@@ -313,8 +463,8 @@ class Plan:
     sites: list[str]
     exclude: dict[str, str]
     groups: dict[str, list[str]]
-    min_fraction: float = 0.5
-    min_hours: float = 12.0
+    min_fraction: float = 0.5  # a remote's common record >= this fraction of the local record
+    min_hours: float = 12.0  # and >= this many hours too: an extra floor for short records
     weightings: dict[str, str] = field(default_factory=lambda: {"u": "none", "w": "coherence"})
     configs: dict[str, list[str]] = field(default_factory=dict)
     tie_tolerance: float = 0.02
@@ -335,9 +485,30 @@ class Plan:
     mantle_gb_per_hour: float = MANTLE_GB_PER_HOUR  # a MANTLE job's expected peak per hour of window
     deferred_configs: list[str] = field(default_factory=list)  # stage 3 configs run only when --configs names them
     parallel: int | None = None  # jobs at once (runner.parallel); None: as many as the memory gate admits at start
+    min_band_windows: int | None = None  # --min-band-windows on every aurora rr job; None: no flag
+    remote_only: list[str] = field(default_factory=list)  # remotes and stack members, never locals
+    exclude_members: list[str] = field(default_factory=list)  # never stack members (stages.stacks.exclude_members)
+    quadrant_term: bool = True  # scoring.quadrant_term: the score's first factor Q (True) or the coverage C (False)
+    stage_flags: dict[int, list[str]] = field(default_factory=dict)  # {1: stages.remotes.flags, 2: stages.stacks.flags}
+    windows_file: str = ""  # `windows: <file>` (health_windows.yaml), resolved; "" for inline windows or none
+    coverage: bool = False  # scoring.coverage: the score times the window coverage C_w (mt_workbench.quality)
+    min_coverage: float = 0.0  # scoring.min_coverage: a product under this window coverage is never the best
+    window_merge: dict = field(default_factory=dict)  # {short, long, rule}; {} without the key
+    never_remote: list[str] = field(default_factory=list)  # plan sites that are locals only, never anyone's remote
+    max_candidates: int | None = None  # stages.remotes.max_candidates: stage 1 keeps the N nearest eligible remotes
+    rr_flags: list[str] = field(default_factory=list)  # process_rr.py flags on every rr job of the plan (rr_flags)
+    lenders: dict[str, list[str]] | None = None  # {local: its same-H sources}, read once by `read_lenders`; None: unread
+    twins: dict[str, list[str]] | None = None  # {site: candidate sites within TWIN_KM}, read by `read_twins`; None: unread
+
+    @property
+    def score_form(self) -> str:
+        """Return the score's form as mt_workbench.quality names it: quadrant or coverage, "+window" with scoring.coverage."""
+        return SCORE_FORMS[self.quadrant_term] + ("+window" if self.coverage else "")
 
     def group_of(self, site: str) -> str:
-        """Return the name of the group that holds `site`."""
+        """Return the name of the group that holds `site`, "remote_only" for a remote-only site."""
+        if site in self.remote_only:
+            return "remote_only"
         return next(g for g, members in self.groups.items() if site in members)
 
     def scored_modes(self, site: str) -> list[str]:
@@ -372,13 +543,16 @@ def utc_text(value) -> str:
     return t.strftime("%Y-%m-%d %H:%M:%S")
 
 
-def site_decisions(raw: dict, sites: list[str], errors: list[str]) -> tuple[dict, dict, dict]:
+def site_decisions(raw: dict, sites: list[str], errors: list[str],
+                   remote_only=()) -> tuple[dict, dict, dict]:
     """Read the plan's per-site `remotes:`, `modes:` and `windows:`, appending each problem to `errors`.
 
     Args:
         raw (dict): The plan YAML as read.
         sites (list[str]): The plan's sites.
         errors (list[str]): The plan's problems so far.
+        remote_only (sequence[str]): The plan's remote-only sites, which a
+            `remotes:` entry may name.
 
     Returns:
         tuple: ``(remotes, modes, windows)``: {site: remote}, {site: [mode]}
@@ -390,8 +564,8 @@ def site_decisions(raw: dict, sites: list[str], errors: list[str]) -> tuple[dict
         site, remote = str(site), str(remote)
         if site not in sites:
             errors.append(f"remotes {site}: not in sites")
-        if remote == site or (remote not in sites and not is_stack(remote)):
-            errors.append(f"remotes {site}: {remote}: another plan site or a stack (STK_...)")
+        if remote == site or (remote not in sites and remote not in remote_only and not is_stack(remote)):
+            errors.append(f"remotes {site}: {remote}: another plan site or a stack (STK_...), or a remote_only site")
         remotes[site] = remote
     for site, listed in (raw.get("modes") or {}).items():
         site, listed = str(site), [str(m) for m in (listed or [])]
@@ -429,6 +603,117 @@ def site_decisions(raw: dict, sites: list[str], errors: list[str]) -> tuple[dict
             errors.append(f"windows {site}: merge takes one mode's window, {len(spans)} given")
         windows[site] = {"modes": spans, "merge": bool(merge)}
     return remotes, modes, windows
+
+
+STAGE_FLAGS_REFUSED = ("--tag", "--dry-run", "--engine")  # the runner's own, or not stage 1-2 business (aurora only)
+
+
+@lru_cache(maxsize=1)
+def rr_parser():
+    """Return process_rr.py's command-line parser (scripts/process_rr.py `build_parser`), imported once."""
+    spec = importlib.util.spec_from_file_location("process_rr_flags", REPO / "scripts" / "process_rr.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.build_parser()
+
+
+def stage_flags_problem(flags) -> str:
+    """Return why a list of stage flags is refused, "" when process_rr.py takes it.
+
+    Args:
+        flags: The plan's value, a list of process_rr.py flags and their
+            values.
+
+    Returns:
+        str: The reason, or "".
+    """
+    if not isinstance(flags, list):
+        return f"{flags!r}: a list of process_rr.py flags, e.g. [--window-samples, \"256\", --overlap, \"75\"]"
+    flags = [str(f) for f in flags]
+    if flags and not flags[0].startswith("--"):
+        return f"{flags}: starts with {flags[0]!r}, not a flag (a positional item would be the run's window)"
+    for f in flags:
+        if f.split("=", 1)[0] in STAGE_FLAGS_REFUSED:
+            return f"{flags}: {f.split('=', 1)[0]} is not a stage flag (the runner sets --tag; stages 1-2 are aurora's)"
+    try:
+        parser = rr_parser()
+    except Exception as exc:  # the check needs the parser: no parser, no check, no flags
+        return f"{flags}: process_rr.py's parser cannot be read to check them ({type(exc).__name__}: {exc})"
+    err = io.StringIO()
+    try:
+        with contextlib.redirect_stderr(err):
+            args = parser.parse_args(["survey.yaml", "LOCAL", "REMOTE", *flags])
+    except SystemExit:
+        last = next((x for x in reversed(err.getvalue().splitlines()) if x.strip()), "refused")
+        return f"{flags}: process_rr.py refuses them ({last.strip()})"
+    if args.start is not None or args.end is not None:
+        return f"{flags}: a positional item among them (process_rr.py would read it as the window)"
+    return ""
+
+
+CONFIG_MARKER = ";config "  # issue 180: a row's inputs end in the config's own flags after this
+WINDOW_CONFIG_RE = re.compile(r"^default-(xy|yx|xyyx)win$")  # the window runs' configs (WINDOW_CONFIG)
+# a config family's window runs of the window merge: <config>-<modes>win (a plan config name holds no hyphen)
+WINDOW_VARIANT_RE = re.compile(r"^(?P<base>[A-Za-z0-9]+(?:_[A-Za-z0-9]+)*)-(?P<modes>xy|yx|xyyx)win$")
+
+
+def read_windows_file(path: Path, sites: list[str], errors: list[str]) -> dict:
+    """Read a `windows: <file>` (scripts/health_windows.py's health_windows.yaml) for the plan's sites.
+
+    Args:
+        path (Path): The file.
+        sites (list[str]): The plan's sites; entries naming none of them
+            are left out.
+        errors (list[str]): The plan's problems so far, appended to.
+
+    Returns:
+        dict: {site: {"modes": {mode: (start, end)}, "merge", "whole",
+        "none", "reason", "file"}}: the windowed modes, whether the two
+        produced modes come from different runs, the whole-record modes, the
+        modes not produced, the file's reason and the file.
+    """
+    try:
+        raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except OSError as exc:
+        errors.append(f"windows {path}: cannot be read ({exc})")
+        return {}
+    entries = raw.get("sites", raw) if isinstance(raw, dict) else None
+    if not isinstance(entries, dict):
+        errors.append(f"windows {path}: no site entries (scripts/health_windows.py writes them under sites:)")
+        return {}
+    out = {}
+    for site, entry in entries.items():
+        site = str(site)
+        if site not in sites:
+            continue
+        if not isinstance(entry, dict):
+            errors.append(f"windows {path} {site}: {entry!r}: a mapping of xy, yx and reason")
+            continue
+        spans, whole, none = {}, [], []
+        for mode in MODES:
+            value = entry.get(mode, "whole")
+            if value == "whole":
+                whole.append(mode)
+            elif value is None:
+                none.append(mode)
+            else:
+                try:
+                    if not isinstance(value, (list, tuple)) or len(value) != 2:
+                        raise ValueError
+                    start, end = utc_text(value[0]), utc_text(value[1])
+                    if end <= start:
+                        raise ValueError
+                except (TypeError, ValueError):
+                    errors.append(f"windows {path} {site} {mode}: {value!r}: whole, null (no sound week) or "
+                                  f"[start, end] in UTC, the end after the start")
+                    continue
+                spans[mode] = (start, end)
+        produced = [m for m in MODES if m not in none]
+        one_run = len(spans) == 2 and len(set(spans.values())) == 1
+        merge = bool(spans) and len(produced) == 2 and not one_run
+        out[site] = {"modes": spans, "merge": merge, "whole": whole, "none": none,
+                     "reason": str(entry.get("reason") or ""), "file": str(path)}
+    return out
 
 
 def load_plan(path) -> Plan:
@@ -480,7 +765,12 @@ def load_plan(path) -> Plan:
     stages = raw.get("stages") or {}
     stacks = stages.get("stacks") or {}
     options = stages.get("options") or {}
-    weightings = {str(k): str(v) for k, v in (stacks.get("weightings") or {"u": "none", "w": "coherence"}).items()}
+    given = stacks.get("weightings")
+    # an empty map ({}) means no stacks: stage 2 builds and runs nothing; an absent (or null)
+    # key keeps the u and w stacks
+    weightings = {str(k): str(v) for k, v in
+                  (given if isinstance(given, dict) and not given else
+                   given or {"u": "none", "w": "coherence"}).items()}
     for suffix, w in weightings.items():
         if w not in ("none", "coherence") or not re.match(r"^[a-z]$", suffix):
             errors.append(f"stacks weightings {suffix}: {w}: a one-letter suffix and none|coherence")
@@ -495,7 +785,66 @@ def load_plan(path) -> Plan:
         if not args or not args[0].startswith("--") or any(a in ("--tag", "--dry-run") for a in args):
             errors.append(f"config {cname}: {args}: process_rr.py flags, without --tag/--dry-run")
         configs[cname] = args
-    remotes, modes, windows = site_decisions(raw, sites, errors)
+    remote_only = [str(s) for s in (raw.get("remote_only") or [])]
+    for s in remote_only:
+        if s in sites or s in exclude:
+            errors.append(f"remote_only {s}: also in sites or exclude (a remote-only site is never a local)")
+    if len(set(remote_only)) != len(remote_only):
+        errors.append(f"remote_only: listed twice: {sorted({s for s in remote_only if remote_only.count(s) > 1})}")
+    if remote_only:
+        # a site's second stack STK_<site>R<suffix> must not be the stack STK_<site>R<suffix> of a site <site>R
+        clash = sorted(s for s in sites if s + "R" in sites)
+        if clash:
+            errors.append(f"remote_only: sites {clash} and <site>R would share the stack names STK_<site>R<suffix>")
+    stage_flags = {}
+    for st, (key, block) in {1: ("remotes", stages.get("remotes") or {}), 2: ("stacks", stacks)}.items():
+        if not isinstance(block, dict) or "flags" not in block:
+            continue
+        problem = stage_flags_problem(block["flags"])
+        if problem:
+            errors.append(f"stages {key} flags {problem}")
+        else:
+            stage_flags[st] = [str(f) for f in block["flags"]]
+    rr_flags = []
+    if "rr_flags" in raw:
+        problem = stage_flags_problem(raw["rr_flags"])
+        if problem:
+            errors.append(f"rr_flags {problem}")
+        else:
+            rr_flags = [str(f) for f in raw["rr_flags"]]
+    never_remote = raw.get("never_remote") or []
+    if not isinstance(never_remote, list):
+        errors.append(f"never_remote {never_remote!r}: a list of plan sites (locals only, never a remote)")
+        never_remote = []
+    never_remote = [str(s) for s in never_remote]
+    for s in never_remote:
+        if s not in sites:
+            errors.append(f"never_remote {s}: not a plan site (a never-remote site is a local of the plan)")
+    if len(set(never_remote)) != len(never_remote):
+        errors.append(f"never_remote: listed twice: {sorted({s for s in never_remote if never_remote.count(s) > 1})}")
+    remotes_block = stages.get("remotes") or {}
+    max_candidates = remotes_block.get("max_candidates") if isinstance(remotes_block, dict) else None
+    if max_candidates is not None and (isinstance(max_candidates, bool) or not isinstance(max_candidates, int)
+                                       or max_candidates < 1):
+        errors.append(f"stages remotes max_candidates {max_candidates!r}: a whole number of remotes, at least 1 "
+                      f"(absent: no cap)")
+        max_candidates = None
+    exclude_members =[str(s) for s in (stacks.get("exclude_members") or [])]
+    for s in exclude_members:
+        if s not in sites and s not in remote_only:
+            errors.append(f"stacks exclude_members {s}: not a plan site or a remote_only site")
+    windows_file, file_windows = "", {}
+    if isinstance(raw.get("windows"), str):
+        wpath = Path(raw["windows"])
+        wpath = wpath if wpath.is_absolute() else path.parent / wpath
+        if not wpath.is_file():
+            errors.append(f"windows {raw['windows']}: no such file ({wpath}); scripts/health_windows.py writes it")
+        else:
+            windows_file = str(wpath.resolve())
+            file_windows = read_windows_file(wpath, sites, errors)
+        raw = {**raw, "windows": None}
+    remotes, modes, windows = site_decisions(raw, sites, errors, remote_only)
+    windows.update(file_windows)
     runner = raw.get("runner") or {}
     for key in ("minutes_per_job", "expected_peak_gb"):
         for k in (runner.get(key) or {}):
@@ -518,7 +867,49 @@ def load_plan(path) -> Plan:
     elif isinstance(parallel, bool) or not isinstance(parallel, int) or parallel < 1:
         errors.append(f"runner parallel {parallel!r}: a whole number of jobs, at least 1, or gate")
         parallel = None
+    floor = raw.get("min_band_windows")
+    if floor is not None and (isinstance(floor, bool) or not isinstance(floor, int) or floor < 0):
+        errors.append(f"min_band_windows {floor!r}: a whole number of STFT windows, 0 or more")
+        floor = None
     scoring = raw.get("scoring") or {}
+    quadrant_term = scoring.get("quadrant_term", True)
+    if not isinstance(quadrant_term, bool):
+        errors.append(f"scoring quadrant_term {quadrant_term!r}: true (Q x S x exp(-5B/N), the default) or false "
+                      f"(the coverage form C x S x exp(-5B/N))")
+        quadrant_term = True
+    coverage = scoring.get("coverage", False)
+    if not isinstance(coverage, bool):
+        errors.append(f"scoring coverage {coverage!r}: true (the score times the window coverage C_w) or false "
+                      f"(the default)")
+        coverage = False
+    min_coverage = scoring.get("min_coverage", 0.0)
+    if isinstance(min_coverage, bool) or not isinstance(min_coverage, (int, float)) or not 0.0 <= min_coverage <= 1.0:
+        errors.append(f"scoring min_coverage {min_coverage!r}: a window coverage from 0 (the default) to 1")
+        min_coverage = 0.0
+    window_merge = {}
+    if raw.get("window_merge") is not None:
+        wm = raw["window_merge"]
+        if not isinstance(wm, dict):
+            errors.append(f"window_merge {wm!r}: a mapping of short, long and rule")
+        else:
+            wm = {str(k): ("" if v is None else str(v)) for k, v in wm.items()}
+            for k in wm:
+                if k not in WINDOW_MERGE_KEYS:
+                    errors.append(f"window_merge {k}: not a key ({', '.join(WINDOW_MERGE_KEYS)})")
+            for k in ("short", "long"):
+                fam = wm.get(k, "")
+                if fam != "default" and fam not in configs:
+                    errors.append(f"window_merge {k} {fam!r}: default or a stage 3 config")
+            if wm.get("short") and wm.get("short") == wm.get("long"):
+                errors.append(f"window_merge: short and long are both {wm['short']!r}")
+            if "rule" not in wm:
+                errors.append("window_merge rule: missing (fixed:<s>, longest:<floor s> or contiguous:<floor s>)")
+            else:
+                try:
+                    merge_windows_module().parse_rule(wm["rule"])
+                except ValueError as exc:
+                    errors.append(f"window_merge {exc}")
+            window_merge = {k: wm[k] for k in WINDOW_MERGE_KEYS if k in wm}
     if errors:
         raise ValueError(f"{path}:\n  " + "\n  ".join(errors))
     plan = Plan(
@@ -533,6 +924,10 @@ def load_plan(path) -> Plan:
         min_available_gb=float(runner.get("min_available_gb", 40.0)),
         peak_factor=float(runner.get("peak_factor", 1.2)),
         mantle_gb_per_hour=gb_per_hour, deferred_configs=deferred, parallel=parallel,
+        min_band_windows=floor, remote_only=remote_only, exclude_members=exclude_members,
+        quadrant_term=quadrant_term, window_merge=window_merge, coverage=coverage, min_coverage=float(min_coverage),
+        stage_flags=stage_flags, windows_file=windows_file,
+        never_remote=never_remote, max_candidates=max_candidates, rr_flags=rr_flags,
     )
     plan.minutes.update({str(k): float(v) for k, v in (runner.get("minutes_per_job") or {}).items()})
     plan.expected_peak_gb.update({str(k): float(v) for k, v in (runner.get("expected_peak_gb") or {}).items()})
@@ -589,12 +984,26 @@ def overlap_hours(a, b) -> float:
 
 
 def is_eligible(plan: Plan, spans: dict, local: str, remote: str) -> bool:
-    """Apply the plan's remote rule: overlap >= min_fraction of the local record, or >= min_hours."""
-    if remote == local:
+    """Apply the plan's remote rule: overlap >= min_fraction of the local record and >= min_hours.
+
+    Both floors hold: min_fraction is the overlap floor (0.5 by default),
+    min_hours an extra floor for short records. Two more rules: a site in
+    the plan's `never_remote` is nobody's remote,
+    and no same-H source of the local is its remote (`plan.lenders` as
+    `read_lenders` reads it: its survey.yaml `h_from` lender and its
+    `derived_from` parent, followed transitively), since that H would be
+    the remote H. And the twin rule: a site within TWIN_KM of the local
+    (`plan.twins` as `read_twins` reads it) is never its remote.
+    """
+    if remote == local or remote in plan.never_remote:
+        return False
+    if plan.lenders and remote in plan.lenders.get(local, ()):
+        return False
+    if plan.twins and remote in plan.twins.get(local, ()):
         return False
     ov = overlap_hours(spans[local], spans[remote])
     rec = (spans[local][1] - spans[local][0]).total_seconds() / 3600.0
-    return ov > 0 and (ov >= plan.min_fraction * rec - 1e-9 or ov >= plan.min_hours - 1e-9)
+    return ov > 0 and ov >= plan.min_fraction * rec - 1e-9 and ov >= plan.min_hours - 1e-9
 
 
 def _km(survey: Survey, a: str, b: str) -> float:
@@ -605,10 +1014,156 @@ def _km(survey: Survey, a: str, b: str) -> float:
     return distance_km(ca.latitude, ca.longitude, cb.latitude, cb.longitude)
 
 
+def same_h_sources(survey: Survey, site: str) -> list[str]:
+    """Return the sites whose H `site` carries: its `h_from` lender and its `derived_from` parent, transitively.
+
+    Both keys are exposed by `Survey.site` (SiteConfig.h_from, SiteConfig.derived_from). A D site
+    (scripts/diagonal_site.py) carries its parent's magnetics; a borrower its lender's.
+    """
+    out, todo = [], [site]
+    while todo:
+        cfg = survey.site(todo.pop())
+        for key in ("h_from", "derived_from"):
+            src = getattr(cfg, key, None)
+            if src and str(src) not in out and str(src) != site:
+                out.append(str(src))
+                todo.append(str(src))
+    return out
+
+
+def read_lenders(plan: Plan, survey: Survey) -> dict[str, list[str]]:
+    """Read each plan site's same-H sources (`same_h_sources`) into `plan.lenders`.
+
+    Returns:
+        dict: {local: [sources]} for the plan sites that have any.
+    """
+    out = {}
+    for s in plan.sites:
+        src = same_h_sources(survey, s)
+        if src:
+            out[s] = src
+    plan.lenders = out
+    return out
+
+
+TWIN_KM = 0.1  # the twin rule: two sites this close (km) are never each other's remote
+TWIN_FLOOR = "twin within 100 m"
+
+
+def read_twins(plan: Plan, survey: Survey) -> dict[str, list[str]]:
+    """Read each candidate site's twins into `plan.twins`: the plan and remote-only sites within TWIN_KM of it.
+
+    Two co-located loggers (simultaneous twins 20-130 m apart at SA AusLAMP sites) are the
+    best lenders and the worst remotes: noise coherent over that distance passes through remote referencing. The
+    rule is symmetric. A site without a position has no twin (`_km` gives inf).
+
+    Returns:
+        dict: {site: [twins, by name]} for the sites that have any.
+    """
+    names = list(dict.fromkeys([*plan.sites, *plan.remote_only]))
+    out: dict[str, list[str]] = {}
+    for i, a in enumerate(names):
+        for b in names[i + 1:]:
+            if _km(survey, a, b) <= TWIN_KM:
+                out.setdefault(a, []).append(b)
+                out.setdefault(b, []).append(a)
+    plan.twins = {k: sorted(v) for k, v in out.items()}
+    return plan.twins
+
+
+def _lenders(plan: Plan, survey: Survey) -> None:
+    """Read the plan's lenders (`read_lenders`) and twins (`read_twins`) once each, when not read yet."""
+    if plan.lenders is None:
+        read_lenders(plan, survey)
+    if plan.twins is None:
+        read_twins(plan, survey)
+
+
 def eligible_remotes(plan: Plan, survey: Survey, spans: dict, local: str) -> list[str]:
-    """Return every eligible remote of `local`, nearest first (then by name)."""
-    rs = [r for r in plan.sites if is_eligible(plan, spans, local, r)]
+    """Return every eligible remote of `local` among the plan's sites and remote-only sites, nearest first (then by name)."""
+    _lenders(plan, survey)
+    rs = [r for r in [*plan.sites, *plan.remote_only] if is_eligible(plan, spans, local, r)]
     return sorted(rs, key=lambda r: (_km(survey, local, r), r))
+
+
+BEYOND_COLUMNS = ["local", "remote", "km", "overlap_h"]
+
+
+def capped_remotes(plan: Plan, survey: Survey, spans: dict, local: str) -> tuple[list[str], list[dict]]:
+    """Return the eligible remotes stage 1 runs for `local` and those beyond the plan's candidate cap.
+
+    `stages.remotes.max_candidates: N` keeps the N nearest eligible remotes
+    (`eligible_remotes`: by km, ties by name); the others are not refused by
+    the gate but "beyond the nearest N". Without the key every eligible remote
+    is admitted.
+
+    Returns:
+        tuple: ``(admitted, beyond)``: the admitted remotes nearest first, and
+        per remote beyond the cap the keys of `BEYOND_COLUMNS`.
+    """
+    el = eligible_remotes(plan, survey, spans, local)
+    n = plan.max_candidates
+    if n is None or len(el) <= n:
+        return el, []
+    beyond = [{"local": local, "remote": r, "km": _km(survey, local, r),
+               "overlap_h": overlap_hours(spans[local], spans[r])} for r in el[n:]]
+    return el[:n], beyond
+
+
+def never_left_out(plan: Plan, spans: dict, local: str) -> int:
+    """Return how many of the plan's never-remote sites share some record with `local` (and so were left out)."""
+    return sum(1 for r in plan.never_remote
+               if r != local and r in spans and overlap_hours(spans[local], spans[r]) > 0)
+
+
+REFUSED_COLUMNS = ["local", "remote", "km", "overlap_h", "overlap_d", "local_record_h", "fraction", "floor"]
+
+
+def refused_remotes(plan: Plan, survey: Survey, spans: dict, local: str) -> list[dict]:
+    """Return the candidates the overlap rule refuses for `local`, nearest first (then by name).
+
+    A candidate is a plan or remote-only site, not `local` and not in the
+    plan's `never_remote` (never offered, so never refused), sharing some
+    record with it; it is refused when it is not `is_eligible`.
+
+    Returns:
+        list[dict]: Per refused remote, the keys of `REFUSED_COLUMNS`:
+        overlap in hours and days, the local record in hours, the overlap
+        as a fraction of it and the floor(s) it falls under
+        ("same H source" for the local's lender or parent, TWIN_FLOOR for a
+        site within TWIN_KM, "min_fraction <f>", "min_hours <h>", several
+        joined by " and ").
+    """
+    _lenders(plan, survey)
+    rec = (spans[local][1] - spans[local][0]).total_seconds() / 3600.0
+    sources = (plan.lenders or {}).get(local, ())
+    twins = (plan.twins or {}).get(local, ())
+    out = []
+    for r in [*plan.sites, *plan.remote_only]:
+        if r == local or r not in spans or r in plan.never_remote:
+            continue
+        ov = overlap_hours(spans[local], spans[r])
+        if ov <= 0 or is_eligible(plan, spans, local, r):
+            continue
+        floors = [*(["same H source"] if r in sources else []),
+                  *([TWIN_FLOOR] if r in twins else []),
+                  *([f"min_fraction {plan.min_fraction:g}"] if ov < plan.min_fraction * rec - 1e-9 else []),
+                  *([f"min_hours {plan.min_hours:g}"] if ov < plan.min_hours - 1e-9 else [])]
+        out.append({"local": local, "remote": r, "km": _km(survey, local, r), "overlap_h": ov,
+                    "overlap_d": ov / 24.0, "local_record_h": rec, "fraction": ov / rec if rec > 0 else float("nan"),
+                    "floor": " and ".join(floors)})
+    return sorted(out, key=lambda x: (x["km"], x["remote"]))
+
+
+def drop_refused(s1: pd.DataFrame, refused) -> pd.DataFrame:
+    """Return a site's stage 1 scores without the rows whose remote the overlap rule refuses.
+
+    A refused remote is never the remote of record, whatever the ledger
+    holds.
+    """
+    if s1 is None or len(s1) == 0 or not refused:
+        return s1
+    return s1[~s1["remote"].isin(set(refused))]
 
 
 def common_span(spans: dict, sites) -> tuple[pd.Timestamp, pd.Timestamp, float]:
@@ -618,39 +1173,197 @@ def common_span(spans: dict, sites) -> tuple[pd.Timestamp, pd.Timestamp, float]:
     return lo, hi, max(0.0, (hi - lo).total_seconds() / 3600.0)
 
 
-def stack_plan(plan: Plan, spans: dict, local: str) -> dict | None:
-    """Plan the leave-one-out stack for `local`.
+def best_run(runs, lo, hi) -> tuple:
+    """Return the run of `runs` that overlaps [lo, hi) most and that overlap in hours.
 
-    Members are the other members of `local`'s group that are eligible
-    remotes of it. With fewer than two, the members come from the other group
-    whose eligible members (at least two) share the longest common span with
-    `local` (at least `min_hours`). The start/end passed to the builder are
-    `local`'s record.
+    The builder (`mt_workbench.virtual._member_run`) takes this run of a
+    member; on a tie the earlier run, as it keeps the first maximum.
+
+    Args:
+        runs (list): (start, end) per run, UTC timestamps.
+        lo, hi: The window.
 
     Returns:
-        dict | None: {members, group, borrowed, span_h, span, start, end},
-        or None when no stack is possible.
+        tuple: ``(start, end, hours)``; ``(None, None, 0.0)`` when no run
+        overlaps.
     """
+    out = (None, None, 0.0)
+    for start, end in sorted(runs):
+        h = (min(end, hi) - max(start, lo)).total_seconds() / 3600.0
+        if h > out[2]:
+            out = (start, end, h)
+    return out
+
+
+def run_span(runs: dict, spans: dict, local: str, members) -> tuple:
+    """Return the span one run per member gives: the local's record cut to each member's best run over it.
+
+    This was the builder's span before the piece rule (`run_pieces`); a
+    piece-wise build equal to it is the same archive (`piece_marker`).
+
+    Returns:
+        tuple: ``(start, end, hours)``, hours 0 when the runs do not overlap.
+    """
+    lo, hi = spans[local]
+    for m in members:
+        start, end, _ = best_run(runs.get(m) or [spans[m]], spans[local][0], spans[local][1])
+        if start is None:
+            return lo, lo, 0.0
+        lo, hi = max(lo, start), min(hi, end)
+    return lo, hi, max(0.0, (hi - lo).total_seconds() / 3600.0)
+
+
+def run_pieces(runs: dict, spans: dict, local: str, members, min_h: float = STACK_MIN_PIECE_H) -> dict:
+    """Return the pieces a piece-wise build gets: the stretches of the local's record inside a run of every member.
+
+    The same rule as `mt_workbench.virtual.stack_pieces` (build_stack.py
+    --min-piece-h), on the runs' survey-time bounds.
+
+    Args:
+        runs (dict): Each site's runs, [(start, end), ...] UTC; a site
+            without an entry counts as one run over its span.
+        spans (dict): Each site's survey.yaml (start, end).
+        local (str): The local site; its record is the window.
+        members (list): The members.
+        min_h (float): The shortest piece kept, in hours.
+
+    Returns:
+        dict: ``kept`` and ``short``, lists of (start, end) in time order,
+        and ``hours``, the kept pieces' total.
+    """
+    pieces = [spans[local]]
+    for m in members:
+        nxt = []
+        for a, b in pieces:
+            for start, end in runs.get(m) or [spans[m]]:
+                lo, hi = max(a, start), min(b, end)
+                if hi > lo:
+                    nxt.append((lo, hi))
+        pieces = sorted(nxt)
+    hours = [(b - a).total_seconds() / 3600.0 for a, b in pieces]
+    kept = [p for p, h in zip(pieces, hours) if h >= min_h - 1e-9]
+    short = [p for p, h in zip(pieces, hours) if h < min_h - 1e-9]
+    return {"kept": kept, "short": short, "hours": sum(h for h in hours if h >= min_h - 1e-9)}
+
+
+def piece_marker(pieces: dict, one_run: tuple) -> str:
+    """Return a stack build's piece layout for its inputs, "" when it is the one-run-per-member span.
+
+    A piece-wise build whose one kept piece is the span `run_span` gives
+    (one run per member) writes the archive the builder wrote before the
+    piece rule, so its inputs stay as they were; any other layout reads
+    "<n> (<hours> h)".
+
+    Args:
+        pieces (dict): `run_pieces` of the build.
+        one_run (tuple): `run_span` of the same members, (start, end, hours).
+
+    Returns:
+        str: The layout, or "".
+    """
+    kept = pieces["kept"]
+    if len(kept) == 1 and kept[0] == (one_run[0], one_run[1]):
+        return ""
+    return f"{len(kept)} ({pieces['hours']:.1f} h)"
+
+
+def stack_plan(plan: Plan, spans: dict, local: str, runs: dict | None = None, km=None) -> dict | None:
+    """Plan the leave-one-out stack for `local`, its members chosen by their runs.
+
+    The candidates are `local`'s eligible remotes among the plan's sites
+    (`is_eligible`), less the plan's `exclude_members`. The builder takes
+    one run per member, the run overlapping `local`'s record most
+    (`best_run`), so each candidate's coverage is the fraction of
+    `local`'s record that run overlaps. The members are the candidates
+    covering at least `STACK_COVER`, the `STACK_MAX_MEMBERS` nearest of
+    them; with fewer than `STACK_MIN_MEMBERS` such candidates the floor is
+    `STACK_COVER_MIN`, and with fewer than that no stack is planned. The
+    eligible remote-only sites that are not excluded and cover the floor
+    used are the second stack's additions. The start/end passed to the
+    builder are `local`'s record, which it builds per piece
+    (`run_pieces`).
+
+    Args:
+        plan (Plan): The plan.
+        spans (dict): Each site's survey.yaml (start, end).
+        local (str): The local site.
+        runs (dict | None): Each site's runs, [(start, end), ...] UTC; a
+            site without an entry (or None for all) counts as one run over
+            its span.
+        km (callable | None): ``km(a, b)``, the distance between two sites;
+            None orders the candidates by name.
+
+    Returns:
+        dict | None: {members, group, borrowed, span_h, span, start, end,
+        remote_only, floor, cover, candidates, run_span, run_span_h,
+        run_span_r_h, pieces, pieces_r, remote_only_left}, or None when no
+        stack is possible. `span_h`/`span` are the survey spans' common span
+        of `local` and the members, `run_span` the first kept piece's start
+        and the last one's end and `run_span_h` the kept pieces' hours (the
+        span the builder will get from the runs), `run_span_r_h` that of
+        the second stack (members and `remote_only`; None without one),
+        `pieces`/`pieces_r` the two stacks' `run_pieces` (None for the
+        second without one); `cover` maps every candidate to
+        its coverage; `remote_only_left` maps an eligible remote-only site
+        under the floor to its coverage; `group` is `local`'s own group, or
+        the group most members are in when `borrowed` (some member outside
+        it).
+    """
+    runs = runs or {}
+    lo, hi = spans[local]
+    record_h = (hi - lo).total_seconds() / 3600.0
+
+    def cover(site: str) -> float:
+        return best_run(runs.get(site) or [spans[site]], lo, hi)[2] / record_h if record_h > 0 else 0.0
+
+    excluded = set(plan.exclude_members)
+    cands = [s for s in plan.sites if s != local and s not in excluded and is_eligible(plan, spans, local, s)]
+    covers = {s: cover(s) for s in cands}
+    order = sorted(cands, key=lambda s: ((km(local, s) if km else 0.0), s))
+    floor = STACK_COVER
+    kept = [s for s in order if covers[s] >= floor - 1e-9]
+    if len(kept) < STACK_MIN_MEMBERS:
+        floor = STACK_COVER_MIN
+        kept = [s for s in order if covers[s] >= floor - 1e-9]
+    if len(kept) < STACK_MIN_MEMBERS:
+        return None
+    members = kept[:STACK_MAX_MEMBERS]
+    ro_all = {r: cover(r) for r in plan.remote_only if r not in excluded and is_eligible(plan, spans, local, r)}
+    ro = [r for r, c in ro_all.items() if c >= floor - 1e-9]
     own = plan.group_of(local)
-    members = [s for s in plan.groups[own] if s != local and is_eligible(plan, spans, local, s)]
-    borrowed = None
-    if len(members) < 2:
-        best = None
-        for g, gm in plan.groups.items():
-            if g == own:
-                continue
-            cand = [s for s in gm if is_eligible(plan, spans, local, s)]
-            if len(cand) < 2:
-                continue
-            _, _, h = common_span(spans, [local, *cand])
-            if h >= plan.min_hours and (best is None or h > best[2]):
-                best = (g, cand, h)
-        if best is None:
-            return None
-        borrowed, members = best[0], best[1]
-    lo, hi, h = common_span(spans, [local, *members])
-    return {"members": members, "group": borrowed or own, "borrowed": borrowed is not None,
-            "span_h": h, "span": (lo, hi), "start": spans[local][0], "end": spans[local][1]}
+    groups = [plan.group_of(m) for m in members]
+    borrowed = any(g != own for g in groups)
+    group = max(set(groups), key=lambda g: (groups.count(g), g == own)) if borrowed else own
+    s_lo, s_hi, h = common_span(spans, [local, *members])
+    pieces = run_pieces(runs, spans, local, members)
+    pieces_r = run_pieces(runs, spans, local, [*members, *ro]) if ro else None
+    kept = pieces["kept"]
+    return {"members": members, "group": group, "borrowed": borrowed,
+            "span_h": h, "span": (s_lo, s_hi), "start": lo, "end": hi,
+            "remote_only": ro, "floor": floor, "cover": covers, "candidates": len(cands),
+            "run_span": (kept[0][0], kept[-1][1]) if kept else (lo, lo), "run_span_h": pieces["hours"],
+            "run_span_r_h": pieces_r["hours"] if ro else None, "pieces": pieces, "pieces_r": pieces_r,
+            "remote_only_left": {r: c for r, c in ro_all.items() if r not in ro}}
+
+
+def stack_note(sp: dict, members, weighting: str, with_remote_only: bool = False) -> str:
+    """Return a stage 2 build row's note: the weighting, the members, the coverage rule and the spans."""
+    rule = (f"members cover >= {sp['floor'] * 100:.0f} % of the record with their best run"
+            + ("" if sp["floor"] >= STACK_COVER - 1e-9 else
+               f" (floor lowered from {STACK_COVER * 100:.0f} %: fewer than {STACK_MIN_MEMBERS} reach it)")
+            + f", the {len(sp['members'])} nearest of {sum(c >= sp['floor'] - 1e-9 for c in sp['cover'].values())}")
+    span = sp["run_span_r_h"] if with_remote_only else sp["run_span_h"]
+    pieces = (sp.get("pieces_r") if with_remote_only else sp.get("pieces")) or {"kept": [None], "short": []}
+    n, short = len(pieces["kept"]), pieces["short"]
+    return (f"{weighting} of {' '.join(members)}; {rule}; expected span {span:.1f} h "
+            + (f"in {n} pieces " if n > 1 else "") + f"from the runs (survey spans {sp['span_h']:.1f} h)"
+            + (f"; {len(short)} piece(s) under {STACK_MIN_PIECE_H:g} h left out "
+               f"({_duration(sum((b - a).total_seconds() for a, b in short))})" if short else ""))
+
+
+def _duration(seconds: float) -> str:
+    """Format a duration as hours to 0.1 h, or in seconds under 6 minutes ("1.0 h", "42 s")."""
+    return f"{seconds / 3600.0:.1f} h" if seconds >= 360.0 else f"{seconds:.0f} s"
 
 
 def filters_hash(filters) -> str:
@@ -792,6 +1505,7 @@ def recorded_matches(comment: str, declared: list, run_channels, fs: float) -> t
         recorded, _, comment = comment[len(VARIANT_HASH_PREFIX):].partition("; ")
         if recorded.strip() != filters_hash(declared):
             return False, f"records filters hash {recorded.strip()}, filters.yaml hashes to {filters_hash(declared)}"
+        comment = VARIANT_RECORD.sub("", comment)  # the variant's freshness record, not a filter
     if not comment.startswith(FILTER_PREFIX):
         if not declared:
             return (not comment.startswith("ingest filters")), "no filters declared"
@@ -939,6 +1653,9 @@ class Job:
     note: str = ""
     window: tuple[str, str] | None = None  # (start, end) UTC of a windowed run
     clip_note: str = ""  # a clipped MANTLE run's expected clip, replaced by the sidecar's after the run
+    pieces: str = ""  # a stack build's piece layout when it differs from one run per member (`piece_marker`)
+    parts: dict = field(default_factory=dict)  # a window merge's {part: (short run id, long run id)}
+    windows_text: dict = field(default_factory=dict)  # a window merge's {part: its sources' window, in words}
 
 
 @dataclass
@@ -1076,7 +1793,10 @@ class Campaign:
         allow_raw (bool): Run without the variant API, marking rows
             provisional.
         create (bool): Create the campaign folders; False for a dry run,
-            which writes nothing (runs.log included).
+            which writes nothing but <campaign>/refused_remotes.csv
+            (`write_refused`) and, with `stages.remotes.max_candidates`,
+            <campaign>/beyond_cap_remotes.csv (`write_beyond_cap`): no
+            runs.log either.
         configs (list[str] | None): The stage 3 configs to run (--configs),
             deferred ones included; None for every config the plan does not
             defer.
@@ -1087,6 +1807,8 @@ class Campaign:
         self.survey_yaml = str(Path(survey_yaml).resolve())
         self.survey = Survey.from_yaml(self.survey_yaml)
         self.plan = plan
+        read_lenders(plan, self.survey)  # the lender rule (`is_eligible`): each local's h_from
+        read_twins(plan, self.survey)  # the twin rule (`is_eligible`): sites within TWIN_KM
         self.parallel = max(1, int(parallel))
         self.max_runs = max_runs
         self.allow_raw = allow_raw
@@ -1096,7 +1818,7 @@ class Campaign:
         for sub in ("", "logs", "tf", "figures") if create else ():  # a dry run writes nothing
             (self.dir / sub).mkdir(parents=True, exist_ok=True)
         self.ledger = Ledger(self.dir / "ledger.csv", log=self.log)
-        self.spans = site_spans(self.survey, plan.sites)
+        self.spans = site_spans(self.survey, [*plan.sites, *plan.remote_only])
         self.pmin = plan.pmin if plan.pmin is not None else self.survey.processing.get("min_period")
         self.pmax = plan.pmax if plan.pmax is not None else self.survey.processing.get("max_period")
         self.n_started = 0
@@ -1119,8 +1841,37 @@ class Campaign:
             pass
 
     def refresh(self) -> None:
-        """Re-read survey.yaml and filters.yaml (a filter may be edited mid-campaign)."""
+        """Re-read survey.yaml and filters.yaml (a filter may be edited mid-campaign); the run tables are re-read when next asked."""
         self.survey = Survey.from_yaml(self.survey_yaml)
+        read_lenders(self.plan, self.survey)
+        read_twins(self.plan, self.survey)
+        self._runs = None
+
+    def site_runs(self) -> dict:
+        """Return each plan and remote-only site's runs, [(start, end), ...] UTC, from its raw archive.
+
+        The runs are the archive's run attributes, read with h5py
+        (`mt_workbench.intersite.archive_runs`); a site whose archive is
+        missing or unreadable counts as one run over its survey.yaml span.
+        Read once and kept until `refresh`.
+        """
+        if getattr(self, "_runs", None) is None:
+            from mt_workbench.intersite import archive_runs  # here: a dry run of stages 0, 1 and 3 needs none
+            out = {}
+            for s in [*self.plan.sites, *self.plan.remote_only]:
+                try:
+                    got = archive_runs(self.raw_archive(s), s)
+                except (OSError, ValueError, KeyError):
+                    got = []
+                out[s] = ([(pd.Timestamp(a, tz="UTC"), pd.Timestamp(b, tz="UTC")) for a, b in got]
+                          or [self.spans[s]])
+            self._runs = out
+        return self._runs
+
+    def stack_plan(self, site: str) -> dict | None:
+        """Return `stack_plan` for `site` with the archives' runs and the sites' distances."""
+        return stack_plan(self.plan, self.spans, site, runs=self.site_runs(),
+                          km=lambda a, b: _km(self.survey, a, b))
 
     def raw_archive(self, site: str) -> Path:
         """Return the site's raw archive path."""
@@ -1161,13 +1912,81 @@ class Campaign:
                            for m in masks]
                 digest = hashlib.sha1(json.dumps(applied, sort_keys=True).encode()).hexdigest()[:8]
                 sig += f";{site}:m{digest}"
+        own = self.config_flags(job.config) if job.kind == "rr" else []
+        if own:
+            # issue 180: the config's own flags (a stage 3 config and its window runs), so an edited config
+            # re-runs; a default run has none and adds nothing. Placed before the window and floor markers, which
+            # readers expect last. A row from before the marker: `legacy_config_row`
+            sig += CONFIG_MARKER + " ".join(own)
+        if job.kind == "stack" and job.pieces:
+            # a stack built per piece (build_stack.py --min-piece-h) whose pieces are not the one-run-per-member
+            # span the builder gave before the piece rule (`piece_marker`)
+            sig += f";pieces {job.pieces}"
         if job.window:
             sig += f";window {job.window[0]}/{job.window[1]}"
+        if job.kind == "rr" and self.floor_flags(job.config) \
+                and self.config_flag(job.config, "--min-band-windows") is None:
+            # the plan's floor, when it is the one the run uses (a config's own flag wins)
+            sig += f";min_band_windows {self.plan.min_band_windows}"
+        flags = self.stage_flags(job.stage, job.remote, job.config) if job.kind == "rr" else []
+        if flags:
+            # the plan's stages.remotes.flags / stages.stacks.flags (absent: nothing, so older ledgers stay done)
+            sig += ";flags " + " ".join(flags)
+        if job.kind == "rr" and self.plan.rr_flags:
+            # the plan's rr_flags, on every rr job (absent: nothing, so older ledgers stay done)
+            sig += ";rr_flags " + " ".join(self.plan.rr_flags)
         return sig
+
+    def legacy_config_row(self, job: Job, row: dict) -> bool:
+        """Whether a ledger row written before the config marker (issue 180) stands for `job` as it is now.
+
+        Its inputs must equal the job's without the ";config <flags>" marker
+        and its recorded command must carry the config's present flags, so an
+        unedited config is not re-run when the marker arrives and an edited one is.
+        """
+        own = self.config_flags(job.config) if job.kind == "rr" else []
+        if not own:
+            return False
+        now, marker = self.inputs(job), CONFIG_MARKER + " ".join(own)
+        if marker not in now or row.get("inputs", "") != now.replace(marker, "", 1):
+            return False
+        return f" {' '.join(own)} " in f" {row.get('cmd', '')} "
+
+    def stage_flags(self, stage: int, remote: str, config: str) -> list[str]:
+        """Return the plan's stage flags an rr run takes: stages.remotes.flags or stages.stacks.flags.
+
+        A default run of stage 1 takes the remotes' and one of stage 2 the
+        stacks'; a `windows:` run of stage 3 (config `default-<mode>win`)
+        those of the full-record run its merge pairs it with, the stacks'
+        on a stack and the remotes' otherwise; any other run none.
+        """
+        if config == "default" and stage in (1, 2):
+            return list(self.plan.stage_flags.get(stage, []))
+        if stage == 3 and WINDOW_CONFIG_RE.match(config):
+            return list(self.plan.stage_flags.get(2 if is_stack(remote) else 1, []))
+        return []
+
+    def config_flags(self, config: str) -> list[str]:
+        """Return a config's own process_rr.py flags: [] for default (and its window runs), the base config's for a
+        window merge run `<config>-<modes>win`."""
+        if config == "default":
+            return []
+        if config in self.plan.configs:
+            return list(self.plan.configs[config])
+        m = WINDOW_VARIANT_RE.match(config)
+        if m and m.group("base") in self.plan.configs:
+            return list(self.plan.configs[m.group("base")])
+        return []
+
+    def floor_flags(self, config: str) -> list[str]:
+        """Return the plan's `--min-band-windows N` for an rr run of `config`; [] without the key or for MANTLE."""
+        if self.plan.min_band_windows is None or self.config_engine(config) == "mantle":
+            return []
+        return ["--min-band-windows", str(self.plan.min_band_windows)]
 
     def config_engine(self, config: str) -> str:
         """Return the engine a config's flags name (`--engine <name>`), "aurora" without the flag."""
-        flags = self.plan.configs.get(config, []) if config != "default" else []
+        flags = self.config_flags(config)
         for i, flag in enumerate(flags):
             if flag == "--engine":
                 return flags[i + 1] if i + 1 < len(flags) else "aurora"
@@ -1179,7 +1998,7 @@ class Campaign:
         Returns:
             str | None: The value, None when the config does not name the flag.
         """
-        flags = self.plan.configs.get(config, []) if config != "default" else []
+        flags = self.config_flags(config)
         value = None
         for i, item in enumerate(flags):
             if item == flag and i + 1 < len(flags):
@@ -1197,7 +2016,7 @@ class Campaign:
 
         The last `--mask-scope` given wins, as on the process_rr command line.
         """
-        flags = self.plan.configs.get(config, []) if config != "default" else []
+        flags = self.config_flags(config)
         rule = "role"
         for i, flag in enumerate(flags):
             if flag == "--mask-scope" and i + 1 < len(flags):
@@ -1217,36 +2036,45 @@ class Campaign:
         if self.config_engine(config) == "mantle":
             return False
         on = self.plan.masks
-        for flag in (self.plan.configs.get(config, []) if config != "default" else []):
+        for flag in self.config_flags(config):
             if flag == "--masks":
                 on = True
             elif flag == "--no-masks":
                 on = False
         return on
 
-    def rr_cmd(self, local: str, remote: str, config: str, window: tuple[str, str] | None = None) -> list[str]:
+    def rr_cmd(self, local: str, remote: str, config: str, window: tuple[str, str] | None = None,
+               stage_flags=()) -> list[str]:
         """Build the process_rr.py command line of one rr run.
 
+        The plan's `rr_flags` (every rr job, all stages, the window runs
+        included) go after the plan's `--min-band-windows`; `stage_flags`
+        (`stage_flags`) after them; both before the config's flags, so the
+        later, more particular flag wins on the process_rr command line.
+
         A window's start and end follow the pair as process_rr.py's
-        positional arguments. The runner's `--no-masks` goes before the
-        config's flags so that a config declaring `--masks` wins; a MANTLE
-        config gets `--no-masks` whatever the plan's `runner.masks` says,
-        and `--mantle-window clip` after its flags unless they name
-        `--mantle-window`.
+        positional arguments. The runner's `--no-masks` and the plan's
+        `--min-band-windows N` (`floor_flags`) go before the config's flags
+        so that a config declaring `--masks` or its own `--min-band-windows`
+        wins; a MANTLE config gets `--no-masks` whatever the plan's
+        `runner.masks` says, no `--min-band-windows`, and `--mantle-window
+        clip` after its flags unless they name `--mantle-window`.
         """
-        extra = self.plan.configs.get(config, []) if config != "default" else []
+        extra = self.config_flags(config)
         mantle = self.config_engine(config) == "mantle"
         masks = [] if self.plan.masks and not mantle else ["--no-masks"]
         clip = ["--mantle-window", "clip"] if mantle and self.config_flag(config, "--mantle-window") is None else []
         return [PY, str(SCRIPTS / "process_rr.py"), self.survey_yaml, local, remote, *(window or ()), *masks,
-                *extra, *clip, "--tag", self.plan.tag(config)]
+                *self.floor_flags(config), *self.plan.rr_flags, *stage_flags, *extra, *clip,
+                "--tag", self.plan.tag(config)]
 
     def rr_job(self, stage: int, local: str, remote: str, config: str, run_id: str, deps=(),
                window: tuple[str, str] | None = None) -> Job:
         """Build one rr job, over `window` (start, end UTC) when given; a clipped MANTLE job notes its expected clip."""
         job = Job(run_id=run_id, stage=stage, kind="rr", group=self.plan.group_of(local), local=local,
                   remote=remote, config=config, tag=self.plan.tag(config),
-                  cmd=self.rr_cmd(local, remote, config, window), deps=list(deps), input_sites=[local, remote],
+                  cmd=self.rr_cmd(local, remote, config, window, self.stage_flags(stage, remote, config)),
+                  deps=list(deps), input_sites=[local, remote],
                   window=window)
         job.clip_note = self.expected_clip(job)
         return job
@@ -1305,32 +2133,119 @@ class Campaign:
         return jobs
 
     def stage1_jobs(self, sites) -> list[Job]:
-        """Build the stage 1 rr jobs: every site against every eligible remote."""
-        return [self.rr_job(1, s, r, "default", f"s1_{s}_rr-{r}")
-                for s in sites for r in eligible_remotes(self.plan, self.survey, self.spans, s)]
+        """Build the stage 1 rr jobs: every site against every eligible remote.
 
-    def stage2_jobs(self, sites) -> list[Job]:
-        """Build the stage 2 jobs: per site, one stack build and one rr run per weighting."""
+        Per site, logs the eligible count and the remotes the overlap rule
+        refused with the one of largest overlap, then ", <n>
+        never-remote site(s) left out" when the plan's `never_remote` held a
+        site sharing record with it, and ", <k> beyond the nearest <N>" when
+        `stages.remotes.max_candidates` cut its list (`capped_remotes`: the
+        admitted remotes are the ones run); and (re)writes
+        <campaign>/refused_remotes.csv for every plan site, a dry run
+        included (`write_refused`), and with the cap
+        <campaign>/beyond_cap_remotes.csv (`write_beyond_cap`).
+        """
         jobs = []
         for s in sites:
-            sp = stack_plan(self.plan, self.spans, s)
+            el, beyond = capped_remotes(self.plan, self.survey, self.spans, s)
+            ref = refused_remotes(self.plan, self.survey, self.spans, s)
+            line = (f"stage 1: {s}: {len(el) + len(beyond)} eligible remote(s), {len(ref)} refused by the overlap "
+                    f"rule")
+            if ref:
+                n = max(ref, key=lambda x: (x["overlap_h"], -x["km"]))  # the largest overlap; the nearer on a tie
+                line += (f" (largest refused {n['remote']} at {n['overlap_d']:.1f} d of "
+                         f"{n['local_record_h'] / 24.0:.1f} d, {n['fraction'] * 100:.0f} %)")
+            left = never_left_out(self.plan, self.spans, s)
+            if left:
+                line += f", {left} never-remote site(s) left out"
+            if beyond:
+                line += f", {len(beyond)} beyond the nearest {self.plan.max_candidates}"
+            self.log(line)
+            jobs += [self.rr_job(1, s, r, "default", f"s1_{s}_rr-{r}") for r in el]
+        self.write_refused()
+        if self.plan.max_candidates is not None:
+            self.write_beyond_cap()
+        return jobs
+
+    def write_beyond_cap(self) -> Path:
+        """Write <campaign>/beyond_cap_remotes.csv: every plan site's eligible remotes beyond the candidate cap.
+
+        Written at plan time, a dry run included, when the plan has
+        `stages.remotes.max_candidates` (`capped_remotes`); columns
+        `BEYOND_COLUMNS`.
+        """
+        rows = [x for s in self.plan.sites for x in capped_remotes(self.plan, self.survey, self.spans, s)[1]]
+        self.dir.mkdir(parents=True, exist_ok=True)
+        path = self.dir / "beyond_cap_remotes.csv"
+        df = pd.DataFrame(rows, columns=BEYOND_COLUMNS)
+        for col, nd in (("km", 1), ("overlap_h", 2)):
+            df[col] = df[col].astype(float).round(nd)
+        try:
+            df.to_csv(path, index=False)
+        except PermissionError:
+            self.log("beyond_cap_remotes.csv is locked (open in Excel?): not rewritten this time")
+        return path
+
+    def write_refused(self) -> Path:
+        """Write <campaign>/refused_remotes.csv: every plan site's refused remotes (`refused_remotes`).
+
+        Written at plan time, a dry run included (the one file a dry run
+        writes; it creates the campaign folder when missing).
+        """
+        rows = [x for s in self.plan.sites for x in refused_remotes(self.plan, self.survey, self.spans, s)]
+        self.dir.mkdir(parents=True, exist_ok=True)
+        path = self.dir / "refused_remotes.csv"
+        df = pd.DataFrame(rows, columns=REFUSED_COLUMNS)
+        for col, nd in (("km", 1), ("overlap_h", 2), ("overlap_d", 3), ("local_record_h", 2), ("fraction", 4)):
+            df[col] = df[col].astype(float).round(nd)
+        try:
+            df.to_csv(path, index=False)
+        except PermissionError:
+            self.log("refused_remotes.csv is locked (open in Excel?): not rewritten this time")
+        return path
+
+    def stage2_jobs(self, sites) -> list[Job]:
+        """Build the stage 2 jobs: per site, one stack build and one rr run per weighting.
+
+        The members are chosen by their runs (`stack_plan`); each build's
+        note gives the rule, the floor used and the span expected from the
+        runs. With the plan's remote-only sites eligible for the site and
+        covering that floor, each weighting gets a second stack,
+        STK_<site>R<suffix>, of the same members and those sites. With
+        `stages.stacks.weightings: {}` there is no stack: no job, and the
+        members are not even chosen.
+        """
+        jobs = []
+        if not self.plan.weightings:
+            self.log("stage 2: no stacks (stages.stacks.weightings is empty)")
+            return jobs
+        for s in sites:
+            sp = self.stack_plan(s)
             if sp is None:
-                self.log(f"stage 2: {s}: no stack possible (fewer than two eligible members in any group)")
+                self.log(f"stage 2: {s}: no stack possible (fewer than {STACK_MIN_MEMBERS} eligible remotes whose "
+                          f"best run covers {STACK_COVER_MIN * 100:.0f} % of its record)")
                 continue
+            for r, c in sp["remote_only_left"].items():
+                self.log(f"stage 2: {s}: no R stack with {r}: its best run covers {c * 100:.0f} % of the record, "
+                         f"under the members' floor of {sp['floor'] * 100:.0f} %")
+            kinds = [("", sp["members"])]
+            if sp["remote_only"]:
+                kinds.append(("R", [*sp["members"], *sp["remote_only"]]))
             for suffix, weighting in self.plan.weightings.items():
-                name = f"STK_{s}{suffix}"
-                build = Job(
-                    run_id=f"s2_build_{name}", stage=2, kind="stack", group=self.plan.group_of(s), local=s,
-                    remote=name, config=weighting,
-                    cmd=[PY, str(SCRIPTS / "build_stack.py"), self.survey_yaml, name,
-                         sp["start"].strftime("%Y-%m-%d %H:%M:%S"), sp["end"].strftime("%Y-%m-%d %H:%M:%S"),
-                         *sp["members"], "--weighting", weighting],
-                    input_sites=list(sp["members"]), output=self.stack_archive(name),
-                    note=(f"{weighting} of {' '.join(sp['members'])}"
-                          + (f" (borrowed group {sp['group']})" if sp["borrowed"] else "")
-                          + f", common span {sp['span_h']:.1f} h"))
-                jobs.append(build)
-                jobs.append(self.rr_job(2, s, name, "default", f"s2_{s}_rr-{name}", deps=[build.run_id]))
+                for mark, members in kinds:
+                    name = f"STK_{s}{mark}{suffix}"
+                    pieces = sp["pieces_r"] if mark else sp["pieces"]
+                    build = Job(
+                        run_id=f"s2_build_{name}", stage=2, kind="stack", group=self.plan.group_of(s), local=s,
+                        remote=name, config=weighting,
+                        cmd=[PY, str(SCRIPTS / "build_stack.py"), self.survey_yaml, name,
+                             sp["start"].strftime("%Y-%m-%d %H:%M:%S"), sp["end"].strftime("%Y-%m-%d %H:%M:%S"),
+                             *members, "--weighting", weighting, "--min-piece-h", f"{STACK_MIN_PIECE_H:g}"],
+                        input_sites=list(members), output=self.stack_archive(name),
+                        note=stack_note(sp, members, weighting, with_remote_only=bool(mark)),
+                        pieces=piece_marker(pieces, run_span(self.site_runs(), self.spans, s, members)))
+                    jobs.append(build)
+                    jobs.append(self.rr_job(2, s, name, "default", f"s2_{s}_rr-{name}", deps=[build.run_id]))
         # per site, its builds before its runs, so two slots build a site's stacks first
         order = {s: k for k, s in enumerate(sites)}
         return sorted(jobs, key=lambda j: (order[j.local], j.kind != "stack"))
@@ -1345,7 +2260,6 @@ class Campaign:
         """
         jobs = []
         chosen = self.best_remotes(sites, persist=not dry)
-        configs = self.stage3_configs()
         for s in sites:
             best = chosen.get(s, {})
             remote = best.get("remote")
@@ -1356,20 +2270,82 @@ class Campaign:
                     self.log(f"stage 3: {s}: no stage 1 product to choose a remote from: skipped")
                     continue
             note = f"remote override (the campaign's pick: {best.get('pick') or 'none'})" if best.get("override") else ""
-            for config in configs:
-                rule = self.config_mask_scope(config)
-                if (self.rr_masks_on(config) and not self.plan.masks and remote != "<best-of-stage-1>"
-                        and not self.has_masks(s, remote, rule)):
-                    # the run would repeat the default: masks.yaml holds no entry it applies
-                    which = (f"{s} or {remote}" if rule == "union" else
-                             f"{s} of scope local or both and none of scope both or remote for {remote}")
-                    self.log(f"stage 3: {s}: {config}: no masks.yaml entry for {which}: skipped")
+            jobs += self.stage3_site_jobs(s, remote, note)
+        return jobs
+
+    def stage3_site_jobs(self, s: str, remote: str, note: str = "") -> list[Job]:
+        """Build one site's stage 3 jobs on its stage 3 remote: the configs, then its windows and window merge."""
+        jobs = []
+        for config in self.stage3_configs():
+            rule = self.config_mask_scope(config)
+            if (self.rr_masks_on(config) and not self.plan.masks and remote != "<best-of-stage-1>"
+                    and not self.has_masks(s, remote, rule)):
+                # the run would repeat the default: masks.yaml holds no entry it applies
+                which = (f"{s} or {remote}" if rule == "union" else
+                         f"{s} of scope local or both and none of scope both or remote for {remote}")
+                self.log(f"stage 3: {s}: {config}: no masks.yaml entry for {which}: skipped")
+                continue
+            job = self.rr_job(3, s, remote, config, f"s3_{s}_rr-{remote}_{config}")
+            job.note = note
+            jobs.append(job)
+        if self.only_configs is None:  # --configs runs the configs it names alone
+            jobs += self.window_jobs(s, remote, note)
+            if self.plan.window_merge:
+                jobs += self.window_merge_jobs(s, remote, note)
+        return jobs
+
+    def window_merge_jobs(self, site: str, remote: str, note: str = "") -> list[Job]:
+        """Build a site's window merge (`window_merge`): a config family's window runs, then the merge.
+
+        Each part's sources are each family's run over the part's health window (`windows:`), or the family's
+        full-record run for a whole-record mode, a mode with no sound week and the tipper: `default` the stage 1
+        run (stage 2 on a stack), a config its stage 3 run. A config family gets one run per distinct window,
+        `<config>-<modes>win`, with that config's flags; the default family's window runs are `window_jobs`'.
+        """
+        wm = self.plan.window_merge
+        spec = self.plan.windows.get(site) or {"modes": {}, "none": []}
+        none = list(spec.get("none", []))
+        by_window: dict[tuple, list[str]] = {}
+        for mode, window in spec["modes"].items():
+            by_window.setdefault(tuple(window), []).append(mode)
+        jobs, run_of = [], {"default": {}}
+        for window, modes in by_window.items():
+            tail = "".join(m for m in MODES if m in modes)
+            run_of["default"].update({m: f"s3_{site}_rr-{remote}_{WINDOW_CONFIG.format(mode=tail)}" for m in modes})
+            for fam in dict.fromkeys((wm["short"], wm["long"])):
+                if fam == "default":
                     continue
-                job = self.rr_job(3, s, remote, config, f"s3_{s}_rr-{remote}_{config}")
-                job.note = note
+                config = f"{fam}-{tail}win"
+                job = self.rr_job(3, site, remote, config, f"s3_{site}_rr-{remote}_{config}", window=window)
+                job.note = "; ".join(x for x in (f"{'+'.join(modes)} from {window[0]} to {window[1]} UTC (window "
+                                                 f"merge, {fam})", note) if x)
                 jobs.append(job)
-            if self.only_configs is None:  # --configs runs the configs it names alone
-                jobs += self.window_jobs(s, remote, note)
+                run_of.setdefault(fam, {}).update({m: job.run_id for m in modes})
+
+        def full(fam: str) -> str:
+            if fam == "default":
+                return f"{'s2' if is_stack(remote) else 's1'}_{site}_rr-{remote}"
+            return f"s3_{site}_rr-{remote}_{fam}"
+
+        parts, texts = {}, {}
+        for part in (*MODES, "tipper"):
+            windowed = part in spec["modes"]
+            parts[part] = tuple(run_of.get(fam, {}).get(part, full(fam)) if windowed else full(fam)
+                                for fam in (wm["short"], wm["long"]))
+            if windowed:
+                texts[part] = f"{spec['modes'][part][0]} to {spec['modes'][part][1]} UTC"
+            elif part in none:
+                texts[part] = NO_SOUND_WEEK
+            else:
+                texts[part] = "whole record"
+        deps = list(dict.fromkeys(rid for pair in parts.values() for rid in pair))
+        jobs.append(Job(
+            run_id=f"s3_{site}_rr-{remote}_{WMERGE_CONFIG}", stage=3, kind="merge", group=self.plan.group_of(site),
+            local=site, remote=remote, config=WMERGE_CONFIG, tag=self.plan.tag(WMERGE_CONFIG), deps=deps,
+            input_sites=[site, remote], parts=parts, windows_text=texts,
+            note="; ".join(x for x in (f"window merge {wm['rule']}: short {wm['short']}, long {wm['long']}",
+                                       ", ".join(f"{p} {t}" for p, t in texts.items() if t != "whole record"),
+                                       note) if x)))
         return jobs
 
     def stage3_configs(self) -> list[str]:
@@ -1386,12 +2362,15 @@ class Campaign:
     def window_jobs(self, site: str, remote: str, note: str = "") -> list[Job]:
         """Build a site's `windows:` jobs on its stage 3 remote.
 
-        One default rr run per mode window over that window (config
-        `default-<mode>win`); with `merge: true` a merge job (config
-        `default-merged`) whose xy source is the xy mode's run and whose yx
-        source the yx mode's: the window run for the window mode, the
-        full-record default run on `remote` (stage 1, or stage 2 for a
-        stack) for the other.
+        One default rr run per distinct window over that window (config
+        `default-<modes>win`: `default-xywin`, `default-yxwin`, or
+        `default-xyyxwin` for one window shared by both modes); with
+        `merge` a merge job (config `default-merged`) whose xy source is the
+        run of the xy mode and whose yx source that of the yx mode: its
+        window run, or the full-record default run on `remote` (stage 1, or
+        stage 2 for a stack) for a mode without a window. A mode the spec
+        names in ``none`` (a windows file's null: no sound week) is not
+        produced; with no job at all for such a site the run log says so.
 
         Args:
             site (str): Local site.
@@ -1405,23 +2384,34 @@ class Campaign:
         spec = self.plan.windows.get(site)
         if not spec:
             return []
-        jobs = []
+        reason = spec.get("reason", "")
+        none = list(spec.get("none", []))
+        by_window: dict[tuple, list[str]] = {}
         for mode, window in spec["modes"].items():
-            config = WINDOW_CONFIG.format(mode=mode)
+            by_window.setdefault(tuple(window), []).append(mode)
+        jobs, run_of = [], {}
+        for window, modes in by_window.items():
+            config = WINDOW_CONFIG.format(mode="".join(m for m in MODES if m in modes))
             job = self.rr_job(3, site, remote, config, f"s3_{site}_rr-{remote}_{config}", window=window)
-            job.note = "; ".join(x for x in (f"{mode} from {window[0]} to {window[1]} UTC", note) if x)
+            job.note = "; ".join(x for x in (f"{'+'.join(modes)} from {window[0]} to {window[1]} UTC", reason,
+                                             f"{', '.join(none)} not produced" if none else "", note) if x)
             jobs.append(job)
+            for m in modes:
+                run_of[m] = job.run_id
         if spec["merge"]:
-            win = jobs[0]
-            mode = next(iter(spec["modes"]))
             full = f"{'s2' if is_stack(remote) else 's1'}_{site}_rr-{remote}"
-            deps = [full, win.run_id] if mode == "yx" else [win.run_id, full]
-            other = "yx" if mode == "xy" else "xy"
+            src = {m: run_of.get(m, full) for m in MODES}
+            order = sorted(MODES, key=lambda m: (src[m] != full, list(MODES).index(m)))
+            first = jobs[0]
             jobs.append(Job(
                 run_id=f"s3_{site}_rr-{remote}_{MERGED_CONFIG}", stage=3, kind="merge", group=self.plan.group_of(site),
-                local=site, remote=remote, config=MERGED_CONFIG, tag=self.plan.tag(MERGED_CONFIG), deps=deps,
-                input_sites=[site, remote], window=win.window,
-                note="; ".join(x for x in (f"{other} from {full}, {mode} from {win.run_id}", note) if x)))
+                local=site, remote=remote, config=MERGED_CONFIG, tag=self.plan.tag(MERGED_CONFIG),
+                deps=[src["xy"], src["yx"]], input_sites=[site, remote], window=first.window,
+                note="; ".join(x for x in (", ".join(f"{m} from {src[m]}" for m in order),
+                                           reason if "file" in spec else "", note) if x)))
+        if none and not jobs:
+            self.log(f"stage 3: {site}: {', '.join(none)} not produced (no sound week); "
+                     f"{reason or 'windows file'}: no window run")
         return jobs
 
     def has_masks(self, local: str, remote: str, rule: str = "role") -> bool:
@@ -1451,7 +2441,10 @@ class Campaign:
 
         The choice stored in best_remote.json is used when present; otherwise
         it is made now from the stage 1 scores (over the site's `modes:`)
-        and stored. A choice made from provisional products (--allow-raw) is
+        and stored. The remotes the overlap rule refuses are dropped
+        from the scores first: a stored choice naming one is superseded
+        (logged, and the new pick's why says so) and re-made, stored only
+        when `persist` (never in a dry run). A choice made from provisional products (--allow-raw) is
         not stored. A site in the plan's `remotes:` gets that remote, with
         the score of its full-record default product (NaN without one),
         `override` True and `pick` the campaign's own choice ("" without
@@ -1467,15 +2460,44 @@ class Campaign:
         out, changed = {}, False
         for s in sites:
             s1 = df[(df["stage"] == 1) & (df["local"] == s)] if len(df) else df
-            if s in stored and stored[s]["remote"] in set(s1.get("remote", [])):
+            # a refused remote is never the remote of record, whatever the ledger holds
+            refused = {x["remote"]: x for x in refused_remotes(self.plan, self.survey, self.spans, s)}
+            s1 = drop_refused(s1, refused)
+            # the first pass: only admitted candidates are candidates; a remote beyond the candidate cap or in
+            # never_remote is not, whatever the ledger holds from an earlier plan
+            beyond = {x["remote"] for x in capped_remotes(self.plan, self.survey, self.spans, s)[1]}
+            not_candidates = beyond | set(self.plan.never_remote)
+            s1 = drop_refused(s1, not_candidates)
+            superseded = ""
+            if s in stored and stored[s].get("remote") in refused:
+                x = refused[stored[s]["remote"]]
+                self.log(f"stage 3: {s}: stored pick {x['remote']} is refused by the overlap rule "
+                         f"({x['overlap_d']:.1f} d of {x['local_record_h'] / 24.0:.1f} d): re-chosen")
+                superseded = f"stored pick {x['remote']} refused by the overlap rule; "
+            elif s in stored and stored[s].get("remote") in not_candidates:
+                r = stored[s]["remote"]
+                why = (f"beyond the nearest {self.plan.max_candidates}" if r in beyond else "never a remote")
+                self.log(f"stage 3: {s}: stored pick {r} is {why}: re-chosen")
+                superseded = f"stored pick {r} {why}; "
+            # a stored choice stands for the score form and floor it was made under (one stored before
+            # scoring.coverage existed was made under the quadrant form, or the coverage form, with no floor)
+            rule = stored.get(s, {})
+            same_rule = (rule.get("score_form", SCORE_FORMS[self.plan.quadrant_term]) == self.plan.score_form
+                         and float(rule.get("min_coverage", 0.0)) == self.plan.min_coverage)
+            if s in stored and stored[s]["remote"] in set(s1.get("remote", [])) and same_rule:
                 out[s] = stored[s]
             else:
-                pick = choose_best(s1, self.plan.tie_tolerance, self.pmin, self.pmax, self.plan.modes.get(s))
+                pick = choose_best(s1, self.plan.tie_tolerance, self.pmin, self.pmax, self.plan.modes.get(s),
+                                   min_coverage=self.plan.min_coverage)
                 if pick:
+                    pick["why"] = superseded + pick["why"]
+                    if refused:
+                        pick["why"] += f"; {len(refused)} candidate(s) refused by the overlap rule"
                     out[s] = pick
                     clean = len(s1) == 0 or not s1.get("provisional", pd.Series(dtype=str)).fillna("").astype(str).str.strip().any()
                     if clean:
-                        stored[s] = {**pick, "chosen": now().isoformat(timespec="seconds")}
+                        stored[s] = {**pick, "chosen": now().isoformat(timespec="seconds"),
+                                     "score_form": self.plan.score_form, "min_coverage": self.plan.min_coverage}
                         changed = True
             forced = self.plan.remotes.get(s)
             if forced:
@@ -1497,7 +2519,8 @@ class Campaign:
         sites = self.plan.ordered(sites)
         if 0 in stages:
             self.refresh()
-            yield "stage 0 variants (all sites)", 0, "", sites, self.stage0_jobs(sites)
+            ro = list(self.plan.remote_only)  # the remotes of every local
+            yield "stage 0 variants (all sites)", 0, "", [*sites, *ro], self.stage0_jobs([*sites, *ro])
         for g, members in self.plan.groups.items():
             gs = [s for s in members if s in sites]
             if not gs:
@@ -1540,6 +2563,28 @@ class Campaign:
             return "unreadable", f"unreadable: {name} ({first}); the run stops on it"
         return ("ready", f"ready: {name} on disk and current") if ready else ("to build", "to build")
 
+    def split_done(self, jobs: list[Job]) -> tuple[set, list[Job]]:
+        """Split a block's jobs into those done and those to run.
+
+        A job is done when `already_done` says so and none of its
+        dependencies in the block is to run: a stack build that runs again
+        writes a new archive, so the rr run on it must run again too, though
+        its inputs (the archive's mtime) still match the ledger before the
+        build. The jobs come with each dependency before its dependents
+        (`stage2_jobs`, `window_jobs`).
+
+        Returns:
+            tuple: ``(done run ids, jobs to run in block order)``.
+        """
+        done, pending, to_run = set(), [], set()
+        for job in jobs:
+            if self.already_done(job) and not to_run.intersection(job.deps):
+                done.add(job.run_id)
+            else:
+                pending.append(job)
+                to_run.add(job.run_id)
+        return done, pending
+
     def already_done(self, job: Job) -> bool:
         """Check whether the ledger has the job done, with the same inputs and its product present.
 
@@ -1551,7 +2596,7 @@ class Campaign:
             return False
         if row["provisional"] and not self.allow_raw:
             return False
-        if row["inputs"] != self.inputs(job):
+        if row["inputs"] != self.inputs(job) and not self.legacy_config_row(job, row):
             return False
         if job.kind == "variant":
             return bool(row["archive"]) and Path(row["archive"]).exists()
@@ -1563,6 +2608,17 @@ class Campaign:
 
     # ------------------------------------------------------------------ merges
 
+    def done_edi(self, rid: str) -> str:
+        """Return the EDI the ledger has for a done run id, "" otherwise."""
+        row = self.ledger.rows.get(rid) or {}
+        return row.get("edi", "") if row.get("status") == "done" else ""
+
+    def window_merge_sources(self, job: Job) -> tuple[dict, dict]:
+        """Return a window merge's short and long EDIs per part, as the ledger has them ("" for one not done)."""
+        short = {p: self.done_edi(pair[0]) for p, pair in job.parts.items()}
+        long = {p: self.done_edi(pair[1]) for p, pair in job.parts.items()}
+        return short, long
+
     def merge_sources(self, job: Job) -> tuple[str, str]:
         """Return the EDIs of a merge's xy and yx sources as the ledger has them ("" for one not done)."""
         edis = []
@@ -1572,7 +2628,11 @@ class Campaign:
         return edis[0], edis[1]
 
     def merge_cmd(self, job: Job) -> str:
-        """Describe a merge by its sources, as the ledger's `cmd` records it."""
+        """Describe a merge by its sources (and a window merge by its rule), as the ledger's `cmd` records it."""
+        if job.config == WMERGE_CONFIG:
+            short, long = self.window_merge_sources(job)
+            return (f"merge_windows.merge_windows --rule {self.plan.window_merge.get('rule', '')} "
+                    + " ".join(f"--short-{p} {short[p]} --long-{p} {long[p]}" for p in job.parts) + f" --tag {job.tag}")
         xy, yx = self.merge_sources(job)
         return f"merge_modes.merge_files --xy {xy} --yx {yx} --tag {job.tag}"
 
@@ -1589,15 +2649,26 @@ class Campaign:
             bool: True when the merged EDI was written.
         """
         started, t0 = now(), time.monotonic()
-        xy, yx = self.merge_sources(job)
+        windows_merge = job.config == WMERGE_CONFIG
+        if windows_merge:
+            short, long = self.window_merge_sources(job)
+            xy, yx = short.get("xy", ""), long.get("xy", "")  # named in the run log below
+        else:
+            xy, yx = self.merge_sources(job)
         dest = (self.dir / "tf") if self.plan.move_products else (self.survey.workspace / "tf")
         out = dest / f"{job.local}_rr-{job.remote}_{started.strftime('%Y%m%d-%H%M')}_{job.tag}.edi"
         cmd = self.merge_cmd(job)
         buf = io.StringIO()
         try:
             with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
-                status = merge_modes_module().merge_files(
-                    out, xy, yx, tag=job.tag, argv=["merge_modes.py", str(out), "--xy", xy, "--yx", yx, "--tag", job.tag])
+                if windows_merge:
+                    status = merge_windows_module().merge_windows(
+                        out, short, long, self.plan.window_merge["rule"], site=job.local, tag=job.tag,
+                        windows=job.windows_text, argv=["merge_windows.py", str(out), *cmd.split()[1:]])
+                else:
+                    status = merge_modes_module().merge_files(
+                        out, xy, yx, tag=job.tag,
+                        argv=["merge_modes.py", str(out), "--xy", xy, "--yx", yx, "--tag", job.tag])
         except Exception as exc:  # a source that cannot be read fails this merge alone
             status = 1
             buf.write(f"{type(exc).__name__}: {exc}\n")
@@ -1615,19 +2686,21 @@ class Campaign:
             error="" if ok else (last_error(text) or f"exit code {status}"), log=str(log_path),
             inputs=self.inputs(job), provisional=self.provisional_reason(job), runner_pid=os.getpid(), child_pid="",
             cmd=cmd, note=job.note))
-        tail = f" -- {self.ledger.rows[job.run_id]['error']}"
+        tail = f": {self.ledger.rows[job.run_id]['error']}"
         if ok:
             try:
                 tail = f", score {self.product_score(out, job.local):.3f}"
             except Exception as exc:  # a product that cannot be read is reported, not fatal
                 tail = f", score unreadable ({exc})"
-        self.log(f"{'DONE' if ok else 'FAILED'} {job.run_id}: {Path(xy).name} (xy) + {Path(yx).name} (yx) -> "
-                 f"{out.name}{tail}")
+        what = (f"{Path(xy).name} (short xy) + {Path(yx).name} (long xy), rule {self.plan.window_merge.get('rule')}"
+                if windows_merge else f"{Path(xy).name} (xy) + {Path(yx).name} (yx)")
+        self.log(f"{'DONE' if ok else 'FAILED'} {job.run_id}: {what} -> {out.name}{tail}")
         return ok
 
     def product_score(self, edi, site: str) -> float:
         """Return a product's score over the scoring window and the site's scored modes."""
-        return mode_score(tf_quality(edi, self.pmin, self.pmax), self.plan.scored_modes(site))
+        return mode_score(tf_quality(edi, self.pmin, self.pmax, quadrant_term=self.plan.quadrant_term,
+                                     coverage=self.plan.coverage), self.plan.scored_modes(site))
 
     # --------------------------------------------------------------- readiness
 
@@ -1892,7 +2965,7 @@ class Campaign:
         what = {"rr": f"{job.local} rr {job.remote} [{job.config}]",
                 "variant": f"variant of {job.local} ({job.note})",
                 "stack": f"build {job.remote} ({job.note})"}[job.kind]
-        self.log(f"START {job.run_id}: {what}" + (f" -- PROVISIONAL: {provisional}" if provisional else "")
+        self.log(f"START {job.run_id}: {what}" + (f"; PROVISIONAL: {provisional}" if provisional else "")
                  + f" (pid {popen.pid})")
         return "started"
 
@@ -1976,7 +3049,7 @@ class Campaign:
         elif ok:
             tail = f", {row.get('size_mb', '?')} MB"
         self.log(f"{'DONE' if ok else row['status'].upper()} {job.run_id}: {secs / 60:.1f} min, peak "
-                 f"{r.peak_mb / 1024:.1f} GB{tail}" + (f" -- {err}" if err else ""))
+                 f"{r.peak_mb / 1024:.1f} GB{tail}" + (f": {err}" if err else ""))
         return ok
 
     def move_products(self, job: Job, prod: dict) -> dict:
@@ -2022,13 +3095,8 @@ class Campaign:
         A merge runs in this process (`run_merge`) once its sources are
         done, outside the memory gate.
         """
-        done, failed = set(), set()
-        pending = []
-        for job in jobs:
-            if self.already_done(job):
-                done.add(job.run_id)
-            else:
-                pending.append(job)
+        done, pending = self.split_done(jobs)
+        failed = set()
         # a dependency outside this block counts as the ledger records it: done, or failed for good
         ids = {j.run_id for j in jobs}
         for d in {d for j in pending for d in j.deps if d not in ids}:
@@ -2194,15 +3262,21 @@ class Campaign:
                     "engine": row.get("engine") or self.config_engine(row["config"]),
                     "remote_kind": "stack" if row["remote"].startswith("STK_") else "site",
                     "provisional": row["provisional"], "edi": str(edi), "edi_mtime": key[1],
-                    "modes": ",".join(modes)}
-            if key in cache and "period_max" in cache[key] and cache[key].get("modes") == base["modes"]:
+                    "modes": ",".join(modes), "score_form": self.plan.score_form,
+                    "min_coverage": self.plan.min_coverage}
+            # a cached row counts only for the same form (a row of a ledger before the key is the quadrant form's)
+            cached_form = (cache.get(key) or {}).get("score_form") or "quadrant"
+            if (key in cache and "period_max" in cache[key] and cache[key].get("modes") == base["modes"]
+                    and cached_form == base["score_form"]):
                 rows.append({**cache[key], **base})
                 continue
             try:
-                qw = tf_quality(edi, self.pmin, self.pmax)
+                qw = tf_quality(edi, self.pmin, self.pmax, quadrant_term=self.plan.quadrant_term,
+                                coverage=self.plan.coverage)
                 q = {**flat_quality(qw), "score": mode_score(qw, modes), "period_min": qw["period_min"],
                      "period_max": qw["period_max"]}
-                full = mode_score(tf_quality(edi), modes)
+                full = mode_score(tf_quality(edi, quadrant_term=self.plan.quadrant_term, coverage=self.plan.coverage),
+                                  modes)
             except Exception as exc:
                 self.log(f"scores: {edi.name} unreadable: {exc}")
                 continue
@@ -2250,14 +3324,15 @@ class Campaign:
         counts: dict[int, dict[str, int]] = {}
         todo_min = 0.0
         for label, st, g, gs, jobs in self.blocks(stages, sites, dry=True):
-            n_done = sum(self.already_done(j) for j in jobs)
+            done_ids = self.split_done(jobs)[0]
+            n_done = len(done_ids)
             by_kind = {k: sum(j.kind == k for j in jobs) for k in KINDS if any(j.kind == k for j in jobs)}
             wait = "" if api[NEEDS[st]] else "  [waits for the variant API]" if st != 2 else \
                 "  [deferred to the end until the stack builder uses the variant API]"
             print(f"\n{label}: {len(jobs)} job(s) ({', '.join(f'{v} {k}' for k, v in by_kind.items()) or 'none'})"
                   + (f", {n_done} already done" if n_done else "") + wait)
             for j in jobs:
-                done = self.already_done(j)
+                done = j.run_id in done_ids
                 # a variant the ledger does not have done may still be on disk and current (with
                 # its raw archive there): the run's processing_archive reuses it, so it is listed
                 # ready and not counted
@@ -2266,7 +3341,9 @@ class Campaign:
                 if j.kind == "rr":
                     ov = overlap_hours(self.spans[j.local], self.spans[j.remote]) if j.remote in self.spans else None
                     km = _km(self.survey, j.local, j.remote) if j.remote in self.spans else None
-                    extra = " ".join(self.plan.configs.get(j.config, [])) or "defaults"
+                    extra = " ".join([*self.floor_flags(j.config), *self.plan.rr_flags,
+                                      *self.stage_flags(j.stage, j.remote, j.config),
+                                      *self.config_flags(j.config)]) or "defaults"
                     if j.window:
                         extra += f", {j.window[0]} to {j.window[1]} UTC"
                     info = f"{j.local} rr {j.remote} [{extra}]" + (f" ({ov:.1f} h overlap, {km:.1f} km)" if ov else "")
@@ -2312,12 +3389,17 @@ class Campaign:
         return {"counts": counts, "total": total, "hours": hours}
 
 
-def choose_best(s1: pd.DataFrame, tie_tolerance: float, pmin=None, pmax=None, modes=None) -> dict | None:
+def choose_best(s1: pd.DataFrame, tie_tolerance: float, pmin=None, pmax=None, modes=None,
+                min_coverage: float = 0.0) -> dict | None:
     """Choose the best stage 1 remote from a site's scores.
 
     The highest score wins; among remotes within `tie_tolerance` of it, the
     one with the lowest median |dlog10 rho| against the site's other stage 1
     products is chosen, over both modes or over the one mode in `modes`.
+    With `min_coverage` above 0 (the plan's scoring.min_coverage), a product
+    whose window coverage (`<part>_window_coverage`, mt_workbench.quality)
+    is under it is not a candidate; the agreement is still measured against
+    every product.
 
     Args:
         s1 (pd.DataFrame): The site's stage 1 scores.
@@ -2325,19 +3407,31 @@ def choose_best(s1: pd.DataFrame, tie_tolerance: float, pmin=None, pmax=None, mo
         pmin (float | None): Shortest period of the agreement window.
         pmax (float | None): Longest period of the agreement window.
         modes (list[str] | None): The site's scored modes; None for both.
+        min_coverage (float): The floor on the window coverage; 0 for none.
 
     Returns:
-        dict | None: {"remote", "score", "why"}, or None without scores.
+        dict | None: {"remote", "score", "why"}, or None without scores or
+        without a product at or above the floor.
     """
     part = modes[0] if modes and len(modes) == 1 else "overall"
     if s1 is None or len(s1) == 0:
         return None
     s1 = s1.sort_values("score", ascending=False)
-    top = float(s1["score"].iloc[0])
-    tied = s1[s1["score"] >= top - tie_tolerance]
+    floor_note = ""
+    cands = s1
+    if min_coverage > 0.0:
+        col = f"{part}_window_coverage"
+        cov = pd.to_numeric(s1[col], errors="coerce") if col in s1 else pd.Series(np.nan, index=s1.index)
+        cands = s1[cov >= min_coverage - 1e-12]
+        if len(cands) == 0:
+            return None
+        if len(cands) < len(s1):
+            floor_note = f"; {len(s1) - len(cands)} under min_coverage {min_coverage:g} left out"
+    top = float(cands["score"].iloc[0])
+    tied = cands[cands["score"] >= top - tie_tolerance]
     if len(tied) == 1 or len(s1) < 3:
-        r = s1.iloc[0]
-        return {"remote": r["remote"], "score": float(r["score"]), "why": "highest score"}
+        r = cands.iloc[0]
+        return {"remote": r["remote"], "score": float(r["score"]), "why": "highest score" + floor_note}
     best, best_d = None, None
     for _, cand in tied.iterrows():
         others = [o for o in s1["edi"] if o != cand["edi"]]
@@ -2346,7 +3440,7 @@ def choose_best(s1: pd.DataFrame, tie_tolerance: float, pmin=None, pmax=None, mo
             best, best_d = cand, d
     return {"remote": best["remote"], "score": float(best["score"]),
             "why": f"{len(tied)} within {tie_tolerance:g} of the top ({top:.3f}); median |dlog10 rho| "
-                   f"to the other remotes {best_d:.3f}"}
+                   f"to the other remotes {best_d:.3f}" + floor_note}
 
 
 # ------------------------------------------------------------------- report
@@ -2534,9 +3628,10 @@ def fig_stacks(c: "Campaign", df: pd.DataFrame, site: str, best: str | None, out
                   f"{r['remote']} ({w})  {r['score']:.2f}", errors=True)
         _style(ax[0], ax[1])
         _legend(fig, ax[0][0], "remote   score")
-        sp = stack_plan(c.plan, c.spans, site)
+        sp = c.stack_plan(site)
         members = "no stack plan" if sp is None else f"members {' '.join(sp['members'])}" + \
-            (f" (borrowed group {sp['group']})" if sp["borrowed"] else "")
+            f", {sp['run_span_h']:.0f} h from the runs" + \
+            (f"; the R stacks add {' '.join(sp['remote_only'])}" if sp["remote_only"] else "")
         fig.suptitle(f"{site}: best single remote vs the leave-one-out stacks ({members})", fontsize=11)
         fig.savefig(out, dpi=110)
         plt.close(fig)
@@ -2582,11 +3677,27 @@ def fig_options(c: "Campaign", df: pd.DataFrame, site: str, best: str | None, ou
     return True
 
 
-def best_products(df: pd.DataFrame) -> dict:
-    """Return each site's highest-scoring product row, any stage: {site: row}."""
+def best_products(df: pd.DataFrame, min_coverage: float = 0.0) -> dict:
+    """Return each site's highest-scoring product row, any stage: {site: row}.
+
+    With `min_coverage` above 0 (scoring.min_coverage) a product whose
+    window coverage (`overall_window_coverage`, or the one mode's for a site
+    scored on one) is under it is never the best; a site with none at or
+    above it has no best.
+    """
     if len(df) == 0:
         return {}
-    return {s: g.sort_values("score", ascending=False).iloc[0] for s, g in df.groupby("local")}
+    out = {}
+    for s, g in df.groupby("local"):
+        if min_coverage > 0.0:
+            modes = str(g["modes"].iloc[0]) if "modes" in g else "xy,yx"
+            col = "overall_window_coverage" if "," in modes else f"{modes}_window_coverage"
+            cov = pd.to_numeric(g[col], errors="coerce") if col in g else pd.Series(np.nan, index=g.index)
+            g = g[cov >= min_coverage - 1e-12]
+            if len(g) == 0:
+                continue
+        out[s] = g.sort_values("score", ascending=False).iloc[0]
+    return out
 
 
 def _label(r) -> str:
@@ -2609,7 +3720,7 @@ def fig_pseudosection(c: "Campaign", df: pd.DataFrame, out: Path, title: str | N
     Returns:
         bool: False when no product is scored.
     """
-    best = best_products(df)
+    best = best_products(df, c.plan.min_coverage)
     if not best:
         return False
     sites = list(c.plan.sites)
@@ -2674,7 +3785,8 @@ def fig_scores(c: "Campaign", df: pd.DataFrame, bests: dict, out: Path) -> bool:
     if len(df) == 0:
         return False
     sites = list(c.plan.sites)
-    rem_cols = sites + [f"STK {sfx}" for sfx in c.plan.weightings]
+    rem_cols = sites + list(c.plan.remote_only) + [f"STK {sfx}" for sfx in c.plan.weightings] + \
+        ([f"STK R{sfx}" for sfx in c.plan.weightings] if c.plan.remote_only else [])
     m1 = np.full((len(sites), len(rem_cols)), np.nan)
     cfg_cols = ["default"] + list(c.plan.configs)
     m3 = np.full((len(sites), len(cfg_cols)), np.nan)
@@ -2682,10 +3794,10 @@ def fig_scores(c: "Campaign", df: pd.DataFrame, bests: dict, out: Path) -> bool:
         if r["local"] not in sites:
             continue
         i = sites.index(r["local"])
-        if r["stage"] == 1 and r["remote"] in sites:
+        if r["stage"] == 1 and (r["remote"] in sites or r["remote"] in c.plan.remote_only):
             m1[i, rem_cols.index(r["remote"])] = r["score"]
         elif r["stage"] == 2 and str(r["remote"]).startswith("STK_"):
-            key = f"STK {r['remote'][-1]}"
+            key = f"STK {str(r['remote'])[len('STK_') + len(r['local']):]}"  # u, w (R u, R w with remote_only)
             if key in rem_cols:
                 m1[i, rem_cols.index(key)] = r["score"]
         best = bests.get(r["local"], {}).get("remote")
@@ -2733,9 +3845,10 @@ def _fmt(v, spec=".3f") -> str:
 
 def _merge_text(plan: Plan, site: str) -> str:
     """Describe a site's merged product: which mode comes from the full record and which from its window."""
-    mode, (start, end) = next(iter(plan.windows[site]["modes"].items()))
-    other = "yx" if mode == "xy" else "xy"
-    return f"{other} from the full record, {mode} from {start} to {end} UTC"
+    spans = plan.windows[site]["modes"]
+    parts = [f"{m} from the full record" for m in MODES if m not in spans]
+    parts += [f"{m} from {spans[m][0]} to {spans[m][1]} UTC" for m in MODES if m in spans]
+    return ", ".join(parts)
 
 
 def _period_max(r) -> float:
@@ -2766,11 +3879,30 @@ def write_summary(c: "Campaign", df: pd.DataFrame, bests: dict, out: Path) -> No
         L += [plan.description, ""]
     L += [f"Written {now().isoformat(timespec='seconds')} from `ledger.csv` ({len(rows)} rows: "
           + (", ".join(f"{v} {k}" for k, v in sorted(by_status.items())) or "none") + ").",
-          f"Scores: `mt_workbench.quality.tf_quality` over {_window_text(c)}: score = Q x S x exp(-5 B / N) "
-          "(Q the fraction of periods in the physical phase quadrant, S the mean per-step smoothness "
+          f"Scores: `mt_workbench.quality.tf_quality` over {_window_text(c)}: "
+          + ("score = Q x S x exp(-5 B / N) (Q the fraction of periods in the physical phase quadrant, "
+             if plan.quadrant_term else
+             "score = C x S x exp(-5 B / N), the coverage form (scoring.quadrant_term false: C the fraction of "
+             "periods holding a value, the phase quadrant not counted; ")
+          + "S the mean per-step smoothness "
           "exp(-(|dlog10 rho| / 0.25)^2), B blow-ups out of N periods), mean of xy and yx (of the listed "
           "modes for a site under the plan's `modes:`, marked xy-only or yx-only); higher is better. "
           "The figures are the judgement; the score only ranks.", ""]
+    if plan.coverage:
+        L += [f"scoring.coverage true (score form `{plan.score_form}`): the score is multiplied by the window "
+              "coverage C_w, the valid periods over the periods the product's own band lattice lays out in the "
+              "scoring window (C_w in place of C under the coverage form), so a product that stops short of the "
+              "window is charged for the periods it lacks (scores.csv `*_window_coverage`, `n_window`).", ""]
+    if plan.min_coverage > 0.0:
+        L += [f"scoring.min_coverage {plan.min_coverage:g}: a product whose window coverage is under it is never "
+              "a site's best (stage 1 remote or best product).", ""]
+    if plan.min_band_windows is not None:
+        L += [f"Every aurora rr run passed `--min-band-windows {plan.min_band_windows}` (the plan's "
+              "`min_band_windows`; a stage 3 config's own flag wins, MANTLE runs take none).", ""]
+    for st, key in ((1, "remotes"), (2, "stacks")):
+        if plan.stage_flags.get(st):
+            L += [f"Stage {st} rr runs passed `{' '.join(plan.stage_flags[st])}` (the plan's `stages.{key}.flags`"
+                  + ("; the `windows:` runs on a " + ("site remote" if st == 1 else "stack") + " too)."), ""]
     L += ["## Excluded", ""] + [f"- **{s}**: {r}" for s, r in plan.exclude.items()] + [""]
 
     L += ["## Stage 0: filtered variants", "",
@@ -2842,14 +3974,19 @@ def write_summary(c: "Campaign", df: pd.DataFrame, bests: dict, out: Path) -> No
           "scored over its own periods, marked \"(to <period> s)\" above: the long-period tail of the "
           "default is in the default's score and not in its own (`period_max` in scores.csv).", ""]
 
-    L += ["## Stacks", "", "| site | members | group | common span (h) |", "|---|---|---|---|"]
+    L += ["## Stacks", "",
+          f"Members: the eligible remotes whose best run covers {STACK_COVER * 100:.0f} % of the local's record "
+          f"({STACK_COVER_MIN * 100:.0f} % when fewer than {STACK_MIN_MEMBERS} do), the {STACK_MAX_MEMBERS} nearest"
+          + (f"; never {', '.join(plan.exclude_members)}" if plan.exclude_members else "") + ".", "",
+          "| site | members | floor | span from the runs (h) | pieces | survey spans (h) | R stack adds |",
+          "|---|---|---|---|---|---|---|"]
     for s in plan.ordered(plan.sites):
-        sp = stack_plan(plan, c.spans, s)
+        sp = c.stack_plan(s)
         if sp is None:
-            L.append(f"| {s} | none possible | - | - |")
+            L.append(f"| {s} | none possible | - | - | - | - | - |")
         else:
-            L.append(f"| {s} | {' '.join(sp['members'])} | {sp['group']}{' (borrowed)' if sp['borrowed'] else ''} | "
-                     f"{sp['span_h']:.1f} |")
+            L.append(f"| {s} | {' '.join(sp['members'])} | {sp['floor'] * 100:.0f} % | {sp['run_span_h']:.1f} | "
+                     f"{len(sp['pieces']['kept'])} | {sp['span_h']:.1f} | {' '.join(sp['remote_only']) or '-'} |")
     L.append("")
 
     prov = [r for r in rows if r["provisional"] and r["status"] == "done"]
@@ -2927,6 +4064,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--dry-run", action="store_true", help="print the matrix, counts and hours; run nothing")
     p.add_argument("--report", action="store_true", help="rebuild scores, figures and summary from the ledger")
     return p
+
+
+def floor_text(plan: Plan) -> str:
+    """Return "; min_band_windows N on every aurora rr run" for a plan with the key, else ""."""
+    if plan.min_band_windows is None:
+        return ""
+    return f"; min_band_windows {plan.min_band_windows} on every aurora rr run"
 
 
 def run_campaign(c: Campaign, stages, sites) -> None:
@@ -3015,7 +4159,8 @@ def main(argv=None) -> int:
     if args.dry_run:
         print(f"campaign {plan.name}: {len(plan.sites)} sites, groups "
               + ", ".join(f"{g} ({len(m)})" for g, m in plan.groups.items())
-              + "; excluded: " + ("; ".join(f"{s}: {r}" for s, r in plan.exclude.items()) or "none"))
+              + "; excluded: " + ("; ".join(f"{s}: {r}" for s, r in plan.exclude.items()) or "none")
+              + floor_text(plan))
         print(gate_line)
         c.dry_run(args.stage, sites)
         return 0
@@ -3043,7 +4188,7 @@ def main(argv=None) -> int:
     c.log(f"campaign {plan.name}: pid {os.getpid()}, stages {args.stage}, sites {', '.join(plan.ordered(sites))}, "
           f"parallel {c.parallel}" + (f", max-runs {args.max_runs}" if args.max_runs else "")
           + (f", stage 3 configs {', '.join(configs)}" if configs else "")
-          + (", --allow-raw (PROVISIONAL products)" if args.allow_raw else ""))
+          + (", --allow-raw (PROVISIONAL products)" if args.allow_raw else "") + floor_text(plan))
     c.log(gate_line)
     rc = 0
     try:

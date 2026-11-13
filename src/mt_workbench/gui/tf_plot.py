@@ -12,7 +12,7 @@ for display only.
 The module handles four aspects of mtpy's behaviour.
 
 mtpy creates its own figure through pyplot (`plt.figure(...)` inside
-`plot()`), and with `show_plot=False` nothing exists until `.plot()` is
+`plot()`), and with `show_plot=False` no figure exists until `.plot()` is
 called. For the duration of the call, `_mtpy_draws_on` points
 `plt.figure`, `plt.fignum_exists`, `plt.close` and `plt.clf` at the caller's
 Figure, so pyplot's registry is left without a stray figure or window. mtpy
@@ -292,7 +292,7 @@ def draw(figure, items, choice: str = "rho", title: str = "", hint: str = "",
          verdicts: tuple[str, dict] | None = None):
     """Draw transfer functions on `figure`.
 
-    With nothing drawable the figure is left empty with `hint` written
+    With no drawable item the figure is left empty with `hint` written
     across it.
 
     Args:
@@ -302,7 +302,7 @@ def draw(figure, items, choice: str = "rho", title: str = "", hint: str = "",
             phase, "pt" adds mtpy's row of phase tensor ellipses (one row per
             station) and "tipper" adds the induction-vector panel.
         title (str): Figure title; defaults to the drawn labels joined by " + ".
-        hint (str): Text shown when nothing is drawn.
+        hint (str): Text shown when no curve is drawn.
         phase_range (str): One of `PHASE_CHOICES`. `PHASE_FOLDED` keeps
             mtpy's yx + 180 fold in 0-90; `PHASE_UNFOLDED` shifts every yx
             curve back by -180 onto a -180 to 180 axis (`_apply_phase_range`).

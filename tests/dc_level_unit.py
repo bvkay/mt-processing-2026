@@ -45,6 +45,44 @@ the script's measure calls) taken as the literal share of samples whose
 channels, whose DC level is many times their noise, come back "saturated?";
 the test checks that it does, so the healthy criterion is shown able to
 fail.
+
+The Phoenix input rail (upstream issue 78). It also fails if, on two
+synthetic 150 Hz records in volts of 2 h each (a drifting E whose median
+climbs 30 mV over the first 80 % of the run and holds at 46 mV, with
+0.1 mV noise, as the S1 runs the ingest flagged; and an E of 0.2 V
+noise with 3 % of its samples
+at +-2.4 V, beyond the rail of 0.9 x 2.5 V), the record's own rail
+(`channel_stats` without `rail`)
+does not flag both "saturated?", or the absolute rail of 2.25 V
+(`rail=2.25`) flags the drifting one or does not flag the railed one with
+3 % at the rail; or the flag line of the railed one does not name the
+rail ("at the input rail (|x| >= 2.25 V)"), the relative line names one,
+or `level_note` and `parse_level_note` do not give back the rail of each
+channel and the same flag line; or a ";"-piece of the `level_note`
+record with rails has a dot in its key (before its first ":"; the EMTF
+XML writer takes the key as an attribute path, upstream issue 82), or
+`parse_level_note` does not read the rails back from the dotted key that
+Phoenix archives built from commit 4beb3cd carry
+(`RAIL_PREFIX_DOTTED`). The mutations: `channel_stats` ignoring `rail`
+must flag the drifting record again, and `RAIL_PREFIX` set to the dotted
+key must trip the key check.
+
+The input rail read back by the script. It also fails if, on
+a 150 Hz site P01 written with mth5 in volts whose run sr150_0001 holds
+the two records above under a run comment with the ingest's "dc rail"
+line (ex 2.25, ey 2.25), whose run sr150_0002 holds the same records
+under a comment without it (the control, a LEMI or EDL run or a Phoenix
+archive built before) and whose run sr150_0003 holds them under the
+dotted "dc rail" line of 4beb3cd archives, `comment_rails` does not give {ex: 2.25,
+ey: 2.25} for the first and third runs and nothing for the second; or
+the script's report does not give the drifting ex of sr150_0001 and
+sr150_0003 "ok" with 0 % at the input rail and their railed ey
+"saturated?" with 2.7 % to 3.3 %, all with the rail 2.25 in the CSV, does
+not give the control's ex and ey "saturated?" at the record's own rail
+with no rail in the CSV, or does not count 4 of 6 channel runs at the
+input rail in the line above the table. The
+mutation: `comment_rails` reading no rail must flag sr150_0001 ex
+"saturated?" again.
 """
 
 from __future__ import annotations
@@ -299,11 +337,254 @@ def main() -> None:
     assert tripped, mutant
     print(f"  mutation |counts| >= 90 % of max|counts|: {len(tripped)} of 8 healthy channel runs come back "
           f"{sorted({r[-1] for r in tripped})}, e.g. {tripped[0][0]} {tripped[0][1]} {tripped[0][2]} "
-          f"at {tripped[0][-2]} % -- the healthy criterion trips")
+          f"at {tripped[0][-2]} %: the healthy criterion trips")
+
+
+PHOENIX_RAIL_V = 2.25  # 0.9 x the 2.5 V input range of a Phoenix E channel at circuitry gain 2
+
+
+def phoenix_records() -> dict[str, np.ndarray]:
+    """Return the drifting and the railed synthetic 150 Hz E records, in volts, 2 h each."""
+    rng = np.random.default_rng(78)
+    n = int(150 * 7200)
+    drift = 0.016 + 0.030 * np.clip(np.linspace(0.0, 1.25, n), 0.0, 1.0) + rng.normal(0.0, 1e-4, n)
+    railed = 0.01 + rng.normal(0.0, 0.2, n)
+    hit = rng.choice(n, size=int(0.03 * n), replace=False)
+    railed[hit] = np.where(rng.random(hit.size) < 0.5, -2.4, 2.4)
+    return {"ex": drift, "ey": railed}
+
+
+def check_input_rail() -> list[str]:
+    """Classify the two records against their own rail and the absolute one. Returns the failures."""
+    bad, rows = [], {}
+    for rail in (None, PHOENIX_RAIL_V):
+        mine = []
+        for channel, x in phoenix_records().items():
+            try:
+                stats = dclevel.channel_stats(x, 150.0) if rail is None else dclevel.channel_stats(x, 150.0, rail=rail)
+            except TypeError as exc:  # the code before the fix takes no rail
+                return bad + [f"channel_stats(rail={rail}): {exc}"]
+            mine.append(dict(site="P01", run="sr150_0001", channel=channel, type="electric", **stats))
+        dclevel.classify(mine, threshold_counts=float("inf"))
+        rows[rail] = {r["channel"]: r for r in mine}
+    own, absolute = rows[None], rows[PHOENIX_RAIL_V]
+    if [own[c]["verdict"] for c in ("ex", "ey")] != ["saturated?"] * 2:
+        bad.append(f"own rail: ex {own['ex']['verdict']}, ey {own['ey']['verdict']}, expected both saturated?")
+    ex, ey = absolute["ex"], absolute["ey"]
+    if ex["verdict"] != "ok" or ex["rail_fraction"] != 0.0:
+        bad.append(f"input rail: drifting ex {ex['verdict']} at {100 * ex['rail_fraction']:.2f} %")
+    if ey["verdict"] != "saturated?" or abs(ey["rail_fraction"] - 0.03) > 0.002:
+        bad.append(f"input rail: railed ey {ey['verdict']} at {100 * ey['rail_fraction']:.2f} %")
+    line = dclevel.flag_line(absolute["ey"], "V")
+    if "at the input rail (|x| >= 2.25 V)" not in line:
+        bad.append(f"flag line does not name the rail: {line}")
+    if "input rail" in dclevel.flag_line(own["ey"], "V"):
+        bad.append(f"relative flag line names an input rail: {dclevel.flag_line(own['ey'], 'V')}")
+    parsed = {r["channel"]: r for r in dclevel.parse_level_note(dclevel.level_note(list(absolute.values()), "V"))}
+    if {c: r.get("rail_level") for c, r in parsed.items()} != {"ex": PHOENIX_RAIL_V, "ey": PHOENIX_RAIL_V}:
+        bad.append(f"rails read back {({c: r.get('rail_level') for c, r in parsed.items()})}")
+    else:
+        again = dclevel.flag_line(dict(site="P01", run="sr150_0001", **parsed["ey"]), "V")
+        if again != line:
+            bad.append(f"flag line read back differs: {again}")
+    return bad
+
+
+def check_rail_key() -> list[str]:
+    """The rail record's keys are dot-free, and the dotted record of 4beb3cd reads back. Returns the failures."""
+    bad = []
+    rows = [dict(channel=c, median_counts=0.01, rail_fraction=0.0, verdict="ok", rail_level=PHOENIX_RAIL_V)
+            for c in ("ex", "ey")]
+    note = dclevel.level_note(rows, "V")
+    dotted = [p.split(":", 1)[0] for p in note.split(";") if ":" in p and "." in p.split(":", 1)[0]]
+    if dotted:
+        bad.append(f"rail key with a dot: {dotted}")
+    old = note.replace(dclevel.RAIL_PREFIX, dclevel.RAIL_PREFIX_DOTTED)
+    read = {r["channel"]: r.get("rail_level") for r in dclevel.parse_level_note(old)}
+    if read != {"ex": PHOENIX_RAIL_V, "ey": PHOENIX_RAIL_V}:
+        bad.append(f"dotted rail key read back {read}")
+    return bad
+
+
+def main_input_rail() -> None:
+    bad = check_rail_key()
+    for line in bad:
+        print(f"  FAIL rail key: {line}")
+    assert not bad, f"{len(bad)} rail key failure(s)"
+    print(f"  rail key {dclevel.RAIL_PREFIX.split(':')[0]!r} dot-free; the 4beb3cd key "
+          f"{dclevel.RAIL_PREFIX_DOTTED.split(':')[0]!r} still read back")
+    kept = dclevel.RAIL_PREFIX
+    dclevel.RAIL_PREFIX = dclevel.RAIL_PREFIX_DOTTED
+    try:
+        trip = check_rail_key()
+    finally:
+        dclevel.RAIL_PREFIX = kept
+    assert any(t.startswith("rail key with a dot") for t in trip), trip
+    print(f"  mutation (the dotted key written) tripped: {trip[0]}")
+    bad = check_input_rail()
+    for line in bad:
+        print(f"  FAIL input rail: {line}")
+    assert not bad, f"{len(bad)} input rail failure(s)"
+    absolute = {c: dclevel.channel_stats(x, 150.0, rail=PHOENIX_RAIL_V) for c, x in phoenix_records().items()}
+    own = {c: dclevel.channel_stats(x, 150.0) for c, x in phoenix_records().items()}
+    print(f"  Phoenix input rail: drifting ex {100 * own['ex']['rail_fraction']:.2f} % at its own rail (saturated?), "
+          f"{100 * absolute['ex']['rail_fraction']:.2f} % at 2.25 V (ok); railed ey "
+          f"{100 * own['ey']['rail_fraction']:.2f} % and {100 * absolute['ey']['rail_fraction']:.2f} % (saturated? "
+          f"both); the flag line names the rail; the note round trip keeps it")
+    kept = dclevel.channel_stats
+    dclevel.channel_stats = lambda samples, fs, sample_seconds=dclevel.SAMPLE_SECONDS, rail=None: kept(
+        samples, fs, sample_seconds)
+    try:
+        trip = check_input_rail()
+    finally:
+        dclevel.channel_stats = kept
+    assert any(t.startswith("input rail: drifting ex saturated?") for t in trip), trip
+    print(f"  mutation (rail ignored) tripped: {next(t for t in trip if t.startswith('input rail: drifting'))}")
+
+
+RAIL_SURVEY = "dc_level_rail"
+RAIL_SURVEY_YAML = """name: {name}
+instrument: lemi423
+sample_rate: 150
+data_root: {root}
+workspace: {work}
+defaults:
+  channels: [ex, ey]
+sites:
+  P01:
+    latitude: -31.9
+    longitude: 140.4
+"""
+
+
+def write_volts_archive(path: Path, site: str, runs: dict) -> None:
+    """Write a site's MTH5 0.2.0 archive of float32 volts, each run with its comment.
+
+    Args:
+        path (Path): The archive.
+        site (str): Station id.
+        runs (dict): {run id: (sample rate, {channel: samples}, comment)}.
+    """
+    from mth5.mth5 import MTH5
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    m = MTH5(file_version="0.2.0")
+    m.open_mth5(path, mode="w")
+    try:
+        m.add_survey(RAIL_SURVEY)
+        station = m.add_station(site, survey=RAIL_SURVEY)
+        station.write_metadata()
+        start = T0
+        for run_id, (fs, channels, comment) in runs.items():
+            n = len(next(iter(channels.values())))
+            end = start + pd.Timedelta(seconds=(n - 1) / fs)
+            run = station.add_run(run_id)
+            for comp, x in channels.items():
+                ch = run.add_channel(comp, "electric", np.asarray(x, dtype="float32"))
+                ch.metadata.component = comp
+                ch.metadata.sample_rate = fs
+                ch.metadata.time_period.start = str(start)
+                ch.metadata.time_period.end = str(end)
+                ch.metadata.units = "V"
+                ch.write_metadata()
+            run.metadata.sample_rate = fs
+            run.metadata.time_period.start = str(start)
+            run.metadata.time_period.end = str(end)
+            run.metadata.comments.value = comment
+            run.write_metadata()
+            start = end + pd.Timedelta(seconds=60)
+    finally:
+        m.close_mth5()
+
+
+def build_rail_survey() -> Path:
+    """Write P01 (a run with the "dc rail" line in its comment, one without) and its survey.yaml."""
+    root, work = SCRATCH / "rail" / "raw", SCRATCH / "rail" / "work"
+    shutil.rmtree(SCRATCH / "rail", ignore_errors=True)
+    root.mkdir(parents=True)
+    records = phoenix_records()
+    rows = {}
+    for rail in (PHOENIX_RAIL_V, None):
+        rows[rail] = [dict(site="P01", run="sr150_0001", channel=c, type="electric",
+                           **dclevel.channel_stats(x, 150.0, rail=rail)) for c, x in records.items()]
+        dclevel.classify(rows[rail], threshold_counts=float("inf"))
+    write_volts_archive(work / "mth5" / "P01.h5", "P01", {
+        "sr150_0001": (150.0, records, dclevel.level_note(rows[PHOENIX_RAIL_V], "V")),
+        "sr150_0002": (150.0, records, dclevel.level_note(rows[None], "V")),
+        "sr150_0003": (150.0, records, dclevel.level_note(rows[PHOENIX_RAIL_V], "V").replace(
+            dclevel.RAIL_PREFIX, dclevel.RAIL_PREFIX_DOTTED)),
+    })
+    yaml_path = SCRATCH / "rail" / "survey.yaml"
+    yaml_path.write_text(RAIL_SURVEY_YAML.format(name=RAIL_SURVEY, root=root.as_posix(), work=work.as_posix()),
+                         encoding="utf-8")
+    return yaml_path
+
+
+def check_rail_read_back(module, yaml_path: Path) -> list[str]:
+    """Run the script on P01 and check the rail it measured each run against. Returns the failures."""
+    import h5py
+
+    bad = []
+    archive = yaml_path.parent / "work" / "mth5" / "P01.h5"
+    with h5py.File(archive, "r", locking=False) as f:
+        station = dclevel.station_group(f, RAIL_SURVEY, "P01")
+        read = {run: module.comment_rails(station[run]) for run in ("sr150_0001", "sr150_0002", "sr150_0003")}
+    both = {"ex": PHOENIX_RAIL_V, "ey": PHOENIX_RAIL_V}
+    if read != {"sr150_0001": both, "sr150_0002": {}, "sr150_0003": both}:
+        bad.append(f"comment_rails: {read}")
+    out_csv = SCRATCH / "rail" / "dc_level.csv"
+    status, stdout, stderr = run_main(module, yaml_path, "--csv", out_csv)
+    if status != 0:
+        return bad + [f"exit {status}: {stderr}"]
+    rows = read_csv(out_csv)
+    for run in ("sr150_0001", "sr150_0003"):
+        ex, ey = rows[("P01", run, "ex")], rows[("P01", run, "ey")]
+        tail = "" if run == "sr150_0001" else f" ({run}, dotted key)"
+        if ex["verdict"] != "ok" or float(ex["rail_fraction"]) != 0.0 or ex["rail_level"] != "2.25":
+            bad.append(f"input rail: drifting ex {ex['verdict']} at {100 * float(ex['rail_fraction']):.2f} % "
+                       f"(rail {ex['rail_level'] or 'its own'}){tail}")
+        if (ey["verdict"] != "saturated?" or not 0.027 <= float(ey["rail_fraction"]) <= 0.033
+                or ey["rail_level"] != "2.25"):
+            bad.append(f"input rail: railed ey {ey['verdict']} at {100 * float(ey['rail_fraction']):.2f} % "
+                       f"(rail {ey['rail_level'] or 'its own'}){tail}")
+    for comp in ("ex", "ey"):
+        row = rows[("P01", "sr150_0002", comp)]
+        if row["verdict"] != "saturated?" or row["rail_level"] != "":
+            bad.append(f"control: sr150_0002 {comp} {row['verdict']} (rail {row['rail_level'] or 'its own'})")
+    if "(the input rail of the run comment for 4 of 6 channel runs, else the record's own)" not in stdout:
+        bad.append("the line above the table does not count 4 of 6 channel runs at the input rail")
+    return bad
+
+
+def main_rail_read_back() -> None:
+    module = load_script()
+    yaml_path = build_rail_survey()
+    bad = check_rail_read_back(module, yaml_path)
+    for line in bad:
+        print(f"  FAIL rail read back: {line}")
+    assert not bad, f"{len(bad)} rail read-back failure(s)"
+    rows = read_csv(SCRATCH / "rail" / "dc_level.csv")
+    share = {(run, c): 100 * float(rows[("P01", run, c)]["rail_fraction"])
+             for run in ("sr150_0001", "sr150_0002") for c in ("ex", "ey")}
+    print(f"  dc_level_check.py with the run comment's rail: sr150_0001 ex {share['sr150_0001', 'ex']:.2f} % at "
+          f"2.25 V (ok), ey {share['sr150_0001', 'ey']:.2f} % (saturated?); the control sr150_0002 (no rail line) "
+          f"ex {share['sr150_0002', 'ex']:.2f} % and ey {share['sr150_0002', 'ey']:.2f} % at the record's own rail "
+          f"(saturated? both)")
+    kept = module.comment_rails
+    module.comment_rails = lambda group: {}
+    try:
+        trip = check_rail_read_back(module, yaml_path)
+    finally:
+        module.comment_rails = kept
+    assert any(t.startswith("input rail: drifting ex saturated?") for t in trip), trip
+    print(f"  mutation (no rail read from the comment) tripped: "
+          f"{next(t for t in trip if t.startswith('input rail: drifting'))}")
 
 
 if __name__ == "__main__":
     print("This test fails if" + __doc__.split("This test fails if", 1)[1].split("\n\n")[0])
     print()
     main()
+    main_input_rail()
+    main_rail_read_back()
     print("\nPASS  dc_level_unit")

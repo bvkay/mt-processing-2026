@@ -35,16 +35,29 @@ sr1000_0002), each channel in float64 digital counts under the source
 channel's metadata and filter chain: dipole length, coil response table,
 linear and `lemi423_b_scale` coefficients, azimuth, units. Aurora and
 `mt_workbench.timefreq.load_station` calibrate it as they do the source. Each run
-comment names the source archive and run, the stages and the source run's
+comment ("derived_by: decimate_site <version>, from <source> <run> ...")
+names the source archive and run, the stages, the source archive's
+identity as it was read (``source: <stem> size <bytes> mtime <time>
+sha256_head <hex>``, `mt_workbench.ingest.source_note`) and the source run's
 own comment. Each run group's `mth5_type` is "Run", as in an archive
 `mt_workbench.ingest` writes, so a reader matching that attribute exactly (MANTLE's
-MTH5 reader) finds the runs. An existing archive is kept unless --force.
+MTH5 reader) finds the runs. An existing archive is kept while it is
+current (`derived_stale`): the site's processing archive would be the file
+its runs record, unchanged, and a filtered variant is current
+(`mt_workbench.ingest.variant_ready`). It is rebuilt when the source was
+rebuilt or replaced, or its runs record no source (written before the
+record); --force rebuilds it in any case.
 
 survey.yaml gains, or has refreshed, the entry
 ``<site>L: {derived_from, sample_rate, dipole_length_ex/ey, azimuth_ex/ey,
 latitude, longitude, elevation, declination, declination_model,
 declination_epoch, start, end, notes}`` (the parent's position, dipoles,
-azimuths and declination; the derived record's span), through the
+azimuths and declination; the derived record's span), with `channels:`
+too when the channels the archive holds differ from `defaults:`
+(`held_channels`: a parent's own `channels:`, plus hx and hy when it
+takes them from a neighbour with `h_from`, as Tasmania's TAS132 does from
+TAS131), so that process_rr.py asks aurora for the outputs the archive
+has (TAS132L: ex and ey, no hz), through the
 sites-block rewrite of the GUI's Metadata tab
 (`mt_workbench.gui.metadata_edit.rewrite_sites_block`), which rewrites the
 `sites:` block alone.
@@ -80,7 +93,11 @@ import pandas as pd  # noqa: E402
 from loguru import logger  # noqa: E402
 from scipy.signal import decimate  # noqa: E402
 
-from mt_workbench.ingest import default_archive_path, processing_archive  # noqa: E402
+from mt_workbench.ingest import (  # noqa: E402
+    _all_real_run_comments, _file_time_stale, archive_identity, default_archive_path, processing_archive,
+    recorded_source, source_note, variant_path, variant_ready,
+)
+from mt_workbench import __version__ as WORKBENCH_VERSION  # noqa: E402
 from mt_workbench.survey import Survey  # noqa: E402
 from mt_workbench.timefreq import _real_runs  # noqa: E402
 
@@ -90,6 +107,13 @@ MEMORY_POLL_S = 30.0
 MEMORY_WAIT_S = 1800.0
 ISO = "%Y-%m-%dT%H:%M:%SZ"
 NS = 1_000_000_000
+# where a derived run comment quotes its source run's comment; the derived run's own
+# ``source: `` piece comes before it (`derived_stale`)
+SOURCE_RUN_COMMENT = "source run comment: "
+# the first piece of a derived run comment, followed by the mt-workbench version: like every
+# piece, a dot-free key, one ":" and no ";", since mt_metadata's EMTF XML writer sets each
+# "key: value" piece of a run comment as an attribute (docs/upstream_issues.md 48)
+DERIVED_BY = "derived_by: decimate_site "
 
 
 def derived_name(site: str) -> str:
@@ -280,6 +304,7 @@ def write_derived(source: Path, site: str, out_path: Path, rate: float, min_free
     from mth5.mth5 import MTH5
 
     name = derived_name(site)
+    source_record = source_note(source)  # the source as read, recorded in every run comment
     tmp = out_path.with_name(out_path.name + ".part")
     tmp.parent.mkdir(parents=True, exist_ok=True)
     if tmp.exists():
@@ -308,11 +333,11 @@ def write_derived(source: Path, site: str, out_path: Path, rate: float, min_free
             grid = run_grid(t0, n, fs_in, rate, stages)
             if grid["last"] < grid["first"]:
                 logger.warning(f"{site} {run_id}: {n / fs_in:.1f} s is too short for the filter's "
-                               f"{grid['reach']:.1f} s reach at each end -- left out")
+                               f"{grid['reach']:.1f} s reach at each end: left out")
                 continue
             if abs(grid["offset"]) > 1e-3:
-                logger.warning(f"{site} {run_id}: its samples sit {grid['offset']:+.4f} samples off whole seconds "
-                               f"-- the nearest sample is taken as the second")
+                logger.warning(f"{site} {run_id}: its samples sit {grid['offset']:+.4f} samples off whole seconds"
+                               f"; the nearest sample is taken as the second")
             out_id = f"sr{label}_{run_id.rsplit('_', 1)[-1]}"
             run_out = station_out.add_run(out_id)
             keep = slice(grid["first"], grid["last"] + 1)
@@ -336,9 +361,9 @@ def write_derived(source: Path, site: str, out_path: Path, rate: float, min_free
             run_out.metadata.id = out_id
             run_out.metadata.sample_rate = rate
             run_out.metadata.comments = (
-                f"decimated from {source.name} {run_id} ({fs_in:g} Hz) to {rate:g} Hz by scripts/decimate_site.py: "
-                f"zero-phase FIR stages {stages} (scipy.signal.decimate), {grid['reach']:.2f} s dropped at each "
-                f"end; source run comment: {_run_comment(run_in) or 'none'}"
+                f"{DERIVED_BY}{WORKBENCH_VERSION}, from {source.name} {run_id} ({fs_in:g} Hz) to {rate:g} Hz, "
+                f"zero-phase FIR stages {stages} (scipy signal decimate), {grid['reach']:.2f} s dropped at each "
+                f"end; {source_record}; {SOURCE_RUN_COMMENT}{_run_comment(run_in) or 'none'}"
             )
             run_out.write_metadata()
             run_out.update_metadata()
@@ -381,6 +406,85 @@ def archive_runs(path: Path, station: str) -> list[dict]:
         m.close_mth5()
 
 
+def derived_stale(survey: Survey, site: str, out_path: Path) -> str | None:
+    """Say why an existing derived archive is out of date with its source.
+
+    The source is the archive `processing_archive` would give for the
+    site: its filtered variant when filters.yaml declares filters for it,
+    else its raw archive. The derived archive is out of date when the
+    variant is not current (`mt_workbench.ingest.variant_ready`, which also
+    covers a rebuilt raw archive), a derived run's comment records no
+    source identity, or the recorded identity is not the source's as it is
+    now (`mt_workbench.ingest.archive_identity`). A raw archive that is
+    missing is not judged, as `variant_ready` does not judge one: the
+    derived archive still holds what it was cut from. A derived archive
+    none of whose runs records its source (cut before the record of 5 Oct
+    2026) is judged by file times (`mt_workbench.ingest._file_time_stale`):
+    current, with a warning, when it is newer than the source.
+
+    Args:
+        survey (Survey): The survey.
+        site (str): The recorded site.
+        out_path (Path): Its existing derived archive.
+
+    Returns:
+        str or None: The reason; None when the archive is current.
+    """
+    if survey.site(site).filters:
+        if not variant_ready(survey, site):
+            return f"{site}'s filtered variant is missing or out of date and is rebuilt first"
+        source = variant_path(survey, site)
+    else:
+        source = default_archive_path(survey, site)
+        if not source.exists():
+            return None
+    comments = _all_real_run_comments(out_path) or []
+    if not comments:
+        return "it holds no run"
+    recorded_runs = [recorded_source(c, stop=SOURCE_RUN_COMMENT) for c in comments]
+    if not any(recorded_runs):
+        why = _file_time_stale(out_path, [source])
+        if why is None:
+            logger.warning(f"{derived_name(site)}: {out_path.name} records no source archive (cut before "
+                           f"archives recorded their source): judged current by file time, newer than {source.name}; "
+                           f"it will carry the record when next rebuilt")
+        return why
+    now = archive_identity(source)
+    for recorded in recorded_runs:
+        if recorded is None:
+            return "some of its runs record no source archive"
+        if recorded != now:
+            return f"it was cut from {recorded}, and the source is now {now}"
+    return None
+
+
+CHANNEL_ORDER = ("ex", "ey", "hx", "hy", "hz")  # the order a derived entry's `channels:` is written in
+
+
+def held_channels(survey: Survey, site: str) -> list[str] | None:
+    """Return the channels a recorded site's archive holds by its declaration, for its derived entry.
+
+    The site's `channels:` (merged with `defaults:`), plus hx and hy when
+    it takes them from a neighbour (`h_from`): the ingest writes the
+    borrowed coils into its archive, so the derived archive holds them as
+    its own. None when the site declares no channels (every column kept).
+
+    Args:
+        survey (Survey): The survey.
+        site (str): The recorded site.
+
+    Returns:
+        list[str] | None: Lower-case channel names in `CHANNEL_ORDER`.
+    """
+    config = survey.site(site)
+    if not config.channels:
+        return None
+    held = [str(c).lower() for c in config.channels]
+    if config.h_from:
+        held += [c for c in ("hx", "hy") if c not in held]
+    return sorted(held, key=lambda c: CHANNEL_ORDER.index(c) if c in CHANNEL_ORDER else len(CHANNEL_ORDER))
+
+
 def survey_entry(survey: Survey, site: str, rate: float, runs: list[dict], notes: str) -> dict:
     """Build the derived site's survey.yaml entry.
 
@@ -392,14 +496,19 @@ def survey_entry(survey: Survey, site: str, rate: float, runs: list[dict], notes
         notes (str): The entry's notes.
 
     Returns:
-        dict: derived_from, sample_rate, the parent's dipoles, azimuths,
-        position and declination (value, model, epoch; left out when the
-        parent has none), the record's start and end (end: the last sample plus one
-        sample interval, as new_survey.py writes a span) and notes.
+        dict: derived_from, sample_rate, `channels` when the archive's
+        (`held_channels`) differ from `defaults:`, the parent's dipoles,
+        azimuths, position and declination (value, model, epoch; left out
+        when the parent has none), the record's start and end (end: the
+        last sample plus one sample interval, as new_survey.py writes a
+        span) and notes.
     """
     parent = survey.site(site)
     end = pd.Timestamp(runs[-1]["end"]) + pd.Timedelta(seconds=1.0 / rate)
-    entry = dict(derived_from=site, sample_rate=float(rate),
+    held = held_channels(survey, site)
+    default = [str(c).lower() for c in (survey.defaults.get("channels") or [])]
+    channels = held if held is not None and sorted(held) != sorted(default) else None
+    entry = dict(derived_from=site, sample_rate=float(rate), channels=channels,
                  dipole_length_ex=parent.dipole_length_ex, dipole_length_ey=parent.dipole_length_ey,
                  azimuth_ex=parent.azimuth_ex, azimuth_ey=parent.azimuth_ey,
                  latitude=parent.latitude, longitude=parent.longitude, elevation=parent.elevation,
@@ -415,6 +524,9 @@ def main(argv=None) -> int:
     Args:
         argv (list[str] | None): Command-line arguments; sys.argv when None.
 
+    An existing derived archive is kept unless `derived_stale` gives a
+    reason, which is printed before the rebuild, or --force is given.
+
     Returns:
         int: 0 on success, 2 when the site or the derived name does not
         fit, 3 when the memory wait runs out.
@@ -423,7 +535,7 @@ def main(argv=None) -> int:
     parser.add_argument("survey_yaml")
     parser.add_argument("site", help="the recorded site to decimate, e.g. B01")
     parser.add_argument("--rate", type=float, default=1.0, help="output sample rate in Hz (default %(default)g)")
-    parser.add_argument("--force", action="store_true", help="rebuild an existing <site>L.h5")
+    parser.add_argument("--force", action="store_true", help="rebuild an existing <site>L.h5 even when current")
     parser.add_argument("--min-free-gb", type=float, default=0.0,
                         help="wait for this much available memory before each channel read (default: no wait)")
     args = parser.parse_args(argv)
@@ -442,7 +554,10 @@ def main(argv=None) -> int:
         return 2
     out_path = default_archive_path(survey, name)
 
-    if out_path.exists() and not args.force:
+    stale = derived_stale(survey, site, out_path) if out_path.exists() and not args.force else None
+    if stale:
+        print(f"{name}: {out_path.name} is out of date ({stale}): rebuilding it", flush=True)
+    if out_path.exists() and not args.force and not stale:
         runs = archive_runs(out_path, name)
         rate = runs[0]["rate"]
         notes = (entry or {}).get("notes") or f"{site} decimated to {rate:g} Hz by scripts/decimate_site.py"

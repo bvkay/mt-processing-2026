@@ -33,9 +33,15 @@ Checks run at the end of every invocation and are printed as CHECK lines.
     independently from the MTH5 (its own fresh open, its index mapped to a run
     from the run metadata alone, its gain recomputed from the filter chain)
     differs from the value figure 01 draws at that same absolute sample by
-    more than 1e-5 of the channel's standard deviation. This is what catches a
-    wrong gain, a dropped filter stage, a sign error, a lost DC offset or a
-    misplaced run.
+    more than the channel's tolerance: 1e-5 of its standard deviation, or
+    three times the float32 resolution of the figure's array where that is
+    coarser (`calibration_tolerances`: the array holds the samples less one
+    offset, the median of the first run, so a record lying hundreds of
+    sigma from it is stored to 2^-24 of that distance; Tasmania AusLAMP
+    2016's TAS138 and TAS151 reach 2.9e-5 and 2.6e-5 sigma). This is what
+    catches a wrong gain, a dropped filter stage, a sign error, a lost DC
+    offset or a misplaced run (a run one sample off moves a probe by about
+    the sample-to-sample change, orders above either tolerance).
 (b) *the 1-second reduction*: the mean of the 1-second means differs from the
     mean of the channel's full-rate samples by more than 1e-6 of the
     channel's standard deviation (0.05 sigma on a record with gaps, where a
@@ -120,6 +126,10 @@ DEAD_BAND_DROP = 0.15
 # offset-removed channel is good to ~1e-7 sigma, so this leaves two orders of
 # margin and still catches any error that matters (a gain, a sign, a stage).
 CAL_TOL = 1e-5
+# the float32 resolution of a figure array, as a fraction of the value it holds, and how many such units a
+# re-read may differ by before check (a) fails (`calibration_tolerances`)
+FLOAT32_REL = 2.0 ** -24
+FLOAT32_FACTOR = 3.0
 MEAN_TOL = 1e-6     # sigma, for the 1-second block reduction on a gapless record
 MEAN_TOL_GAPS = 0.05  # with gaps the blocks are weighted equally, not by sample
 MEDIAN_NOTE = 0.1   # sigma, above which the two medians are worth a look
@@ -407,11 +417,36 @@ def spectrogram_figure(
 # ---------------------------------------------------------------- checks
 
 
+def calibration_tolerances(record: Record, keys) -> dict[str, float]:
+    """Return check (a)'s tolerance per channel, in sigma.
+
+    Figure 01's array of a channel holds its samples less one offset in
+    float32, so a sample x is stored to about |x - offset| x 2^-24. The
+    channel's bound is the largest such error over the record in units of
+    its standard deviation, max |x - offset| x 2^-24 / sigma, and the
+    tolerance max(CAL_TOL, FLOAT32_FACTOR x bound).
+
+    Args:
+        record (Record): The loaded record.
+        keys (iterable of str): Channel keys (``hx``, ``r_hx`` ...).
+
+    Returns:
+        dict: Key to tolerance in sigma.
+    """
+    out = {}
+    for key in keys:
+        a = record.arrays[key]
+        sd = float(np.nanstd(a)) or 1.0
+        bound = float(np.nanmax(np.abs(a))) * FLOAT32_REL / sd if np.isfinite(a).any() else 0.0
+        out[key] = max(CAL_TOL, FLOAT32_FACTOR * bound)
+    return out
+
+
 def check_calibration(record: Record, survey: Survey, site: str, remote: str | None) -> bool:
     """Run check (a): re-read samples independently from the MTH5 and compare with figure 01.
 
     Returns:
-        bool: True when every channel is within CAL_TOL sigma.
+        bool: True when every channel is within its tolerance (`calibration_tolerances`).
     """
     worst = spot_check_calibration(station_h5(survey, site), survey.name, site, record)
     if remote:
@@ -420,11 +455,13 @@ def check_calibration(record: Record, survey: Survey, site: str, remote: str | N
                 station_h5(survey, remote), survey.name, remote, record, ("hx", "hy"), "r_"
             )
         )
-    ok = all(v <= CAL_TOL for v in worst.values())
-    detail = ", ".join(f"{k} {v:.1e}" for k, v in worst.items())
+    tol = calibration_tolerances(record, worst)
+    ok = all(v <= tol[k] for k, v in worst.items())
+    detail = ", ".join(f"{k} {v:.1e} (tol {tol[k]:.1e})" for k, v in worst.items())
     print(
         f"CHECK {'PASS' if ok else 'FAIL'}  calibration and run placement: worst re-read "
-        f"difference {max(worst.values()):.1e} sigma (tol {CAL_TOL:g}) -- {detail}"
+        f"difference {max(worst.values()):.1e} sigma (tolerance max({CAL_TOL:g}, {FLOAT32_FACTOR:g} x the "
+        f"channel's float32 bound)): {detail}"
     )
     return ok
 
@@ -465,7 +502,7 @@ def check_lines(base_psd: dict, lines=(50.0, 100.0, 150.0)) -> None:
             continue
         freqs, psd = base_psd[comp]
         parts = " ".join(f"{f0:g} Hz {line_excess(freqs, psd, f0):+.1f} dB" for f0 in lines)
-        print(f"CHECK       {comp}: narrow-line excess over the local floor -- {parts}")
+        print(f"CHECK       {comp}: narrow-line excess over the local floor: {parts}")
 
 
 def check_dead_band(coh_levels, assert_it: bool) -> bool:

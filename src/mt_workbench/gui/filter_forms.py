@@ -187,7 +187,7 @@ class ReplaceForm(_Form):
                          "Applied first at ingest, wherever it sits in the list.")
 
     def set_donors(self, names) -> None:
-        """Fill the donor combos with the sites that have a raw folder, keeping the current choice."""
+        """Fill the donor combos with the recorded sites (`State.recorded_sites`), keeping the current choice."""
         for combo in self.donors.values():
             previous = combo.currentText()
             combo.blockSignals(True)
@@ -543,8 +543,8 @@ class FlipForm(_Form):
         self.channels.set([])
         self._grid([("reverse", self.channels)],
                    "Each ticked channel is multiplied by -1 at ingest: for a channel wired the wrong way "
-                   "round (a mode's phase 180 degrees out with its resistivity right). Nothing is ticked "
-                   "until you tick it.")
+                   "round (a mode's phase 180 degrees out with its resistivity right). Every box starts "
+                   "unticked.")
         self.channels.changed.connect(self.changed)
 
     def set_channels(self, names) -> None:

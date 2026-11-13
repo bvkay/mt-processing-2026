@@ -14,8 +14,8 @@ channel pair and impedance element::
     Bx-By (magnetic)    Bx-rBx                 then the two coil checks
     Ex-Ey (electric)    By-rBy
 
-Names follow the roles channels play (`mt_workbench.gui.channels.roles`), so on a
-LEMI-424 the rows read "By-E1 (Zxy)", "Bx-E2 (Zyx)", ..., "E1-E2 (electric)";
+Names follow the roles channels play (`mt_workbench.gui.channels.roles`), so on an
+older LEMI-424 archive (bx .. e4) the rows read "By-E1 (Zxy)", ..., "E1-E2 (electric)";
 the panels stay keyed by the LEMI-423 pairs of `ROWS`.
 
 Each row places a local pair beside the matching remote pair, so a low
@@ -190,7 +190,7 @@ class CoherenceTab(QWidget):
             self.state.set_remote(self.remote_combo.currentData())
 
     def _selection_changed(self, selection) -> None:
-        """Refill the remotes, clearing the plots when nothing is selected."""
+        """Refill the remotes, clearing the plots when the selection is empty."""
         self._fill_remotes()
         if selection is None:
             self.clear()

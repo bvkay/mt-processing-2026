@@ -27,7 +27,7 @@ Usage:
    bare string "ex"; a site saved with an [ex] entry and an entry without
    the key does not write "channels: [ex]" on the first and no channels
    line on the second, or does not load them back as ["ex"] and "all"; the
-   block of an entry without channels is not byte for byte BLOCK_X (the
+   block of an entry without channels is not identical to BLOCK_X (the
    text the code wrote before the key existed); re-saving that site with
    the same list changes a byte of the file; or saving another site
    changes a byte of that block;
@@ -64,7 +64,7 @@ Usage:
    channel None and ex, and none for ey;
 6. the history is wrong: `retire_masks` of C19's night entries does not
    return them with retired {on, why}, leave "C19: []" in masks.yaml and
-   C22's block and the header byte for byte, or write them to
+   C22's block and the header unchanged, or write them to
    masks_history.yaml under its header with their keys; a second retire
    does not append after them; `restore_masks` does not move one back
    without `retired`, leaving the other in the history; a temporary file
@@ -215,7 +215,7 @@ def test_normalise_and_file() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         check_bytes(Path(tmp))
     print("  no key -> all; [EY, ex] -> [ex, ey]; [ez], [] and 'ex' refused; channels: [ex] written, the key left "
-          "out otherwise; an entry without channels writes BLOCK_X byte for byte, re-saving and other sites "
+          "out otherwise; an entry without channels writes BLOCK_X exactly, re-saving and other sites "
           "leave it")
 
 
@@ -490,8 +490,8 @@ def test_history() -> None:
         finally:
             cmasks.os.replace = real_replace
         assert target.read_text(encoding="utf-8") == "NEW: []\n" and leftovers(tmp) == [], leftovers(tmp)
-    print("  retire: C19's two night entries to the history with retired {on, why}, C22 and the comment byte for "
-          "byte; a second retire appended, C19: [] kept; restore moves one back without retired; no temp file; "
+    print("  retire: C19's two night entries to the history with retired {on, why}, C22 and the comment "
+          "unchanged; a second retire appended, C19: [] kept; restore moves one back without retired; no temp file; "
           "the target unchanged until os.replace, and after a failed replace")
 
 

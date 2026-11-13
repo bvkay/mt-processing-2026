@@ -4,8 +4,8 @@ Unit test for a B423 file cut mid-record inside a run (mt_workbench.ingest)
 
 Four synthetic B423 files of 4 s at 1000 Hz, named 4 s apart (back to back),
 are written into a scratch site folder; the second is then cut to 2000
-whole records and 17 bytes, as `corrupt_b423.py truncate` cut a copy of a
-real file in the robustness pass of 3 Oct 2026 (case 5c). Each file's Ex is
+whole records and 17 bytes, as `corrupt_b423.py truncate` cuts a copy of a
+real file. Each file's Ex is
 a constant of its own (1e6, 2e6, 3e6, 4e6 counts), so every file's stretch
 can be found in the archive by its value. `ingest_site` writes the archive
 and h5py reads it back: each stretch's time stamp (its run's start plus its

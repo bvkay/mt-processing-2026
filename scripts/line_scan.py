@@ -204,7 +204,7 @@ def scan_archive(
                 if c not in channels_present:
                     channels_present.append(c)
             if not chans:
-                logger.warning(f"{site} {run_id}: none of {channels_wanted} present -- skipped")
+                logger.warning(f"{site} {run_id}: none of {channels_wanted} present, skipped")
                 continue
 
             n = run[chans[0]].shape[0]
@@ -388,7 +388,7 @@ def main(argv=None) -> None:
         t_start = time.time()
         h5_path = survey.workspace / "mth5" / f"{site}.h5"
         if not h5_path.exists():
-            logger.warning(f"{site}: no archive at {h5_path} -- skipped")
+            logger.warning(f"{site}: no archive at {h5_path}, skipped")
             continue
         try:
             rows, hours_scanned, channels_present = scan_archive(
@@ -396,7 +396,7 @@ def main(argv=None) -> None:
                 args.hours_step, args.fmin, args.fmax, args.min_db,
             )
         except Exception as exc:
-            logger.warning(f"{site}: could not scan ({exc!r}) -- skipped")
+            logger.warning(f"{site}: could not scan ({exc!r}), skipped")
             continue
 
         df = pd.DataFrame(rows, columns=list(CSV_COLUMNS))
@@ -409,7 +409,7 @@ def main(argv=None) -> None:
             line_figure(site, channels_present, df, args.min_db, png_path)
             logger.info(f"{site}: figure -> {png_path}")
         else:
-            logger.warning(f"{site}: none of {args.channels} present in any run -- no figure")
+            logger.warning(f"{site}: none of {args.channels} present in any run, no figure")
 
         block = summary_block(site, channels_present, hours_scanned, df)
         print(block)

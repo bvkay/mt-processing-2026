@@ -21,8 +21,8 @@ Usage:
   with `line_excess` above 20 dB over its local floor, or stage 1 is missing
   (a 1 h array supports stages 0 and 1);
 - the band coherence hx-hy in the 0.01-0.1 s band (10-100 Hz) does not have a
-  median above 0.95, or hy-ex -- the independent pair among the QC pairs
-  (`LOCAL_PAIRS` has no hx-ex; hy is hx plus a tenth of its noise) -- does
+  median above 0.95, or hy-ex (the independent pair among the QC pairs:
+  `LOCAL_PAIRS` has no hx-ex; hy is hx plus a tenth of its noise) does
   not have a median below 0.3;
 - the spectrogram grid of hx has no finite values, has fewer than 20 time
   columns, or has NaN in more than a fifth of its columns (only the windows

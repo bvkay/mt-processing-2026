@@ -42,6 +42,34 @@ are handled alike.
   depends on the estimator settings being compared (more overlap gives more
   correlated windows and smaller bars) as well as on the data.
 
+The coverage form, for products whose phase out of its quadrant is data,
+not a defect to rank against, drops the quadrant term: ``score = C * S * exp(-5 * B / N)`` with C
+the coverage, the fraction of the window's periods holding a finite,
+positive rho and a finite phase, so a product missing periods is still
+charged and one whose phase leaves the quadrant is not.
+`tf_quality(..., quadrant_term=True)` gives both, ``score_quadrant`` and
+``score_coverage``, with ``coverage``, per mode and overall; ``score`` is the
+quadrant form's by default (so older ledgers and summaries reproduce) and the
+coverage form's with ``quadrant_term=False`` (`SCORE_FORMS`; the campaign
+plan key ``scoring.quadrant_term``).
+
+The window coverage (the campaign plan key ``scoring.coverage``): both forms take N, Q and C over the
+periods the EDI holds inside the window, so a product that stops short of the
+window's end (a 40 h cross-wave pair at 3,649 s against 29,193 s for a
+whole-record product in a 10-30,000 s window) is charged nothing for the
+periods it lacks: C was 1.0 for it. ``window_coverage`` C_w is the valid
+periods over N_w, the periods the product's own band lattice lays out inside
+the window: its log-period step (the median adjacent step, aurora's bands
+being evenly spread in log period) extended from its periods over the whole
+window, and never fewer than the periods it holds there. Without a window
+bound the product's own end stands in, so C_w is C. With
+``tf_quality(..., coverage=True)`` the selected form is multiplied by it,
+``score = Q x C_w x S x exp(-5 B / N)`` (the quadrant form) or
+``C_w x S x exp(-5 B / N)`` (the coverage form, C_w in place of C, never
+both), and ``score_form`` gains "+window"; C_w and N_w are reported
+whatever ``coverage`` is (``window_coverage``, ``n_window``), and with it off
+the scores are those of the selected form alone.
+
 ``overall``: Q is the mean of the two modes', the relative error and the
 roughness are medians over both modes' values pooled, the blow-ups a sum, and
 the score the mean of the two modes' scores.
@@ -76,6 +104,8 @@ RHO_LOW = 1e-2  # ohm m: below this too
 ROUGHNESS_SCALE = 0.25  # dex: the adjacent step whose smoothness term is exp(-1)
 BLOWUP_WEIGHT = 5.0  # score *= exp(-BLOWUP_WEIGHT * blow-up fraction)
 PERIOD_RTOL = 0.02  # two periods are "the same" within 2 %
+# the score's first factor: Q, the in-quadrant fraction (the default), or C, the coverage
+SCORE_FORMS = {True: "quadrant", False: "coverage"}
 
 
 @lru_cache(maxsize=512)
@@ -134,8 +164,13 @@ def smoothness(steps) -> float:
 def combined_score(quadrant_frac: float, smooth: float, blowups: int, n_periods: int) -> float:
     """Combine quality factors into a score in [0, 1].
 
+    The first factor is Q, the fraction of periods in quadrant, for the
+    quadrant form, or C, the coverage, for the coverage form (`SCORE_FORMS`,
+    `tf_quality`'s ``quadrant_term``); the formula is the same.
+
     Args:
-        quadrant_frac (float): Q, the fraction of periods in quadrant.
+        quadrant_frac (float): Q, the fraction of periods in quadrant, or C,
+            the coverage.
         smooth (float): S, the smoothness.
         blowups (int): B, the number of blow-up periods.
         n_periods (int): N, the number of periods in the window.
@@ -157,7 +192,41 @@ def _median(values) -> float:
     return float(np.median(values)) if values.size else float("nan")
 
 
-def tf_quality(edi_path, pmin=None, pmax=None) -> dict:
+def window_count(period, pmin=None, pmax=None) -> int:
+    """Return the number of periods a product's band lattice lays out inside [pmin, pmax].
+
+    The lattice is the product's log-period step, the median of its adjacent
+    log10 steps, from its shortest period, extended both ways; a bound left
+    as None is the product's own shortest or longest period. The count is
+    never below the periods the product holds in the window (an uneven
+    grid, a merged product of two lattices).
+
+    Args:
+        period (np.ndarray): Every period of the product in s.
+        pmin (float, optional): Shortest period of the window in s.
+        pmax (float, optional): Longest period of the window in s.
+
+    Returns:
+        int: N_w; 0 for a product without periods.
+    """
+    period = np.sort(np.asarray(period, dtype=float))
+    period = period[np.isfinite(period) & (period > 0)]
+    held = int(_window(period, pmin, pmax).sum())
+    if period.size < 2:
+        return held
+    logp = np.log10(period)
+    step = float(np.median(np.diff(logp)))
+    if not step > 0:
+        return held
+    lo = np.log10(float(pmin)) if pmin is not None else logp[0]
+    hi = np.log10(float(pmax)) if pmax is not None else logp[-1]
+    tol = 1e-6  # of a step: a lattice period on a bound is inside, as _window takes it
+    k_lo = int(np.ceil((lo - logp[0]) / step - tol))
+    k_hi = int(np.floor((hi - logp[0]) / step + tol))
+    return max(held, k_hi - k_lo + 1, 0)
+
+
+def tf_quality(edi_path, pmin=None, pmax=None, quadrant_term: bool = True, coverage: bool = False) -> dict:
     """Compute the per-mode and overall quality of one TF.
 
     The rules are given in the module docstring.
@@ -166,12 +235,21 @@ def tf_quality(edi_path, pmin=None, pmax=None) -> dict:
         edi_path (str or Path or TF): EDI path or TF object.
         pmin (float, optional): Shortest period in s; all periods when None.
         pmax (float, optional): Longest period in s; all periods when None.
+        quadrant_term (bool): Which form ``score`` is: True the quadrant
+            form Q x S x exp(-5B/N) (the default), False the coverage form
+            C x S x exp(-5B/N). Both are reported whatever it is.
+        coverage (bool): Multiply the selected form by the window coverage
+            C_w (the coverage form takes C_w in place of C); False (the
+            default) gives the scores of before. C_w is reported either way.
 
     Returns:
         dict: ``{"xy": {...}, "yx": {...}, "overall": {...}, "n_periods",
-        "pmin", "pmax", "period_min", "period_max"}``. Each mode dict holds
-        ``quadrant_frac``, ``median_rel_err``, ``roughness``,
-        ``smoothness``, ``blowups``, ``n_valid`` and ``score``.
+        "pmin", "pmax", "period_min", "period_max", "score_form"}``. Each
+        mode dict holds ``quadrant_frac``, ``coverage``,
+        ``median_rel_err``, ``roughness``, ``smoothness``, ``blowups``,
+        ``n_valid``, ``score_quadrant``, ``score_coverage``,
+        ``window_coverage`` and ``score`` (the selected form's); the top
+        level also ``n_window``.
     """
     period, rho, phi, rho_err, _ = curves(edi_path)
     sel = _window(period, pmin, pmax)
@@ -182,14 +260,19 @@ def tf_quality(edi_path, pmin=None, pmax=None) -> dict:
         "pmax": None if pmax is None else float(pmax),
         "period_min": float(period[sel].min()) if n else float("nan"),
         "period_max": float(period[sel].max()) if n else float("nan"),
+        "score_form": SCORE_FORMS[bool(quadrant_term)] + ("+window" if coverage else ""),
     }
+    n_w = window_count(period, pmin, pmax)
+    out["n_window"] = n_w
     pooled_rel, pooled_steps, scores, quads, blows = [], [], [], [], 0
+    covs, s_quad, s_cov, covs_w = [], [], [], []
     for mode, (i, j) in MODES.items():
         r = rho[sel, i, j]
         ph = phi[sel, i, j]
         e = rho_err[sel, i, j]
         valid = np.isfinite(r) & (r > 0) & np.isfinite(ph)
         q = float((valid & in_quadrant(ph, mode)).sum() / n) if n else float("nan")
+        cov = float(valid.sum() / n) if n else float("nan")
         with np.errstate(divide="ignore", invalid="ignore"):
             rel = e[valid] / r[valid]
         rel = rel[np.isfinite(rel) & (rel > 0)]
@@ -197,7 +280,13 @@ def tf_quality(edi_path, pmin=None, pmax=None) -> dict:
         rough = _median(steps)
         smooth = smoothness(steps)
         b = int((valid & ((r > RHO_HIGH) | (r < RHO_LOW))).sum())
-        score = combined_score(q, smooth, b, n)
+        score_q = combined_score(q, smooth, b, n)
+        score_c = combined_score(cov, smooth, b, n)
+        cov_w = float(valid.sum() / n_w) if n_w else float("nan")
+        if coverage:
+            score = combined_score(q * cov_w if quadrant_term else cov_w, smooth, b, n)
+        else:
+            score = score_q if quadrant_term else score_c
         out[mode] = {
             "quadrant_frac": q,
             "median_rel_err": _median(rel),
@@ -206,7 +295,15 @@ def tf_quality(edi_path, pmin=None, pmax=None) -> dict:
             "blowups": b,
             "n_valid": int(valid.sum()),
             "score": score,
+            "coverage": cov,
+            "score_quadrant": score_q,
+            "score_coverage": score_c,
+            "window_coverage": cov_w,
         }
+        covs_w.append(cov_w)
+        covs.append(cov)
+        s_quad.append(score_q)
+        s_cov.append(score_c)
         pooled_rel.append(rel)
         pooled_steps.append(steps)
         scores.append(score)
@@ -220,6 +317,10 @@ def tf_quality(edi_path, pmin=None, pmax=None) -> dict:
         "blowups": blows,
         "n_valid": out["xy"]["n_valid"] + out["yx"]["n_valid"],
         "score": float(np.mean(scores)),
+        "coverage": float(np.mean(covs)) if n else float("nan"),
+        "score_quadrant": float(np.mean(s_quad)),
+        "score_coverage": float(np.mean(s_cov)),
+        "window_coverage": float(np.mean(covs_w)) if n_w else float("nan"),
     }
     return out
 
@@ -231,10 +332,12 @@ def flat_quality(q: dict) -> dict:
         q (dict): Result of `tf_quality`.
 
     Returns:
-        dict: ``score`` and ``n_periods``, then ``<mode>_<key>`` for
+        dict: ``score``, ``n_periods`` and ``n_window``, then ``<mode>_<key>`` for
         overall, xy and yx.
     """
     row = {"score": q["overall"]["score"], "n_periods": q["n_periods"]}
+    if "n_window" in q:
+        row["n_window"] = q["n_window"]
     for mode in ("overall", "xy", "yx"):
         for key, value in q[mode].items():
             row[f"{mode}_{key}"] = value

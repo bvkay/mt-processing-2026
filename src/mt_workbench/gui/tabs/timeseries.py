@@ -166,11 +166,17 @@ class TimeSeriesTab(QWidget):
         return None if item is None else item.data(0, SITE_ROLE)
 
     def _update_build(self) -> None:
-        """Enable Build MTH5 for a selected site with raw data and no archive while no job runs."""
+        """Enable Build MTH5 for a selected site with raw data and no archive while no job runs.
+
+        A burst site (`bursts_of:`) has no folder of its own: its raw data
+        is its recorded site's folder (`Survey.raw_site`), as
+        scripts/ingest_site.py looks it up (upstream issue 72).
+        """
         site, state = self.selected_site(), self.state
+        raw = None if site is None or state.survey is None else state.survey.raw_site(site)
         why = ("select a site in the tree" if site is None
                else "archive exists" if state.has_archive(site)
-               else f"no raw data folder for {site}" if site not in state.raw_sites()
+               else f"no raw data folder for {raw or site}" if raw not in state.raw_sites()
                else "a job is running - wait for it to finish" if state.runner.running
                else None)
         self.build_button.setEnabled(why is None)

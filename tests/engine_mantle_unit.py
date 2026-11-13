@@ -65,7 +65,7 @@ Usage:
     reading with the default options, or does not go on to read with
     `MantleOptions(max_hours=72)`.
 
-Proven red (2026-09-25) by returning the arithmetic mean of the per-bin
+Proven red by returning the arithmetic mean of the per-bin
 variances instead of the quadratic form in `band_pool` (criterion 3) and by
 dropping the `engine` branch of `edi_info_lines` (criterion 5).
 """

@@ -57,8 +57,8 @@ fails if**
   three runs each starting and ending within 0.15 s of a true burst's start
   and end, or any sample of any channel more than 0.3 s outside a true
   burst differs from its input by a single bit, or a changed run's interior
-  (the tapers aside) on ex, ey, hx or hy is not the local level -- here
-  |y| < 0.2 with the noise gone (std < 0.1) -- or hy's 5 x ringing
+  (the tapers aside) on ex, ey, hx or hy is not the local level (here
+  |y| < 0.2 with the noise gone, std < 0.1), or hy's 5 x ringing
   survives; or, with ex carried at 5000 + 37 x (counts, as ingest sees
   them), the spans move or ex's fill is not at 5000 (to 0.2 x 37): a fill
   at zero would dig a 5000-count hole; or the plain noise, or the noise
@@ -71,7 +71,7 @@ fails if**
 - `mains` (the defaults, on a third synthetic: 120 s at 1000 Hz of pink-ish
   noise, std 1, different on every channel, plus a mains of 50, 150 and 250
   Hz, amplitude 100 each, that steps to 300 at 40.0031 s and back at
-  80.0117 s -- off every block and sub-block boundary -- while its
+  80.0117 s (off every block and sub-block boundary) while its
   frequency wanders linearly from 49.95 to 50.05 Hz), on any channel:
   (a) the output's Welch PSD (2^14 segments) at 50, 150 or 250 Hz (its
   highest bin within 0.5 Hz) stands more than 3 dB above the same synthetic
@@ -392,7 +392,7 @@ def main() -> int:
     a3 = square_amplitude(out["ex"])
     print(f"cp 12 s: ex square wave {a0:.3f} -> {a1:.2e} without the drift ({100 * abs(a1 / a0):.3f} %), "
           f"-> {a2:.3f} with it after hp then cp ({100 * abs(a2 / a0):.2f} %); {lines[0]!r}")
-    print(f"  (information: cp alone on the drifting ex leaves {a3:.3f}, {100 * abs(a3 / a0):.1f} % -- "
+    print(f"  (information: cp alone on the drifting ex leaves {a3:.3f}, {100 * abs(a3 / a0):.1f} %; "
           f"high-pass first)")
 
     # --- channels scoping, and the untouched outputs are read-only views

@@ -1,6 +1,6 @@
 # The IAGA Div VI fork branches: what is where, and what to do next
 
-Working record of Ben's `mtproc-fixes` branches of the IAGA-DVI-DataStandards
+Working record of the author's `mtproc-fixes` branches of the IAGA-DVI-DataStandards
 repositories (and the simpeg aurora fork), kept so that later work on them
 starts from what is known. Symptoms are numbered in `upstream_issues.md`;
 the review evidence of 2 Oct 2026 is under
@@ -13,16 +13,16 @@ under `<workspace>/qc/survey/pipeline_bench_20261002/`.
 
 | repo | clone | base (upstream) | tip | pushed | PR target | commits |
 |---|---|---|---|---|---|---|
-| mt-timeseries | D:\BEN\mt-timeseries | main f25956e (v0.0.3) | 1e69f05 | yes | main | 5 |
-| mth5 | D:\BEN\mth5 | master 6c62aeb9 (v0.6.9) | 0ea85692 | yes | patches | 6 |
-| mt-metadata | D:\BEN\mt-metadata | main 22350c51 (v1.0.11) | 405e7ff1 | **no** (origin at 0a84443f) | patches | 2 |
-| mt-io | D:\BEN\mt-io | main 90f3365 (v0.0.5; develop has the same tree) | cdceeb3 | yes | develop | 16 |
-| aurora | D:\BEN\aurora | simpeg main 3395804c | d7acd16c | yes | (not in the PR plan) | 14 |
+| mt-timeseries | mt-timeseries | main f25956e (v0.0.3) | 1e69f05 | yes | main | 5 |
+| mth5 | mth5 | master 6c62aeb9 (v0.6.9) | 0ea85692 | yes | patches | 6 |
+| mt-metadata | mt-metadata | main 22350c51 (v1.0.11) | 405e7ff1 | **no** (origin at 0a84443f) | patches | 2 |
+| mt-io | mt-io | main 90f3365 (v0.0.5; develop has the same tree) | cdceeb3 | yes | develop | 16 |
+| aurora | aurora | simpeg main 3395804c | d7acd16c | yes | (not in the PR plan) | 14 |
 
 All five are installed in `bbmt-2026` non-editable from the clones
 (`pip install --no-deps <clone>`), so a change to a clone is not live until
 reinstalled. `remote -v` in each clone: `origin` = github.com/bvkay/<repo>,
-`upstream` = the IAGA-DVI or simpeg repository. Rules: Ben is the only
+`upstream` = the IAGA-DVI or simpeg repository. Rules: the author is the only
 author, no attribution lines, one concern per commit, nothing pushed and no
 issue or PR opened by an agent.
 
@@ -72,7 +72,7 @@ trees; mth5 upstream fails black on 105 files). The exact commands are in
 each `review/README.md`; pytest, black and isort are not in `bbmt-2026` and
 were run from a `--target` install on PYTHONPATH.
 
-## Blockers before the PRs (who acts: Ben)
+## Blockers before the PRs (who acts: the author)
 
 1. mt-metadata 405e7ff1: not pushed; not idempotent (a second
    `TF.write(file_type="edi")` of the same TF gives ey AZM 0.00: the
@@ -102,7 +102,7 @@ were run from a `--target` install on PYTHONPATH.
    defaults; coil label).
 
 Granularity: the drafts give 23 PRs (mt-io 12). Three mt-io PRs (LEMI-423
-fixes, LEMI speed, UoA) is the alternative; Ben decides when opening.
+fixes, LEMI speed, UoA) is the alternative; decided when opening.
 
 ## Measured gains to quote (paired, fresh process per run, medians)
 
@@ -125,7 +125,7 @@ attributable to the four forks: the sidecars record no fork SHAs (to add).
   regression over the six bench pairs); threaded per-channel
   `prototype_decimate` (1.72 -> 0.72 s per call); release the L0 series
   before the L0 regression (19.45 of the 51.9 GiB B10 peak); complex64 STFTs
-  (-9.7 GiB, numerics change, Ben's decision). Trial patches with identical
+  (-9.7 GiB, numerics change, a decision). Trial patches with identical
   TFs: `fork_pr_readiness_20261002/profile/`.
 - mth5: `apply_prewhitening` by `np.gradient` with the scalar step (1.08 ->
   0.55 s per call); `ChannelTable.has_data` returning False for a 0-byte
@@ -225,7 +225,7 @@ B02 rr R01 1.16x; micro: jitter step 3.2x, prewhitening 2.0x, decimate
 re-measures on the frozen tips, with B10 rr B09 under the decimate bound and
 the Phoenix hour.
 
-Ben's steps: review each branch (`git -C D:\BEN\<repo> log -p
+The author's steps: review each branch (`git -C <repo> log -p
 mtproc-fixes..testing` with the per-repo README, commits.md and sceptic
 READMEs); push `mtproc-fixes` of mt-metadata (405e7ff1, local only) and
 `testing` of all five; install in the order mt-metadata, mt-timeseries,

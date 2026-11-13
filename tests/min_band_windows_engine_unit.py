@@ -6,7 +6,10 @@ The floor on STFT windows per band (`mt_workbench.process.drop_short_bands`)
 acts inside aurora's `process_station` alone. On a two-site synthetic
 survey, process_rr.py's `resolve`, `print_resolution` and `build_sidecar`
 are called in process with each engine; no archive is read and no engine
-runs.
+runs. The periods an aurora run's floor removed are handed to
+`build_sidecar` as `main` hands them (the resolution's `dropped_periods`,
+read off each run's TF), unsorted and with a repeat, as two masked runs
+give them.
 
 Usage:
     python tests/min_band_windows_engine_unit.py
@@ -15,15 +18,20 @@ Usage:
 
 :license: MIT
 
-**This test fails if** an aurora resolution does not take 5 by default, 3
-from `--min-band-windows 3` and 7 from survey.yaml `processing:
+**This test fails if** an aurora resolution does not take 2 by default
+(`MIN_BAND_WINDOWS`; set back to 5, this trips), 3 from
+`--min-band-windows 3` and 7 from survey.yaml `processing:
 min_band_windows: 7`, print `min_band_windows: <n>` and record the same
-in the sidecar; or if `--engine mantle --min-band-windows 3` is not
-refused naming --min-band-windows, or a MANTLE resolution (with the
-survey.yaml key or without it) prints a min_band_windows line or gives a
-sidecar whose `min_band_windows` is not null. Before this check the
-MANTLE flag was taken silently and the sidecar recorded 5, a setting
-that did not act.
+in the sidecar; an aurora sidecar's `dropped_periods` is not
+{"n": 0, "periods_s": [], "min_band_windows": <n>} when nothing was
+dropped, or, given 4507.6, 3663.6 and 4507.6 s again, not n 2 with
+[3663.6, 4507.6] (a repeat counted twice or the list left unsorted
+trips); or if `--engine mantle --min-band-windows 3` is not refused
+naming --min-band-windows, or a MANTLE resolution (with the survey.yaml
+key or without it) prints a min_band_windows line or gives a sidecar
+whose `min_band_windows` or `dropped_periods` is not null. Before this
+check the MANTLE flag was taken silently and the sidecar recorded 5, a
+setting that did not act.
 """
 
 from __future__ import annotations
@@ -74,13 +82,19 @@ def _process_rr():
     return module
 
 
-def _run(pr, survey_yaml: Path, *options: str):
-    """Resolve A rr B with `options`; return (resolution lines, sidecar) or the SystemExit raised."""
+def _run(pr, survey_yaml: Path, *options: str, dropped=None):
+    """Resolve A rr B with `options`; return (resolution lines, sidecar) or the SystemExit raised.
+
+    `dropped` stands for the periods the run's floor removed, set on the
+    resolution as `main` sets it after aurora runs.
+    """
     args = pr.build_parser().parse_args([str(survey_yaml), "A", "B", "--no-masks", *options])
     try:
         res = pr.resolve(args, STARTED)
     except SystemExit as exc:
         return exc
+    if dropped is not None:
+        res["dropped_periods"] = list(dropped)
     buf = io.StringIO()
     with contextlib.redirect_stdout(buf):
         pr.print_resolution(res)
@@ -98,7 +112,7 @@ def main() -> int:
         if not ok:
             failures.append(name)
 
-    for name, survey_yaml, options, want in (("aurora default", plain, (), 5),
+    for name, survey_yaml, options, want in (("aurora default", plain, (), 2),
                                              ("aurora --min-band-windows 3", plain, ("--min-band-windows", "3"), 3),
                                              ("aurora survey.yaml 7", keyed, (), 7)):
         got = _run(pr, survey_yaml, *options)
@@ -109,6 +123,16 @@ def main() -> int:
         printed = [ln for ln in lines if ln.startswith("min_band_windows")]
         check(name, printed == [f"min_band_windows: {want}"] and side.get("min_band_windows") == want,
               f"printed {printed}, sidecar min_band_windows {side.get('min_band_windows')!r}")
+        none = {"n": 0, "periods_s": [], "min_band_windows": want}
+        check(f"{name}, nothing dropped", side.get("dropped_periods") == none,
+              f"sidecar dropped_periods {side.get('dropped_periods', 'absent')!r}")
+
+    got = _run(pr, plain, dropped=[4507.6, 3663.6, 4507.6])
+    want = {"n": 2, "periods_s": [3663.6, 4507.6], "min_band_windows": 2}
+    check("aurora default, two periods dropped", not isinstance(got, SystemExit)
+          and got[1].get("dropped_periods") == want,
+          f"refused: {got}" if isinstance(got, SystemExit) else
+          f"sidecar dropped_periods {got[1].get('dropped_periods', 'absent')!r}")
 
     got = _run(pr, plain, "--engine", "mantle", "--min-band-windows", "3")
     check("mantle --min-band-windows 3", isinstance(got, SystemExit) and "--min-band-windows" in str(got),
@@ -122,8 +146,10 @@ def main() -> int:
             continue
         lines, side = got
         printed = [ln for ln in lines if ln.startswith("min_band_windows")]
-        check(name, not printed and "min_band_windows" in side and side["min_band_windows"] is None,
-              f"printed {printed}, sidecar min_band_windows {side.get('min_band_windows', 'absent')!r}")
+        check(name, not printed and "min_band_windows" in side and side["min_band_windows"] is None
+              and "dropped_periods" in side and side["dropped_periods"] is None,
+              f"printed {printed}, sidecar min_band_windows {side.get('min_band_windows', 'absent')!r}, "
+              f"dropped_periods {side.get('dropped_periods', 'absent')!r}")
 
     print(f"\n{'FAIL' if failures else 'PASS'}  min_band_windows_engine_unit "
           f"({len(failures)} failed{': ' + ', '.join(failures) if failures else ''})")

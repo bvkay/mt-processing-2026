@@ -99,7 +99,7 @@ the run's channels wherever it is accepted):
         outside the spans are unchanged. Place it after the notch: the bursts
         include the zero-phase notch's two-sided ringing at abrupt steps of
         the mains amplitude, and before the notch the mains itself sets the
-        MAD, so nothing is found. The default threshold is 12: a lower one (5
+        MAD, so no burst is found. The default threshold is 12: a lower one (5
         or 8) catches the same ringing but also masks sferic-like spikes and
         stretches where the background rose after a load switched on (the 60 s
         MAD lags such a rise).
@@ -110,6 +110,24 @@ the run's channels wherever it is accepted):
         default, and a name the run lacks raises an error. It acts on the
         channel as it stands at that point in the list, so a replaced coil is
         flipped too.
+    - template: {period_s: 60.0, channels: [hx, hy, hz], width_s: 2.0,
+                 skip_s: 3600, chunk_s: 3600, estimate: median,
+                 min_significance: 8.0, reference: hx}
+        "periodic glitch template": `template_subtract` removes a logger
+        glitch that repeats once per `period_s` (the Orange Box's
+        once-a-minute magnetic step) by subtracting its folded template, so
+        nothing rings: the glitch times are fitted as a straight line from
+        per-chunk folds of the reference channel (the logger's clock runs
+        off the UTC grid, so the glitch moves through the minute), the
+        template is each channel's median high-passed sample binned by its
+        offset from the nearest glitch at 0.1 sample, estimated without the
+        first and last `skip_s`, and its +-width_s / 2 part is subtracted at
+        every glitch. A channel whose template does not reach
+        `min_significance` is left unchanged. `channels` defaults to the
+        magnetics; `reference` to the treated channel with the largest
+        fold significance; `estimate` takes only `median`. The provenance
+        line gives the fitted period, the first glitch's time after the
+        run's first sample, and each channel's amplitude and significance.
     - replace: {hx: A06}
         "replace magnetics from another site": the channel is taken from
         `donors[site][comp]` given to `apply_filters_arrays`.
@@ -141,7 +159,10 @@ from scipy.ndimage import median_filter, uniform_filter1d
 from scipy.signal import butter, decimate, iirnotch, sosfiltfilt, tf2sos
 
 ELECTRIC = ("ex", "ey")
-KINDS = ("replace", "notch", "mains", "hp", "lp", "cp", "burst", "flip")
+KINDS = ("replace", "notch", "mains", "hp", "lp", "cp", "burst", "flip", "template")
+MAGNETIC = ("hx", "hy", "hz")  # template: the channels treated without a `channels` key
+TEMPLATE_HP_S = 5.1  # template: the running median taken off before folding (s), as in the stage 2 fold
+TEMPLATE_FLANK_S = 2.0  # template: the span each side of the core the quadratic is fitted to (s)
 LEVEL_S = 1.0  # burst: the local level is the medians of blocks this long, joined by straight lines
 SCALE_S = 60.0  # burst: the running MAD's window
 MAINS_TRACK_S = 1.0  # mains: the phase is tracked from demodulations over blocks this long
@@ -521,7 +542,7 @@ def mains_subtract(
     With a `pool`, the chunks of the amplitude demodulation, of the block
     fits and of the subtraction run over its threads. The chunks are the
     ones a single pass uses, each computed by the same operations, so the
-    result is the single pass's, bit for bit. This was checked on the
+    result is identical to the single pass's. This was checked on the
     synthetic of tests/noise_chunks_unit.py, against a stored result of the
     single pass before the pool was added, and on 2 h of B10's four
     channels with 1 to 20 threads; it is not a proof for every BLAS build.
@@ -776,6 +797,246 @@ def fill_spans(x: np.ndarray, spans, fs: float, taper_s: float = 0.05) -> np.nda
     return y
 
 
+def _hp_median(x: np.ndarray, fs: float) -> np.ndarray:
+    """Return x less its running median over `TEMPLATE_HP_S` (an odd number of samples), as float64."""
+    size = max(3, int(round(TEMPLATE_HP_S * fs)) | 1)
+    y = np.asarray(x, dtype="float64")
+    return y - median_filter(y, size=size, mode="nearest")
+
+
+def _chunk_folds(h: np.ndarray, fs: float, period: float, a: int, b: int, chunk_s: float):
+    """Fold h[a:b] chunk by chunk at the nearest whole number of samples to `period`.
+
+    Returns:
+        list of tuple: ``(first_cycle_start, cycles, fold, noise)`` per chunk
+        of at least 10 whole cycles, the fold being the mean per sample of
+        the cycles and the noise 1.4826 x the chunk's MAD over the root of
+        the cycles.
+    """
+    L = int(round(period))
+    out = []
+    step = max(L, int(round(chunk_s * fs)))
+    for c0 in range(a, b - L + 1, step):
+        c1 = min(b, c0 + step)
+        ncyc = int((c1 - c0) // period)
+        if ncyc < 10:
+            continue
+        starts = c0 + np.round(np.arange(ncyc) * period).astype(np.int64)
+        starts = starts[starts + L <= c1]
+        block = h[starts[:, None] + np.arange(L)[None, :]]
+        ok = np.all(np.isfinite(block), axis=1)
+        if ok.sum() < 10:
+            continue
+        fold = block[ok].mean(axis=0)
+        seg = h[c0:c1]
+        seg = seg[np.isfinite(seg)]
+        noise = 1.4826 * np.median(np.abs(seg - np.median(seg))) / np.sqrt(ok.sum())
+        out.append((int(starts[0]), int(ok.sum()), fold, float(noise)))
+    return out
+
+
+def _fold_peak(fold: np.ndarray, fs: float) -> tuple[float, float, float]:
+    """Return (centre, amplitude, sign) of the largest excursion of a fold from its median.
+
+    The centre is the centroid, in samples from the fold's first sample, of
+    the excursion's own sign over +-0.5 s around the largest sample (circular),
+    the part of the other sign set to zero.
+    """
+    L = fold.size
+    d = fold - np.median(fold)
+    j = int(np.argmax(np.abs(d)))
+    sign = 1.0 if d[j] >= 0 else -1.0
+    w = max(1, int(round(0.5 * fs)))
+    offs = np.arange(-w, w + 1)
+    vals = np.clip(sign * d[(j + offs) % L], 0.0, None)
+    centre = j + (float(np.sum(offs * vals)) / float(np.sum(vals)) if vals.sum() > 0 else 0.0)
+    return centre % L, float(abs(d[j])), sign
+
+
+def template_subtract(
+    arrays: dict[str, np.ndarray],
+    fs: float,
+    period_s: float = 60.0,
+    channels: list[str] | None = None,
+    width_s: float = 2.0,
+    skip_s: float = 3600.0,
+    chunk_s: float = 3600.0,
+    reference: str | None = None,
+    min_significance: float = 8.0,
+) -> tuple[dict[str, np.ndarray], dict]:
+    """Subtract a periodic glitch by its folded template, the glitch times fitted as a straight line.
+
+    A logger glitch that repeats once per logger cycle (the Orange Box's
+    once-a-minute magnetic step, 0.6 s wide) sits on the UTC grid at a phase
+    that moves at the logger clock's rate against the grid, about 0.1-0.2 s
+    per hour on the Kalgoorlie 2006 boxes, so a template fixed to one second
+    of the UTC minute would be smeared. The times are found first: the
+    high-passed reference channel (x less its running median over
+    `TEMPLATE_HP_S`) is folded per `chunk_s` chunk at the nearest whole
+    number of samples to `period_s`, the glitch centre of each chunk whose
+    fold peak stands above `min_significance` times the fold's noise is its
+    centroid, and the centres, unwrapped, are fitted by a straight line in
+    time (once, then again without the chunks off the line by more than 2
+    samples). The line gives the true period and the time of every glitch,
+    fractional in samples. Around each glitch the channel less a quadratic
+    in time, fitted by least squares to its `TEMPLATE_FLANK_S` on each side
+    of the +-width_s / 2 core, is the cycle's residual (a running median
+    would be pulled by the glitch itself wherever the field slopes); the
+    template is the median of the residuals of the core binned by their
+    offset from the glitch time at 0.1 sample, and only the core is
+    subtracted, the rest being zero. The estimate uses the cycles from
+    `skip_s` after the first sample to `skip_s` before the last (handling at
+    the sensors) whose windows hold no NaN, the subtraction every glitch of
+    the array.
+
+    A channel whose template peak stands below `min_significance` times its
+    noise (1.4826 x the MAD of the flank residuals over the root of the
+    residuals per bin) is left unchanged, and so is every channel when the
+    reference has fewer than three significant chunks or the estimate span
+    fewer than 30 cycles. Signal at the comb lines k / period_s Hz that
+    keeps its phase over the estimate span is taken out with the glitch; a
+    natural field there, of random phase over many hours, averages out of
+    the median.
+
+    Args:
+        arrays (dict): Channel name to samples.
+        fs (float): Sample rate in Hz.
+        period_s (float): Nominal period of the glitch in s.
+        channels (list of str, optional): Channels to treat; every key of
+            `arrays` when None.
+        width_s (float): Length in s of the part of the template subtracted,
+            centred on the glitch.
+        skip_s (float): Time in s left out of the estimate at each end.
+        chunk_s (float): Chunk length in s for the glitch times.
+        reference (str, optional): Channel whose folds give the times; when
+            None, the treated channel with the largest median fold
+            significance.
+        min_significance (float): Significance a chunk's fold peak and a
+            channel's template peak must reach.
+
+    Returns:
+        tuple: ``(filtered, info)``. `filtered` holds a new float64 array for
+        each channel changed and the input array otherwise. `info` holds
+        ``period_s`` (fitted), ``first_s`` (the first glitch centre in s
+        after the first sample), ``reference``, ``chunks`` (used, of all),
+        ``rms_samples`` (the chunk centres about the line), ``channels``
+        ({name: {"amplitude", "significance", "applied", "sign"}}),
+        ``templates`` ({name: (offsets_s, values)}) and ``reason`` (empty,
+        or why nothing was subtracted).
+    """
+    names = [c for c in (channels if channels is not None else list(arrays)) if c in arrays]
+    out = dict(arrays)
+    info = {"period_s": float(period_s), "first_s": float("nan"), "reference": None, "chunks": (0, 0),
+            "rms_samples": float("nan"), "channels": {}, "templates": {}, "reason": ""}
+    if not names:
+        info["reason"] = "no channel to treat"
+        return out, info
+    n = len(arrays[names[0]])
+    period = float(period_s) * fs
+    skip = int(round(skip_s * fs))
+    a, b = skip, n - skip
+    if (b - a) < 30 * period:
+        info["reason"] = f"estimate span {(b - a) / fs / 3600.0:.2f} h holds fewer than 30 cycles"
+        return out, info
+    hp = {c: _hp_median(arrays[c], fs) for c in names}
+    folds = {c: _chunk_folds(hp[c], fs, period, a, b, chunk_s) for c in names}
+
+    def sig(c):
+        s = [_fold_peak(f, fs)[1] / nz for _s0, _k, f, nz in folds[c] if nz > 0]
+        return float(np.median(s)) if s else 0.0
+
+    ref = str(reference).lower() if reference else max(names, key=sig)
+    if ref not in hp:
+        raise ValueError(f"template reference {ref!r} is not among the treated channels {names}")
+    info["reference"] = ref
+    t_c, ph = [], []
+    for s0, _k, f, nz in folds[ref]:
+        centre, amp, _sign = _fold_peak(f, fs)
+        if nz > 0 and amp / nz >= min_significance:
+            t_c.append(s0 + 0.5 * chunk_s * fs)
+            ph.append((s0 + centre) % period)
+    info["chunks"] = (len(ph), len(folds[ref]))
+    if len(ph) < 3:
+        info["reason"] = f"{len(ph)} of {len(folds[ref])} chunks of {ref} carry a significant fold"
+        return out, info
+    t_c = np.asarray(t_c)
+    ph = np.unwrap(np.asarray(ph), period=period)
+    keep = np.ones(ph.size, bool)
+    for _ in range(2):
+        slope, icept = np.polyfit(t_c[keep], ph[keep], 1)
+        resid = ph - (icept + slope * t_c)
+        keep = np.abs(resid) <= 2.0
+        if keep.sum() < 3:
+            keep = np.ones(ph.size, bool)
+            break
+    slope, icept = np.polyfit(t_c[keep], ph[keep], 1)
+    info["rms_samples"] = float(np.sqrt(np.mean((ph[keep] - (icept + slope * t_c[keep])) ** 2)))
+    # glitches at t = icept + slope t + m period, so t_m = (icept + m period) / (1 - slope)
+    true_period = period / (1.0 - slope)
+    first = (icept / (1.0 - slope)) % true_period
+    info["period_s"] = true_period / fs
+    info["first_s"] = first / fs
+    half = 0.5 * width_s * fs
+    reach = half + TEMPLATE_FLANK_S * fs
+    k = int(np.ceil(reach)) + 1
+    offs = np.arange(-k, k + 1)
+    times = first + true_period * np.arange(-1, int(np.ceil(n / true_period)) + 1)
+    idx = np.floor(times)[:, None].astype(np.int64) + offs[None, :]
+    u = idx - times[:, None]
+    inside = (idx >= 0) & (idx < n)
+    est = np.all((idx >= a) & (idx < b), axis=1)
+    edges = np.arange(-half, half + 0.1 + 1e-9, 0.1)
+    centres = 0.5 * (edges[:-1] + edges[1:])
+    ue, ie = u[est], idx[est]
+    flank = (np.abs(ue) > half) & (np.abs(ue) <= reach)
+    core = np.abs(ue) <= half
+    s = ue / fs
+    basis = np.stack([np.ones_like(s), s, s * s], axis=-1)
+    for c in names:
+        x = np.asarray(arrays[c], dtype="float64")
+        vals = x[ie]
+        rows = np.all(np.isfinite(vals), axis=1)
+        if rows.sum() < 30:
+            info["channels"][c] = {"amplitude": 0.0, "significance": 0.0, "applied": False, "sign": 0.0}
+            continue
+        v, bs, fl, co, ub = vals[rows], basis[rows], flank[rows], core[rows], ue[rows]
+        w = fl.astype("float64")
+        gram = np.einsum("rc,rci,rcj->rij", w, bs, bs)
+        rhs = np.einsum("rc,rci,rc->ri", w, bs, v)
+        coef = np.linalg.solve(gram + 1e-12 * np.eye(3), rhs[..., None])[..., 0]
+        resid = v - np.einsum("rci,ri->rc", bs, coef)
+        ub, vb = ub[co], resid[co]
+        which = np.clip(np.digitize(ub, edges) - 1, 0, centres.size - 1)
+        order = np.argsort(which, kind="stable")
+        which, vb = which[order], vb[order]
+        bounds = np.searchsorted(which, np.arange(centres.size + 1))
+        counts = np.diff(bounds)
+        med = np.full(centres.size, np.nan)
+        for j in np.flatnonzero(counts):
+            med[j] = np.median(vb[bounds[j]:bounds[j + 1]])
+        good = np.isfinite(med)
+        if good.sum() < 4:
+            info["channels"][c] = {"amplitude": 0.0, "significance": 0.0, "applied": False, "sign": 0.0}
+            continue
+        tmpl = np.interp(centres, centres[good], med[good])
+        fr = resid[fl]
+        noise = 1.4826 * np.median(np.abs(fr - np.median(fr))) / np.sqrt(max(1.0, float(np.median(counts[counts > 0]))))
+        jpk = int(np.argmax(np.abs(tmpl)))
+        amp = float(abs(tmpl[jpk]))
+        significance = amp / noise if noise > 0 else 0.0
+        applied = significance >= min_significance
+        info["channels"][c] = {"amplitude": amp, "significance": float(significance), "applied": bool(applied),
+                               "sign": float(np.sign(tmpl[jpk]))}
+        info["templates"][c] = (centres / fs, tmpl.copy())
+        if not applied:
+            continue
+        y = np.array(x, dtype="float64")
+        hit = inside & (np.abs(u) <= half)
+        np.subtract.at(y, idx[hit], np.interp(u[hit], centres, tmpl))
+        out[c] = y
+    return out, info
+
+
 def _channels(opts: dict, comps: list[str]) -> list[str]:
     """Return the spec's `channels` in lower case, or every channel of the run when the key is absent."""
     chans = opts.get("channels")
@@ -950,6 +1211,33 @@ def apply_filters_arrays(
                     f"window), threshold {thr:g} x MAD on {refs}; min {min_len:g} s, pad {pad:g} s, "
                     f"taper {taper:g} s, set to the local level on {chans}"
                 )
+            elif kind == "template":
+                estimate = str(opts.get("estimate", "median")).lower()
+                if estimate != "median":
+                    raise ValueError(f"{tag}: template estimate {estimate!r} is not known (know: median)")
+                period = float(opts.get("period_s", 60.0)); width = float(opts.get("width_s", 2.0))
+                skip = float(opts.get("skip_s", 3600.0)); chunk_s = float(opts.get("chunk_s", 3600.0))
+                min_sig = float(opts.get("min_significance", 8.0)); ref = opts.get("reference")
+                if period <= 0.0 or width <= 0.0 or chunk_s <= 0.0 or skip < 0.0 or width >= period:
+                    raise ValueError(f"{tag}: template period_s, width_s and chunk_s must be positive, skip_s not "
+                                     f"negative and width_s under period_s ({period:g}, {width:g}, {chunk_s:g}, {skip:g})")
+                chans = [c for c in (_channels(opts, comps) if "channels" in opts else MAGNETIC) if c in comps]
+                res, tinfo = template_subtract({c: out[c] for c in chans}, fs, period, chans, width, skip, chunk_s,
+                                               ref, min_sig)
+                for c in chans:
+                    if res[c] is not out[c]:
+                        out[c] = res[c]
+                if tinfo["reason"]:
+                    line = f"template: nothing subtracted ({tinfo['reason']}) on {chans}"
+                else:
+                    used, total = tinfo["chunks"]
+                    per = ", ".join(
+                        f"{c} {d['amplitude']:.4g} sig {d['significance']:.0f}" + ("" if d["applied"] else " (left)")
+                        for c, d in tinfo["channels"].items())
+                    line = (f"template: period {tinfo['period_s']:.5f} s fitted from {used} of {total} "
+                            f"{chunk_s:g} s chunks of {tinfo['reference']} (rms {tinfo['rms_samples']:.2f} samples), "
+                            f"first glitch {tinfo['first_s']:.3f} s after the first sample, median template "
+                            f"+-{0.5 * width:g} s subtracted, ends {skip:g} s left out of the estimate; {per}")
             elif kind == "flip":
                 if "channels" not in opts:
                     raise ValueError(f"{tag}: flip needs `channels` (the ones wired reversed); there is no default")

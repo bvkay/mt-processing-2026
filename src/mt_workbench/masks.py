@@ -10,7 +10,7 @@ A mask is an interval that processing leaves out. The file is written by the
       end: '2023-09-22T12:25:49Z'
       bands: all                      # or [pmin_s, pmax_s]
       reason: mains switching         # free text
-      found_by: time                  # time | polar | cluster | night | gate: how it was found
+      found_by: time                  # time | polar | cluster | night | gate | stretch: how it was found
       scope: local                    # local | both | remote: the roles of a pair it applies in
       channels: [ex]                  # optional: the channels the noise is on; every channel without it
 
@@ -120,7 +120,7 @@ from loguru import logger
 MASKS_FILE = "masks.yaml"
 HISTORY_FILE = "masks_history.yaml"
 MIN_PIECE_S = 600.0  # a run piece a mask leaves shorter than this is dropped
-FOUND_BY = ("time", "polar", "cluster", "night", "gate")
+FOUND_BY = ("time", "polar", "cluster", "night", "gate", "stretch")  # stretch: scripts/stretch_masks.py
 # a mask applies to its site as the local; as the local and the remote; or as the remote alone
 SCOPES = ("local", "both", "remote")
 ROLES = ("local", "remote")       # the roles of a site in a remote-referenced pair
@@ -263,7 +263,7 @@ def stored(mask: dict) -> dict:
     """Return a mask as masks.yaml holds it: normalised, ``channels`` written only as a list.
 
     An entry on every channel is written with the six keys it had before
-    `channels` existed, so its block dumps byte for byte as it did. A
+    `channels` existed, so its block dumps unchanged. A
     ``retired`` record (a history entry) is kept, last.
     """
     out = normalise(mask)

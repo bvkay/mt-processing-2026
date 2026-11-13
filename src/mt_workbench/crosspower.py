@@ -151,11 +151,12 @@ class _Station:
     fs: float
     runs: list[_Run]
     names: dict[str, str]  # role -> the archive's channel name
-    chains: dict[str, tuple] = field(default_factory=dict)  # role -> (channel_response, filters to remove)
+    chains: dict[str, tuple] = field(default_factory=dict)  # role -> first run's (channel_response, filters to remove)
+    run_chains: dict[str, list] = field(default_factory=dict)  # role -> a chain per run, one object per distinct one
 
-    def response(self, role: str, freqs: np.ndarray) -> np.ndarray:
-        """Return the complex response aurora divides the spectrum of channel `role` by, at `freqs` (Hz)."""
-        response, filters = self.chains[role]
+    def response(self, role: str, freqs: np.ndarray, run: int = 0) -> np.ndarray:
+        """Return the complex response aurora divides the spectrum of channel `role` of run `run` by, at `freqs`."""
+        response, filters = self.run_chains[role][run] if self.run_chains else self.chains[role]
         if not filters:
             return np.ones(freqs.size, dtype=complex)
         return np.asarray(response.complex_response(freqs, filters_list=filters), dtype=complex)
@@ -164,10 +165,12 @@ class _Station:
 def _layout(h5_path, station: str, roles) -> _Station:
     """Read a station's run layout and filter chains from its MTH5 archive.
 
-    Opens the archive read-only and closes it before returning. Each role's
-    filter chain is the first run's, with the filters aurora removes
+    Opens the archive read-only and closes it before returning. Each run's
+    chain of each role is read, with the filters aurora removes
     (`calibrate_stft_obj`): the applied filters other than decimation and
-    delay.
+    delay. Runs whose channel lists the same filters share one chain
+    object: an MTH5 survey holds one filter per name, so the same list is
+    the same response. `chains` holds the first run's chain of each role.
 
     Args:
         h5_path: The MTH5 archive.
@@ -205,17 +208,27 @@ def _layout(h5_path, station: str, roles) -> _Station:
             elif abs(rate - fs) > 1e-9 * fs:
                 raise ValueError(f"{station} {run_id}: {rate:g} Hz, the first run is {fs:g} Hz")
             runs.append(_Run(run_id, _ns(ch.metadata.time_period.start), int(ch.hdf5_dataset.shape[0])))
+        run_chains = {}
         for role, name in names.items():
-            # the first run's chain, removed the way aurora removes it (calibrate_stft_obj)
-            ch = m.get_channel(station, run_list[0][0], name, survey)
-            response = ch.channel_response
-            idx = response.get_indices_of_filters_to_remove(include_decimation=False, include_delay=False)
-            idx = [i for i in idx if ch.metadata.filters[i].applied]
-            chains[role] = (response, [response.filters_list[i] for i in idx])
+            # each run's chain, removed the way aurora removes it (calibrate_stft_obj); runs listing the same
+            # filters share the chain read from the first of them
+            seen, per_run = {}, []
+            for run_id, _start, _end in run_list:
+                listed = st.hdf5_group[run_id][name].attrs.get("filters")
+                key = listed.decode() if isinstance(listed, bytes) else str(listed)
+                if key not in seen:
+                    ch = m.get_channel(station, run_id, name, survey)
+                    response = ch.channel_response
+                    idx = response.get_indices_of_filters_to_remove(include_decimation=False, include_delay=False)
+                    idx = [i for i in idx if ch.metadata.filters[i].applied]
+                    seen[key] = (response, [response.filters_list[i] for i in idx])
+                per_run.append(seen[key])
+            chains[role] = per_run[0]
+            run_chains[role] = per_run
         group = st.hdf5_group.name
     finally:
         m.close_mth5()
-    return _Station(h5_path, station, group, fs, runs, names, chains)
+    return _Station(h5_path, station, group, fs, runs, names, chains, run_chains)
 
 
 def _read(st: _Station, handle, role: str, t0_ns: int, n: int, warned: set):
@@ -501,7 +514,7 @@ def _settle_n(factor: int, level: int) -> int:
 def _margin_n(fs: float, levels: list, factor: int, q: int) -> int:
     """Return the base samples read either side of a block: `MARGIN_S`, widened where needed.
 
-    A block owns the binned-level windows starting in its chunk proper, so
+    A block holds the binned-level windows starting in its chunk proper, so
     its last one runs up to one window (win_b of the deepest binned level K)
     into the right margin, and the first starts at the left margin's end.
     Both lie on samples the cascade has settled when the margin is at least

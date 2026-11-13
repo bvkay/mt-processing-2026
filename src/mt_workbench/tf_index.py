@@ -20,8 +20,8 @@ neither covers or whose time or size moved, saving the index again when it
 read any. Entries are kept in-process without bound (a few hundred bytes
 each). The file is written atomically (`mt_workbench.masks.replace_text`);
 two runs landing at once may each drop the other's entry, which the next
-`facts` call reads back from the sidecar. Nothing here is needed to read a
-product: the sidecar stays the record.
+`facts` call reads back from the sidecar. Reading a product needs only its
+sidecar, which stays the record.
 
 @author: ben kay (ben@auscope.org.au)
 

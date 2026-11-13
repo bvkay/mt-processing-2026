@@ -58,7 +58,7 @@ class ConsoleStrip(QPlainTextEdit):
         font.setFixedPitch(True)  # the declared property; on a headless test rig the platform's
         self.setFont(font)        # own substitution can still hand back a variable-pitch family
         self.setToolTip("what the backend is running: subprocess commands and output, and the "
-                        "in-process log -- drag the splitter above to read more of it")
+                        "in-process log; drag the splitter above to read more of it")
         self._closing = False
 
     def sizeHint(self) -> QSize:

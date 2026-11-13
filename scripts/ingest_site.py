@@ -22,15 +22,24 @@ builds the variant only, from an existing raw archive.
 
 For one site the script prints "archive: <path>" for the raw step and
 "variant: <path>" for the variant step (or "variant: none (no declared
-filters)"). The raw step records the DC level of each channel and run in
+filters)"). For a site declared `h_from: <neighbour>` the "ingesting" line
+names the neighbour whose raw hx and hy the archive takes; the neighbour's
+own archive is not needed. A burst site (`bursts_of: <site>`, a Phoenix
+receiver's 24 kHz bursts) has no folder of its own: it is ingested from
+its recorded site's folder, which the "ingesting" line names, with "the
+bursts of <site> (bursts_of)" at its end. The raw step records the DC level of each channel and run in
 the run comments (`mt_workbench.ingest.ingest_site`, `mt_workbench.dclevel`); after the
 "archive:" line the script reads them back (`mt_workbench.dclevel.recorded_levels`)
 and prints one line per flagged channel run, "<site> <run> <channel>:
 median 1.60e9 counts, open input?" (or the share at the rail and
-"saturated?"). An existing raw archive is rebuilt only with --force, since
+"saturated?"), in V for a Phoenix site, whose archive stores volts. An
+existing raw archive is rebuilt only with --force, since
 every transfer function of the site may have been made from it. A variant
-already current for the site's declared filters
-(`mt_workbench.ingest.variant_ready`) is likewise kept unless --force is given. A
+already current (`mt_workbench.ingest.variant_ready`: built for the site's
+declared filters from the raw archive and donors as they are on disk now,
+with coil tables that have not changed) is likewise kept unless --force is
+given; a variant built before a raw archive was rebuilt is rebuilt, with
+the reason in the log. A
 run that fails part-way removes the partial file it was writing (a variant's
 ``.part`` file, never the variant it was to replace). A variant that another
 program holds open (the GUI) cannot be replaced on Windows: the new build is
@@ -40,7 +49,8 @@ Series tab of the GUI runs this script (no flags) from its "Build MTH5"
 button for a site without an archive.
 
 Several sites, or --all, make a batch. --all takes every site of
-survey.yaml that has a raw data folder (`Survey.site_dirs`) and lists the
+survey.yaml that has a raw data folder (`Survey.site_dirs`; a burst
+site's is its recorded site's, `Survey.raw_site`) and lists the
 sites it skips: declared sites without a raw folder, and raw folders missing
 from survey.yaml. In a batch each site keeps an existing raw archive
 (rebuilt with --force) and goes on to its variant step, and --raw,
@@ -151,8 +161,19 @@ class SiteJob:
         self.log: Path | None = None
 
 
+def _no_folder(survey: Survey, site: str) -> str:
+    """Return the error of a site whose raw folder (a burst site's: its `bursts_of` site's) is missing."""
+    raw = survey.raw_site(site)
+    whose = f" for {raw} (bursts_of)" if raw != site else ""
+    return f"no folder of raw files (B423, LEMI-424 .txt, EDL, Phoenix){whose} under {survey.data_root}"
+
+
 def plan_site(survey: Survey, site: str, raw_sites: dict, args: argparse.Namespace) -> SiteJob:
     """Decide the steps one site of a batch needs.
+
+    A burst site (`bursts_of:`) has no folder of its own and is looked up
+    by its recorded site's folder (`Survey.raw_site`), so that it is not
+    refused (upstream issue 72).
 
     Args:
         survey (Survey): The survey.
@@ -165,9 +186,9 @@ def plan_site(survey: Survey, site: str, raw_sites: dict, args: argparse.Namespa
         when it has no raw data folder, "" otherwise.
     """
     job = SiteJob(site)
-    if site not in raw_sites:
+    if survey.raw_site(site) not in raw_sites:
         job.status = "failed"
-        job.error = f"no folder of raw files (B423, LEMI-424 .txt, EDL) under {survey.data_root}"
+        job.error = _no_folder(survey, site)
         return job
     archive = default_archive_path(survey, site)
     if not args.variant:
@@ -376,13 +397,14 @@ def run_batch(survey: Survey, args: argparse.Namespace) -> int:
     if args.all:
         declared = survey.site_names()
         for site in declared:
-            if site not in raw_sites:
-                print(f"skipping {site}: no raw data folder under {survey.data_root}")
+            if survey.raw_site(site) not in raw_sites:
+                whose = f" for {survey.raw_site(site)} (bursts_of)" if survey.raw_site(site) != site else ""
+                print(f"skipping {site}: no raw data folder{whose} under {survey.data_root}")
         undeclared = [s for s in raw_sites if s not in declared]
         if undeclared:
             print(f"skipping raw folder(s) missing from survey.yaml: {' '.join(undeclared)} "
                   "(name a site to build it with the survey defaults)")
-        names = [s for s in declared if s in raw_sites]
+        names = [s for s in declared if survey.raw_site(s) in raw_sites]
     else:
         names = list(dict.fromkeys(args.sites))
     if not names:
@@ -413,7 +435,8 @@ def main(argv=None) -> int:
         argv (list[str] | None): Command-line arguments; sys.argv when None.
 
     Returns:
-        int: 0 on success, 1 when the site has no raw-file folder, its
+        int: 0 on success, 1 when the site has no raw-file folder (a burst
+        site: its recorded site has none, upstream issue 72), its
         variant is open in another program, or a site of a batch failed, 2
         when the raw archive of one site exists and --force was not given.
     """
@@ -431,9 +454,9 @@ def main(argv=None) -> int:
 
     site = args.sites[0]
     raw_sites = survey.site_dirs()
-    if site not in raw_sites:
-        print(f"ERROR {site}: no folder of raw files (B423, LEMI-424 .txt, EDL) under {survey.data_root}",
-              file=sys.stderr)
+    raw = survey.raw_site(site)
+    if raw not in raw_sites:
+        print(f"ERROR {site}: {_no_folder(survey, site)}", file=sys.stderr)
         return 1
 
     if not args.variant:
@@ -441,18 +464,22 @@ def main(argv=None) -> int:
         if out.exists() and not args.force:
             print(f"ERROR {out} exists: pass --force to rebuild it", file=sys.stderr)
             return 2
-        print(f"ingesting {site} ({survey.instrument_of(site)}) from {raw_sites[site]} "
-              f"(LEMI-423 runs of at most {args.max_run_files} files) -> {out}", flush=True)
+        h_from = survey.site(site).h_from
+        borrowed = f"; hx and hy from {h_from}'s raw files (h_from)" if h_from else ""
+        bursts = f"; the bursts of {raw} (bursts_of)" if raw != site else ""
+        print(f"ingesting {site} ({survey.instrument_of(site)}) from {raw_sites[raw]} "
+              f"(LEMI-423 runs of at most {args.max_run_files} files) -> {out}{borrowed}{bursts}", flush=True)
         try:
             path = ingest_site(survey, site, overwrite=args.force, max_run_files=args.max_run_files)
         except BaseException:
             _remove_partial(out)
             raise
         print(f"archive: {path}")
+        unit = "V" if survey.instrument_of(site) == "phoenix" else "counts"  # a Phoenix archive stores volts
         for rows in recorded_levels(path, survey.name, site).values():
             for row in rows:
                 if row["verdict"] != OK:
-                    print(flag_line(row))
+                    print(flag_line(row, unit))
 
     if not args.raw:
         declared = survey.site(site).filters or []

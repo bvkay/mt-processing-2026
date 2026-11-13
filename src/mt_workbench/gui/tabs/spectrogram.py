@@ -112,7 +112,7 @@ class SpectrogramTab(QWidget):
         self.title_label.setText(PLACEHOLDER)
 
     def _selection_changed(self, selection) -> None:
-        """Clear the images when nothing is selected."""
+        """Clear the images when the selection is empty."""
         if selection is None:
             self.clear()
 

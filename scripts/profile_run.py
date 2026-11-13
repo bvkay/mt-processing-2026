@@ -670,7 +670,7 @@ def inprocess_rr(spec: dict, mode: str) -> None:
         wall = time.perf_counter() - t_wall
         prof.dump_stats(str(stem) + "_cprofile.prof")
         buf = io.StringIO()
-        buf.write(f"cProfile of mt_workbench.process.process_station{call_args} -- {wall:.1f} s wall "
+        buf.write(f"cProfile of mt_workbench.process.process_station{call_args}: {wall:.1f} s wall "
                   f"({dt.datetime.now():%Y-%m-%d %H:%M})\n")
         for key in ("cumulative", "tottime"):
             buf.write(f"\n===== top 40 by {key} =====\n")
@@ -1079,11 +1079,11 @@ def wait_for_memory(need_gib: float, other_peak_gib: float = 62.0, young_min: fl
                 pass
         if avail - reserve >= need_gib:
             log(f"memory gate: {avail:.1f} GiB available, {reserve:.1f} GiB held back for {young} young "
-                f"process_rr.py job(s): need {need_gib:.0f} GiB -- starting")
+                f"process_rr.py job(s): need {need_gib:.0f} GiB; starting")
             return
         if time.time() - last > 120:
             log(f"memory gate: {avail:.1f} GiB available, {reserve:.1f} GiB held back for {young} young "
-                f"process_rr.py job(s): need {need_gib:.0f} GiB -- waiting")
+                f"process_rr.py job(s): need {need_gib:.0f} GiB; waiting")
             last = time.time()
         time.sleep(poll_s)
 
@@ -1096,8 +1096,8 @@ LOGURU = re.compile(r"^(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:[+-]\
 MARK_RE = re.compile(rf"^{MARK} (\d+\.\d+) ([BE]) ([PD]) (.+)$")
 HEADER = re.compile(r"^=== (\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}) ")
 STARTED = re.compile(r"^started: (\d{4}-\d{2}-\d{2}T\S+)$")
-# the logger of mt_workbench.process; logs written before the renames name it crust.process (25 Sep to
-# 2 Oct 2026) or mtproc.process (before 25 Sep)
+# the logger of mt_workbench.process; logs written under the package's earlier names call it crust.process
+# or mtproc.process
 PROCESS_LOGGERS = ("mt_workbench.process", "crust.process", "mtproc.process")
 
 
@@ -1649,8 +1649,8 @@ def ledger_stats(campaign: Path, out: Path) -> None:
 
 TRACE_PASSES = ("pyspy-idle", "pyspy-gil", "viztracer", "tracemalloc")
 SPAN_TRACK = "mt-workbench phases + counters"
-# "crust" and "mtproc": the package names in traces recorded before the renames to mt-workbench
-# (2 Oct 2026) and to CRUST (25 Sep 2026), read by --reanalyse
+# "crust" and "mtproc": the package's earlier names, found in older traces
+# read by --reanalyse
 MT_PACKAGES = ("aurora", "mth5", "mt_timeseries", "mt_metadata", "mt_workbench", "crust", "mtproc", "mt_io")
 MIB = 2.0 ** 20
 STOCK_AURORA_BASE = "3395804c"
@@ -3189,7 +3189,7 @@ def trace_report(out: Path, run_id: str, variants: list[str]) -> None:
                     shutil.copyfileobj(f, g, 1 << 24)
             print(f"{vstem}: viztracer {vj.stat().st_size / MB:.0f} MB ({gz.stat().st_size / MB:.0f} MB gzipped), "
                   f"{va['fee_events']} call events ({va['events']} in all)"
-                  + (" -- BUFFER OVERFLOWED, the earliest calls are missing" if va["overflow"] else ""), flush=True)
+                  + ("; buffer overflowed, the earliest calls are missing" if va["overflow"] else ""), flush=True)
         tm_p = out / f"{vstem}_tracemalloc_tm_pieces.csv"
         if tm_p.exists():
             pieces_tm = pd.read_csv(tm_p)

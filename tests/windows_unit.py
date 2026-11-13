@@ -14,8 +14,8 @@ Usage:
 :license: MIT
 
 **This test fails if** a record of 41.268 h at 1000 Hz in one
-run does not give exactly 21 windows -- twenty of 2.0 h from the record
-start and a last one of 1.268 h ending at the record end -- with the first
+run does not give exactly 21 windows (twenty of 2.0 h from the record
+start and a last one of 1.268 h ending at the record end), with the first
 labelled '2021-06-29 06:55 UTC (2.0 h)'; 500 Hz data is not offered in 4 h
 windows (a 10 h record: 4 h, 4 h, 2 h); `window_hours` is not 2.0 at 1000 Hz,
 4.0 at 500 Hz, capped at 24 h for 10 Hz (an EDL) and 1 Hz (a LEMI-424) and

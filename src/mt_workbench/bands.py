@@ -15,8 +15,21 @@ whole bands, so every band keeps its period. Raised, the bands at the foot
 of a level move to the top of the next decimation level, where they span
 four times as many harmonics.
 
+A `min_period` shorter than 4 / rate, the shortest period a site's rate
+reaches, drops the layout's bands above a quarter of the rate whole
+(`top_edge`): the top edge comes down by whole band steps (4**(1/6) with
+the defaults), so the bands left keep the edges that `min_period` lays out.
+One `min_period`, the survey's shortest, then serves sites at several rates
+with their bands on one set of edges.
+
 The returned dictionary is passed as keyword arguments to aurora's
 ``ConfigCreator.create_from_kernel_dataset``.
+
+`site_min_period` gives a site whose archive is at another rate than the
+survey's its shortest period: a slower site (a decimated ``<site>L``) the
+larger of the survey's and 4 / rate, a faster one (a Phoenix burst site at
+24 kHz, a LEMI-423 site at 1000 Hz in a 150 Hz survey) the shortest period
+of the survey's layout that its rate reaches.
 
 @author: ben kay (ben@auscope.org.au)
 
@@ -26,6 +39,87 @@ The returned dictionary is passed as keyword arguments to aurora's
 from __future__ import annotations
 
 import numpy as np
+
+
+def site_min_period(
+    sample_rate: float,
+    survey_rate: float,
+    survey_min_period: float,
+    periods_per_decade: float = 10.0,
+    factor: int = 4,
+) -> float:
+    """Return the shortest period processed at a site's own sample rate.
+
+    `build_band_scheme` keeps the top band edge at or below a quarter of
+    the sample rate, so 4 / rate is the shortest period a layout reaches
+    at that rate. A site at the survey's rate keeps the survey's
+    `min_period`. A slower site takes the larger of the two: the survey's
+    0.005 s means nothing at 1 Hz. A faster site takes the shortest period
+    of the survey's layout, `survey_min_period` times a whole number of
+    band steps (`_band_step`), at or above 4 / rate: the survey's period
+    (0.027 s at 150 Hz) would leave its short periods out, at 24 kHz
+    0.005 s puts the lowest band edge below a harmonic, which the layout
+    refuses, and 4 / rate itself (0.004 s at 1000 Hz) would move its bands
+    off the survey's. With the survey's 4**(22/6)/6000 s (Kalkaroo) a
+    24 kHz burst site takes 1/6000 s and a 1000 Hz site 4**(14/6)/6000 s,
+    0.004233 s.
+
+    Args:
+        sample_rate (float): The site's rate in Hz.
+        survey_rate (float): The survey's `sample_rate` in Hz.
+        survey_min_period (float): The survey's `processing:` min_period in s.
+        periods_per_decade (float): The layout's bands per decade of period.
+        factor (int): Decimation factor between levels.
+
+    Returns:
+        float: The shortest period in s.
+    """
+    rate, survey_rate = float(sample_rate), float(survey_rate)
+    if abs(rate - survey_rate) <= 1e-9 * survey_rate:
+        return float(survey_min_period)
+    if rate > survey_rate:
+        step = _band_step(periods_per_decade, factor)
+        n_steps = int(np.floor(np.log(0.25 * rate * float(survey_min_period)) / np.log(step) + 1e-9))
+        period = float(survey_min_period) / step**n_steps
+        return 4.0 / rate if abs(period * rate / 4.0 - 1.0) <= 1e-9 else period
+    return max(float(survey_min_period), 4.0 / rate)
+
+
+def _band_step(periods_per_decade: float, factor: int) -> float:
+    """Return the ratio of adjacent band edges of a layout: factor ** (1 / its bands per level)."""
+    return float(factor) ** (1.0 / max(1, round(periods_per_decade * np.log10(factor))))
+
+
+def top_edge(sample_rate: float, min_period: float, periods_per_decade: float = 10.0, factor: int = 4) -> float:
+    """Return the top band edge of a layout in Hz.
+
+    It is 1 / `min_period` while that is at most a quarter of the sample
+    rate. Above it, the bands above a quarter of the rate are dropped: the
+    edge comes down by the whole number of band steps (`_band_step`) that
+    brings it to a quarter of the rate or below, so that every band left
+    keeps the edges `min_period` lays out at any rate. At 150 Hz,
+    4**(14/6)/6000 s (236.2 Hz) gives 6000 / 4**(22/6) = 37.2 Hz, eight
+    steps down. The quarter rate itself (37.5 Hz) as the edge would
+    move every band of such a site off the layout.
+
+    Args:
+        sample_rate (float): Sample rate of the run in Hz.
+        min_period (float): Shortest period in s.
+        periods_per_decade (float): Number of bands per decade of period.
+        factor (int): Decimation factor between levels.
+
+    Returns:
+        float: The top edge in Hz.
+    """
+    f_top, f_cap = 1.0 / float(min_period), 0.25 * float(sample_rate)
+    if f_top <= f_cap * (1.0 + 1e-9):
+        return min(f_top, f_cap)
+    step = _band_step(periods_per_decade, factor)
+    n_steps = int(np.ceil(np.log(f_top / f_cap) / np.log(step) - 1e-9))
+    edge = f_top / step**n_steps
+    # an edge on the quarter rate to rounding (100 Hz at 0.005 s: 200 / 4**(9/6) = 25) is taken as the
+    # quarter rate exactly
+    return f_cap if edge > f_cap * (1.0 - 1e-9) else edge
 
 
 def _apply_notches(
@@ -82,11 +176,11 @@ def _level_shift(
         level boundaries move up in frequency, a whole number of band
         steps of the layout (1.0 when `min_bin` is None).
     """
-    f_top = min(1.0 / min_period, 0.25 * sample_rate)
+    f_top = top_edge(sample_rate, min_period, periods_per_decade, factor)
     k_lo = f_top * window / (factor * sample_rate)
     if min_bin is None:
         return k_lo, 1.0
-    step = float(factor) ** (1.0 / max(1, round(periods_per_decade * np.log10(factor))))
+    step = _band_step(periods_per_decade, factor)
     n_steps = int(np.ceil(np.log(float(min_bin) / k_lo) / np.log(step) - 1e-9))
     shift = step**n_steps
     return k_lo * shift, shift
@@ -152,8 +246,9 @@ def build_band_scheme(
 
     Args:
         sample_rate (float): Sample rate of the run in Hz.
-        min_period (float): Shortest period in s. The top band edge is
-            capped at a quarter of the sample rate.
+        min_period (float): Shortest period in s. Above a quarter of the
+            sample rate, the bands are dropped whole and the rest keep
+            their edges (`top_edge`).
         max_period (float): Longest period in s.
         periods_per_decade (float): Number of bands per decade of period.
         window (int): FFT window length in samples, the same on every level.
@@ -164,8 +259,7 @@ def build_band_scheme(
             of the line frequency.
         min_bin (float, optional): Lowest band edge of the decimated levels
             in FFT harmonics; None keeps the layout's own,
-            ``min(1 / min_period, sample_rate / 4) * window / (factor *
-            sample_rate)`` harmonics.
+            ``top_edge(...) * window / (factor * sample_rate)`` harmonics.
 
     Returns:
         dict: ``{"band_edges", "decimation_factors", "num_samples_window"}``,
@@ -185,7 +279,7 @@ def build_band_scheme(
             `min_period` of 2 s triggers both cases: 13 of 41 periods remain,
             or aurora fails.
     """
-    f_top = min(1.0 / min_period, 0.25 * sample_rate)
+    f_top = top_edge(sample_rate, min_period, periods_per_decade, factor)
     f_floor = 1.0 / max_period
     if f_floor >= f_top:
         raise ValueError("max_period must exceed min_period")

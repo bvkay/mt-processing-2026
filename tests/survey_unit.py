@@ -28,13 +28,17 @@ file unchanged; or the channel presets (`CHANNEL_PRESETS`, `preset_label`,
 trip label -> list -> label; the LEMI-423 default (the first preset) is not
 "Ex Ey Bx By" = [ex, ey, hx, hy]; the same set in another order or case does
 not get the preset's label; "Bx By Bz" does not mean hx hy hz on a LEMI-423
-and bx by bz on a LEMI-424; a custom list is not written "a, b, c" and read
+and on a LEMI-424 (stored names); a custom list is not written "a, b, c" and read
 back unchanged; a typed "hx hy" is not [hx, hy]; None is not "all columns"
 and back; a returned preset list is not a copy; or a preset names a channel
-the reader does not produce (LEMI-424: mt-io's own `LEMI424().file_column_names`;
+the reader does not produce (LEMI-424: mt-io's own `LEMI424().file_column_names`
+as ingest stores them, `mt_workbench.instruments.LEMI424_RENAME`;
 LEMI-423: hx hy hz ex ey, as `LEMI423Reader.read` stores Bx By Bz Ex Ey; EDL:
-mt-io's own `UoACollection.CHANNEL_MAP`), the presets' instruments are not
-exactly `INSTRUMENTS` (lemi423, lemi424, edl) or the EDL default is not
+mt-io's own `UoACollection.CHANNEL_MAP`; Phoenix: mt-io's channel tags e1 e2
+h1 h2 h3 as mt_workbench.phoenix renames them; Orange Box: the channels
+mt-io's `read_orange` returns for a one-record synthetic file), the presets'
+instruments are not exactly `INSTRUMENTS` (lemi423, lemi424, edl, phoenix,
+orangebox) or the EDL default is not
 "Ex Ey Bx By Bz" = [ex, ey, hx, hy, hz]; or a preset's words in another
 order, with commas or in another case ("Bx By Ex Ey", as typed for an
 EDL survey's `--channels`) are not that preset ([ex, ey, hx, hy] on an
@@ -48,9 +52,9 @@ fields), an EDL folder with only a channel file, an EDL folder with only
 `config/recorder.ini`, a folder whose 12-digit .txt holds prose, a folder of
 AppleDouble twins only, and a folder with both B423 and LEMI-424 files,
 `Survey.site_dirs()` does not list exactly the five data folders or
-`instrument_of` does not name each one's recorder -- the mixed folder
-lemi423 in a lemi423 survey and lemi424 in a lemi424 survey (the survey's
-instrument is preferred) -- or a site's own `instrument:` does not win over
+`instrument_of` does not name each one's recorder (the mixed folder
+lemi423 in a lemi423 survey and lemi424 in a lemi424 survey: the survey's
+instrument is preferred), or a site's own `instrument:` does not win over
 its files, or an unknown one does not raise ValueError, or a site with no
 folder does not fall back to the survey's instrument.
 
@@ -94,6 +98,36 @@ geographic for geographic on an mt_metadata Station whose default is
 geographic; the Morocco survey.yaml does not give "magnetic" for B03 (from
 its `defaults:`). Control: a site with `layout_north: north` must raise
 ValueError when built.
+
+And the unknown keys: a site entry with `model` (a key `SiteConfig` does
+not declare) or a `defaults:` block with `bogus_key` does not raise
+ValueError naming the key and where it came from (site entry or
+defaults:), or a site with only known keys is refused. The mutation:
+with `_check_known_keys` made a no-op, `Survey.site` must raise TypeError
+instead, which the check must report as a failure.
+
+And the Phoenix keys and the burst site: in a scratch data root with a
+Phoenix folder G5 (one synthetic `.td_150` name), `Survey.site("G5")` does
+not carry `recording`, `calibration_dir` and `coil_hx` as declared, or a
+coil serial and receiver id written as YAML integers do not come back as
+text; the burst site G5H (`bursts_of: G5`, `sample_rate: 24000`, `remote:
+G8H`) does not get G5's dipoles, coils and calibration folder under the
+name G5H with its own rate, remote and a `clock_offset_s` of 0.0, its
+`instrument_of` is not phoenix, `sample_rate_of` not 24000, `raw_site` not
+G5, `bursts_parent` not G5 (None for G5), or `site_dirs()` lists G5H. And
+a burst entry with `dipole_length_ex`, with `derived_from`, with
+`sample_rate: 150`, without `sample_rate`, naming itself, or naming a
+derived site, is not refused with ValueError naming the problem. The
+mutation: with `dipole_length_ex` added to `BURST_SITE_KEYS`, the refusal
+of `dipole_length_ex` on G5H must fail.
+
+And the burst site's clock: under a G5 declaring `clock_offset_s: -0.1148`
+(the Kalkaroo continuous stream's delay), G5H does not resolve to 0.0 (its
+bursts carry GPS time); a G5H entry declaring 0.05 does not resolve to 0.05
+or is refused; G5 does not keep -0.1148 (the control); or a G5H entry
+declaring 61.0 is not refused by `MAX_CLOCK_OFFSET_S`. The mutation:
+`Survey._burst_site` copying the recorded site's offset, must fail the
+check.
 """
 
 from __future__ import annotations
@@ -190,12 +224,38 @@ def test_field_survey_csv_columns() -> None:
     print(f"  field-sheet survey CSV read: A01 {rows['A01']}, ignored {ignored}")
 
 
+def _orange_reader_channels() -> set[str]:
+    """Return the channels mt-io's Orange Box reader returns, read from a one-record synthetic file."""
+    import tempfile
+    from mt_io.uoa.orange import read_orange
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "HFM1-000.BIN"
+        header = b" 00000001 \nTue May  2 14:56:00 2006\n 7A1"
+        path.write_bytes(header + bytes([128, 0, 0] * 3 + [0] * 5 + [128, 0, 0] * 2 + [32])
+                         + b" Tue May  2 14:56:00 2006\n")
+        run = read_orange([str(path)], station_id="T", dipole_length_ex=1.0, dipole_length_ey=1.0,
+                          electric_full_scale_uv=25000.0, magnetic_full_scale_nt=70000.0,
+                          latitude=0.0, longitude=0.0, elevation=0.0)
+        return set(run.dataset.data_vars)
+
+
 def test_channel_presets() -> None:
     from mt_io.lemi.lemi424 import LEMI424
     from mt_io.uoa import UoACollection
-    produced = {"lemi423": {"hx", "hy", "hz", "ex", "ey"}, "lemi424": set(LEMI424().file_column_names),
-                "edl": {comp for comp, _n in UoACollection.CHANNEL_MAP.values()}}
-    assert set(CHANNEL_PRESETS) == set(INSTRUMENTS) == {"lemi423", "lemi424", "edl"}, list(CHANNEL_PRESETS)
+    from mt_io.phoenix.readers.header import Header
+    from mt_workbench.mtu5a import CHANNELS as MTU5A_CHANNELS
+    # Phoenix: mt-io's channel tags (e1 e2 h1 h2 h3), as mt_workbench.phoenix renames them
+    rename = {"e1": "ex", "e2": "ey", "h1": "hx", "h2": "hy", "h3": "hz"}
+    from mt_workbench.instruments import LEMI424_RENAME
+    produced = {"lemi423": {"hx", "hy", "hz", "ex", "ey"},
+                "lemi424": {LEMI424_RENAME.get(c, c) for c in LEMI424().file_column_names},
+                "edl": {comp for comp, _n in UoACollection.CHANNEL_MAP.values()},
+                "phoenix": {rename[t] for t in Header().channel_map.values() if t in rename},
+                "orangebox": _orange_reader_channels(),
+                "mtu5a": set(MTU5A_CHANNELS)}  # the table's CHEX .. CHHZ, as mt_workbench.mtu5a stores them
+    assert set(CHANNEL_PRESETS) == set(INSTRUMENTS) == {"lemi423", "lemi424", "edl", "phoenix", "orangebox",
+                                                        "mtu5a"}, \
+        list(CHANNEL_PRESETS)
     for instrument, presets in CHANNEL_PRESETS.items():
         for label, channels in presets.items():
             back = channels_from_label(label, instrument)
@@ -208,7 +268,7 @@ def test_channel_presets() -> None:
     assert channels_from_label("Ex Ey Bx By", "lemi423") == ["ex", "ey", "hx", "hy"]
     assert preset_label(["HX", "hy", "Ey", "ex"], "lemi423") == "Ex Ey Bx By"
     assert channels_from_label("bx by bz", "lemi423") == ["hx", "hy", "hz"]
-    assert channels_from_label("Bx By Bz", "lemi424") == ["bx", "by", "bz"]
+    assert channels_from_label("Bx By Bz", "lemi424") == ["hx", "hy", "hz"]
     for custom in (["hx", "ey"], ["ex", "ey", "hx", "hy", "hz", "tx"], ["e1", "e2", "hx", "hy"]):
         label = preset_label(custom, "lemi423")
         assert label == ", ".join(custom) and channels_from_label(label, "lemi423") == custom, (custom, label)
@@ -233,7 +293,7 @@ def test_preset_words_in_any_order() -> None:
             assert got == ["ex", "ey", "hx", "hy"], (typed, instrument, got)
             assert preset_label(got, instrument) == "Ex Ey Bx By", (typed, instrument)
     assert channels_from_label("Bx By Bz Ex Ey", "edl") == ["ex", "ey", "hx", "hy", "hz"]
-    assert channels_from_label("Bx By Bz E1 E2", "lemi424") == ["e1", "e2", "bx", "by", "bz"]
+    assert channels_from_label("Bx By Bz E1 E2", "lemi424") == ["ex", "ey", "hx", "hy", "hz"]
     # a typed list that is no preset's words is still the list, as typed
     assert channels_from_label("hx, hy, ex, ey", "edl") == ["hx", "hy", "ex", "ey"]
     assert channels_from_label("Bx By Ex", "edl") == ["bx", "by", "ex"]
@@ -412,6 +472,191 @@ def test_layout_north() -> None:
         raise AssertionError("control: layout_north north was accepted")
     print(f"  layout_north: default magnetic; defaults geographic -> A {frames['A']}, own magnetic -> M "
           f"{frames['M']}; Morocco B03 magnetic; control: {refused}")
+
+
+def _unknown_key_refusal(survey: Survey, site: str) -> str:
+    """Return the ValueError text `Survey.site` raises for a site, failing on any other outcome."""
+    try:
+        survey.site(site)
+    except ValueError as exc:
+        return str(exc)
+    except TypeError as exc:
+        raise AssertionError(f"{site}: TypeError, not ValueError: {exc}") from None
+    raise AssertionError(f"{site}: an unknown key was accepted")
+
+
+def test_unknown_key() -> None:
+    import mt_workbench.survey as survey_module
+    config = {"name": "t", "data_root": ".", "defaults": {"azimuth_ex": 0.0},
+              "sites": {"A": {"model": "MTU-8A"}, "B": {"dipole_length_ex": 50.0}}}
+    survey = Survey(config, Path("."))
+    text = _unknown_key_refusal(survey, "A")
+    assert "'model' (site entry)" in text, text
+    assert survey.site("B").dipole_length_ex == 50.0
+    other = Survey({**config, "defaults": {"bogus_key": 1}}, Path("."))
+    text_d = _unknown_key_refusal(other, "B")
+    assert "'bogus_key' (defaults:)" in text_d, text_d
+    # mutation: without the check the dataclass's TypeError comes through, and the check must see it
+    kept = survey_module._check_known_keys
+    survey_module._check_known_keys = lambda *a, **k: None
+    try:
+        _unknown_key_refusal(survey, "A")
+    except AssertionError as exc:
+        tripped = str(exc)
+    else:
+        raise AssertionError("mutation: the TypeError passed the check")
+    finally:
+        survey_module._check_known_keys = kept
+    assert "TypeError" in tripped, tripped
+    print(f"  unknown keys: {text.split(';')[0]}; {text_d.split(';')[0]}; mutation tripped ({tripped[:40]}...)")
+
+
+def _burst_refusals(root: Path) -> dict:
+    """Return the ValueError text for each refused burst entry, or "ACCEPTED" where none was raised."""
+    base = {"G5": {"serial": "10133"}, "G5L": {"derived_from": "G5", "sample_rate": 1.0}}
+    cases = {"dipole_length_ex": {"bursts_of": "G5", "sample_rate": 24000, "dipole_length_ex": 50.0},
+             "derived_from": {"bursts_of": "G5", "sample_rate": 24000, "derived_from": "G5"},
+             "rate 150": {"bursts_of": "G5", "sample_rate": 150},
+             "no rate": {"bursts_of": "G5"},
+             "itself": {"bursts_of": "G5H", "sample_rate": 24000},
+             "of derived": {"bursts_of": "G5L", "sample_rate": 24000}}
+    out = {}
+    for label, entry in cases.items():
+        survey = Survey({"name": "t", "instrument": "phoenix", "data_root": str(root),
+                         "sites": {**base, "G5H": entry}}, root)
+        try:
+            survey.site("G5H")
+        except ValueError as exc:
+            out[label] = str(exc)
+        else:
+            out[label] = "ACCEPTED"
+    return out
+
+
+def test_phoenix_keys_and_burst_site() -> None:
+    import tempfile
+    import mt_workbench.survey as survey_module
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        (root / "G5" / "3").mkdir(parents=True)
+        (root / "G5" / "3" / "10133_5FA4809A_3_00000001.td_150").write_bytes(bytes(128))
+        sites = {"G5": {"serial": 10133, "dipole_length_ey": 85.0, "coil_hx": 53674, "recording": ".",
+                        "calibration_dir": "sensors", "clock_offset_s": 0.5},
+                 "G5H": {"bursts_of": "G5", "sample_rate": 24000, "remote": "G8H"}}
+        survey = Survey({"name": "t", "instrument": "lemi423", "sample_rate": 150, "data_root": str(root),
+                         "sites": sites}, root)
+        g5 = survey.site("G5")
+        assert (g5.serial, g5.coil_hx, g5.recording, g5.calibration_dir) == ("10133", "53674", ".", "sensors"), g5
+        g5h = survey.site("G5H")
+        same = ("serial", "dipole_length_ey", "coil_hx", "calibration_dir", "recording")
+        assert all(getattr(g5h, k) == getattr(g5, k) for k in same), g5h
+        assert (g5.clock_offset_s, g5h.clock_offset_s) == (0.5, 0.0), (g5.clock_offset_s, g5h.clock_offset_s)
+        assert (g5h.name, g5h.bursts_of, g5h.sample_rate, g5h.remote) == ("G5H", "G5", 24000.0, "G8H"), g5h
+        assert survey.instrument_of("G5H") == survey.instrument_of("G5") == "phoenix"
+        assert survey.sample_rate_of("G5H") == 24000.0 and survey.sample_rate_of("G5") == 150.0
+        assert (survey.raw_site("G5H"), survey.raw_site("G5")) == ("G5", "G5")
+        assert (survey.bursts_parent("G5H"), survey.bursts_parent("G5")) == ("G5", None)
+        assert list(survey.site_dirs()) == ["G5"], list(survey.site_dirs())
+        refused = _burst_refusals(root)
+        accepted = [k for k, v in refused.items() if v == "ACCEPTED"]
+        assert not accepted, accepted
+        assert "dipole_length_ex on a burst site" in refused["dipole_length_ex"], refused["dipole_length_ex"]
+        assert "derived_from on a burst site" in refused["derived_from"], refused["derived_from"]
+        assert "sample_rate: 24000" in refused["rate 150"] and "None" in refused["no rate"], refused
+        assert "names the site itself" in refused["itself"] and "derived or burst" in refused["of derived"], refused
+        kept = survey_module.BURST_SITE_KEYS
+        survey_module.BURST_SITE_KEYS = (*kept, "dipole_length_ex")
+        try:
+            mutated = _burst_refusals(root)["dipole_length_ex"]
+        finally:
+            survey_module.BURST_SITE_KEYS = kept
+        assert mutated == "ACCEPTED", mutated
+    print(f"  G5H from G5: serial {g5h.serial}, ey {g5h.dipole_length_ey}, coil_hx {g5h.coil_hx}, clock "
+          f"{g5h.clock_offset_s}, rate {g5h.sample_rate:g}, remote {g5h.remote}; 6 bad burst entries refused; "
+          f"mutation (dipole_length_ex allowed) accepted it, as it must")
+
+
+def _burst_clocks(root: Path) -> dict:
+    """Return G5's and G5H's resolved clock_offset_s under a G5 at -0.1148 s, for three G5H entries.
+
+    Each value is the offset, or the ValueError text where `Survey.site` refused the entry.
+    """
+    entries = {"inherits": {}, "own 0.05": {"clock_offset_s": 0.05}, "own 61": {"clock_offset_s": 61.0}}
+    out = {}
+    for label, extra in entries.items():
+        sites = {"G5": {"serial": "10133", "clock_offset_s": -0.1148},
+                 "G5H": {"bursts_of": "G5", "sample_rate": 24000, **extra}}
+        survey = Survey({"name": "t", "instrument": "phoenix", "sample_rate": 150, "data_root": str(root),
+                         "sites": sites}, root)
+        out[f"G5 ({label})"] = survey.site("G5").clock_offset_s
+        try:
+            out[label] = survey.site("G5H").clock_offset_s
+        except ValueError as exc:
+            out[label] = str(exc)
+    return out
+
+
+def _check_burst_clocks(root: Path) -> list[str]:
+    """Return the failures of the burst-clock criterion of the module docstring."""
+    got, bad = _burst_clocks(root), []
+    if got["inherits"] != 0.0:
+        bad.append(f"G5H under G5 at -0.1148 s resolves to {got['inherits']!r}, expected 0.0")
+    if got["own 0.05"] != 0.05:
+        bad.append(f"G5H declaring 0.05 resolves to {got['own 0.05']!r}")
+    if not isinstance(got["own 61"], str) or "not a clock offset" not in got["own 61"]:
+        bad.append(f"G5H declaring 61.0 resolves to {got['own 61']!r}, expected the MAX_CLOCK_OFFSET_S refusal")
+    bad += [f"{k} resolves to {v!r}, expected -0.1148" for k, v in got.items() if k.startswith("G5 (") and v != -0.1148]
+    return bad
+
+
+def test_burst_site_clock_offset() -> None:
+    import tempfile
+    import mt_workbench.survey as survey_module
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        (root / "G5" / "3").mkdir(parents=True)
+        (root / "G5" / "3" / "10133_5FA4809A_3_00000001.td_150").write_bytes(bytes(128))
+        bad = _check_burst_clocks(root)
+        assert not bad, bad
+        got = _burst_clocks(root)
+        kept = survey_module.Survey._burst_site
+
+        def inheriting(self, name):
+            config = kept(self, name)
+            config.clock_offset_s = self.site(config.bursts_of).clock_offset_s
+            return config
+
+        survey_module.Survey._burst_site = inheriting
+        try:
+            trip = _check_burst_clocks(root)
+        finally:
+            survey_module.Survey._burst_site = kept
+        assert trip and "expected 0.0" in trip[0], trip
+    print(f"  G5 at {got['G5 (inherits)']}: G5H {got['inherits']}, G5H declaring 0.05 {got['own 0.05']}, "
+          f"61.0 refused; mutation (the recorded site's offset copied) tripped: {trip[0]}")
+
+
+def test_processing_overlap_keys() -> None:
+    """This test fails if processing: overlap: / overlap_long: are not read as percentages by overlap_pct /
+    overlap_pct_long, if they are not left out of `processing` (they are not band-scheme keywords), if an
+    unset key does not read None, or if a value outside [0, 100) is not refused."""
+    config = {"name": "t", "data_root": ".", "sites": {"A": {}},
+              "processing": {"min_period": 0.2, "max_period": 1e5, "min_band_windows": 2, "overlap_long": 25}}
+    survey = Survey(config, Path("."))
+    assert survey.overlap_pct_long == 25.0 and survey.overlap_pct is None, (survey.overlap_pct_long, survey.overlap_pct)
+    assert set(survey.processing) == {"min_period", "max_period"}, survey.processing
+    assert survey.min_band_windows == 2
+    both = Survey({**config, "processing": {**config["processing"], "overlap": 0}}, Path("."))
+    assert both.overlap_pct == 0.0, both.overlap_pct
+    for bad in (100, -1, 250):
+        try:
+            Survey({**config, "processing": {**config["processing"], "overlap_long": bad}}, Path(".")).overlap_pct_long
+        except ValueError as exc:
+            assert "overlap_long" in str(exc), exc
+        else:
+            raise AssertionError(f"overlap_long: {bad} was taken")
+    assert Survey({**config, "processing": {}}, Path(".")).overlap_pct_long is None
+    print("  processing: overlap_long 25 -> 25.0, overlap unset -> None, both left out of processing; 100/-1/250 refused")
 
 
 if __name__ == "__main__":

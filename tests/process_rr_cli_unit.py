@@ -22,17 +22,17 @@ does not exit 0 with `local_archive` ending in `D02.h5`, `remote_archive` in
 own band block (min_period 0.005, max_period 5000, periods_per_decade 10,
 notch_frequencies "50, 150"); `--min-period 0.01 --max-period 1000
 --per-decade 6 --notch "50,100,150"` do not each replace exactly their own
-value and leave the others alone (`started`/`stem` excepted -- each
+value and leave the others alone (`started`/`stem` excepted: each
 subprocess starts at its own instant); `--no-filters` does not leave both
 archive paths (still `<site>.h5`, no more `_unfiltered.h5`) with
 `ignore_filters` True and both "local archive"/"remote archive" status lines
 reading "no filters used (--no-filters)"; `--tag try2` does not put `_try2`
 at the end of the stem and "try2" in `tag`; a start and an end do not appear
 in `window` while leaving the stem exactly `D02_rr-E08_<stamp>_try2` (the
-window nowhere in it); `--notch ""` does not clear the list; on a SCRATCH
-COPY of curnamona_cube's config (workspace pointed at the real one, so D02's
+window nowhere in it); `--notch ""` does not clear the list; on a scratch
+copy of curnamona_cube's config (workspace pointed at the real one, so D02's
 and E08's real archives are read but never written to, and a throwaway
-filters.yaml only the copy ever sees -- the real curnamona files are never
+filters.yaml only the copy ever sees; the real curnamona files are never
 touched), D02's declared filters gaining a notch its archive has no variant
 for does not make the "local archive" status line read "raw: ...D02.h5,
 variant: to build (<hash>)", or E08's unchanged status does not stay "none
@@ -42,7 +42,7 @@ The advanced estimator flags. **This test also fails if** a plain dry run
 does not say "tweaks: none" and print no `tweak.` line; `--taper hamming
 --overlap 50 --no-prewhiten --r0 2.0` does not print exactly `tweak.taper:
 hamming`, `tweak.overlap_pct: 50.0`, `tweak.prewhiten: False` and `tweak.r0:
-2.0` -- no other tweak, no "tweaks: none" -- with every other line as in the
+2.0` (no other tweak, no "tweaks: none") with every other line as in the
 plain run (`started`/`stem` excepted); or, building aurora's real config for
 D02 against E08 with the survey's lemimt band scheme (in-process, through
 `mt_workbench.process.kernel_dataset` with nothing patched, while this process
@@ -50,15 +50,15 @@ holds both archives open read-only with h5py, as the GUI holds one: HDF5
 refuses a read-write open of a file already open read-only, so the build
 fails unless mth5 itself opens them read-only), without tweaks any decimation level is not
 window.type hann (the in-use default; aurora's own is
-boxcar), overlap round(num_samples * 0.25) -- or int(num_samples * 0.75) on a
+boxcar), overlap round(num_samples * 0.25) (or int(num_samples * 0.75) on a
 level whose window lasts over 600 s, of which there must be at least one, so
-the boost is really exercised -- prewhitening_type "first difference" with
+the boost is really exercised), prewhitening_type "first difference" with
 recoloring True, min_num_stft_windows 0, and regression max_iterations 10,
 max_redescending_iterations 2, r0 1.5, u0 2.8, tolerance 0.005 (and
 `mt_workbench.process.ESTIMATOR_DEFAULTS`, which the GUI compares against, does not
 say the same); with the tweaks `resolve()` makes of those four flags, any
-level is not window.type hamming with overlap round(num_samples * 0.5) --
-the long-window boost replaced -- prewhitening_type "" (which mth5's
+level is not window.type hamming with overlap round(num_samples * 0.5)
+(the long-window boost replaced), prewhitening_type "" (which mth5's
 `apply_prewhitening` must hand back untouched) with recoloring False and r0
 2.0, or any other value moved from the defaults above; a dpss taper does not
 build a finite taper of num_samples points on every level; or the config
@@ -75,7 +75,7 @@ not carry `local`/`remote`, `started`/`finished` as the exact ISO strings
 passed in, `seconds` matching their difference, the band scheme and the full
 effective tweaks (taper "hann" included even though no `--taper` was given),
 the argv, the tag, the edi/figure names and a `versions` dict naming mt_workbench,
-aurora, mth5, mt_metadata and mt_io -- or is not JSON-serialisable as it
+aurora, mth5, mt_metadata and mt_io, or is not JSON-serialisable as it
 stands; a phase-quadrant verdict built from a mode 180 deg out of quadrant is
 not "flipped: ..." and one built from too few usable periods is not "not
 judged: ..."; or `quadrant_window` does not pick 0.1-10 s at 100 Hz and above
@@ -98,7 +98,12 @@ from the level's own FFT frequencies, level 0 does not lose exactly two
 bands, or a band centre period under 1000 s differs from the plain config's
 by more than 1e-9 of itself; or the sidecar does not carry `window` and
 `min_bin` in `band_scheme` (128 and None without the flags, 256 and 10.0
-with them) and `lowest_harmonic` 6.4 (10.16).
+with them) and `lowest_harmonic` 6.4 (10.16); on a scratch copy whose
+`processing:` block gives `min_bin: 10`, the resolution does not take 10
+(lowest harmonic 10.16) without the flag, or `--min-bin 0` does not give
+min_bin None and lowest harmonic 6.4 (the layout's own, which the Process
+tab's "layout's own" passes; taken as a harmonic of 0 it fails in
+build_band_scheme), or `--min-bin -1` is not refused naming --min-bin.
 
 Both sites' time masks. **This test also fails if**, on a scratch copy of
 curnamona_cube whose own masks.yaml holds three D02 masks (one written twice),
@@ -107,7 +112,7 @@ STK_E08u and one for the archive-only SYN01 (the entries of E08, SYN01 and
 STK_E08u of scope both, so that they apply as a remote; the scope rule
 itself is tests/mask_scope_unit.py's), `resolve` for D02 rr E08 does not give `masks_local` D02's
 three in start order, `masks_remote` E08's three, and `masks` the union in
-start order -- exactly the starts listed in MASK_UNION_STARTS, the shared
+start order: exactly the starts listed in MASK_UNION_STARTS, the shared
 interval once (D02's entry), E08's own entries carrying E08's reasons; the
 sidecar `build_sidecar` makes does not carry the same three lists in the
 form masks.yaml holds them (`mt_workbench.masks.stored`: `channels` left out of an
@@ -120,9 +125,10 @@ applied)"; with `--no-masks` all three lists are not empty with
 masks.yaml entry (a stacked remote has none of its own); D02 against SYN01
 (archive-only, no STK_ prefix: judged by name, like a site) does not carry
 SYN01's entry; or, with data_root pointed at a folder that does not exist
-(the data drive unplugged, so resolve sees no raw sites and classes E08 as
-virtual), `masks_remote` in `resolve` and the sidecar is not E08's three
-and `masks` not the same union.
+(the data drive unplugged), resolve classes E08, a declared recorded site,
+as virtual or leaves D02 or E08 out of `raw_sites` (workbench issue 32), or
+`masks_remote` in `resolve` and the sidecar is not E08's three and `masks`
+not the same union.
 
 The products and the frame. **This test also fails if** the sidecar's
 `xml` and `h5` are not the EDI's stem with .xml and .h5, or `frame` is not
@@ -294,6 +300,77 @@ def test_each_band_option_overrides_only_itself() -> None:
     print("  --notch \"\" -> no notch frequencies at all")
 
 
+def test_min_bin_zero_is_the_layouts_own() -> None:
+    import tempfile
+
+    process_rr = _load_process_rr()
+    started = dt.datetime(2026, 9, 23, 21, 15, 0, tzinfo=dt.timezone.utc)
+    with tempfile.TemporaryDirectory() as tmp:
+        copy_yaml = make_survey_copy(Path(tmp), {})
+        config = yaml.safe_load(copy_yaml.read_text(encoding="utf-8"))
+        config.setdefault("processing", {})["min_bin"] = 10
+        copy_yaml.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+
+        def resolved(*options):
+            args = process_rr.build_parser().parse_args([str(copy_yaml), LOCAL, REMOTE, *options])
+            return process_rr.resolve(args, started)
+
+        survey, own = resolved(), resolved("--min-bin", "0")
+        assert survey["scheme_kwargs"]["min_bin"] == 10 and round(survey["lowest_harmonic"], 2) == 10.16,             (survey["scheme_kwargs"]["min_bin"], survey["lowest_harmonic"])
+        assert own["scheme_kwargs"]["min_bin"] is None and round(own["lowest_harmonic"], 2) == 6.4,             (own["scheme_kwargs"]["min_bin"], own["lowest_harmonic"])
+        process_rr.build_band_scheme(own["sample_rate"], **own["scheme_kwargs"])
+        try:
+            resolved("--min-bin", "-1")
+        except SystemExit as exc:
+            assert "--min-bin" in str(exc), exc
+        else:
+            raise AssertionError("--min-bin -1 was taken")
+    print("  survey min_bin 10: taken without the flag (10.16); --min-bin 0 -> None (6.4); --min-bin -1 refused")
+
+
+def test_overlap_from_the_survey_block() -> None:
+    """This test fails if a survey's processing: overlap_long: does not reach the tweaks when --overlap-long is
+    not given, if the flag does not win over it, if overlap: does not do the same for overlap_pct, if a block
+    value outside [0, 100) is not refused, or if a survey without the keys gains a tweak."""
+    import tempfile
+
+    process_rr = _load_process_rr()
+    started = dt.datetime(2026, 11, 8, 9, 40, 0, tzinfo=dt.timezone.utc)
+    with tempfile.TemporaryDirectory() as tmp:
+        copy_yaml = make_survey_copy(Path(tmp), {})
+        config = yaml.safe_load(copy_yaml.read_text(encoding="utf-8"))
+        block = config.setdefault("processing", {})
+        block["overlap_long"] = 25
+        copy_yaml.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+
+        def resolved(*options):
+            args = process_rr.build_parser().parse_args([str(copy_yaml), LOCAL, REMOTE, *options])
+            return process_rr.resolve(args, started)
+
+        from_block = resolved()["tweaks"]
+        assert from_block == {"overlap_pct_long": 25.0}, from_block
+        flag_wins = resolved("--overlap-long", "50")["tweaks"]
+        assert flag_wins == {"overlap_pct_long": 50.0}, flag_wins
+        assert "overlap_long" not in resolved()["scheme_kwargs"], "the block key leaked into the band scheme"
+        block["overlap"] = 30
+        copy_yaml.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+        both = resolved()["tweaks"]
+        assert both == {"overlap_pct": 30.0, "overlap_pct_long": 25.0}, both
+        block["overlap_long"] = 100
+        copy_yaml.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+        try:
+            resolved()
+        except ValueError as exc:
+            assert "overlap_long" in str(exc), exc
+        else:
+            raise AssertionError("overlap_long: 100 was taken")
+    plain = _load_process_rr().resolve(
+        _load_process_rr().build_parser().parse_args([str(SURVEY), LOCAL, REMOTE]), started)["tweaks"]
+    assert plain == {}, plain
+    print("  survey overlap_long 25 -> tweak overlap_pct_long 25.0; --overlap-long 50 wins; overlap 30 reaches "
+          "overlap_pct; 100 refused; a survey without the keys has no tweak")
+
+
 def test_no_filters_uses_the_raw_archive() -> None:
     got = dry_run("--no-filters")
     assert got["local_archive"].endswith(f"{LOCAL}.h5") and "_unfiltered" not in got["local_archive"],         got["local_archive"]
@@ -349,6 +426,8 @@ def test_tweaks_print_only_what_was_given() -> None:
     base = dry_run()
     assert base.get("tweaks") == "none", base.get("tweaks")
     assert not [k for k in base if k.startswith("tweak.")], base
+    long_only = dry_run("--overlap-long", "0")
+    assert {k: v for k, v in long_only.items() if k.startswith("tweak.")} == {"tweak.overlap_pct_long": "0.0"}, long_only
     got = dry_run("--taper", "hamming", "--overlap", "50", "--no-prewhiten", "--r0", "2.0")
     tweaks = {k: v for k, v in got.items() if k.startswith("tweak.")}
     assert tweaks == {"tweak.taper": "hamming", "tweak.overlap_pct": "50.0",
@@ -442,6 +521,28 @@ def test_tweaks_reach_every_decimation_level() -> None:
         dec.stft.window._taper = None  # built lazily and cached: rebuild it as dpss
         taper = dec.stft.window.taper()
         assert len(taper) == dec.stft.window.num_samples and np.isfinite(taper).all(), dec.decimation.level
+    # overlap_pct_long reaches the long levels only: 0 % there, the short levels keep their 25 %
+    apply_tweaks(configs["in use"], {"overlap_pct_long": 0.0})
+    touched = 0
+    for dec in configs["in use"].decimations:
+        n, seconds = dec.stft.window.num_samples, dec.stft.window.num_samples / dec.decimation.sample_rate
+        want = 0 if seconds > 600.0 else round(n * 0.25)
+        touched += seconds > 600.0
+        assert dec.stft.window.overlap == want, ("overlap_pct_long", dec.decimation.level, dec.stft.window.overlap, want)
+    assert touched == long_levels, (touched, long_levels)
+    # given with overlap_pct, the long value wins on the long levels only
+    apply_tweaks(configs["in use"], {"overlap_pct": 50.0, "overlap_pct_long": 10.0})
+    for dec in configs["in use"].decimations:
+        n, seconds = dec.stft.window.num_samples, dec.stft.window.num_samples / dec.decimation.sample_rate
+        want = round(n * 0.10) if seconds > 600.0 else round(n * 0.50)
+        assert dec.stft.window.overlap == want, ("both overlaps", dec.decimation.level, dec.stft.window.overlap, want)
+    for bad in ({"overlap_pct_long": 100.0}, {"overlap_pct_long": -1.0}, {"overlap_long": 25.0}):
+        try:
+            apply_tweaks(configs["in use"], bad)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError(f"apply_tweaks accepted {bad}")
     print(f"  config D02 rr E08, {len(levels)} levels ({long_levels} with windows over 600 s): "
           f"in use {IN_USE['type']}, overlap 25 %/75 %, r0 {IN_USE['r0']}; tweaked hamming, overlap "
           f"50 % on every level, prewhitening off, r0 2.0; dpss builds; built while both archives were "
@@ -631,8 +732,8 @@ def test_masks_from_both_sites() -> None:
         assert [m["reason"] for m in res["masks_remote"]] == ["SYN01 declared by hand"], res["masks_remote"]
         print(f"  D02 rr SYN01 (archive-only, no STK_ prefix): its entry applies, {len(res['masks'])} applied")
 
-    # data_root on a drive that is not plugged in: every remote with an archive
-    # looks virtual to resolve, and E08's masks must still apply
+    # data_root on a drive that is not plugged in: E08 is declared, so it is still a
+    # recorded remote at data_root/E08 (workbench issue 32), and its masks apply
     with tempfile.TemporaryDirectory() as tmp:
         copy_yaml = make_survey_copy(Path(tmp), {})
         config = yaml.safe_load(copy_yaml.read_text(encoding="utf-8"))
@@ -640,12 +741,14 @@ def test_masks_from_both_sites() -> None:
         copy_yaml.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
         (Path(tmp) / "masks.yaml").write_text(yaml.safe_dump(MASKS_BOTH, sort_keys=False), encoding="utf-8")
         res, sidecar = resolved()
-        assert res["raw_sites"] == {} and res["virtual_remote"] is True, (res["raw_sites"], res["virtual_remote"])
+        folders = {site: Path(res["raw_sites"].get(site, "")) for site in (LOCAL, REMOTE)}
+        assert all(f.name == site and f.parent.name == "drive_not_mounted" for site, f in folders.items()), folders
+        assert res["virtual_remote"] is False, res["virtual_remote"]
         assert [m["reason"] for m in res["masks_remote"]] == [
             "E08 fence", "E08 band", "E08 same as D02 night"], res["masks_remote"]
         assert [m["start"] for m in res["masks"]] == MASK_UNION_STARTS, [m["start"] for m in res["masks"]]
         assert sidecar["masks_remote"] == [stored(m) for m in res["masks_remote"]], sidecar["masks_remote"]
-        print(f"  data_root unmounted (E08 looks virtual): masks_remote {len(res['masks_remote'])}, "
+        print(f"  data_root unmounted (E08 still recorded, not virtual): masks_remote {len(res['masks_remote'])}, "
               f"{len(res['masks'])} applied")
 
 

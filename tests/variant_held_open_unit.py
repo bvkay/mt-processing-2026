@@ -136,7 +136,7 @@ def check_hold_is_real(probe: Path) -> None:
 
 
 def check_left(out: Path, before: str, where: str) -> None:
-    """The variant must be byte for byte as before and its .part file gone."""
+    """Check that the variant is unchanged and its .part file gone."""
     part = out.with_name(out.name + ".part")
     assert not part.exists(), f"{where}: {part.name} was left behind ({part.stat().st_size} bytes)"
     assert out.exists(), f"{where}: the variant {out.name} was deleted"
@@ -149,7 +149,7 @@ def test_build_variant_held() -> None:
         check_hold_is_real(probe)
         try:
             build_variant(survey, SITE)
-        except Exception as exc:  # noqa: BLE001 -- any type; the message and the files are checked
+        except Exception as exc:  # noqa: BLE001  (any type; the message and the files are checked)
             err = exc
         else:
             raise AssertionError("build_variant replaced a variant another process holds open")

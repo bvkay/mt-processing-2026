@@ -7,7 +7,8 @@ counts, the runner, the filter check, product parsing, the masks
 signature, a MANTLE stage 3 config (its memory class, the ledger's
 engine and the score of its shorter product, its window clip and its
 expected peak by hours), the plan's per-site remotes, modes and windows,
-and the deferred configs with --configs. Everything runs on a synthetic survey in a
+the deferred configs with --configs, the plan's min_band_windows and its
+remote_only sites. Everything runs on a synthetic survey in a
 temporary workspace,
 without an archive or aurora: five sites on a line with designed record
 spans, A 0-48 h, B 2-50 h, C 4-46 h (group G1) and D 40-90 h, E 44-94 h
@@ -33,15 +34,19 @@ Usage:
     plan with a site in two groups, an excluded site in a group, a config
     carrying --tag, or an exclusion without a reason loads at all;
 
-(2) the overlap rule is wrong at its edges: for a 48 h local, 24 h of overlap
-    (exactly 50 %) and 12 h (exactly the floor) must qualify and 11.9 h
-    (25 %) must not; for a 10 h local, 6 h (60 %, under 12 h) must qualify;
-    no overlap never does; a site is never its own remote;
+(2) the overlap rule is wrong at its edges (both floors hold,
+    min_fraction of the local record and min_hours): for a 48 h
+    local, 24 h of overlap (exactly 50 %, over 12 h) must qualify, 12 h
+    (exactly the floor but 25 %) and 11.9 h (25 %) must not; for a 10 h
+    local, 6 h (60 %, under 12 h) must not; for a 24 h local, 12 h (exactly
+    50 % and exactly 12 h) must; no overlap never does; a site is never its
+    own remote. The two floors together are tested in
+    tests/campaign_overlap_gate_unit.py (workbench 187).
 
 (3) the stacks are wrong: G1's sites stack the other two members (the local
-    never in its own stack); a site alone in its group borrows the group
-    with the longest common span (F 0-48 h borrows G1, span 42 h); D, whose
-    group has one other member and no other group qualifying, gets none;
+    never in its own stack); a site alone in its group stacks its eligible
+    remotes of the other group (F 0-48 h takes G1's A, B, C, span 42 h,
+    marked borrowed from G1); D, with one eligible remote, gets none;
 
 (4) resume is wrong: a ledger row marked done with the current inputs and an
     existing EDI is not skipped (no child may start), or it still counts as
@@ -51,7 +56,9 @@ Usage:
 (5) the dry run does not count, for the synthetic plan with 2 configs:
     stage 0 5 variants; stage 1 8 rr (A, B, C two remotes each, D and E one);
     stage 2 6 stack builds and 6 rr (G1 only); stage 3 10 rr; hours
-    (5 x 8 + 6 x 1 + 24 x 8) / 2 slots / 60 = 1.983; or it writes anything;
+    (5 x 8 + 6 x 1 + 24 x 8) / 2 slots / 60 = 1.983; or it writes anything
+    but <campaign>/refused_remotes.csv (and the folders holding it), which
+    the dry run writes at plan time;
 
 (6) the runner, on three fake rr jobs of ~2 s with --parallel 2: ever runs
     three at once or never two, does not record every job done with its EDI
@@ -65,8 +72,10 @@ Usage:
 (7) the filter check is wrong against the real producer: comments built the
     way ingest builds them (mt_workbench.noise.apply_filters_arrays' own provenance
     lines joined by "; then ") for C04's declared list (mains then notch) and
-    C22's (notch with extra lines) must match, bare and behind build_variant's
-    "filters hash <h>; " prefix; a changed q, a swapped order, a missing
+    C22's (notch with extra lines) must match, bare, behind build_variant's
+    "filters hash <h>; " prefix, and behind the prefix and the freshness
+    record that follows it ("source: ...; calibration_sha256: ...; donor:
+    ...", workbench issue 20); a changed q, a swapped order, a missing
     filter, a comment with no filters, a notch on the wrong channels and a
     recorded hash that is not filters.yaml's must not;
 
@@ -208,7 +217,79 @@ Usage:
      (16), finished, `campaign.py <survey> <plan> --stage 3 --sites A
      --configs mantle_full` does not run exactly the one mantle_full child,
      leaving every earlier row (stage 1 and stage 3) as it was, with the
-     stage 3 remote from best_remote.json.
+     stage 3 remote from best_remote.json;
+
+(18) the plan's `min_band_windows` is wrong: a plan giving -1, 2.5, true or
+     "2" loads, or one giving 0 does not; with `min_band_windows: 2` a stage
+     1, a stage 2 (against a stack) and a stage 3 aurora rr job and the
+     `windows:` run do not carry `--min-band-windows 2` exactly once,
+     after the runner's --no-masks and before the config's flags and
+     --tag, or the MANTLE job carries it; a config [--min-band-windows 5]
+     does not put its own flag after the plan's (the later wins) or names
+     the plan's floor in its inputs; an aurora job's inputs do not end
+     ";min_band_windows 2", or do not change at 3 while the MANTLE job's
+     stay the same; a row done under 2 is still done under 3, or not done
+     under 2 again; a plan without the key adds the flag or names a floor
+     in the inputs; the dry run does not list the stage 1 jobs as
+     "[--min-band-windows 2]" and the stage 3 floor5 job as
+     "[--min-band-windows 2 --min-band-windows 5]", or `campaign.py
+     --dry-run` does not print "min_band_windows 2 on every aurora rr run"
+     on the plan's line; summary.md does not state the floor. Mutations
+     that trip it: the flag given to a MANTLE config, the floor left out of
+     the inputs, the plan's flag put after the config's.
+
+(19) the plan's `remote_only` is wrong: a plan whose remote_only site is
+     also a plan site, is listed twice, or (with the key) holds sites A and
+     AR (their stacks would share STK_AR<suffix>) loads; with
+     `remote_only: [O]` (a site O in survey.yaml spanning 0-94 h, in no
+     group) and `remotes: {A: O}`: O is in no job as the local (stages 1-3);
+     stage 0 does not hold one variant job for O (group "remote_only");
+     stage 1 does not give each of A-E one job against O beside its own
+     remotes; stage 2 does not build, per weighting, STK_<site><s> of the
+     group's members and STK_<site>R<s> of the same members and O (G1's
+     sites; D and E, whose group has no stack, get neither), with O's name
+     at the end of the R build's member list only; A's stage 3 is not on O;
+     the dry run does not count stage 0 6 variants, stage 1 13 rr, stage 2
+     12 stack builds and 12 rr, stage 3 5 rr, or writes any new file
+     (refused_remotes.csv is already there: stage 1 jobs were built).
+     Mutations that trip it (run by hand through monkeypatching): the
+     remote-only sites left out of `eligible_remotes`, the R stacks not
+     built, stage 0 without them.
+
+(20) the stack members are not chosen by their runs: with A 0-48 h and the runs B (2-40, 41-50),
+     C (4-46), G (0-9.6: 20 % of A's record), H (0-30, 31-48: 62.5 %),
+     I (0-28, 29-48: 58 %), A's stack holds G or H, or not B and C; its
+     floor is not 70 %; its span from the runs is not 36 h (4-40) or its
+     survey-span figure not 42 h; with B and C in `stages.stacks.
+     exclude_members` A's members are not H and I at the 50 % floor, or
+     its build's note does not say the floor was lowered; with H excluded
+     as well no stack is planned; of ten candidates covering the
+     whole record the members are not the 8 nearest; a plan whose
+     exclude_members names a site it does not have loads; through the
+     Campaign (runs injected), A's build commands do not list B C (and
+     B C O for the R stack, O covering 100 %) or their notes do not read
+     "expected span 36.0 h from the runs (survey spans 42.0 h)"; a
+     remote-only site covering under the floor gives an R stack; or
+     `split_done` counts a done rr row on STK_Au as done while the
+     stack's build is to run again (its members changed), or as not done
+     when the build is done too. Mutations that trip it (run by hand):
+     coverage from the survey spans instead of the runs, no coverage
+     floor, exclude_members ignored, `split_done` without the dependency
+     rule.
+
+(21) the stacks are not planned per piece (a member with a gap costs the
+     gap, not the stack): with A
+     0-48 h, B in two runs (0-36, 37-48: its best run covers 75 %) and C
+     (4-46), A's stack does not span 41 h in two pieces (4-36 and 37-46)
+     from the runs, its note does not read "expected span 41.0 h in 2
+     pieces from the runs", its build command does not end with
+     "--min-piece-h 6", or its inputs do not carry ";pieces 2 (41.0 h)";
+     with item 20's runs (one piece of 36 h, 4-40, and one of 5 h left
+     out) the inputs carry a piece marker, or the note does not add "1
+     piece(s) under 6 h left out (5.0 h)"; `piece_marker` gives "" for a
+     single piece that is not the one-run span; or `run_pieces` does not
+     take a site without runs as one run over its span. Mutation that
+     trips it (run by hand): `piece_marker` always "".
 """
 
 from __future__ import annotations
@@ -481,11 +562,16 @@ def test_plan_parser() -> None:
 
 
 def test_overlap_rule() -> None:
-    plan = cp.load_plan(make_plan(ROOT / "rule", groups={"G": ["L", "P", "Q", "R", "S", "N", "M"]}))
+    plan = cp.load_plan(make_plan(ROOT / "rule", groups={"G": ["L", "P", "Q", "R", "S", "N", "M", "T", "U"]}))
     spans = {k: (T0 + pd.Timedelta(hours=a), T0 + pd.Timedelta(hours=b)) for k, (a, b) in {
-        "L": (0, 48), "P": (24, 80), "Q": (36, 90), "R": (36.1, 90), "S": (0, 10), "N": (60, 70), "M": (4, 100)}.items()}
-    cases = [("L", "P", True, "24 h = 50 %"), ("L", "Q", True, "12 h floor"), ("L", "R", False, "11.9 h, 25 %"),
-             ("S", "M", True, "6 h = 60 % of a 10 h local"), ("L", "N", False, "no overlap"), ("L", "L", False, "itself")]
+        "L": (0, 48), "P": (24, 80), "Q": (36, 90), "R": (36.1, 90), "S": (0, 10), "N": (60, 70), "M": (4, 100),
+        "T": (0, 24), "U": (12, 40)}.items()}
+    # both floors hold (min_fraction 0.5 of the local record and min_hours 12); on one floor
+    # alone L rr Q and S rr M would pass
+    cases = [("L", "P", True, "24 h = 50 %"), ("L", "Q", False, "12 h floor but 25 %"),
+             ("L", "R", False, "11.9 h, 25 %"), ("S", "M", False, "6 h = 60 % of a 10 h local, under 12 h"),
+             ("T", "U", True, "12 h = 50 % of a 24 h local: both edges"),
+             ("L", "N", False, "no overlap"), ("L", "L", False, "itself")]
     for local, remote, want, why in cases:
         got = cp.is_eligible(plan, spans, local, remote)
         assert got == want, (local, remote, why, cp.overlap_hours(spans[local], spans[remote]))
@@ -498,14 +584,16 @@ def test_stacks() -> None:
     survey_yaml = make_survey(ROOT / "stacks", spans_h)
     plan = cp.load_plan(make_plan(ROOT / "stacks", groups={"G1": ["A", "B", "C"], "G2": ["D", "E"], "G3": ["F"]}))
     spans = cp.site_spans(cp.Survey.from_yaml(survey_yaml), plan.sites)
-    for s, others in (("A", ["B", "C"]), ("B", ["A", "C"]), ("C", ["A", "B"])):
+    # the members are the eligible remotes of every group:
+    # F (G3, 0-48 h) is one of A's, B's and C's; G1 still holds most of them
+    for s, others in (("A", ["B", "C", "F"]), ("B", ["A", "C", "F"]), ("C", ["A", "B", "F"])):
         sp = cp.stack_plan(plan, spans, s)
-        assert sp and sorted(sp["members"]) == others and not sp["borrowed"], (s, sp)
+        assert sp and sorted(sp["members"]) == others and sp["group"] == "G1", (s, sp)
     sp = cp.stack_plan(plan, spans, "F")
     assert sp and sp["borrowed"] and sp["group"] == "G1" and sorted(sp["members"]) == ["A", "B", "C"], sp
     assert abs(sp["span_h"] - 42.0) < 1e-9, sp["span_h"]
     assert cp.stack_plan(plan, spans, "D") is None, cp.stack_plan(plan, spans, "D")
-    print(f"  A <- B C; F (alone) borrows G1: {sp['members']} over {sp['span_h']:.0f} h; D: none")
+    print(f"  A <- B C F; F (alone in G3) takes G1's {sp['members']} over {sp['span_h']:.0f} h; D: none")
 
 
 def test_dry_run_counts() -> None:
@@ -520,8 +608,12 @@ def test_dry_run_counts() -> None:
     assert got == want, (got, text)
     assert abs(out["hours"] - (5 * 8 + 6 * 1 + 24 * 8) / 2 / 60) < 1e-9, out["hours"]
     after = sorted(p.relative_to(root) for p in root.rglob("*"))
-    assert before == after, f"the dry run wrote {set(after) - set(before)}"
-    print(f"  counts {got}; {out['hours']:.3f} h; nothing written")
+    # the dry run writes <campaign>/refused_remotes.csv at plan time, and nothing else
+    refused = (c.dir / "refused_remotes.csv").relative_to(root)
+    allowed = {refused, *(p for p in refused.parents if str(p) != ".")}
+    assert refused in set(after), f"the dry run did not write {refused}"
+    assert set(after) - set(before) <= allowed, f"the dry run wrote {set(after) - set(before) - allowed}"
+    print(f"  counts {got}; {out['hours']:.3f} h; nothing written but {refused}")
 
 
 def _fake_job(c, run_id: str, local: str, remote: str, edi_src: Path, seconds: float, trace: Path,
@@ -617,7 +709,7 @@ def test_runner_and_resume() -> None:
     assert "made to fail" in c3.ledger.rows["s1_D_rr-E"]["error"], c3.ledger.rows["s1_D_rr-E"]["error"]
     c3.max_runs = None
     t = time.time()
-    quiet(c3.run_block, "deps", [dep])  # its dependency failed in an earlier block: only the ledger knows
+    quiet(c3.run_block, "deps", [dep])  # its dependency failed in an earlier block: only the ledger records it
     assert time.time() - t < 30, "run_block waited on a dependency outside the block"
     assert c3.ledger.rows["s2_D_rr-STK_Du"]["status"] == "skipped", c3.ledger.rows["s2_D_rr-STK_Du"]
     quiet(c3.run_block, "deps in block", [_fake_job(c3, "s1_E_rr-D", "E", "D", edi, 0.2, root / "trace3.txt",
@@ -664,6 +756,12 @@ def test_filter_check() -> None:
         variant = f"{cp.VARIANT_HASH_PREFIX}{cp.filters_hash(declared)}; {_comment(declared)}"
         ok, why = cp.recorded_matches(variant, declared, chans, 1000.0)
         assert ok, (site, "variant", why)
+        stamp = "mtime 20261005T044812.520872600Z"
+        record = (f"source: {site} size 1 {stamp} sha256_head {'0' * 64}; calibration_sha256: {'a' * 64}; "
+                  f"donor: R01 size 2 {stamp} sha256_head {'b' * 64}")
+        fresh = f"{cp.VARIANT_HASH_PREFIX}{cp.filters_hash(declared)}; {record}; {_comment(declared)}"
+        ok, why = cp.recorded_matches(fresh, declared, chans, 1000.0)
+        assert ok, (site, "variant with its freshness record", why)
         print(f"  {site} ({' then '.join(next(iter(s)) for s in declared)}): recorded as declared, "
               f"bare and as a variant (hash {cp.filters_hash(declared)})")
     declared = filt["C04"]
@@ -747,7 +845,9 @@ def test_inputs_masks_both_sites() -> None:
     c.plan.configs["union"] = ["--mask-scope", "union"]
     union_job = c.rr_job(3, "A", "B", "union", "s3_A_rr-B_union")
     assert c.config_mask_scope("union") == "union" and c.config_mask_scope("default") == "role"
-    assert c.inputs(union_job) == remote_masked, (c.inputs(union_job), remote_masked)
+    # a config's own flags enter its rows' inputs (";config <flags>", workbench 180),
+    # so the union run's inputs are the masks the default run would name plus that marker; the masks part is unchanged
+    assert c.inputs(union_job) == remote_masked + ";config --mask-scope union", (c.inputs(union_job), remote_masked)
     (root / "masks.yaml").write_text(yaml.safe_dump({"A": [mask(20, None)], "B": [mask(10, "local")]}),
                                      encoding="utf-8")
     local_scoped = c.inputs(job)
@@ -1277,6 +1377,290 @@ def test_site_overrides() -> None:
     print(f"  summary: {line_a[:160]}...")
 
 
+def test_min_band_windows_plan_key() -> None:
+    root = ROOT / "floor"
+    survey_yaml = make_survey(root)
+    configs = {"hamming": ["--taper", "hamming"], "mantle": ["--engine", "mantle"],
+               "floor5": ["--min-band-windows", "5"]}
+
+    def plan_path(sub: str, floor, windows=True) -> Path:
+        path = make_plan(root / sub, configs=configs)
+        raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+        if floor is not None:
+            raw["min_band_windows"] = floor
+        if windows:
+            raw["windows"] = {"A": {"yx": [iso(10), iso(14)]}}
+        path.write_text(yaml.safe_dump(raw, sort_keys=False), encoding="utf-8")
+        return path
+
+    for bad in (-1, 2.5, True, "2"):
+        try:
+            cp.load_plan(plan_path("bad", bad))
+        except ValueError as exc:
+            assert "min_band_windows" in str(exc), str(exc)
+        else:
+            raise AssertionError(f"a plan with min_band_windows {bad!r} loaded")
+    assert cp.load_plan(plan_path("zero", 0)).min_band_windows == 0
+
+    pick = lambda sites, persist=True, df=None: {s: {"remote": "B"} for s in sites}  # noqa: E731
+
+    def campaign(sub: str, floor) -> "cp.Campaign":
+        c = cp.Campaign(survey_yaml, cp.load_plan(plan_path(sub, floor)), parallel=2, create=False)
+        c.best_remotes = pick
+        return c
+
+    two, three, none = campaign("two", 2), campaign("three", 3), campaign("none", None)
+    (root / "two" / "masks.yaml").write_text("", encoding="utf-8")
+    s1 = two.stage1_jobs(["A"])
+    s2 = [j for j in quiet(two.stage2_jobs, ["A"])[0] if j.kind == "rr"]
+    s3 = {j.config: j for j in two.stage3_jobs(["A"])}
+    assert sorted(s3) == ["default-yxwin", "floor5", "hamming", "mantle"], sorted(s3)
+    flag = ["--min-band-windows", "2"]
+
+    def at(cmd, items):
+        return [i for i in range(len(cmd) - 1) if cmd[i:i + len(items)] == items]
+
+    for job in [*s1, *s2, s3["hamming"], s3["default-yxwin"], s3["floor5"]]:
+        where = at(job.cmd, flag)
+        assert len(where) == 1 and job.cmd.count("--min-band-windows") == (2 if job.config == "floor5" else 1), \
+            (job.run_id, job.cmd)
+        assert job.cmd.index("--no-masks") < where[0] < job.cmd.index("--tag"), (job.run_id, job.cmd)
+        extra = two.plan.configs.get(job.config, [])
+        assert not extra or where[0] < at(job.cmd, extra)[0], (job.run_id, job.cmd)
+        assert two.inputs(job).endswith(";min_band_windows 2") or job.config == "floor5", two.inputs(job)
+    own = at(s3["floor5"].cmd, ["--min-band-windows", "5"])
+    assert own and own[0] > at(s3["floor5"].cmd, flag)[0], s3["floor5"].cmd
+    assert "min_band_windows" not in two.inputs(s3["floor5"]), two.inputs(s3["floor5"])
+    assert "--min-band-windows" not in s3["mantle"].cmd and "min_band_windows" not in two.inputs(s3["mantle"]), \
+        s3["mantle"].cmd
+    print(f"  floor 2: stage 1 {s1[0].cmd[5:]}; stage 2 {s2[0].run_id}, stage 3 hamming, the window run carry "
+          f"--min-band-windows 2 once; floor5 {s3['floor5'].cmd[5:-2]}; mantle none")
+
+    j3 = {j.config: j for j in three.stage3_jobs(["A"])}
+    assert three.inputs(j3["hamming"]).endswith(";min_band_windows 3"), three.inputs(j3["hamming"])
+    assert three.inputs(j3["hamming"]) != two.inputs(s3["hamming"])
+    assert three.inputs(j3["mantle"]) == two.inputs(s3["mantle"]), (three.inputs(j3["mantle"]), two.inputs(s3["mantle"]))
+    assert three.inputs(j3["floor5"]) == two.inputs(s3["floor5"])
+    edi = synthetic_edi(root / "done.edi")
+    row = {**{k: "" for k in cp.LEDGER_COLUMNS}, "run_id": s3["hamming"].run_id, "stage": "3", "kind": "rr",
+           "local": "A", "remote": "B", "config": "hamming", "status": "done", "exit_code": "0", "edi": str(edi),
+           "inputs": two.inputs(s3["hamming"])}
+    for c in (two, three):  # in memory: a dry-run campaign has no folder to save the ledger to
+        c.ledger.rows[row["run_id"]] = dict(row)
+    assert two.already_done(s3["hamming"]) and not three.already_done(j3["hamming"]), "the floor change left it done"
+    n1 = none.stage1_jobs(["A"])
+    nj = {j.config: j for j in none.stage3_jobs(["A"])}
+    assert all("--min-band-windows" not in j.cmd for j in [*n1, nj["hamming"], nj["default-yxwin"]]), n1[0].cmd
+    assert all("min_band_windows" not in none.inputs(j) for j in [*n1, *nj.values()])
+    print("  floor 3: aurora inputs changed, mantle and floor5 unchanged; a row done under 2 stale under 3; "
+          "no key: no flag, no floor in the inputs")
+
+    out, text = quiet(two.dry_run, [1, 3], ["A"])
+    lines = text.splitlines()
+    s1_lines = [ln for ln in lines if ln.strip().startswith("s1_A_rr-")]
+    assert s1_lines and all("[--min-band-windows 2]" in ln for ln in s1_lines), s1_lines
+    assert any("s3_A_rr-B_floor5" in ln and "[--min-band-windows 2 --min-band-windows 5]" in ln for ln in lines), text
+    assert any("s3_A_rr-B_mantle" in ln and "[--engine mantle]" in ln for ln in lines), text
+    code, text = quiet(cp.main, [str(survey_yaml), str(root / "two" / "plan.yaml"), "--stage", "1", "--sites", "A",
+                                 "--dry-run"])
+    head = next(ln for ln in text.splitlines() if ln.startswith("campaign syn:"))
+    assert code == 0 and head.endswith("; min_band_windows 2 on every aurora rr run"), (code, head)
+    two.ledger.rows = {}
+    summary = root / "two_summary.md"
+    cp.write_summary(two, pd.DataFrame(), {}, summary)
+    assert "`--min-band-windows 2`" in summary.read_text(encoding="utf-8"), summary.read_text(encoding="utf-8")[:600]
+    print(f"  dry run: {s1_lines[0].strip()[:90]}; plan line ends {head[-45:]!r}; summary.md states the floor")
+
+
+def test_remote_only() -> None:
+    root = ROOT / "remote_only"
+    survey_yaml = make_survey(root, {**SPANS_H, "O": (0, 94)})
+    bad = {
+        "a remote-only site that is a plan site": ({"remote_only": ["A"]}, "remote_only A: also in sites or exclude"),
+        "a remote-only site listed twice": ({"remote_only": ["O", "O"]}, "remote_only: listed twice: ['O']"),
+    }
+    for label, (keys, message) in bad.items():
+        try:
+            cp.load_plan(_plan_with(root / "bad", **keys))
+        except ValueError as exc:
+            assert message in str(exc), (label, str(exc))
+        else:
+            raise AssertionError(f"a plan with {label} loaded")
+    clash = make_plan(root / "clash", groups={"G1": ["A", "AR", "B"], "G2": ["D", "E"]})
+    raw = yaml.safe_load(clash.read_text(encoding="utf-8"))
+    raw["remote_only"] = ["O"]
+    clash.write_text(yaml.safe_dump(raw, sort_keys=False), encoding="utf-8")
+    try:
+        cp.load_plan(clash)
+    except ValueError as exc:
+        assert "sites ['A'] and <site>R would share the stack names" in str(exc), str(exc)
+    else:
+        raise AssertionError("a plan with sites A and AR and remote_only loaded")
+    print(f"  refused: {', '.join(bad)}, sites A and AR")
+
+    plan = cp.load_plan(_plan_with(root, remote_only=["O"], remotes={"A": "O"}))
+    assert plan.remote_only == ["O"] and plan.group_of("O") == "remote_only" and "O" not in plan.sites, plan
+    c = cp.Campaign(survey_yaml, plan, parallel=2, create=False)
+    s0 = c.stage0_jobs([*plan.sites, *plan.remote_only])
+    s1 = c.stage1_jobs(plan.sites)
+    s2 = c.stage2_jobs(plan.sites)
+    s3 = c.stage3_jobs(plan.sites, dry=True)
+    assert not [j.run_id for j in s1 + s2 + s3 if j.local == "O"], "O is a local"
+    blocks = list(c.blocks([0], plan.sites, dry=True))
+    assert [j.local for j in blocks[0][4]].count("O") == 1, [j.local for j in blocks[0][4]]
+    assert [j.group for j in s0 if j.local == "O"] == ["remote_only"], [(j.local, j.group) for j in s0]
+    for s in plan.sites:
+        against = [j.remote for j in s1 if j.local == s]
+        assert against.count("O") == 1 and len(against) >= 2, (s, against)
+    builds = {j.remote: j for j in s2 if j.kind == "stack"}
+    want = {f"STK_{s}{m}{w}" for s in ("A", "B", "C") for m in ("", "R") for w in ("u", "w")}
+    assert set(builds) == want, sorted(builds)
+    for s, others in (("A", ["B", "C"]), ("B", ["A", "C"]), ("C", ["A", "B"])):
+        for w, weighting in (("u", "none"), ("w", "coherence")):
+            plain, with_o = builds[f"STK_{s}{w}"], builds[f"STK_{s}R{w}"]
+            # the piece rule's flag last (item 21), then the weighting
+            assert plain.cmd[-2:] == ["--min-piece-h", "6"] and with_o.cmd[-2:] == ["--min-piece-h", "6"], plain.cmd
+            pc, wc = plain.cmd[:-2], with_o.cmd[:-2]
+            assert pc[-2:] == ["--weighting", weighting] and wc[-2:] == ["--weighting", weighting]
+            # members nearest first (the member rule of item 20), O last in the R build
+            assert sorted(pc[-4:-2]) == others and sorted(plain.input_sites) == others, plain.cmd
+            assert sorted(wc[-5:-3]) == others and wc[-3] == "O", with_o.cmd
+            assert sorted(with_o.input_sites) == [*others, "O"], with_o.cmd
+    runs2 = sorted(j.remote for j in s2 if j.kind == "rr")
+    assert runs2 == sorted(want), runs2
+    assert {j.remote for j in s3 if j.local == "A"} == {"O"}, [(j.run_id, j.remote) for j in s3 if j.local == "A"]
+    before = sorted(p.relative_to(root) for p in root.rglob("*"))
+    out, text = quiet(c.dry_run, [0, 1, 2, 3], plan.sites)
+    got = {st: {k: v for k, v in kinds.items() if v} for st, kinds in out["counts"].items()}
+    assert got == {0: {"variant": 6}, 1: {"rr": 13}, 2: {"stack": 12, "rr": 12}, 3: {"rr": 5}}, (got, text)
+    assert sorted(p.relative_to(root) for p in root.rglob("*")) == before, "the dry run wrote"
+    print(f"  O: stage 1 remote of A-E, in STK_<site>R<s> of G1; A's stage 3 on O; counts {got}")
+
+
+def test_stack_members_by_runs() -> None:
+    root = ROOT / "member_runs"
+    spans_h = {"A": (0, 48), "B": (2, 50), "C": (4, 46), "G": (0, 48), "H": (0, 48), "I": (0, 48), "O": (0, 94)}
+    survey_yaml = make_survey(root, spans_h)
+
+    def t(h: float) -> pd.Timestamp:
+        return T0 + pd.Timedelta(hours=h)
+
+    runs = {"B": [(t(2), t(40)), (t(41), t(50))], "C": [(t(4), t(46))], "G": [(t(0), t(9.6))],
+            "H": [(t(0), t(30)), (t(31), t(48))], "I": [(t(0), t(28)), (t(29), t(48))], "O": [(t(0), t(94))]}
+
+    def plan_with(**stack_keys):
+        path = make_plan(root, groups={"G1": ["A", "B", "C", "G", "H", "I"]}, configs={"hamming": ["--taper", "hamming"]})
+        raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+        raw["stages"]["stacks"].update(stack_keys)
+        raw["remote_only"] = ["O"]
+        path.write_text(yaml.safe_dump(raw, sort_keys=False), encoding="utf-8")
+        return cp.load_plan(path)
+
+    plan = plan_with()
+    spans = cp.site_spans(cp.Survey.from_yaml(survey_yaml), [*plan.sites, *plan.remote_only])
+    sp = cp.stack_plan(plan, spans, "A", runs=runs)
+    assert sorted(sp["members"]) == ["B", "C"], sp["members"]
+    assert abs(sp["cover"]["G"] - 0.2) < 1e-9 and abs(sp["cover"]["H"] - 0.625) < 1e-9, sp["cover"]
+    assert sp["floor"] == cp.STACK_COVER == 0.70, sp["floor"]
+    assert abs(sp["run_span_h"] - 36.0) < 1e-9 and abs(sp["span_h"] - 42.0) < 1e-9, (sp["run_span_h"], sp["span_h"])
+    print(f"  A: members {sp['members']} (G covers 20 %, H 62.5 %, I 58 %: left out), span {sp['run_span_h']:.1f} h "
+          f"from the runs against {sp['span_h']:.1f} h from the survey spans")
+
+    sp2 = cp.stack_plan(plan_with(exclude_members=["B", "C"]), spans, "A", runs=runs)
+    assert sorted(sp2["members"]) == ["H", "I"] and sp2["floor"] == cp.STACK_COVER_MIN == 0.50, sp2
+    note = cp.stack_note(sp2, sp2["members"], "none")
+    assert "floor lowered from 70 %: fewer than 2 reach it" in note, note
+    assert cp.stack_plan(plan_with(exclude_members=["B", "C", "H"]), spans, "A", runs=runs) is None
+    try:
+        plan_with(exclude_members=["Q"])
+    except ValueError as exc:
+        assert "stacks exclude_members Q: not a plan site or a remote_only site" in str(exc), str(exc)
+    else:
+        raise AssertionError("a plan excluding a site it does not have loaded")
+    print(f"  B and C excluded: {sp2['members']} at the 50 % floor ({note.split('; ')[1]}); H also excluded: none")
+
+    cap_sites = [f"S{k:02d}" for k in range(11)]
+    cap = cp.Plan(path=root / "cap.yaml", name="cap", description="", sites=cap_sites, exclude={},
+                  groups={"G": cap_sites})
+    cap_spans = {s: (t(0), t(48)) for s in cap_sites}
+    sp3 = cp.stack_plan(cap, cap_spans, "S00", km=lambda a, b: abs(int(a[1:]) - int(b[1:])))
+    assert sp3["members"] == cap_sites[1:9], sp3["members"]
+
+    c = cp.Campaign(survey_yaml, plan, parallel=2, create=False)
+    c._runs = {**{s: [spans[s]] for s in spans}, **runs}
+    builds = {j.remote: j for j in c.stage2_jobs(["A"]) if j.kind == "stack"}
+    assert sorted(builds) == ["STK_ARu", "STK_ARw", "STK_Au", "STK_Aw"], sorted(builds)
+    assert builds["STK_Au"].cmd[-6:-4] == ["B", "C"] and builds["STK_ARu"].cmd[-7:-4] == ["B", "C", "O"], \
+        (builds["STK_Au"].cmd, builds["STK_ARu"].cmd)
+    for b in builds.values():
+        assert "expected span 36.0 h from the runs (survey spans 42.0 h)" in b.note, b.note
+    c._runs["O"] = [(t(0), t(10))]
+    quiet_builds = quiet(c.stage2_jobs, ["A"])[0]
+    assert not [j.remote for j in quiet_builds if "STK_AR" in j.remote], [j.remote for j in quiet_builds]
+    print(f"  ten candidates: the 8 nearest; the Campaign's builds: {builds['STK_Au'].note}; O at 21 %: no R stack")
+
+    # a stack rebuilt (new members) makes its rr run again, though the rr row's inputs still match
+    build = builds["STK_Au"]
+    rr = next(j for j in quiet_builds if j.kind == "rr" and j.remote == "STK_Au")
+    edi = root / "work" / "tf" / "A_rr-STK_Au.edi"
+    edi.write_text("x", encoding="utf-8")
+    build.output.write_bytes(b"")
+    c.ledger.rows[rr.run_id] = {"status": "done", "exit_code": "0", "provisional": "", "inputs": c.inputs(rr),
+                                "edi": str(edi)}
+    c.ledger.rows[build.run_id] = {"status": "done", "exit_code": "0", "provisional": "", "inputs": c.inputs(build)}
+    done, pending = c.split_done([build, rr])
+    assert done == {build.run_id, rr.run_id} and not pending, (done, [j.run_id for j in pending])
+    c.ledger.rows[build.run_id]["inputs"] = "members of the earlier rule"
+    done, pending = c.split_done([build, rr])
+    assert not done and [j.run_id for j in pending] == [build.run_id, rr.run_id], (done, [j.run_id for j in pending])
+    print("  a done rr row on a stack that is rebuilt runs again (split_done)")
+
+
+def test_stack_pieces() -> None:
+    root = ROOT / "pieces"
+    spans_h = {"A": (0, 48), "B": (0, 48), "C": (4, 46)}
+    survey_yaml = make_survey(root, spans_h)
+
+    def t(h: float) -> pd.Timestamp:
+        return T0 + pd.Timedelta(hours=h)
+
+    runs = {"B": [(t(0), t(36)), (t(37), t(48))], "C": [(t(4), t(46))]}
+    path = make_plan(root, groups={"G1": ["A", "B", "C"]}, configs={"hamming": ["--taper", "hamming"]})
+    raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+    raw["stages"]["stacks"]["weightings"] = {"u": "none"}
+    path.write_text(yaml.safe_dump(raw, sort_keys=False), encoding="utf-8")
+    plan = cp.load_plan(path)
+    spans = cp.site_spans(cp.Survey.from_yaml(survey_yaml), plan.sites)
+    sp = cp.stack_plan(plan, spans, "A", runs=runs)
+    assert sorted(sp["members"]) == ["B", "C"] and abs(sp["cover"]["B"] - 0.75) < 1e-9, (sp["members"], sp["cover"])
+    assert sp["pieces"]["kept"] == [(t(4), t(36)), (t(37), t(46))] and not sp["pieces"]["short"], sp["pieces"]
+    assert abs(sp["run_span_h"] - 41.0) < 1e-9 and sp["run_span"] == (t(4), t(46)), (sp["run_span_h"], sp["run_span"])
+    assert abs(cp.run_span(runs, spans, "A", sp["members"])[2] - 32.0) < 1e-9
+    note = cp.stack_note(sp, sp["members"], "none")
+    assert "expected span 41.0 h in 2 pieces from the runs (survey spans 42.0 h)" in note, note
+    c = cp.Campaign(survey_yaml, plan, parallel=2, create=False)
+    c._runs = {**{s: [spans[s]] for s in spans}, **runs}
+    build = next(j for j in c.stage2_jobs(["A"]) if j.kind == "stack")
+    assert build.cmd[-2:] == ["--min-piece-h", "6"] and build.pieces == "2 (41.0 h)", (build.cmd, build.pieces)
+    assert c.inputs(build).endswith(";pieces 2 (41.0 h)"), c.inputs(build)
+    print(f"  two pieces: {note.split('; ')[-1]}; inputs ...{c.inputs(build)[-24:]}")
+
+    # item 20's runs: one piece of 36 h (the one-run span) and one of 5 h left out
+    runs20 = {"B": [(t(2), t(40)), (t(41), t(50))], "C": [(t(4), t(46))]}
+    sp20 = cp.stack_plan(plan, spans, "A", runs=runs20)
+    c._runs = {**{s: [spans[s]] for s in spans}, **runs20}
+    b20 = next(j for j in c.stage2_jobs(["A"]) if j.kind == "stack")
+    assert b20.pieces == "" and ";pieces" not in c.inputs(b20), (b20.pieces, c.inputs(b20))
+    assert b20.note.endswith("expected span 36.0 h from the runs (survey spans 42.0 h); 1 piece(s) under 6 h left "
+                             "out (5.0 h)"), b20.note
+    assert sp20["pieces"]["kept"] == [(t(4), t(40))] and sp20["pieces"]["short"] == [(t(41), t(46))], sp20["pieces"]
+    one = cp.piece_marker({"kept": [(t(10), t(20))], "short": [], "hours": 10.0}, (t(0), t(5), 5.0))
+    assert one == "1 (10.0 h)", one
+    p_ = cp.run_pieces({}, spans, "A", ["C"])
+    assert p_["kept"] == [(t(4), t(46))] and abs(p_["hours"] - 42.0) < 1e-9, p_
+    print(f"  one piece equal to the one-run span: no marker; a different single piece: {one!r}")
+
+
 def main() -> int:
     """Run every test; return 1 when any failed."""
     print(__doc__.split("**This test fails if**")[1].strip())
@@ -1285,7 +1669,9 @@ def main() -> int:
              test_filter_check, test_parse_products, test_inputs_masks_both_sites,
              test_inputs_masks_channels_and_remote_scope, test_mantle_config,
              test_mantle_runner_figures, test_mantle_runner_and_scores, test_site_overrides,
-             test_mantle_window_and_memory, test_mantle_resume, test_deferred_configs]
+             test_mantle_window_and_memory, test_mantle_resume, test_deferred_configs,
+             test_min_band_windows_plan_key, test_remote_only, test_stack_members_by_runs,
+             test_stack_pieces]
     failed = 0
     for t in tests:
         print(t.__name__)

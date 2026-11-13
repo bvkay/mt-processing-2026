@@ -14,7 +14,7 @@ for ex, ey, hx, hy).
 The stored result holds, per channel, the SHA-256 of the float64 output of
 `mains_subtract` and of `apply_filters_arrays` with mains then notch, the
 steps, and the sum and largest |sample| per 10,000-sample block (to show
-where and by how much an output differs). It was made on this machine's
+where and by how much an output differs). It was made in the
 bbmt-2026 environment from a git archive of a937bc4; another numpy or BLAS
 build may round differently and need it remade from that tree.
 
@@ -26,13 +26,13 @@ Usage:
 :license: MIT
 
 **This test fails if** the single pass of `mains_subtract` on any channel,
-or `apply_filters_arrays` with mains then notch, is not bit for bit the
+or `apply_filters_arrays` with mains then notch, is not identical to the
 stored a937bc4 result (so a change shared by the single pass and the pool
-shows); `mains_subtract` over an 8-thread pool is not bit for bit the
+shows); `mains_subtract` over an 8-thread pool is not identical to the
 single pass (samples and steps), or fewer than 30 chunk calls reach the
-pool; a 5 min record over the pool is not bit for bit the single pass; or
+pool; a 5 min record over the pool is not identical to the single pass; or
 `apply_filters_arrays` with chunk_workers=8 does not give the same
-provenance lines and the same output, bit for bit, as chunk_workers=1, for
+provenance lines and an output identical to that of chunk_workers=1, for
 mains and for mains then notch.
 """
 
@@ -93,7 +93,7 @@ def blocks(y: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
 
 
 def against_reference(ref, key: str, y: np.ndarray, what: str) -> None:
-    """Assert y is bit for bit the stored result `key`, naming the blocks that differ when not."""
+    """Assert y is identical to the stored result `key`, naming the blocks that differ when not."""
     if sha(y) == str(ref[f"{key}_sha256"]):
         return
     s, m = blocks(y)
@@ -101,7 +101,7 @@ def against_reference(ref, key: str, y: np.ndarray, what: str) -> None:
     bad = np.flatnonzero((ds > 0) | (dm > 0))
     first = int(bad[0]) * BLOCK if len(bad) else "-"
     raise AssertionError(
-        f"{what}: not bit for bit the a937bc4 single pass; {len(bad)} of {len(s)} blocks differ "
+        f"{what}: not identical to the a937bc4 single pass; {len(bad)} of {len(s)} blocks differ "
         f"(first at sample {first}), largest block-sum change {ds.max():.3g}, "
         f"largest block-max change {dm.max():.3g}")
 
@@ -112,13 +112,13 @@ def check_reference(raw: dict[str, np.ndarray], ref) -> None:
         against_reference(ref, f"{c}_mains", y, f"mains {c}")
         stored = ref[f"{c}_mains_steps"]
         assert np.array_equal(info["steps"], stored), f"mains {c}: steps {info['steps']} != stored {stored}"
-    print(f"reference: the single pass of mains_subtract == the stored a937bc4 result bit for bit "
+    print(f"reference: the single pass of mains_subtract == the stored a937bc4 result "
           f"on {len(COMPS)} channels (SHA-256 and steps)")
     out, _lines = apply_filters_arrays(raw, FS, [MAINS, NOTCH], workers=4, chunk_workers=8)
     for c in COMPS:
         against_reference(ref, f"{c}_mains_notch", out[c], f"mains then notch {c}")
     print("reference: apply_filters_arrays mains then notch, chunk_workers 8 == the stored a937bc4 "
-          "result bit for bit on 4 channels")
+          "result on 4 channels")
 
 
 def check_mains(x: np.ndarray) -> None:
@@ -130,14 +130,14 @@ def check_mains(x: np.ndarray) -> None:
         f"mains: steps {info_c['steps']} != {info['steps']}"
     assert len(info["steps"]) == 2, f"mains: the synthetic's two steps not found: {info['steps']}"
     assert pool.calls >= 30, f"mains: only {pool.calls} chunk calls reached the pool"
-    print(f"mains: 8 threads == single pass bit for bit, steps {info['steps'].tolist()}, "
+    print(f"mains: 8 threads == single pass, steps {info['steps'].tolist()}, "
           f"{pool.calls} chunk calls over the pool")
 
     short = x[: int(300 * FS)]
     with ThreadPoolExecutor(8) as pool:
         assert np.array_equal(mains_subtract(short, FS, pool=pool)[0], mains_subtract(short, FS)[0]), \
             "mains: 5 min record"
-    print("short: a 5 min record over the pool == single pass bit for bit")
+    print("short: a 5 min record over the pool == single pass")
 
 
 def check_arrays(raw: dict[str, np.ndarray]) -> None:
@@ -148,7 +148,7 @@ def check_arrays(raw: dict[str, np.ndarray]) -> None:
         assert lines_many == lines_one, f"provenance differs: {lines_many} != {lines_one}"
         for c in raw:
             assert np.array_equal(many[c], one[c]), f"{c}: {kinds} chunk_workers 8 != 1"
-        print(f"apply_filters_arrays {kinds}: chunk_workers 8 == 1 bit for bit, the same lines")
+        print(f"apply_filters_arrays {kinds}: chunk_workers 8 == 1, the same lines")
 
 
 def main() -> int:

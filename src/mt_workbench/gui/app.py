@@ -9,17 +9,17 @@ that runs the scripts. Tabs ask `State` for everything they need about the
 survey, so opening a different survey is one signal and one `reload()` per
 tab.
 
-`State` owns the window's single `JobRunner`. Every tab queues on
+`State` holds the window's single `JobRunner`. Every tab queues on
 `state.runner`, so the GUI runs one job at a time and an MTH5 file is open in
 one process at a time; the Process tab's `queue_table.QueuePanel` lists every
 job. Opening a survey with no basemap fetches one through
 `site_map.fetch_basemap_if_missing`; a workspace not made yet (the default
-`<survey dir>/work`, or a folder whose parent exists) is fetched into as it
-always was. When the workspace and its parent folder are both missing
+`<survey dir>/work`, or a folder whose parent exists) is fetched into.
+When the workspace and its parent folder are both missing
 (`site_map.workspace_unreachable`: a wrong `workspace:` path or a drive not
-connected), nothing is fetched and `MainWindow.open_survey` names the folder
-in the status bar and in a non-modal message box, which never holds up the
-window or a test that builds it.
+connected), no basemap is fetched and `MainWindow.open_survey` names the folder
+in the status bar and in a non-modal message box, so the window, and a test
+that builds it, carry on.
 
 `State` also carries what the Time Series tab and the QC tabs share:
 
@@ -36,16 +36,23 @@ window or a test that builds it.
   Cross-powers tabs.
 * `spans`: the `mt_workbench.gui.window_bar.SpanCache` of archive spans the
   Process and Cross-powers tabs' window bars share.
+* `runs_cache`: the `mt_workbench.gui.availability_model.RunsCache` of each
+  archive's runs, which the Stacks tab's availability chart reads in and the
+  Process tab's recipe picker judges a base recipe's members from.
 * `goto_time`: emitted by any tab to put the Time Series view on a moment.
 
 `request_qc()` asks the store for the selection with the current remote and
 window ladder.
 
-`MainWindow` is a QTabWidget over nine tabs in this order (QC
+`MainWindow` is a QTabWidget over ten tabs in this order (QC
 first: Metadata, Time Series, Spectra, Spectrogram, Coherence; then Filter
-Data, Cross-powers, Process, View EDIs), with a status bar, a File menu and,
+Data, Cross-powers, Stacks, Process, View EDIs), with a status bar, a File menu and,
 below the tabs in a vertical `QSplitter`, the `console.ConsoleStrip` showing
-the runner's log, loguru output and `qc_started` messages.
+the runner's log, loguru output and `qc_started` messages. The Stacks tab
+hands its work to the Process tab: Build archive queues through
+`ProcessTab.queue_stack`, Use in Process calls `use_recipe`, a saved recipe
+reloads the Process tab's recipe picker, and the picker's "edit in Stacks
+tab..." calls `edit_recipe`.
 
 @author: ben kay (ben@auscope.org.au)
 
@@ -66,6 +73,7 @@ from PySide6.QtWidgets import QFileDialog, QMainWindow, QMessageBox, QSplitter, 
 
 from mt_workbench.ingest import variant_path, variant_ready
 from mt_workbench.survey import OBSERVATORY, Survey
+from mt_workbench.gui.availability_model import RunsCache
 from mt_workbench.gui.console import ConsoleStrip, LoguruQtSink
 from mt_workbench.gui.jobs import JobRunner
 from mt_workbench.gui.masks_reader import MasksReader
@@ -119,6 +127,7 @@ class State(QObject):
         self.segment_store = SegmentStore(self, self)
         self.masks_reader = MasksReader(self, self)
         self.spans = SpanCache()  # archive spans for every window bar, kept across survey reloads
+        self.runs_cache = RunsCache()  # archive runs for the Stacks chart and the recipe picker, kept likewise
 
     # ------------------------------------------------------------ survey
 
@@ -232,8 +241,52 @@ class State(QObject):
         return list((self.survey.config.get("sites") or {}).keys())
 
     def all_sites(self) -> list[str]:
-        """Every site the survey knows: configured plus raw folders found."""
+        """Every site of the survey: configured plus raw folders found."""
         return sorted(set(self.configured_sites()) | set(self.raw_sites()))
+
+    def _product_site(self, name: str) -> bool:
+        """True for a declared derived site, burst site or observatory: an archive no raw folder holds."""
+        survey = self.survey
+        entry = (survey.config.get("sites") or {}).get(name) or {}
+        return bool(survey.parent_of(name) or survey.bursts_parent(name) or entry.get("instrument") == OBSERVATORY)
+
+    def recorded_sites(self) -> list[str]:
+        """List the recorded sites: every raw folder found, and every declared recorded site with an archive.
+
+        A declared site that is not derived, a burst site or an
+        observatory counts when its raw archive exists, so a survey whose
+        `data_root` is stale or on a drive not plugged in still lists the
+        sites it has archives of. A raw folder not declared counts as
+        before; an archive not declared (a stack) does not.
+
+        Returns:
+            list[str]: Sorted site names.
+        """
+        if self.survey is None:
+            return []
+        archived = {n for n in self.configured_sites() if not self._product_site(n) and self.has_archive(n)}
+        return sorted(set(self.raw_sites()) | archived)
+
+    def station_choices(self) -> list[tuple[str, str]]:
+        """List the sites the Process tab may process as the station.
+
+        The recorded sites (`recorded_sites`) and the declared derived and
+        burst sites that have an archive. An observatory is left out: it
+        records the magnetic field only and is a remote. A site with no raw
+        folder is labelled with its kind (`archive_kind`), as
+        "A01  (archive)", so a survey whose raw folders are present lists
+        its recorded sites as before.
+
+        Returns:
+            list[tuple[str, str]]: (display label, site name) pairs, sorted by name.
+        """
+        if self.survey is None:
+            return []
+        names = set(self.recorded_sites())
+        names |= {n for n in self.configured_sites()
+                  if (self.survey.parent_of(n) or self.survey.bursts_parent(n)) and self.has_archive(n)}
+        raw = self.raw_sites()
+        return [(n if n in raw else f"{n}  ({self.archive_kind(n)})", n) for n in sorted(names)]
 
     def archive_dir(self) -> Path | None:
         """`<workspace>/mth5`, or None with no survey open."""
@@ -288,7 +341,14 @@ class State(QObject):
         return sorted(p.stem for p in d.glob("*.h5") if not _VARIANT_SUFFIX.search(p.stem))
 
     def stacked_remotes(self) -> list[str]:
-        """Archives with no raw folder: stacks from scripts/build_stack.py, observatories and derived sites (`archive_kind`)."""
+        """List the archives with no raw folder (`archive_kind`).
+
+        Stacks, observatories, derived and burst sites, and declared sites
+        whose raw folder is not found under `data_root`.
+
+        Returns:
+            list[str]: Sorted archive stems.
+        """
         raw = self.raw_sites()
         return [s for s in self.archived_sites() if s not in raw]
 
@@ -309,23 +369,31 @@ class State(QObject):
         return out
 
     def archive_kind(self, name: str) -> str:
-        """Describe an archive with no raw folder, for the remote lists.
+        """Describe an archive with no raw folder, for the station and remote lists.
 
         Args:
             name (str): Archive stem.
 
         Returns:
             str: "derived from <parent>, <rate> Hz" for a derived site,
-            "observatory, <rate> Hz" for an INTERMAGNET entry, else "stack".
+            "bursts of <site>, <rate> Hz" for a burst site, "observatory,
+            <rate> Hz" for an INTERMAGNET entry, "archive" for another
+            declared site (a recorded site whose raw folder is not found
+            under `data_root`), else "stack".
         """
         if self.survey is None:
             return "stack"
         parent = self.survey.parent_of(name)
+        bursts = self.survey.bursts_parent(name)
         rate = self.survey.sample_rate_of(name)
         if parent:
             return f"derived from {parent}, {rate:g} Hz"
+        if bursts:
+            return f"bursts of {bursts}, {rate:g} Hz"
         if ((self.survey.config.get("sites") or {}).get(name) or {}).get("instrument") == OBSERVATORY:
             return f"observatory, {rate:g} Hz"
+        if name in self.survey.site_names():
+            return "archive"
         return "stack"
 
     def default_remote(self, site: str | None) -> str | None:
@@ -377,6 +445,7 @@ class MainWindow(QMainWindow):
         from mt_workbench.gui.tabs.process import ProcessTab
         from mt_workbench.gui.tabs.spectra import SpectraTab
         from mt_workbench.gui.tabs.spectrogram import SpectrogramTab
+        from mt_workbench.gui.tabs.stacks import StacksTab
         from mt_workbench.gui.tabs.timeseries import TimeSeriesTab
 
         self.setWindowTitle("mt-workbench")
@@ -394,6 +463,7 @@ class MainWindow(QMainWindow):
         self.filters_tab = FiltersTab(self.state, self)
         self.edis_tab = EdiTab(self.state, self)
         self.crosspower_tab = CrossPowerTab(self.state, self)
+        self.stacks_tab = StacksTab(self.state, self)
         # tab order: QC tabs, then filters, then processing, then EDIs
         self.tabs.addTab(self.metadata_tab, "Metadata")
         self.tabs.addTab(self.timeseries_tab, "Time Series")
@@ -402,12 +472,19 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.coherence_tab, "Coherence")
         self.tabs.addTab(self.filters_tab, "Filter Data")
         self.tabs.addTab(self.crosspower_tab, "Cross-powers")
+        self.tabs.addTab(self.stacks_tab, "Stacks")
         self.tabs.addTab(self.process_tab, "Process")
         self.tabs.addTab(self.edis_tab, "View EDIs")
 
         self.metadata_tab.open_requested.connect(self.choose_survey)
         self.timeseries_tab.processing_window_selected.connect(self.use_processing_window)
         self.process_tab.show_edi_requested.connect(self.show_edi)
+        self.stacks_tab.build_requested.connect(self.process_tab.queue_stack)
+        self.stacks_tab.use_in_process_requested.connect(self.use_recipe)
+        self.stacks_tab.recipe_saved.connect(lambda _name: self.process_tab.stack_builder.reload())
+        # the chart's reads fill State.runs_cache, from which the picker judges a base recipe's members
+        self.stacks_tab.chart.rows_changed.connect(self.process_tab.stack_builder.refresh)
+        self.process_tab.stack_builder.edit_requested.connect(self.edit_recipe)
         self.state.survey_changed.connect(self.reload_tabs)
         self.state.goto_time.connect(lambda _t: self.tabs.setCurrentWidget(self.timeseries_tab))
 
@@ -530,7 +607,8 @@ class MainWindow(QMainWindow):
     def reload_tabs(self) -> None:
         """Call `reload()` on every tab."""
         for tab in (self.metadata_tab, self.timeseries_tab, self.spectra_tab, self.spectrogram_tab,
-                    self.coherence_tab, self.filters_tab, self.process_tab, self.crosspower_tab, self.edis_tab):
+                    self.coherence_tab, self.filters_tab, self.process_tab, self.crosspower_tab, self.stacks_tab,
+                    self.edis_tab):
             tab.reload()
 
     def use_processing_window(self, start: str, end: str) -> None:
@@ -538,6 +616,25 @@ class MainWindow(QMainWindow):
         self.process_tab.set_window(start, end)
         self.tabs.setCurrentWidget(self.process_tab)
         self.statusBar().showMessage(f"processing window set: {start} to {end} UTC")
+
+    def use_recipe(self, name: str) -> None:
+        """Hand a stack recipe from the Stacks tab to the Process tab and show it.
+
+        Args:
+            name (str): The recipe, saved in stacks.yaml.
+        """
+        note = self.process_tab.use_recipe(name)
+        self.tabs.setCurrentWidget(self.process_tab)
+        self.statusBar().showMessage(note)
+
+    def edit_recipe(self, name: str) -> None:
+        """Open a stack recipe on the Stacks tab (the Process picker's "edit in Stacks tab...").
+
+        Args:
+            name (str): The recipe; "" for a new one.
+        """
+        self.stacks_tab.select_recipe(name)
+        self.tabs.setCurrentWidget(self.stacks_tab)
 
     def show_edi(self, path: Path) -> None:
         """Show an EDI written by a Process job on the View EDIs tab.
@@ -572,5 +669,6 @@ class MainWindow(QMainWindow):
         self.state.segment_store.wait()
         self.filters_tab.wait()  # the filter preview's worker and its chooser's read
         self.crosspower_tab.wait()  # a chunk-impedance compute or a window read
+        self.stacks_tab.wait()  # the availability chart's run reads and the member check's reads
         self.state.masks_reader.wait()  # a masks.yaml parse
         super().closeEvent(event)

@@ -29,7 +29,7 @@ Usage:
    split a run around a mask inside it into two rows per station with the
    bounds [00:00, 02:00) and [02:30, 06:00); trim a run whose mask covers its
    first 45 min to [00:45, 06:00); drop a run a mask covers whole (the other
-   station's run then pairs with nothing and RR restriction raises -- tested
+   station's run then pairs with nothing and RR restriction raises; tested
    in single-station form: the run's row goes and the other run's stays);
    drop a piece a mask leaves under 10 min (a mask 00:05-03:00 leaves
    [00:00, 00:05), which must go, and [03:00, 06:00)); or leave a run no mask

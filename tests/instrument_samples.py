@@ -36,7 +36,7 @@ from _scratch import scratch_dir
 REPO = Path(__file__).resolve().parents[1]
 SCRATCH = scratch_dir("instruments")
 LEMI424_SOURCE = Path(r"E:\MT_Timeseries_DATA\MT_WA-MT\Phase_1\!TimeSeries_ByName_1stDataRelease\MBJ21")
-EDL_SOURCE = Path(r"D:\MT_PROCESSING_2026\MT_Processing\MT_EasternGoldfields\EGFLP02")
+EDL_SOURCE = Path(r"E:\MT_Timeseries_DATA\MT_EasternGoldfieldsData\TimeSeries\EGFLP02")
 LEMI424_FILE, LEMI424_INF, LEMI424_LINES = "202410250000.txt", "202410240824.inf", 3600
 EDL_STAMP, EDL_DAY = "EGFLP02_190110000000", "010"
 EDL_CHANNELS = ("BX", "BY", "BZ", "EX", "EY")
