@@ -2,16 +2,18 @@
 """
 Process tab
 
-Selects a station, a remote and a window, and queues the scripts that make
-the products. Processing runs in `scripts/process_rr.py`,
+Selects a processing type, a station, a remote and a window, and queues the
+scripts that make the products. Processing runs in `scripts/process_rr.py`,
 `scripts/build_stack.py` and `scripts/process_intersite.py`; this tab builds
 their command lines and queues them. The tab is laid out in rows, top to bottom:
 
-1. Station, remote and the pair summary (`site_map.PairSummary`).
+1. Processing type, station, remote, the Base box of a tensor type and the
+   pair summary (`site_map.PairSummary`).
 2. The window bar, full width (`window_bar.WindowBar`), with the start field
    at its left end, the end field at its right and the sync status centred
    above between two lamps.
-3. Add to queue, Run queue, Reset queue and Build stack.
+3. Add to queue, "Add every site on this base" (a tensor type only), Run
+   queue, Reset queue and Build stack.
 4. The run options (`stack_builder.RunOptions`): the engine, the bands,
    the band layout (window samples, min bin) and the min band windows
    floor, filters, masks, tag and the aurora estimator block.
@@ -41,6 +43,28 @@ Each button runs one command line from the README's table through
     Build stack      scripts/build_stack.py <survey.yaml> --recipe NAME --overwrite
     Queue intersite  scripts/process_intersite.py <survey.yaml> <station> <start> <end> --kind KIND
                                            --remote <remote> --stack NAME [--no-filters]
+    Add to queue     scripts/process_intersite.py <survey.yaml> <station> <base> [start end] --kind KIND
+    (a tensor type)                        --remote <remote> [--tag ...] [--no-filters]
+
+The Processing type combo chooses what Add to queue runs: "MT impedance and
+tipper" (the default, process_rr.py), "Telluric tensor, E to E" or "Magnetic
+tensor, B to B" (process_intersite.py with `--kind telluric` or `magnetic`).
+A tensor type shows the Base box, which lists the survey.yaml sites that
+have an archive at the station's sample rate, then the `use: base` band
+recipes of stacks.yaml for the tensor's field at that rate as "stack: NAME".
+The tensor and psi = arg(det) / 2 are the station's field relative to the
+base's, in each site's channels as recorded, in geomagnetic coordinates: no
+rotation is applied, and a declination is a recorded number that is not
+applied. Add to queue then queues the station on the base with the remote
+as the reference, through `mt_workbench.stacks.pair_argv` for a base site
+and `StackBuilder.base_argv` for a base stack. "Add every site on this base"
+queues one such run for every other site with an archive at that rate, the
+base and the remote left out; the sites the checks refuse are left out too,
+and the status line names them under each reason. A refusal is one the
+script gives the same command line (exit 2). For a base site the three
+archives' run lists are read when the button is pressed, under
+`State.archive_lock`. A tensor run takes the tag and the filters switch;
+the other run options are disabled meanwhile (`RunOptions.set_tensor`).
 
 A band option is passed only when it differs from the survey's
 `processing:` block, so a default run has the default command line. Min
@@ -95,6 +119,7 @@ Comparison figures are listed only.
 
 from __future__ import annotations
 
+import functools
 from pathlib import Path
 
 from PySide6.QtCore import Qt, Signal
@@ -103,11 +128,41 @@ from PySide6.QtWidgets import (
     QScrollArea, QSplitter, QVBoxLayout, QWidget,
 )
 
+from mt_workbench import intersite, stacks
 from mt_workbench.gui.jobs import QUEUED
 from mt_workbench.gui.queue_table import ProductList, QueuePanel
 from mt_workbench.gui.site_map import PairSummary, SiteMap
 from mt_workbench.gui.stack_builder import RunOptions, StackBuilder
 from mt_workbench.gui.window_bar import UTC_FMT, WindowBar
+
+# the Processing type choices: the label, and the --kind of scripts/process_intersite.py (None: process_rr.py)
+TYPES = (("MT impedance and tipper", None), ("Telluric tensor, E to E", "telluric"),
+         ("Magnetic tensor, B to B", "magnetic"))
+STACK = "stack: "  # how the Base box lists a base recipe of stacks.yaml
+ADD_TIPS = {False: "process_rr.py: ingest both sites, remote-referenced TF, EDI",
+            True: "process_intersite.py: the station on the base, the remote as the reference, over the window"}
+BASE_TIP = ("The site, or the saved base stack (stack: NAME), the tensor is taken against. The tensor and "
+            "psi = arg(det) / 2 are the station's field relative to the base's, in each site's channels as "
+            "recorded, in geomagnetic coordinates: no rotation is applied, and a declination is a recorded "
+            "number that is not applied. A site is listed when it has an archive at the station's sample rate.")
+STAR_TIP = ("One run for every other site that has an archive at the station's sample rate, each on this base "
+            "with the same remote, window, tag and filters switch (a star of pairs around the base). The base, "
+            "the remote and the sites the checks refuse are left out; the status line names them. The base "
+            "must be a site: a base stack takes one station at a time.")
+
+
+def _archive_runs(site: str, path, channels) -> list | None:
+    """Return a site's runs (`intersite.archive_runs`), or None for an archive that cannot be opened now."""
+    try:
+        return intersite.archive_runs(path, site, channels)
+    except OSError:  # being written by a job: the run reads it again
+        return None
+
+
+def _some(names: list[str], most: int = 6) -> str:
+    """Return a comma list of the first `most` names and a count of the rest."""
+    shown = ", ".join(names[:most])
+    return shown if len(names) <= most else f"{shown} and {len(names) - most} more"
 
 
 class ProcessTab(QWidget):
@@ -126,12 +181,23 @@ class ProcessTab(QWidget):
         self.runner = state.runner  # the window's queue, owned by State
         self._remote_station = None
         self._remote_note = ""  # why a kept remote was dropped on a station change
+        self._star_note = ""  # what "Add every site on this base" queued and left out, until the pair changes
         self._stack_jobs: dict[int, str] = {}
 
+        self.type_combo = QComboBox(self)
+        for text, kind in TYPES:
+            self.type_combo.addItem(text, kind)
+        self.type_combo.setToolTip("What Add to queue runs: the impedance and tipper of the station (process_rr.py), "
+                                   "or the telluric or magnetic tensor of the station on a base (process_intersite.py)")
+        self.type_combo.currentIndexChanged.connect(self._type_changed)
         self.station_combo = QComboBox(self, minimumWidth=140)
         self.station_combo.currentIndexChanged.connect(self._station_changed)
         self.remote_combo = QComboBox(self, minimumWidth=140)
         self.remote_combo.currentIndexChanged.connect(self._remote_changed)
+        self.base_label = QLabel("Base", self, visible=False)
+        self.base_combo = QComboBox(self, minimumWidth=140, visible=False, toolTip=BASE_TIP)
+        self.base_combo.setPlaceholderText("choose a base")
+        self.base_combo.currentIndexChanged.connect(lambda _index: self._sites_changed())
         self.site_map = SiteMap(state, self)
         self.site_map.setMinimumHeight(340)
         self.window_bar = WindowBar(state, self)
@@ -142,8 +208,9 @@ class ProcessTab(QWidget):
         self.stack_builder.build_requested.connect(self.queue_stack)
         self.stack_builder.intersite_requested.connect(self.queue_intersite)
 
-        self.add_button = self._button("Add to queue", self.queue_process,
-                                       "process_rr.py: ingest both sites, remote-referenced TF, EDI")
+        self.add_button = self._button("Add to queue", self.queue_process, ADD_TIPS[False])
+        self.star_button = self._button("Add every site on this base", self.queue_star, STAR_TIP)
+        self.star_button.setVisible(False)
         self.run_button = self._button("Run queue", self.runner.run_queue, "start the next queued job")
         self.reset_button = self._button("Reset queue", self.reset_queue,
                                          "cancel the running job, clear the queue and the log")
@@ -174,18 +241,21 @@ class ProcessTab(QWidget):
     def _build_layout(self) -> None:
         """Lay out the rows top to bottom, with the map column beside rows 3-5."""
         pair = QGridLayout()
-        pair.addWidget(QLabel("Station to process", self), 0, 0)
-        pair.addWidget(self.station_combo, 1, 0)
-        pair.addWidget(QLabel("Remote reference", self), 0, 1)
-        pair.addWidget(self.remote_combo, 1, 1)
-        pair.addWidget(self.summary, 0, 2, 3, 1)
+        for column, (label, combo) in enumerate(((QLabel("Processing type", self), self.type_combo),
+                                                 (QLabel("Station to process", self), self.station_combo),
+                                                 (QLabel("Remote reference", self), self.remote_combo),
+                                                 (self.base_label, self.base_combo))):  # hidden for MT
+            pair.addWidget(label, 0, column)
+            pair.addWidget(combo, 1, column)
+        pair.addWidget(self.summary, 0, 4, 3, 1)
         pair.setRowStretch(2, 1)
-        pair.setColumnStretch(2, 1)
+        pair.setColumnStretch(4, 1)
         pair.setHorizontalSpacing(24)
 
         buttons = QHBoxLayout()
         separator = QFrame(self, frameShape=QFrame.VLine, frameShadow=QFrame.Sunken)
-        for widget in (self.add_button, self.run_button, self.reset_button, separator, self.build_button):
+        for widget in (self.add_button, self.star_button, self.run_button, self.reset_button, separator,
+                       self.build_button):
             buttons.addWidget(widget)
         buttons.addStretch(1)
         left = QWidget(self)
@@ -236,6 +306,52 @@ class ProcessTab(QWidget):
         if self.state.site:
             self.select_station(self.state.site)
         self._fill_remotes()
+        self._fill_bases()
+        self._sites_changed()
+
+    def _archived_at(self, rate: float) -> list[str]:
+        """Return the survey.yaml sites at `rate` Hz that have an archive, in the file's order."""
+        survey = self.state.survey
+        return [site for site in survey.site_names()
+                if survey.sample_rate_of(site) == rate and self.state.has_archive(site)]
+
+    def _fill_bases(self) -> None:
+        """Fill the Base box for the tensor type and the station, keeping the base chosen while it is still listed.
+
+        The sites with an archive at the station's sample rate, the station
+        left out, then the base recipes of stacks.yaml for the tensor's
+        field at that rate as "stack: NAME". Empty for MT, and with no
+        station.
+        """
+        kind, station, survey = self.type_combo.currentData(), self.station_combo.currentData(), self.state.survey
+        previous = self.base_combo.currentData()
+        self.base_combo.blockSignals(True)
+        self.base_combo.clear()
+        if kind and station and survey is not None:
+            rate = survey.sample_rate_of(station)
+            for site in self._archived_at(rate):
+                if site != station:
+                    self.base_combo.addItem(site, site)
+            for name in self.stack_builder.base_recipes(intersite.BASE_FIELDS[kind], rate):
+                self.base_combo.addItem(STACK + name, STACK + name)
+        self.base_combo.setCurrentIndex(self.base_combo.findData(previous) if previous else -1)
+        self.base_combo.blockSignals(False)
+
+    def _base(self) -> tuple[str | None, bool]:
+        """Return the Base box's choice as (the site or recipe name, or None; whether it is a base stack)."""
+        data = self.base_combo.currentData() or ""
+        if data.startswith(STACK):
+            return data[len(STACK):], True
+        return data or None, False
+
+    def _type_changed(self, _index: int) -> None:
+        """Show the Base box and the star button for a tensor type, and set the run options for its script."""
+        tensor = bool(self.type_combo.currentData())
+        for widget in (self.base_label, self.base_combo, self.star_button):
+            widget.setVisible(tensor)
+        self.add_button.setToolTip(ADD_TIPS[tensor])
+        self.options.set_tensor(tensor)
+        self._fill_bases()
         self._sites_changed()
 
     def _fill_remotes(self) -> None:
@@ -277,6 +393,7 @@ class ProcessTab(QWidget):
         """Refill the remotes and set `State.site`."""
         station = self.station_combo.currentData()
         self._fill_remotes()
+        self._fill_bases()
         self._sites_changed()
         if station:
             self.state.set_site(station)
@@ -289,6 +406,7 @@ class ProcessTab(QWidget):
     def _sites_changed(self) -> None:
         """Update the map, spans, summary, buttons, filter line and masks switch for the current pair."""
         station, remote = self.station_combo.currentData(), self.remote_combo.currentData()
+        self._star_note = ""
         self.stack_builder.set_pair(station, remote)
         self._paint_map()
         self.window_bar.set_sites(station, remote)
@@ -302,6 +420,9 @@ class ProcessTab(QWidget):
         super().showEvent(event)
         self._describe_masks()
         self.stack_builder.reload()
+        if self.type_combo.currentData():  # a base recipe saved or an archive built on another tab
+            self._fill_bases()
+            self._update_enabled()
 
     def _describe_masks(self) -> None:
         """Count the pair's masks on the switch, at once when masks.yaml is parsed as it is now.
@@ -327,9 +448,15 @@ class ProcessTab(QWidget):
             self.station_combo.setCurrentIndex(index)
 
     def _update_enabled(self) -> None:
-        """Enable Add to queue when a station and a remote are selected."""
+        """Enable Add to queue when a station and a remote are selected, and for a tensor type a base as well.
+
+        The star button needs a base site: a base stack takes one station
+        at a time.
+        """
         ready = bool(self.station_combo.currentData()) and bool(self.remote_combo.currentData())
-        self.add_button.setEnabled(ready)
+        tensor, (base, stacked) = bool(self.type_combo.currentData()), self._base()
+        self.add_button.setEnabled(ready and (bool(base) or not tensor))
+        self.star_button.setEnabled(ready and tensor and bool(base) and not stacked)
         self._refresh_status()
 
     def _queue_status(self) -> str | None:
@@ -340,8 +467,11 @@ class ProcessTab(QWidget):
         return None
 
     def _engine_note(self) -> str:
-        """Describe what the chosen engine leaves out: "" for aurora, the masks and estimator note for MANTLE."""
-        if self.options.engine() == "aurora":
+        """Describe what the chosen engine leaves out: "" for aurora, the masks and estimator note for MANTLE.
+
+        "" for a tensor type too: scripts/process_intersite.py takes no engine.
+        """
+        if self.options.engine() == "aurora" or self.type_combo.currentData():
             return ""
         note = "engine mantle: the aurora estimator options above do not reach it"
         if self.options.masks_declared():
@@ -350,12 +480,22 @@ class ProcessTab(QWidget):
         return note
 
     def _refresh_status(self) -> None:
-        """Show the queued-jobs notice and the engine note, or else the station and remote reminder when either is missing."""
-        parts = [text for text in (self._remote_note, self._queue_status(), self._engine_note()) if text]
+        """Show the queued-jobs notice and the engine note, or else the station and remote reminder when either is missing.
+
+        The summary of "Add every site on this base" stays until the pair
+        changes, and a tensor type with a station, a remote and no base
+        asks for the base.
+        """
+        parts = [text for text in (self._remote_note, self._star_note, self._queue_status(), self._engine_note())
+                 if text]
         ready = bool(self.station_combo.currentData()) and bool(self.remote_combo.currentData())
+        kind = self.type_combo.currentData()
         if not parts and not ready:
             parts = ["A station and a remote are both required: every product here is "
                      "remote-referenced (adjacent site, dedicated remote, or a stack)."]
+        if kind and ready and self.base_combo.currentIndex() < 0:
+            parts.append(f"Choose a base: the {kind} tensor and psi = arg(det) / 2 are the station's field "
+                         f"relative to the base's.")
         self.status_label.setText(" | ".join(parts))
 
     @property
@@ -406,9 +546,14 @@ class ProcessTab(QWidget):
     def queue_process(self) -> list[str] | None:
         """Queue scripts/process_rr.py: ingest both sites, remote-reference TF, EDI and figure.
 
+        With a tensor type chosen, Add to queue queues the station's tensor
+        run instead (`queue_tensor`).
+
         Returns:
             list[str] | None: The queued argv, or None when the pair or window is invalid.
         """
+        if self.type_combo.currentData():
+            return self.queue_tensor()
         pair = self._pair()
         if pair is None:
             return None
@@ -430,6 +575,109 @@ class ProcessTab(QWidget):
         self._queue(label + (f" {' '.join(options)}" if options else ""), argv, station=station,
                     remote=remote, window=shown, options=" ".join(options) or "defaults")
         return argv
+
+    def tensor_argvs(self, stations) -> tuple[dict[str, tuple[list[str] | None, str]], str]:
+        """Return each station's tensor command line on the base, remote, window, tag and filters switch shown.
+
+        A base site goes through `mt_workbench.stacks.pair_argv`, which
+        reads the run list of each archive once, here under
+        `State.archive_lock`. A "stack: NAME" base goes through the recipe
+        picker (`StackBuilder.base_argv`), which opens no file.
+
+        Args:
+            stations (list[str]): The local sites.
+
+        Returns:
+            tuple: ({station: (command line, "") or (None, the refusal)},
+            ""), or ({}, why no station could be judged): no survey, base
+            or remote, window fields that are not a window, or an archive
+            read in flight.
+        """
+        kind, remote = self.type_combo.currentData(), self.remote_combo.currentData()
+        base, stacked = self._base()
+        if self.state.survey_yaml is None or not kind or not base or not remote:
+            return {}, "Open a survey, and choose a tensor type, a base and a remote."
+        tag = self.options.tag_edit.text().strip() or None
+        no_filters = not self.options.filters_check.isChecked()
+        if stacked:
+            return {s: self.stack_builder.base_argv(base, s, tag, no_filters) for s in stations}, ""
+        start, end = (text or None for text in self.window_bar.window_text())
+        if (start or end) and self.window_bar.window() is None:
+            return {}, ("The window needs a start and an end in UTC, the end after the start: fill both fields, "
+                        "or clear both to take the time the three sites share.")
+        lock = self.state.archive_lock
+        if not lock.acquire(self):
+            return {}, "An archive is being read: press the button again in a moment."
+        runs_of = functools.lru_cache(maxsize=None)(_archive_runs)  # each run list read once for this press
+        try:
+            return {s: stacks.pair_argv(self.state.python_exe, self.state.script("process_intersite.py"),
+                                        str(self.state.survey_yaml), s, base, kind, remote, start, end, tag,
+                                        no_filters, survey=self.state.survey, runs_of=runs_of)
+                    for s in stations}, ""
+        finally:
+            lock.release(self)
+
+    def _queue_tensor(self, argv) -> int:
+        """Add a tensor job: a base recipe's as Queue intersite adds it, a plain pair's with its base under Options."""
+        if "--stack" in argv:
+            return self.queue_intersite(argv)
+        local, base, kind_at, remote_at = argv[3], argv[4], argv.index("--kind"), argv.index("--remote")
+        kind = argv[kind_at + 1]
+        return self._queue(f"process_intersite {local} on {base} ({kind})", argv, station=local,
+                           remote=argv[remote_at + 1], window=" to ".join(argv[5:kind_at]) or "the shared record",
+                           options=" ".join([f"{kind} tensor on base {base}", *argv[remote_at + 2:]]))
+
+    def queue_tensor(self) -> list[str] | None:
+        """Queue the station's tensor run on the base shown: Add to queue with a tensor type chosen.
+
+        Returns:
+            list[str] | None: The queued argv, or None after a warning box
+            that gives the refusal and what to do.
+        """
+        station = self.station_combo.currentData()
+        answers, why = self.tensor_argvs([station] if station else [])
+        argv, why = answers.get(station, (None, why or "Pick a station."))
+        if argv is None:
+            QMessageBox.warning(self, self.type_combo.currentText(), why)
+            return None
+        self._queue_tensor(argv)
+        return argv
+
+    def queue_star(self) -> list[list[str]]:
+        """Queue every other site on the base shown, with the same remote, window, tag and filters switch.
+
+        The sites are those of survey.yaml that have an archive at the
+        station's sample rate (the rate of every base the box lists), less
+        the base and the remote. A site the checks refuse is left out. The
+        status line then counts the runs queued and, under each refusal,
+        the sites left out. The base is a site: a base stack takes one
+        station at a time through Add to queue.
+
+        Returns:
+            list[list[str]]: The queued argvs; [] after a warning box when
+            no site could be judged.
+        """
+        station, remote = self.station_combo.currentData(), self.remote_combo.currentData()
+        base, stacked = self._base()
+        sites = [] if not station or self.state.survey is None else [
+            site for site in self._archived_at(self.state.survey.sample_rate_of(station)) if site not in (base, remote)]
+        answers, why = ({}, "A base stack takes one station at a time: choose the station and press Add to "
+                            "queue.") if stacked else self.tensor_argvs(sites)
+        if why:
+            QMessageBox.warning(self, self.star_button.text(), why)
+            return []
+        queued, left_out = [], {}
+        for site, (argv, refusal) in answers.items():
+            if argv is None:
+                left_out.setdefault(refusal, []).append(site)
+            else:
+                self._queue_tensor(argv)
+                queued.append(argv)
+        note = [f"{len(queued)} {self.type_combo.currentData()} tensor run(s) queued on base {base}"]
+        note += [f"{len(names)} left out ({_some(names)}): {refusal}" for refusal, names in left_out.items()]
+        self._star_note = " | ".join(note)
+        self._refresh_status()
+        return queued
 
     def queue_stack(self, argv) -> int:
         """Queue a time recipe's scripts/build_stack.py; the archive becomes the remote when it finishes.

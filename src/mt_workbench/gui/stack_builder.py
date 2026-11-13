@@ -9,6 +9,9 @@ Stack builder and run options of the Process tab
   `scripts/process_intersite.py` with `--stack NAME` for a `use: base` band
   recipe over the station, the remote and the window, which its "Queue
   intersite" button queues. "edit in Stacks tab..." opens the recipe there.
+  `base_argv` builds that command line for a named base recipe and a named
+  station, with a tag and the filters switch. The Process tab's Base box
+  lists the recipes of `base_recipes` as "stack: NAME" and queues through it.
 * `RunOptions`: the group box of settings a run can vary (the four band
   kwargs, the band layout's window samples and min bin, the min band windows
   floor, the ingest-filters switch, the masks.yaml switch and the output tag
@@ -16,7 +19,9 @@ Stack builder and run options of the Process tab
   from the survey's `processing:` block only. Below it, collapsed by default,
   `EstimatorOptions` ("Advanced (aurora estimator)") covers process_rr.py's
   --taper ... --tolerance by the same rule, against the values a run uses
-  (`mt_workbench.process.ESTIMATOR_DEFAULTS`).
+  (`mt_workbench.process.ESTIMATOR_DEFAULTS`). While a tensor type is chosen
+  on the Process tab, `RunOptions.set_tensor` disables every setting but the
+  tag and the filters switch, the two a tensor run takes.
 
 Queue intersite is enabled only for a command line process_intersite takes:
 the station and the remote at the recipe's rate, neither a burst site, and,
@@ -261,9 +266,46 @@ class StackBuilder(QGroupBox):
         return stacks.build_argv(self.state.python_exe, self.state.script("build_stack.py"),
                                  str(self.state.survey_yaml), recipe.name), ""
 
-    def _intersite(self) -> tuple[list[str] | None, str]:
-        """Return (process_intersite.py argv, "") for a base band recipe and the pair, else (None, the reason)."""
-        survey, recipe = self.state.survey, self.recipe()
+    def base_recipes(self, field: str, rate: float) -> list[str]:
+        """Return the listed ``use: base`` band recipes of a field (E or H) at `rate` Hz, in file order."""
+        return [name for name, recipe in self._recipes.items()
+                if recipe.engine == "band" and recipe.use == "base" and recipe.field == field
+                and math.isclose(recipe.sample_rate, float(rate), rel_tol=1e-9)]
+
+    def base_argv(self, name: str, station: str, tag: str | None = None,
+                  no_filters: bool | None = None) -> tuple[list[str] | None, str]:
+        """Return (process_intersite.py argv, "") for a station on the base recipe `name`, else (None, the reason).
+
+        The Process tab's Base box calls this for a "stack: NAME" entry.
+        The checks are Queue intersite's (`_intersite`), made for `station`
+        in place of the tab's station, with the run's tag and its filters
+        switch.
+
+        Args:
+            name (str): A ``use: base`` band recipe of stacks.yaml.
+            station (str): The local site.
+            tag (str | None): ``--tag``.
+            no_filters (bool | None): The filters switch as the run has it,
+                refused when the recipe's `use_filters` says otherwise, as
+                the script refuses it; None takes the recipe's.
+
+        Returns:
+            tuple: (the command line, "") or (None, the reason).
+        """
+        recipe = self._recipes.get(name)
+        if recipe is None:
+            return None, f"{name}: no valid recipe of that name in stacks.yaml: declare it on the Stacks tab"
+        return self._intersite(recipe, station, tag, no_filters)
+
+    def _intersite(self, recipe=None, station=None, tag=None, no_filters=None) -> tuple[list[str] | None, str]:
+        """Return (process_intersite.py argv, "") for a base band recipe and the pair, else (None, the reason).
+
+        Queue intersite judges the recipe chosen in the picker for the
+        tab's station; `base_argv` gives the recipe, the station, the tag
+        and the filters switch.
+        """
+        survey = self.state.survey
+        recipe = self.recipe() if recipe is None else recipe
         if survey is None or self.state.survey_yaml is None:
             return None, "open a survey first"
         if recipe is None:
@@ -273,7 +315,7 @@ class StackBuilder(QGroupBox):
                           f"remote")
         if recipe.use != "base":
             return None, f"{recipe.name} is a reference recipe: it needs a base site: the Stacks tab's command line"
-        station, remote = self.station, self.remote
+        station, remote = station or self.station, self.remote
         if not station:
             return None, "pick a station"
         names = survey.site_names()
@@ -294,6 +336,10 @@ class StackBuilder(QGroupBox):
         if bursts:
             return None, (f"{', '.join(bursts)}: burst sites are read on a compact grid of their bursts, and "
                           f"process_intersite takes no stack with them")
+        if no_filters is not None and no_filters == recipe.use_filters:
+            return None, (f"{recipe.name} declares use_filters: {str(recipe.use_filters).lower()}: "
+                          f"{'tick' if recipe.use_filters else 'untick'} \"use declared filters\", or change the "
+                          f"recipe on the Stacks tab")
         window = self.window_bar.window()
         if window is None:
             return None, "the processing window must have a start and an end"
@@ -303,7 +349,7 @@ class StackBuilder(QGroupBox):
         return stacks.intersite_argv(
             self.state.python_exe, self.state.script("process_intersite.py"), str(self.state.survey_yaml),
             station, stacks.KIND_OF_BASE[recipe.field], [recipe.name], remote=remote,
-            start=window[0].strftime(UTC_FMT), end=window[1].strftime(UTC_FMT),
+            start=window[0].strftime(UTC_FMT), end=window[1].strftime(UTC_FMT), tag=tag,
             no_filters=not recipe.use_filters), ""
 
     def _members_refusal(self, recipe, survey, station: str, remote: str, window) -> str:
@@ -462,6 +508,12 @@ class RunOptions(QGroupBox):
     samples and min bin stay enabled: MANTLE pools its estimate onto the
     same band scheme, whose longest-period band edges they move.
 
+    A tensor run (scripts/process_intersite.py, the Process tab's
+    Processing type) takes the tag and the filters switch of this box and
+    none of its other settings. `set_tensor` disables those while a tensor
+    type is chosen, each with `TENSOR_TIP` as its tooltip, and puts them
+    back with their own tooltips afterwards.
+
     Args:
         state: The shared `mt_workbench.gui.app.State`.
         parent (QWidget | None): Qt parent.
@@ -469,6 +521,8 @@ class RunOptions(QGroupBox):
 
     ENGINES = ("aurora", "mantle")
     engine_changed = Signal(str)
+    TENSOR_TIP = ("Not passed to a tensor run: scripts/process_intersite.py estimates on the survey's band layout "
+                  "with its own estimator and always applies masks.yaml. The tag and the filters switch are passed.")
     MASKS_TEXT = "apply masks.yaml"
     MASKS_TIP = (
         "On (default): the run leaves out the intervals in masks.yaml. Masks are declared "
@@ -483,6 +537,8 @@ class RunOptions(QGroupBox):
         super().__init__("Run options (survey defaults; only what you change is passed)", parent)
         self.state = state
         self.defaults: dict = {}
+        self._tensor = False  # True while a tensor type is chosen on the Process tab (`set_tensor`)
+        self._tips: dict = {}  # the tooltips `TENSOR_TIP` stands in for meanwhile
 
         self.engine_combo = QComboBox(self)
         self.engine_combo.addItems(self.ENGINES)
@@ -582,11 +638,42 @@ class RunOptions(QGroupBox):
 
     def _engine_changed(self, engine: str) -> None:
         """Disable the aurora estimator block, the min band windows control and the masks switch for MANTLE."""
-        aurora = engine == self.ENGINES[0]
+        aurora = engine == self.ENGINES[0] and not self._tensor  # a tensor type keeps all three disabled
         self.advanced.setEnabled(aurora)
         self.floor_spin.setEnabled(aurora)
         self.masks_check.setEnabled(aurora and self._masks_declared)
         self.engine_changed.emit(engine)
+
+    def set_tensor(self, on: bool) -> None:
+        """Disable the options a tensor run does not take, each with a tooltip saying why; False puts them back.
+
+        The engine, the band controls, the masks switch and the aurora
+        estimator block are process_rr.py's. The tag and the filters switch
+        stay enabled: scripts/process_intersite.py takes both.
+
+        Args:
+            on (bool): True while a tensor type is chosen on the Process tab.
+        """
+        if on == self._tensor:
+            return
+        widgets = (self.engine_combo, self.min_spin, self.max_spin, self.decade_spin, self.notch_edit,
+                   self.window_spin, self.min_bin_spin, self.floor_spin, self.masks_check, self.advanced)
+        if on:
+            self._tips = {widget: widget.toolTip() for widget in widgets}
+        self._tensor = on
+        for widget in widgets:
+            widget.setEnabled(not on)
+            widget.setToolTip(self.TENSOR_TIP if on else self._tips[widget])
+        if not on:
+            self._engine_changed(self.engine())  # the engine's rule for its three controls again
+
+    def _set_masks(self, enabled: bool, tip: str) -> None:
+        """Enable the masks switch and set its tooltip; a tensor type keeps it disabled and the tooltip for later."""
+        if self._tensor:
+            self._tips[self.masks_check] = tip
+            return
+        self.masks_check.setEnabled(enabled)
+        self.masks_check.setToolTip(tip)
 
     def masks_declared(self) -> bool:
         """Return whether the pair shown declares masks.yaml entries (`describe_masks`)."""
@@ -655,13 +742,11 @@ class RunOptions(QGroupBox):
                     counts.append((remote, len(remote_masks(survey, remote))))
         except (OSError, ValueError, yaml.YAMLError) as exc:
             self._masks_declared = True  # the run reports the file's error; the switch stays enabled
-            self.masks_check.setEnabled(True)
             self.masks_check.setText(f"{self.MASKS_TEXT} (masks.yaml unreadable)")
-            self.masks_check.setToolTip(f"{self.MASKS_TIP}\n\nmasks.yaml could not be read: {exc}")
+            self._set_masks(True, f"{self.MASKS_TIP}\n\nmasks.yaml could not be read: {exc}")
             return
-        self.masks_check.setToolTip(self.MASKS_TIP)
         self._masks_declared = any(n for _site, n in counts)
-        self.masks_check.setEnabled(self._masks_declared and self.engine() == self.ENGINES[0])
+        self._set_masks(self._masks_declared and self.engine() == self.ENGINES[0], self.MASKS_TIP)
         if not self._masks_declared:
             self.masks_check.setChecked(True)
         detail = (", ".join(f"{site}: {n}" for site, n in counts) if self._masks_declared
