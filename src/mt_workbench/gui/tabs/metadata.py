@@ -19,7 +19,8 @@ with:
   (`swap_h:`), for a site whose two electric lines or two horizontal coils
   were connected to each other's inputs; ingest exchanges the samples of the
   two channels, so a change reaches the data only when the archive is built
-  again ("Rebuild archive");
+  again ("Rebuild archive"); greyed on a derived, burst or observatory row,
+  which takes no swap of its own (`_swap_elsewhere`);
 * the site's usual remote-reference partner (`remote:`), which the Process,
   Spectra and Coherence tabs preselect;
 * its channels (`channels_column`);
@@ -190,6 +191,24 @@ def _instrument_text(survey, name: str) -> str:
     if instrument == OBSERVATORY:
         return f"{instrument} ({survey.sample_rate_of(name):g} Hz)"
     return instrument
+
+
+def _swap_elsewhere(survey, name: str) -> str | None:
+    """Return why a site's swap boxes are greyed, naming the site that holds the setting; None when they are not.
+
+    A swap acts at ingest, on the raw samples of a recorded site. A derived
+    site's archive is decimated from its parent's, a burst site's is
+    ingested with its recorded site's settings, and an observatory's is
+    fetched from INTERMAGNET, so none of them takes a swap of its own.
+    """
+    parent = survey.parent_of(name) or survey.bursts_parent(name)
+    if parent:
+        kind = "derived from" if survey.parent_of(name) else "a burst site of"
+        return (f"{name} is {kind} {parent}: its archive is made from {parent}'s, so the swap is set on "
+                f"{parent}'s row")
+    if survey.instrument_of(name) == OBSERVATORY:
+        return f"{name} is an observatory: its archive is fetched from INTERMAGNET, so it takes no swap"
+    return None
 
 
 def _dc_level_item(survey_name: str, site: str, path) -> SortableItem:
@@ -472,7 +491,13 @@ class MetadataTab(QWidget):
                     item = SortableItem("")
                     item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
                     item.setCheckState(Qt.Checked if flag else Qt.Unchecked)
-                    self._shown[(name, key)] = flag
+                    elsewhere = _swap_elsewhere(survey, name)
+                    if elsewhere:  # shown greyed, as the site reads it; set on the recorded site
+                        item.setFlags(item.flags() & ~Qt.ItemIsUserCheckable & ~Qt.ItemIsEnabled)
+                        item.setForeground(QColor(DISABLED))
+                        item.setToolTip(elsewhere)
+                    else:
+                        self._shown[(name, key)] = flag
                 elif key == "raw folder":
                     item = _yes_no(name in raw_sites)
                 elif key == "archive":

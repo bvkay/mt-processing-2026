@@ -93,6 +93,12 @@ This test fails if:
   unticking leaves the key in the file; the status line asks for a rebuild
   after a swap change at a site with no archive, or does not name the site
   and say to press Rebuild archive after one at a site with an archive;
+- the swap boxes of a derived row (S01L, derived_from S01), a burst row
+  (S01H, bursts_of S01) or an observatory row (OBS, instrument
+  intermagnet) can be ticked or are not greyed, do not show the value the
+  site reads (S01H shows the swap_h of S01), or lack a tooltip naming S01
+  (or, for OBS, saying it is an observatory); or the boxes of S01 cannot be
+  ticked;
 - Rebuild archive is enabled with no site selected, for a site with no
   archive, for a folder with no entry (that has an archive), for an entry
   with an archive and no raw data folder, or while a job runs; it is not
@@ -593,6 +599,37 @@ def test_swaps(app, window, check) -> None:
           and "swap_e" not in yaml.safe_load(after.decode("utf-8"))["sites"]["S01"], f"save() {saved}, changes {diff}")
 
 
+def test_swap_rows(app, window, check) -> None:
+    """The swap boxes of a derived, a burst and an observatory row: greyed, the value the site reads, a tooltip."""
+    path = make_survey()
+    text = path.read_bytes().decode("utf-8").replace("  S01:\n", "  S01:\n    swap_h: true\n", 1)
+    text += ("  S01L:\n    derived_from: S01\n    sample_rate: 1.0\n"
+             "  S01H:\n    bursts_of: S01\n    sample_rate: 24000\n"
+             "  OBS:\n    instrument: intermagnet\n    sample_rate: 1.0\n    latitude: -32.3\n    longitude: 137.1\n")
+    path.write_bytes(text.encode("utf-8"))
+    window.open_survey(path)
+    pump(app)
+    table = window.metadata_tab.table
+    for site, holder in (("S01L", "S01"), ("S01H", "S01"), ("OBS", None)):
+        cells = {key: find(table, site, key) for key in ("swap_e", "swap_h")}
+        reads = Survey.from_yaml(path).site(site)
+        shown = {key: c.checkState() == Qt.Checked for key, c in cells.items()}
+        tips = [c.toolTip() for c in cells.values()]
+        check(f"the swap boxes of {site} are greyed, cannot be ticked, show the value {site} reads and their "
+              f"tooltip names {holder or 'the observatory'}",
+              all(not c.flags() & Qt.ItemIsUserCheckable and not c.flags() & Qt.ItemIsEnabled
+                  and c.foreground().color().name() == DISABLED for c in cells.values())
+              and shown == {"swap_e": reads.swap_e, "swap_h": reads.swap_h}
+              and all(tip and (f"set on {holder}" in tip if holder else "observatory" in tip) for tip in tips),
+              f"flags {[c.flags() for c in cells.values()]}, shown {shown}, tips {tips}")
+    check("the burst row S01H shows the swap_h S01 holds", find(table, "S01H", "swap_h").checkState() == Qt.Checked,
+          str(find(table, "S01H", "swap_h").checkState()))
+    s01 = find(table, "S01", "swap_e")
+    check("the recorded site S01 keeps boxes that can be ticked", bool(s01.flags() & Qt.ItemIsUserCheckable)
+          and bool(s01.flags() & Qt.ItemIsEnabled), str(s01.flags()))
+    check("the table holds no unsaved change", window.metadata_tab.pending() == {}, str(window.metadata_tab.pending()))
+
+
 def test_rebuild(app, window, check) -> None:
     """Rebuild archive: when it is enabled, its question and the command it queues."""
     path = make_survey()
@@ -957,7 +994,8 @@ def main() -> int:
               f"line shown {shown} ({tab.warning_label.text()!r}), questions {len(asked)}, saved {saved}")
         BOXES.clear()
 
-    for part in (test_form, test_add_sites, test_check, test_save_held, test_swaps, test_rebuild, test_site_column):
+    for part in (test_form, test_add_sites, test_check, test_save_held, test_swaps, test_swap_rows, test_rebuild,
+                 test_site_column):
         print(f"{part.__name__}:")
         BOXES.clear()
         ANSWERS.clear()
