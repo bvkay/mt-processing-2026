@@ -789,8 +789,8 @@ def _unchanged(path: Path, planned: bytes) -> None:
 def commit(path, old: str, new: str, made: dict, *, dry_run: bool = False) -> Edit:
     """Check a new text and write it over survey.yaml, keeping the file as it was.
 
-    Nothing is written when the text is unchanged, on a dry run, or when
-    `check` finds a problem. Otherwise the file is read again and must
+    `commit` writes nothing when the text is unchanged, on a dry run, or
+    when `check` finds a problem. Otherwise the file is read again and must
     still be `old`; it is copied to survey.yaml.previous; the new text goes
     to a temporary file in the same folder, which replaces survey.yaml
     (retried while Windows holds the file, the file read again before each
