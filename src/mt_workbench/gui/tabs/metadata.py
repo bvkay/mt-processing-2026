@@ -48,7 +48,11 @@ a position the site holds is kept). A row of a site folder with no entry in
 survey.yaml is read-only until "Add sites" adds it: that button runs
 scripts/new_survey.py again on the survey (`metadata_edit.start_add_sites`),
 after a question that lists the folders, and is refused while the table holds
-unsaved edits. "Check" lists what stops an ingest and what is doubtful
+unsaved edits. "Rebuild archive" builds the selected site's archive again
+from its raw data (scripts/ingest_site.py <survey.yaml> <site> --force, on
+`state.runner`), after a question, for a site with an entry, a raw data
+folder and an archive, while no job runs; a changed swap box or electric gain
+reaches the data that way. "Check" lists what stops an ingest and what is doubtful
 (`mt_workbench.survey_check`, the findings and lines scripts/check_survey.py
 prints) in a table below the sites, one row per finding, the stops first; a
 double click on a row selects its site. "Save survey.yaml" writes the
@@ -111,6 +115,8 @@ NUMBERS = {"latitude", "longitude", "elevation", "declination", "declination_epo
 NO_ENTRY_TIP = "no entry yet: press Add sites"
 ADD_SHOWN = 20  # the folders the question of Add sites names before "and N more"
 CHECK_COLUMNS = ["level", "site", "finding", "message"]
+INGEST_SCRIPT = "ingest_site.py"
+REBUILD = "rebuild MTH5"  # the label of a Rebuild archive job, before the site
 # Save tries the replace of a survey.yaml held open this many times, this far apart: the window waits about 2 s
 SAVE_TRIES = 3
 SAVE_WAIT_S = 1.0
@@ -266,6 +272,8 @@ class MetadataTab(QWidget):
         self.check_button.setToolTip("list what stops an ingest (STOP) and what to look at (WARN), site by site, "
                                      "as scripts/check_survey.py prints it")
         self.check_button.clicked.connect(self.run_check)
+        self.rebuild_button = QPushButton("Rebuild archive", self)
+        self.rebuild_button.clicked.connect(self.rebuild_archive)
 
         self.name_label, self.data_root_label, self.workspace_label = (QLabel("-", self) for _ in range(3))
         self.count_label, self.status_label, self.warning_label = (QLabel("", self) for _ in range(3))
@@ -288,6 +296,7 @@ class MetadataTab(QWidget):
         edit_row.addWidget(self.save_button)
         edit_row.addWidget(self.add_button)
         edit_row.addWidget(self.check_button)
+        edit_row.addWidget(self.rebuild_button)
         edit_row.addWidget(self.status_label, 1)
 
         self.table = QTableWidget(0, len(COLUMNS), self)
@@ -330,6 +339,7 @@ class MetadataTab(QWidget):
 
         self.state.site_changed.connect(self.select_site)
         self.state.runner.job_finished.connect(self._job_finished)
+        self.state.runner.queue_changed.connect(self._update_rebuild)  # a job started or ended
         self._set_enabled(False)
 
     # ------------------------------------------------------------ filling
@@ -423,6 +433,28 @@ class MetadataTab(QWidget):
         self.save_button.setEnabled(loaded)
         self.add_button.setEnabled(loaded)
         self.check_button.setEnabled(loaded)
+        self._update_rebuild()
+
+    def _update_rebuild(self) -> None:
+        """Enable Rebuild archive for the selected site when it has an entry, raw data and an archive, and no job runs.
+
+        A burst site's raw data is its recorded site's folder
+        (`Survey.raw_site`), as scripts/ingest_site.py looks it up.
+        """
+        site, state = self.state.site, self.state
+        survey = state.survey
+        raw = None if site is None or survey is None else survey.raw_site(site)
+        why = ("open a survey" if survey is None
+               else "select a site in the table" if site is None
+               else f"{site} has no entry yet: press Add sites" if site not in state.configured_sites()
+               else f"no raw data folder for {raw}" if raw not in state.raw_sites()
+               else f"{site} has no archive yet: Build MTH5 on the Time Series tab builds it"
+               if not state.has_archive(site)
+               else "a job is running - wait for it to finish" if state.runner.running
+               else None)
+        self.rebuild_button.setEnabled(why is None)
+        self.rebuild_button.setToolTip(why or f"build the archive of {site} again from its raw data "
+                                              f"(scripts/ingest_site.py --force), after a question")
 
     def _status(self, text: str, colour: str | None = None) -> None:
         """Show a status message, optionally coloured."""
@@ -686,10 +718,46 @@ class MetadataTab(QWidget):
         if item is not None and item.text():
             self.state.set_site(item.text())
 
+    def rebuild_command(self, site: str) -> list[str]:
+        """Return the command line that rebuilds a site's archive: scripts/ingest_site.py <survey.yaml> SITE --force."""
+        return [self.state.python_exe, self.state.script(INGEST_SCRIPT), str(self.state.survey_yaml), site, "--force"]
+
+    def rebuild_archive(self) -> int | None:
+        """Build the selected site's archive again from its raw data, after a question.
+
+        The question says that the present archive is replaced and, for a
+        site with declared filters, that its filtered variant is built again
+        too, as scripts/ingest_site.py --force does. On Yes the command of
+        `rebuild_command` starts at once on `state.runner`
+        (`JobRunner.run_now`), as Build MTH5 does on the Time Series tab, and
+        the status line follows it.
+
+        Returns:
+            int | None: The job's index, or None when nothing was started.
+        """
+        self._update_rebuild()
+        site = self.state.site
+        if not self.rebuild_button.isEnabled() or not site:
+            return None
+        variant = (" Its filtered variant is built again from the new archive too."
+                   if self.state.survey.site(site).filters else "")
+        if not metadata_edit.ask_yes_no(self, "Rebuild archive", f"Rebuild the archive of {site} from its raw data? "
+                                                                 f"The present archive is replaced.{variant}"):
+            return None
+        index = self.state.runner.run_now(f"{REBUILD} {site}", self.rebuild_command(site), station=site)
+        self._status(f"rebuilding {site}.h5 ... (the log is in the console strip below)")
+        self._update_rebuild()
+        return index
+
     def _job_finished(self, index: int, ok: bool) -> None:
-        """Open what a New survey or Add sites job wrote, and show the line Add sites printed."""
+        """Open what a New survey or Add sites job wrote, and report an Add sites or Rebuild archive job."""
         metadata_edit.handle_new_survey_finished(self, self.state, index, ok)
         job = self.state.runner.jobs[index] if 0 <= index < len(self.state.runner.jobs) else None
+        if job is not None and job.label.startswith(REBUILD):
+            site = job.label[len(REBUILD):].strip()
+            self._status(f"rebuilt {site}.h5 from its raw data" if ok else
+                         f"could not rebuild {site}.h5: the console strip says why", None if ok else BAD_COLOUR)
+            return
         if job is None or not ok or not metadata_edit.is_new_survey_job(job) \
                 or not job.label.startswith(metadata_edit.ADD_SITES):
             return
@@ -719,6 +787,7 @@ class MetadataTab(QWidget):
 
     def select_site(self, name: str) -> None:
         """Select `name`'s row after another tab changes the site."""
+        self._update_rebuild()
         if not name:
             return
         self._syncing = True
