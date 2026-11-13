@@ -52,7 +52,8 @@ column is red for an open input and yellow for a saturated channel.
   other's inputs (`swap_e`, `swap_h`: [instruments.md](instruments.md)).
   Ingest exchanges the samples of the two channels; for the electric
   lines, give the lengths and azimuths of the lines as they are after the
-  exchange. A tick reaches the data only when the archive is built again.
+  exchange. A tick reaches the data only when the archive is built again:
+  press Save survey.yaml, then select the site and press Rebuild archive.
 - **Rebuild archive** builds the selected site's archive again from its raw
   data, after a question (`ingest_site.py <survey.yaml> SITE --force`); a
   site with declared filters gets its filtered variant built again too. It

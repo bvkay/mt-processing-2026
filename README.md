@@ -62,6 +62,7 @@ This opens the window (the GUI) on a survey file. Its tabs, left to right:
 - **View EDIs**: plot the EDI products (apparent resistivity, phase and phase tensor).
 - **View tensors**: plot the telluric tensor and magnetic tensor products.
 
+With no file it opens empty: press New survey... on the Metadata tab.
 [docs/guide/gui.md](docs/guide/gui.md) has more on each.
 
 ## The usual path through a survey

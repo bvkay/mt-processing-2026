@@ -106,12 +106,12 @@ SWAPS = {
     "swap_e": ("Ex and Ey swapped",
                "Ticked for a site whose two electric lines were connected to each other's inputs: ingest exchanges "
                "the samples of ex and ey, and the dipole lengths and azimuths are declared for the lines as they "
-               "are after the exchange. The change reaches the data only when the archive is built again: select "
-               "the site and press Rebuild archive."),
+               "are after the exchange. The change reaches the data only when the archive is built again: press "
+               "Save survey.yaml, then select the site and press Rebuild archive."),
     "swap_h": ("Hx and Hy swapped",
                "Ticked for a site whose two horizontal coils were plugged into each other's inputs: ingest "
                "exchanges the samples of hx and hy. The change reaches the data only when the archive is built "
-               "again: select the site and press Rebuild archive."),
+               "again: press Save survey.yaml, then select the site and press Rebuild archive."),
 }
 NUMBERS = {"latitude", "longitude", "elevation", "declination", "declination_epoch", "dipole_length_ex",
            "dipole_length_ey", "azimuth_ex", "azimuth_ey"}
