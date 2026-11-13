@@ -73,8 +73,9 @@ Usage:
 - a refused shape (a flow entry on its header, an unquoted numeric name, a
   duplicate site, mixed line endings, a tab, `sites: {}`, anchors, a merge
   key with an alias and one with a flow mapping, two `sites:` lines, a
-  value with a line break, a line that is not a key at the entry's indent)
-  writes anything, or its message does not name
+  value with a line break (LF, CR LF, U+0085, U+2028 or U+2029, also in a
+  list item), a line that is not a key at the entry's indent) writes
+  anything, or its message does not name
   the site, the line or the shape; or another entry of the file with the
   flow entry cannot be edited;
 - after a write, survey.yaml.previous is not the old bytes, or a `*.tmp`
@@ -226,6 +227,16 @@ REFUSED = {  # name: (text, request, a fragment the message holds)
                          {"sites": {"S01": {"latitude": 2.0}}}, "2 top-level 'sites:' lines"),
     "line break": (HEAD + "sites:\n  S01:\n    latitude: 1.0\n", {"sites": {"S01": {"notes": "a\nb"}}},
                    "line break"),
+    "carriage return and line feed": (HEAD + "sites:\n  S01:\n    latitude: 1.0\n",
+                                      {"sites": {"S01": {"notes": "a\r\nb"}}}, "line break"),
+    "line separator": (HEAD + "sites:\n  S01:\n    latitude: 1.0\n", {"sites": {"S01": {"notes": "a b"}}},
+                       "line break"),
+    "paragraph separator": (HEAD + "sites:\n  S01:\n    latitude: 1.0\n",
+                            {"sites": {"S01": {"notes": "a b"}}}, "line break"),
+    "next line": (HEAD + "sites:\n  S01:\n    latitude: 1.0\n", {"sites": {"S01": {"notes": "a\x85b"}}},
+                  "line break"),
+    "line break in a list item": (HEAD + "sites:\n  S01:\n    latitude: 1.0\n",
+                                  {"sites": {"S01": {"filters": ["a\rb"]}}}, "line break"),
     "not a key line": (HEAD + "sites:\n  S01:\n    latitude: 1.0\n    ? complex\n    : 1\n",
                        {"sites": {"S01": {"latitude": 2.0}}}, "site 'S01': line 8"),
 }

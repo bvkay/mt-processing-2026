@@ -128,8 +128,20 @@ def comment_texts(text: str) -> list[str]:
     return [text[a:b].rstrip() for a, b in _comment_spans(text)]
 
 
+# characters that YAML or an editor reads as a line break; YAML would write them escaped or raw inside quotes
+_BREAK = re.compile("[\r\n\x85  ]")
+
+
 def _text(value) -> str:
     """Return a value as YAML on one line: scalars quoted as needed, lists and mappings in flow style."""
+    if isinstance(value, dict):
+        texts = [*value, *value.values()]
+    elif isinstance(value, list):
+        texts = value
+    else:
+        texts = [value]
+    if any(isinstance(t, str) and _BREAK.search(t) for t in texts):
+        raise SurveyFileRefused("a value holds a line break: write it on one line")
     try:
         if isinstance(value, (list, dict)):
             out = yaml.safe_dump(value, default_flow_style=True, width=10 ** 9, allow_unicode=True,
