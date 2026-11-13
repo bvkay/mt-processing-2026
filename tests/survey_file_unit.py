@@ -70,7 +70,9 @@ Usage:
 - the new line of a CRLF file written with LF in a new text is not refused
   by the line ending check;
 - `elevation: true` written in place of 1.0 is not refused by `check` (a value
-  `Survey.site` accepts, so only the typed comparison can refuse it);
+  `Survey.site` accepts), on a line of the entry that was not asked and on
+  the line of the key asked, where only the typed comparison of the parsed
+  file can refuse it;
 - removing the last key of an entry is not refused; the bare header `S09`
   cannot be given a key at the file's key indent;
 - in a file with no final newline, the last value written over two lines
@@ -110,7 +112,13 @@ backed off past trailing comments; (c) comment texts taken with the regular
 expression ``(^|\\s)#.*``; (d) the line ending taken as LF always; (e) `check`
 returning no problem; (f) `NO_LEAN` emptied; (g) the burst exemption removed;
 (h) the comment check put back to a count; (i) `same` replaced by ``==``; (j)
-`name_text` returning the raw name.
+`name_text` returning the raw name; (k) the check for a key written twice
+switched off; (l) the lines of an edited entry other than the keys asked not
+compared; (m) a `NO_LEAN` key the site holds removed when asked equal to
+`defaults:`; (n) survey.yaml.previous made before the checks; (o) the
+re-read before the copy left out; (p) the line diff check, (q) the line
+ending check and (r) the read-back by `Survey.site` switched off; (s) a site
+refused before the edit refused again.
 """
 
 from __future__ import annotations
@@ -588,6 +596,11 @@ def test_tampered() -> None:
     tampered = new.replace("    elevation: 1.0\n", "    elevation: true\n")
     problems = sf.check(LF, tampered, made)
     check("elevation: true in place of 1.0: refused by check", tampered != new and bool(problems), str(problems))
+    new, made, _ = sf.plan(LF, sites={"S01": {"elevation": 1.0}})
+    tampered = new.replace("    serial: '036'\n    elevation: 1.0\n", "    serial: '036'\n    elevation: true\n")
+    problems = sf.check(LF, tampered, made)
+    check("the key asked written as true in place of 1.0: refused by the parsed comparison",
+          tampered != new and any("site S01 would read differently" in p for p in problems), str(problems))
 
     new, made, _ = sf.plan(LF, sites={"S01": {"dipole_length_ex": 53.5}})
     kept_old = new.replace("    dipole_length_ex: 53.5", "    dipole_length_ex: 52.0\n    dipole_length_ex: 53.5")
