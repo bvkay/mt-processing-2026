@@ -67,6 +67,10 @@ Usage:
 - `A.1`, the name of 29 characters or `B.2` does not give site_name (stop),
   `B.2` not folder_without_entry as well, or the name of 28 characters or
   its `SL` site gives any;
+- the message of site_name for `A.1`, `B.2` or the name of 29 characters is
+  not the refusal of `mt_workbench.survey.check_site_name`, which
+  scripts/new_survey.py prints for a site folder, so the check and the
+  command could disagree on a name;
 - the edges survey does not give data_root_missing (stop), or lists a site
   for having no folder; a span that ends before it starts, ends when it
   starts, runs 401 days or has an end that is not a time is not listed, or
@@ -106,6 +110,7 @@ observatory taken as recorded (CNB listed); the stack names not read (S07
 listed); a remote that is a folder with no entry refused (S08 listed); the
 folder map of the caller not used; the name rule on derived sites, without
 the pattern, with 27 as the limit, or not on a folder with no entry; the
+check given a name rule of its own again; the
 span and azimuth limits moved; the position, span, azimuth, full-scale
 and calibration rules on derived sites, and the declination rule not on
 them; the full scales asked for with `and`; the calibration file of any
@@ -141,7 +146,7 @@ sys.path.insert(0, str(REPO / "src"))
 sys.path.insert(0, str(REPO / "tests"))
 
 from mt_workbench import survey_check, survey_file  # noqa: E402
-from mt_workbench.survey import Survey  # noqa: E402
+from mt_workbench.survey import Survey, check_site_name  # noqa: E402
 from _scratch import scratch_dir  # noqa: E402
 import new_survey_unit as nsu  # noqa: E402  (the synthetic B423 writer)
 
@@ -470,6 +475,15 @@ def test_names() -> None:
     compare("names", by_site(path), NAME_EXPECTED, (N28, N28 + "SL"))
     text = message(path, N29, "site_name")
     check("the message of a long name gives its length and the limit", "has 29 characters: 28 at most" in text, text)
+    for name in ("A.1", "B.2", N29):
+        try:
+            check_site_name(name)
+            refusal = None
+        except ValueError as exc:
+            refusal = str(exc)
+        text = message(path, name, "site_name")
+        check(f"the site_name message of {name} is the refusal of check_site_name, as new_survey.py prints it",
+              refusal is not None and text == refusal, f"check {text!r}, library {refusal!r}")
     done = command("check_survey.py", path)
     check("run as a command, a refused site name exits 1", done.returncode == 1, f"exit {done.returncode}")
 

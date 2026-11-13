@@ -28,11 +28,10 @@ that says so. scripts/check_survey.py prints the findings.
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass, fields
 from pathlib import Path
 
-from .survey import OBSERVATORY, SiteConfig, Survey, _window_time
+from .survey import OBSERVATORY, SiteConfig, Survey, _window_time, check_site_name
 from .survey_file import DIPOLE_KEYS
 
 STOP, WARN = "stop", "warn"
@@ -52,11 +51,6 @@ LEVELS = {
     "dipoles_not_perpendicular": WARN,
     "remote_unknown": WARN,
 }
-# the characters mt_metadata takes in a station id, without the blank (a site name is a folder name)
-SITE_NAME = re.compile(r"[A-Za-z0-9_-]+")
-# mth5 keeps 30 characters of a station id in its summaries, and the names of the sites made from a
-# recorded site (<site>L, <site>D, <site>SL) add up to two
-SITE_NAME_MAX = 28
 # a record longer than this is taken for a wrong clock or a wrong stamp, in days
 SPAN_MAX_DAYS = 400.0
 # how far from a right angle the two electric lines may be laid, in degrees
@@ -110,13 +104,11 @@ def _number(value) -> str:
 
 
 def _name_message(name: str) -> str | None:
-    """Return why a site name is refused, None for a name every store takes."""
-    if not SITE_NAME.fullmatch(name):
-        return (f"site name {name!r} holds characters other than letters, digits, _ and -: rename its folder "
-                f"(mt_metadata refuses it as a station id)")
-    if len(name) > SITE_NAME_MAX:
-        return (f"site name {name!r} has {len(name)} characters: {SITE_NAME_MAX} at most; rename its folder "
-                f"(mth5 keeps 30 in its summaries, and the L, D and SL sites made from it add up to two)")
+    """Return why a site name is refused (`mt_workbench.survey.check_site_name`), None for a name every store takes."""
+    try:
+        check_site_name(name)
+    except ValueError as exc:
+        return str(exc)
     return None
 
 
