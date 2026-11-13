@@ -357,8 +357,8 @@ Usage:
      the window stays responsive) does not run `scripts/new_survey.py`,
      write `<scratch>/<name>/survey.yaml` and open it (`state.survey_yaml`),
      with the table showing two rows whose serial and firmware cells read
-     "36" and "2.1" for S01 and "112" and "2.3" for S02, the yellow line
-     naming scripts/new_survey.py, and the console strip also carrying the
+     "36" and "2.1" for S01 and "112" and "2.3" for S02, no yellow line (a
+     new survey has no `generated_by`), and the console strip also carrying the
      script's "wrote ..." line; nor does the name default to the folder's,
      the dialog's workspace field to `<data folder>/work` (that path in the
      job's `--workspace` and in the written survey.yaml's `workspace:`), or
@@ -3399,8 +3399,9 @@ def main() -> int:
     for site, (serial, firmware) in SYNTHETIC.items():
         assert (cells[(site, "serial")], cells[(site, "firmware")]) == (serial, firmware), \
             (site, cells[(site, "serial")], cells[(site, "firmware")])
-    assert meta.warning_label.isVisible() and "scripts/new_survey.py" in meta.warning_label.text()
+    assert not meta.warning_label.isVisible(), f"yellow line on a new survey: {meta.warning_label.text()!r}"
     written_config = yaml.safe_load(want_yaml.read_text(encoding="utf-8"))
+    assert "generated_by" not in written_config, written_config.get("generated_by")
     written = written_config["workspace"]
     assert Path(written) == (raw_root / "work").resolve(), written
     assert written_config["defaults"]["channels"] == ["ex", "ey", "hx", "hy", "hz"], written_config["defaults"]
@@ -3413,7 +3414,7 @@ def main() -> int:
         "the console strip has no new_survey.py command or 'wrote' line"
     print("  finished: state.survey_yaml opened, window responsive throughout")
     print("  table: " + ", ".join(f"{s} serial {cells[(s, 'serial')]} firmware {cells[(s, 'firmware')]}"
-                                  for s in SYNTHETIC) + f"; yellow line {meta.warning_label.text()!r}")
+                                  for s in SYNTHETIC) + "; no yellow line")
     print(f"  console: {job.command[:90]}...")
     print(f"  channels combo {filled['channels'][0]}, {filled['channels'][1]!r} preselected; set to "
           f"{NEW_SURVEY_CHANNELS!r}: --channels in the argv, defaults channels "

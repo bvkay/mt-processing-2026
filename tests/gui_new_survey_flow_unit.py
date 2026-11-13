@@ -38,14 +38,19 @@ This test fails if:
   in one warning box; or a name of 30 characters is not accepted;
 - New survey... on a survey.yaml that exists starts a job, changes the file,
   or does not say in one box that the file exists and to open it and press
-  Add sites; or the command line built for a new survey holds `--force`.
+  Add sites; or the command line built for a new survey holds `--force`;
+- a survey.yaml that holds `generated_by: scripts/new_survey.py` (a file
+  that script only adds to) shows the yellow line or asks before Save; or
+  one that names another script, or a longer text that only mentions
+  new_survey.py, shows no yellow line or is saved without the question.
 
 Mutations that must make it fail: Save put back on a rewrite of the whole
 `sites:` block with `yaml.safe_dump`, as before the writer (the comments
 are lost and no survey.yaml.previous is made); the status line given only
 the summary lines that end in "check it" (a removal is not shown); the form
 accepted without the check of the name; New survey... starting its job on a
-survey.yaml that exists.
+survey.yaml that exists; the yellow line and the question for every
+`generated_by`; neither of them for any text that contains new_survey.py.
 
 Usage:
     QT_QPA_PLATFORM=offscreen python tests/gui_new_survey_flow_unit.py
@@ -340,6 +345,29 @@ def main() -> int:
     check("the command line built for a new survey has no --force",
           "--force" not in argv and Path(argv[1]).name == "new_survey.py" and "--name" in argv, str(argv))
     BOXES.clear()
+
+    # the yellow line and the question before Save are for files another script writes again whole
+    for label, generated_by, warned in (
+            ("scripts/new_survey.py", "scripts/new_survey.py", False),
+            ("another script", "scripts/burra_notes_to_yaml.py", True),
+            ("a text that only mentions new_survey.py", "the field sheet script, not new_survey.py", True)):
+        path = make_survey()
+        text = path.read_bytes().decode("utf-8")
+        path.write_bytes(text.replace("defaults:\n", f"generated_by: {generated_by}\ndefaults:\n", 1).encode("utf-8"))
+        window.open_survey(path)
+        pump(app)
+        shown = not tab.warning_label.isHidden()
+        before = path.read_bytes()
+        cell("S02", "dipole_length_ex").setText("46")
+        saved = tab.save()
+        pump(app)
+        asked = [box for box in BOXES if box[:2] == ("question", "Save survey.yaml")]
+        check(f"generated_by {label}: the yellow line {'shown' if warned else 'hidden'}, Save "
+              f"{'asks first' if warned else 'asks nothing'}",
+              shown is warned and (len(asked) == 1) is warned and saved is (not warned)
+              and (path.read_bytes() == before) is warned,
+              f"line shown {shown} ({tab.warning_label.text()!r}), questions {len(asked)}, saved {saved}")
+        BOXES.clear()
 
     window.close()
     print()

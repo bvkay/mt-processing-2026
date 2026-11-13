@@ -30,13 +30,13 @@ Usage:
     or a direct call to `fast_sample_rate` on S01's first file (written at
     1000 Hz above) does not return exactly 1000.0 (the bounded-read scan
     new_survey.py uses in place of mt-io's whole-file `read_summary`);
-(4) generated_by is not scripts/new_survey.py; the defaults block is not
-    exactly the one asked for (channels [ex, ey, hx, hy], the LEMI-423's
+(4) the file holds a `generated_by` key or names --force; the defaults block
+    is not exactly the one asked for (channels [ex, ey, hx, hy], the LEMI-423's
     default preset, with no --channels given; flip_reversed_dipoles true, h_scale
     -1000.0, calibration_fn sensors/l120n.rsp, 50 m dipoles, azimuths 0/90);
     the processing block differs; a site carries a dipole length or azimuth of
-    its own (the defaults must apply until edited), or its notes are not the
-    "set them from the field sheet" line; the coil response copied into
+    its own (the defaults must apply until edited), or any `notes` (these
+    sites' files give no problem to note); the coil response copied into
     sensors/ is not identical to surveys/burra/sensors/l120n.rsp; or
     `Survey.site()` does not read serial/firmware/start/end back as strings
     and the dipole lengths as the defaults; or the `workspace:` key (and
@@ -184,7 +184,12 @@ exists (a re-run), on data roots built as part 1's. **This test fails if**
      the data, and "next: python scripts/check_survey.py <survey.yaml>" as
      its last line; or, over site folders named `A.1` and with 29
      characters, does not write their entries and name each with what to do
-     (rename its folder).
+     (rename its folder);
+(29) at a first run with `--dipole-length 45` and a site table, S01's row
+     giving dipole_length_ex 45, the usual value, writes a dipole key into
+     S01's entry, or S02's row giving 48 does not write `dipole_length_ex:
+     48.0` into S02's; or the table's latitude for S02, 0.01 deg off its
+     header's, replaces the header's or is not printed as a disagreement.
 
 Part 5, sites of another recorder and another rate, on the mixed data root
 of part 3 and on its EDL folder alone. **This test fails if**
@@ -192,7 +197,10 @@ of part 3 and on its EDL folder alone. **This test fails if**
 (26) in the default mixed survey (lemi423 at 1000 Hz) MBJ21 (1 Hz) and
      EGFLP02 (10 Hz) do not carry `sample_rate: 1.0` and `10.0` in their own
      entries, read back by `Survey.sample_rate_of`, or S01 carries one; or
-     EGFLP02, which has no position, gets a declination key;
+     EGFLP02, which has no position, gets a declination key; or the file is
+     not in the layout later writes keep, a key on each line and a list in
+     flow style on the line of its key (`channels: [ex, ey, e3, e4, hx, hy,
+     hz]` in MBJ21's entry);
 (27) a first run over the EDL folder alone (an EDL survey at 10 Hz) does not
      keep `calibration_fn` and `h_scale` in `defaults:` and the coil table
      in sensors/; or a re-run after a LEMI-423 folder (S01) and a LEMI-424
@@ -228,7 +236,10 @@ for a site of the survey's own recorder ((26)); `calibration_fn` and
 `h_scale` written only for a LEMI-423 survey ((27)); the block of 100 Hz and
 above written at every rate, or only above 100 Hz, the shortest period taken
 as 4 / rate below 100 Hz, or the 4 s of the slowest records taken from 2 Hz
-down in place of below 2 Hz ((28)).
+down in place of below 2 Hz ((28)); the `sites:` block of the first file
+written with `yaml.safe_dump` again ((29): the usual 45 is written into
+S01; (26): the list is not in flow style); `generated_by`, or the note on
+the dipoles being the defaults, written again ((4)).
 
 Part 2, the real-data check: the script run over the Curnamona Cube raw data
 (E:, read only) into the scratch folder must give D02 and E08 latitudes and
@@ -395,24 +406,25 @@ def part1() -> None:
         assert e["serial"] == str(serial) and e["firmware"] == fw, (folder, e["serial"], e["firmware"])
         assert e["start"] == iso(epoch) and e["end"] == iso(epoch + n * spacing), (folder, e["start"], e["end"])
         assert not set(e) & set(EXPECTED_DEFAULTS), f"{folder} carries its own {set(e) & set(EXPECTED_DEFAULTS)}"
-        assert e["notes"] == NOTE, e["notes"]
+        assert "notes" not in e, e["notes"]
         print(f"(2)(3) {folder}: {e['latitude']} {e['longitude']} {e['elevation']} m, serial "
               f"{e['serial']}, firmware {e['firmware']}, {e['start']} to {e['end']}")
     assert config["sample_rate"] == 1000, config["sample_rate"]
-    assert config["generated_by"] == "scripts/new_survey.py", config.get("generated_by")
+    written = out.read_text(encoding="utf-8")
+    assert "generated_by" not in config and "--force" not in written and NOTE not in written, written[:600]
     assert config["defaults"] == EXPECTED_DEFAULTS, config["defaults"]
     assert config["processing"] == EXPECTED_PROCESSING, config["processing"]
     assert config["timezone"] == "Australia/Adelaide" and Path(config["data_root"]) == root.resolve()
     assert (out.parent / "sensors" / "l120n.rsp").read_bytes() == RSP.read_bytes()
     survey = Survey.from_yaml(out)
     s01 = survey.site("S01")
-    assert survey.generated_by == "scripts/new_survey.py"
+    assert survey.generated_by is None, survey.generated_by
     assert all(isinstance(v, str) for v in (s01.serial, s01.firmware, s01.start, s01.end)), s01
     assert (s01.dipole_length_ex, s01.azimuth_ey) == (50.0, 90.0), s01
     assert list(survey.site_dirs()) == ["S01", "S02"]
     assert Path(config["workspace"]) == root.resolve() / "work" == survey.workspace, config["workspace"]
     assert not (root / "work").exists(), "new_survey.py made the workspace folder"
-    print(f"(4) sample_rate 1000, generated_by, defaults and processing blocks as asked, "
+    print(f"(4) sample_rate 1000, no generated_by and no note, defaults and processing blocks as asked, "
           f"coil response copied; Survey.site('S01') = serial {s01.serial!r}, start {s01.start!r}; "
           f"workspace {config['workspace']} (<data_root>/work, not made)")
 
@@ -889,6 +901,23 @@ def test_head() -> None:
     assert f"'{long_site}' has 29 characters: 28 at most" in named[1], named
     print(f"(25) summary: {coil}; {recorded[0]}; {lines[-1]}; {named[0]}")
 
+    table = SCRATCH / "usual_and_other.csv"
+    off = round(SITES[1][4] + 0.01, 6)
+    table.write_text(f"site,dipole_length_ex,latitude\nS01,45,\nS02,48,{off}\n", encoding="utf-8")
+    out = fresh("head_lean_table")
+    done = run(root, "--name", "head_lean", "--out", out, "--dipole-length", "45", "--site-table", table)
+    assert done.returncode == 0, (done.returncode, done.stdout, done.stderr)
+    sites = yaml.safe_load(out.read_text(encoding="utf-8"))["sites"]
+    assert not set(sites["S01"]) & {"dipole_length_ex", "dipole_length_ey"}, sites["S01"]
+    assert sites["S02"].get("dipole_length_ex") == 48.0 and "dipole_length_ey" not in sites["S02"], sites["S02"]
+    assert abs(sites["S02"]["latitude"] - SITES[1][4]) <= 1e-6, sites["S02"]["latitude"]
+    assert "S02 latitude: table" in done.stdout and "header kept" in done.stdout, done.stdout
+    survey = Survey.from_yaml(out)
+    lengths = {site: survey.site(site).dipole_length_ex for site in sites}
+    assert lengths == {"S01": 45.0, "S02": 48.0}, lengths
+    print(f"(29) a table row equal to the usual 45 m writes no key (S01), a row of 48 m does (S02); read back "
+          f"{lengths}; S02's latitude kept from the header")
+
 
 def test_other_recorders() -> None:
     """Run checks (26)-(27): the own sample_rate of sites at another rate, and other recorders added to an EDL survey."""
@@ -905,6 +934,11 @@ def test_other_recorders() -> None:
     assert read == {"EGFLP02": 10.0, "MBJ21": 1.0, "S01": 1000.0}, read
     assert not set(sites["EGFLP02"]) & set(DECLINATION_KEYS), sites["EGFLP02"]
     assert set(DECLINATION_KEYS) <= set(sites["MBJ21"]) and set(DECLINATION_KEYS) <= set(sites["S01"]), sites
+    rows = samples.MIXED_YAML.read_text(encoding="utf-8").splitlines()
+    assert "    channels: [ex, ey, e3, e4, hx, hy, hz]" in rows, [r for r in rows if "channels" in r or "- " in r]
+    at = rows.index("  MBJ21:")
+    entry_rows = rows[at + 1:rows.index("  S01:")]
+    assert all(r.startswith("    ") and not r.startswith("     ") and ": " in r for r in entry_rows), entry_rows
     print(f"(26) mixed survey at 1000 Hz: own sample_rate {own}, read back {read}; no declination for EGFLP02 "
           f"(no position), MBJ21 {sites['MBJ21']['declination']}")
 

@@ -32,13 +32,16 @@ The name of a new survey is checked before any folder is read
 (`mt_workbench.survey.check_survey_name`: 30 characters at most, of letters,
 digits, _ and -). The script writes surveys/<name>/survey.yaml (or --out) with the survey's
 name, instrument, sample_rate (the most common across sites; a warning names
-any site that differs), data_root, workspace, timezone and `generated_by:
-scripts/new_survey.py`; a `defaults:` block and a `processing:` block that
+any site that differs), data_root, workspace and timezone; a `defaults:`
+block and a `processing:` block that
 fits the survey's rate (`processing_block`: 0.005 to 5000 s with mains
 notches at 100 Hz and above, a long-period layout to 100000 s below); and a
 `sites:` block with one entry per folder: latitude, longitude, elevation,
-serial, firmware, start and end (UTC), and a note that the dipole lengths and
-azimuths are the defaults. A site recorded at another rate than the survey's
+serial, firmware, start and end (UTC), and a note only where the files gave
+a problem (no GPS fix, no position in an EDL's files). The entries go
+through `mt_workbench.survey_file.plan`, so the first file has the layout
+every later edit keeps: one key per line, a list in flow style, and no
+value that equals `defaults:`. A site recorded at another rate than the survey's
 gets its own `sample_rate:`, which `Survey.sample_rate_of` reads. The
 `defaults:` block holds the usual dipole length of the survey
 (--dipole-length, 50 m, for Ex and Ey) and the usual azimuths of Ex and Ey
@@ -55,7 +58,8 @@ to the data: azimuths stay as laid out, from magnetic north, and no
 `layout_north` is written. The site table is a CSV or
 XLSX with a `site` column plus any of `mt_workbench.survey.SITE_TABLE_COLUMNS`;
 its values are merged over the header's for
-the sites it names. The header's GPS fix takes precedence for latitude,
+the sites it names (`mt_workbench.survey.merge_table_row`); a value equal to
+`defaults:` is not written. The header's GPS fix takes precedence for latitude,
 longitude and elevation (the table fills them only where the header has
 none), and every disagreement is printed. The columns of the field-sheet
 survey CSV (SiteName, ExDipole, ExAzimuth, ..., TimeZone) are read as
@@ -143,11 +147,12 @@ Usage (the same command again adds the site folders that have no entry):
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
 import sys
+import tempfile
 from collections import Counter
 from pathlib import Path
-from textwrap import indent
 
 import numpy as np
 import pandas as pd
@@ -176,7 +181,6 @@ PHOENIX_DIPOLES = ("Phoenix receivers record their dipole lengths (empower_recme
 FORCE_GONE = ("--force is gone: a re-run only adds the site folders that have no entry. To start again, delete "
               "{out} by hand and run this command again.")
 DEFAULT_FILE_SECONDS = 5400  # a B423 file's nominal span, for a site with one file
-DEFAULTS_NOTE = "dipole lengths and azimuths from defaults - set them from the field sheet"
 # the LEMI-423's documented rates (mt_io.lemi.lemi_collection.LEMICollection's docstring).
 # There is no 1 Hz mode: a file with one record per second (tick always 0)
 # is an instrument fault and is reported as measured, with a warning
@@ -216,9 +220,6 @@ workspace: {workspace}
 # local time of the field area (IANA name), for display only: every
 # timestamp in the YAML, the archives and the scripts is UTC
 timezone: {timezone}
-# written by this script from the raw files' headers; run again, it adds the
-# site folders that have no entry and leaves every other line
-generated_by: scripts/new_survey.py
 defaults:
   # the usual dipole lengths (m) and azimuths (degrees from magnetic north, as laid out with a
   # compass) of the survey; a site that differs has its own keys in its entry
@@ -493,12 +494,13 @@ def read_site(site_dir: Path, instrument: str = "lemi423", clock_timezone: str =
 
 
 def site_entry(facts: dict) -> dict:
-    """Build a site's survey.yaml entry from its facts, with the defaults note."""
+    """Build a site's survey.yaml entry from its facts; a problem met reading its files is its note."""
     entry = {key: facts[key] for key in ("latitude", "longitude", "elevation", "serial", "firmware")
              if facts.get(key) is not None}
     entry["start"] = facts["start"].strftime(ISO)
     entry["end"] = facts["end"].strftime(ISO)
-    entry["notes"] = "; ".join(n for n in (DEFAULTS_NOTE, facts["problem"]) if n)
+    if facts["problem"]:
+        entry["notes"] = facts["problem"]
     return entry
 
 
@@ -572,10 +574,6 @@ def merge_site_table(sites: dict, path: Path, existing: dict | None = None) -> d
         disagreements += [f"{site} {key}: table {rows[site][key]} vs header {entry[key]} -> header kept"
                           for key in disagree]
         entry.update(values)
-        if all(k in entry for k in DIPOLE_KEYS) and "notes" not in rows[site]:
-            entry["notes"] = entry["notes"].replace(DEFAULTS_NOTE, "").lstrip("; ")
-            if not entry["notes"]:
-                del entry["notes"]
         sites[site] = {k: entry[k] for k in KEY_ORDER if k in entry}
     print(f"site table {path.name}: {len(matched)} of {len(rows)} sites matched")
     for line in disagreements:
@@ -1011,11 +1009,6 @@ def main(argv=None) -> int:
             timezone = zone
     add_declinations(sites)
 
-    out.parent.mkdir(parents=True, exist_ok=True)
-    sensor = out.parent / "sensors" / calibration.name
-    sensor.parent.mkdir(exist_ok=True)
-    if calibration.resolve() != sensor.resolve():
-        shutil.copy2(calibration, sensor)
     head = HEAD.format(
         name=scalar(args.name), instrument=instrument,
         sample_rate=int(sample_rate) if float(sample_rate).is_integer() else sample_rate,
@@ -1046,10 +1039,22 @@ def main(argv=None) -> int:
         head = phoenix_defaults(head)
     if instrument == "orangebox":
         head = orangebox_defaults(head, clock_timezone)
-    # the sites block as burra_notes_to_yaml.py's write_sites_block writes it
-    body = yaml.safe_dump(sites, sort_keys=False, allow_unicode=True, default_flow_style=False)
-    with open(out, "w", encoding="utf-8", newline="\n") as f:
-        f.write(head + "sites:\n" + indent(body, "  "))
+    # the entries go in as every later edit writes them: one key per line, a list in flow style, and no
+    # value that equals defaults:
+    try:
+        text, _made, _summary = survey_file.plan(head + "sites:\n", add=sites)
+    except survey_file.SurveyFileRefused as exc:
+        print(f"ERROR {exc}; nothing written")
+        return 2
+    out.parent.mkdir(parents=True, exist_ok=True)
+    sensor = out.parent / "sensors" / calibration.name
+    sensor.parent.mkdir(exist_ok=True)
+    if calibration.resolve() != sensor.resolve():
+        shutil.copy2(calibration, sensor)
+    handle, temporary = tempfile.mkstemp(dir=out.parent, prefix=out.name + ".", suffix=".tmp")
+    with os.fdopen(handle, "w", encoding="utf-8", newline="") as f:
+        f.write(text)
+    os.replace(temporary, out)  # the file appears whole, or not at all
 
     print(f"wrote {out}: {len(sites)} sites, sample_rate {sample_rate:g} Hz")
     print(f"coil response copied: sensors/{calibration.name} " +
