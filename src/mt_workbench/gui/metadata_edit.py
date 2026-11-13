@@ -73,7 +73,8 @@ def format_cell(column: str, value) -> str:
 # it is separate from the PR6-24 pre-amplifier setting.
 ELECTRIC_GAIN = "electric_gain"
 ELECTRIC_GAIN_TIP = "extra gain of the electric chain beyond the reader's own (the x10 terminal box), declared from the field notes"
-ELECTRIC_GAIN_ARCHIVE_TIP = "archive built with the old gain - Delete archive then Build MTH5 to change it"
+ELECTRIC_GAIN_ARCHIVE_TIP = ("archive built with the old gain: press Save survey.yaml, then select the site and press "
+                             "Rebuild archive to change it")
 ELECTRIC_GAIN_NOT_EDL = "PR6-24 (EDL) sites only"
 
 

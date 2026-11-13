@@ -710,9 +710,14 @@ class MetadataTab(QWidget):
         n = sum(len(v) for v in edits.values())
         # every summary line, so a removed key and the value the site now takes are seen
         notes = result.summary[:5] + ([f"and {len(result.summary) - 5} more"] if len(result.summary) > 5 else [])
-        # a swap acts at ingest: an archive built before the change still holds the channels as they were
-        stale = [s for s, values in edits.items() if set(values) & set(SWAPS) and self.state.has_archive(s)]
-        rebuild = ([f"the archive of {', '.join(stale)} was built before the swap changed: select "
+        # a swap and the electric gain act at ingest: an archive built before the change still holds the old samples
+        ingest_keys = {*SWAPS, metadata_edit.ELECTRIC_GAIN}
+        stale = [s for s, values in edits.items() if set(values) & ingest_keys and self.state.has_archive(s)]
+        changed = {key for s in stale for key in edits[s]}
+        what = " and ".join(text for text, keys in (("the swap", set(SWAPS)),
+                                                    ("the electric gain", {metadata_edit.ELECTRIC_GAIN}))
+                            if changed & keys)
+        rebuild = ([f"the archive of {', '.join(stale)} was built before {what} changed: select "
                     f"{'it' if len(stale) == 1 else 'each'} and press Rebuild archive"] if stale else [])
         rebuild += [text for text in (derived_rebuilds(self.state.survey, s, self.state.has_archive) for s in stale)
                     if text]

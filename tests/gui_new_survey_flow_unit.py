@@ -93,6 +93,10 @@ This test fails if:
   unticking leaves the key in the file; the status line asks for a rebuild
   after a swap change at a site with no archive, or does not name the site
   and say to press Rebuild archive after one at a site with an archive;
+- on an EDL row with an archive (S02), the electric gain tooltip does not
+  say to press Save survey.yaml and then Rebuild archive, or the status line
+  after a Save that changed the gain does not name S02 and ask for Rebuild
+  archive;
 - the swap boxes of a derived row (S01L, derived_from S01), a burst row
   (S01H, bursts_of S01) or an observatory row (OBS, instrument
   intermagnet) can be ticked or are not greyed, do not show the value the
@@ -606,6 +610,31 @@ def test_swaps(app, window, check) -> None:
           and "swap_e" not in yaml.safe_load(after.decode("utf-8"))["sites"]["S01"], f"save() {saved}, changes {diff}")
 
 
+def test_gain(app, window, check) -> None:
+    """The electric gain of an EDL row with an archive: its tooltip, and the rebuild asked after a Save that changes it."""
+    path = make_survey()
+    text = path.read_bytes().decode("utf-8").replace("    elevation: 240.0\n", "    elevation: 240.0\n"
+                                                     "    instrument: edl\n", 1)
+    path.write_bytes(text.encode("utf-8"))
+    (path.parent / "work" / "mth5").mkdir(parents=True)
+    (path.parent / "work" / "mth5" / "S02.h5").write_bytes(b"")
+    window.open_survey(path)
+    pump(app)
+    tab = window.metadata_tab
+    cell = find(tab.table, "S02", metadata_edit.ELECTRIC_GAIN)
+    tip = cell.toolTip()
+    check("the electric gain tooltip of S02, which has an archive, says to save and press Rebuild archive",
+          tip == "archive built with the old gain: press Save survey.yaml, then select the site and press Rebuild "
+                 "archive to change it", repr(tip))
+    cell.setText("10")
+    saved = tab.save()
+    pump(app)
+    status = tab.status_label.text()
+    check("after a Save that changed S02's electric gain the status line names S02 and asks for Rebuild archive",
+          saved is True and "the archive of S02 was built before the electric gain changed: select it and press "
+                            "Rebuild archive" in status, f"save() {saved}, status {status!r}")
+
+
 def test_swap_rows(app, window, check) -> None:
     """The swap boxes of a derived, a burst and an observatory row: greyed, the value the site reads, a tooltip."""
     path = make_survey()
@@ -1039,8 +1068,8 @@ def main() -> int:
               f"line shown {shown} ({tab.warning_label.text()!r}), questions {len(asked)}, saved {saved}")
         BOXES.clear()
 
-    for part in (test_form, test_add_sites, test_check, test_save_held, test_swaps, test_swap_rows, test_rebuild,
-                 test_site_column):
+    for part in (test_form, test_add_sites, test_check, test_save_held, test_swaps, test_gain, test_swap_rows,
+                 test_rebuild, test_site_column):
         print(f"{part.__name__}:")
         BOXES.clear()
         ANSWERS.clear()
