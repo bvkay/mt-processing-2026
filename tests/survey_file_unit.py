@@ -55,6 +55,9 @@ Usage:
 - three tampered new texts (a comment reworded; a comment moved to its
   entry's foot; a comment moved from one edited entry into another, both in
   `made`) are not refused by `check`;
+- a key or a site entry written twice in a new text (the old key line kept
+  above the new one, an unasked key line repeated, a copy of another entry
+  or of the new entry at the point of an add) is not refused by `check`;
 - `elevation: true` written in place of 1.0 is not refused by `check` (a value
   `Survey.site` accepts, so only the typed comparison can refuse it);
 - removing the last key of an entry is not refused; the bare header `S09`
@@ -531,6 +534,20 @@ def test_tampered() -> None:
     tampered = new.replace("    elevation: 1.0\n", "    elevation: true\n")
     problems = sf.check(LF, tampered, made)
     check("elevation: true in place of 1.0: refused by check", tampered != new and bool(problems), str(problems))
+
+    new, made, _ = sf.plan(LF, sites={"S01": {"dipole_length_ex": 53.5}})
+    kept_old = new.replace("    dipole_length_ex: 53.5", "    dipole_length_ex: 52.0\n    dipole_length_ex: 53.5")
+    repeated = new.replace("    serial: '036'\n", "    serial: '036'\n    serial: '036'\n")
+    new_add, made_add, _ = sf.plan(LF, add={"S04": {"latitude": -31.4}})
+    copied = new_add + "  S01L:\n    derived_from: S01\n    sample_rate: 1.0\n"
+    doubled = new_add + "  S04:\n    latitude: -31.4\n"
+    for label, old_made, text in (("the old key line kept above the new one", made, kept_old),
+                                  ("an unasked key line written twice", made, repeated),
+                                  ("a copy of the entry S01L at the point of an add", made_add, copied),
+                                  ("the new entry written twice", made_add, doubled)):
+        problems = sf.check(LF, text, old_made)
+        check(f"{label}: refused by check as a key twice", text not in (new, new_add)
+              and any("appears twice" in p for p in problems), str(problems))
 
 
 def test_entries() -> None:

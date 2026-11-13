@@ -603,6 +603,27 @@ def _allowed(old: str, made: dict) -> tuple[list, list]:
     return spans, points
 
 
+class _KeysTwice(yaml.SafeLoader):
+    """A loader that lists every key written twice in one mapping; `yaml.safe_load` keeps the last silently."""
+
+    def construct_mapping(self, node, deep=False):
+        keys = [self.construct_object(k, deep=deep) for k, _v in node.value]
+        self.twice += [(str(key), node.value[i][0].start_mark.line + 1) for i, key in enumerate(keys)
+                       if key in keys[:i]]
+        return super().construct_mapping(node, deep)
+
+
+def _twice(text: str) -> list[tuple[str, int]]:
+    """Return (key, line) of every key that repeats an earlier key of its mapping."""
+    loader = _KeysTwice(text)
+    loader.twice = []
+    try:
+        loader.get_single_data()
+    finally:
+        loader.dispose()
+    return loader.twice
+
+
 def _refusals(config: dict, names: list) -> dict:
     """Return {site: message} for each named site that `Survey.site` refuses, read with no data folder."""
     config = {**config, "data_root": NO_DATA_ROOT}
@@ -624,8 +645,9 @@ def check(old: str, new: str, made: dict) -> list[str]:
     """Compare a new text of survey.yaml with the old one and the edit.
 
     Each item is a separate observation: the new text parses to the old
-    file with `made` applied (key order included); the comment texts are
-    the same list; every line removed, changed or inserted lies inside an
+    file with `made` applied (key order included); no key or site name
+    appears twice that did not before; the comment texts are the same
+    list; every line removed, changed or inserted lies inside an
     edited entry or the defaults block, or at the point where a new entry
     or block goes; every line keeps the file's ending; and `Survey.site`
     reads every site the edit reaches unless it was refused before.
@@ -656,6 +678,9 @@ def check(old: str, new: str, made: dict) -> list[str]:
             problems.append("the order of the keys or the sites would change")
         if not problems:
             problems.append("the parsed file would read differently")
+    twice = _twice(new)
+    if sorted(k for k, _line in twice) != sorted(k for k, _line in _twice(old)):
+        problems.append("a key or site name appears twice: " + ", ".join(f"{k} (line {line})" for k, line in twice))
     if comment_texts(old) != comment_texts(new):
         problems.append("the comments would change (a comment reworded, moved or lost)")
 
