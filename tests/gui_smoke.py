@@ -364,7 +364,8 @@ Usage:
      job's `--workspace` and in the written survey.yaml's `workspace:`), or
      the survey's opening (its workspace has no basemap.json) run
      `<python> scripts/fetch_basemap.py <the new survey.yaml>` through
-     `run_now`; nor does the dialog's "channels recorded" combo offer
+     `run_now`; nor does the dialog's "channels recorded" combo, with the
+     instrument set from "auto (from the files)" to lemi423, offer
      exactly the LEMI-423 presets "Ex Ey Bx By", "Ex Ey Bx By Bz", "Bx By
      (magnetics only)", "Bx By Bz" in that order with "Ex Ey Bx By"
      preselected, and, set to "Ex Ey Bx By Bz", put
@@ -3350,6 +3351,7 @@ def main() -> int:
             QTimer.singleShot(100, fill_dialog)  # exec() has not shown it yet
             return
         dialog.folder_edit.setText(str(raw_root))
+        dialog.instrument_combo.setCurrentText("lemi423")  # the presets are offered for a chosen instrument
         filled["name"] = dialog.name_edit.text()
         filled["timezone"] = dialog.timezone_edit.text()
         filled["workspace"] = dialog.workspace_edit.text()

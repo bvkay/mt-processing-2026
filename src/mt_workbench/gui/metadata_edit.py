@@ -25,20 +25,25 @@ from pathlib import Path
 
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
-    QComboBox, QDialog, QDialogButtonBox, QFileDialog, QGridLayout, QHBoxLayout, QLabel, QLineEdit,
-    QMessageBox, QPushButton,
+    QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox, QFileDialog, QGridLayout, QHBoxLayout, QLabel,
+    QLineEdit, QMessageBox, QPushButton,
 )
 
 from mt_workbench.survey import (
-    CHANNEL_PRESETS, INSTRUMENTS as SURVEY_INSTRUMENTS, SITE_TABLE_COLUMNS, Survey, check_survey_name,
-    default_preset,
+    CHANNEL_PRESETS, INSTRUMENTS as SURVEY_INSTRUMENTS, SITE_TABLE_COLUMNS, SURVEY_NAME_MAX, Survey,
+    check_survey_name, default_preset,
 )
 from mt_workbench.gui.channels_column import UNCHANGED
 from mt_workbench.gui.theme import DISABLED
 
 EDITABLE = tuple(SITE_TABLE_COLUMNS)  # the table's editable columns, the site table's too
-INSTRUMENTS = list(SURVEY_INSTRUMENTS)  # the survey's default; each site's is detected from its files
+AUTO = "auto (from the files)"  # the instrument most common among the site folders, as new_survey.py picks it
+INSTRUMENTS = [AUTO, *SURVEY_INSTRUMENTS]  # the survey's default; each site's is detected from its files
 DEFAULT_TIMEZONE = "Australia/Adelaide"
+# what scripts/new_survey.py writes to defaults: when --dipole-length or --azimuths is not given
+USUAL_DIPOLE_LENGTH = 50.0
+USUAL_AZIMUTHS = (0.0, 90.0)
+PHOENIX_DIPOLES_TIP = "Phoenix receivers record their dipole lengths"
 TABLE_FILTER = "Site table (*.csv *.xlsx *.xls);;All files (*)"
 
 
@@ -157,13 +162,19 @@ class NewSurveyDialog(QDialog):
     """Dialog for the arguments of scripts/new_survey.py.
 
     Collects the data folder, workspace, survey name, instrument, channels
-    recorded, time zone and optional site table. The workspace (archives,
-    TFs, figures) defaults to `<data folder>/work` beside the raw data, since
-    a 100-site survey's archives run to hundreds of GB, and follows the data
-    folder until it is typed over or browsed to. "channels recorded" offers
-    the instrument's presets (`mt_workbench.survey.CHANNEL_PRESETS`, its default
-    preselected) and becomes `--channels`, the survey's
-    `defaults: channels:`.
+    recorded, time zone, the usual dipole length and azimuths, the electric
+    gain of an EDL survey, the logger clock zone of an Orange Box survey and
+    an optional site table. The workspace (archives, TFs, figures) defaults
+    to `<data folder>/work` beside the raw data, since a 100-site survey's
+    archives run to hundreds of GB, and follows the data folder until it is
+    typed over or browsed to. The instrument is `AUTO` by default: the script
+    takes the recorder most common among the site folders, with its default
+    channels. A chosen instrument offers its presets in "channels recorded"
+    (`mt_workbench.survey.CHANNEL_PRESETS`, its default preselected), which
+    becomes `--channels`, the survey's `defaults: channels:`. The azimuths
+    are from magnetic north, as laid out with a compass. The dipole length
+    box is disabled for a Phoenix survey, whose receivers record their
+    dipole lengths.
 
     Args:
         surveys_dir (Path): Folder the survey's own folder is created in.
@@ -185,6 +196,13 @@ class NewSurveyDialog(QDialog):
         self.channels_combo.setToolTip("the columns that had a sensor attached: the survey's defaults, "
                                        "applied at ingest; a site that differs is set on the Metadata table")
         self.timezone_edit = QLineEdit(DEFAULT_TIMEZONE, self)
+        self.dipole_spin = self._spin(0.1, 10000.0, USUAL_DIPOLE_LENGTH)
+        self.azimuth_ex_spin = self._spin(-360.0, 360.0, USUAL_AZIMUTHS[0])
+        self.azimuth_ey_spin = self._spin(-360.0, 360.0, USUAL_AZIMUTHS[1])
+        self.gain_edit = QLineEdit(self)
+        self.gain_edit.setPlaceholderText("empty: 1, no extra gain; e.g. 10 for the x10 terminal box")
+        self.clock_edit = QLineEdit(self)
+        self.clock_edit.setPlaceholderText("empty: UTC; the IANA zone the loggers' clocks ran on, e.g. Australia/Perth")
         self.table_edit = QLineEdit(self)
         self.table_edit.setPlaceholderText("optional: CSV or XLSX, a site column + any editable column")
         self.out_label = QLabel(self)
@@ -202,12 +220,18 @@ class NewSurveyDialog(QDialog):
         instrument_row.addWidget(self.instrument_combo)
         instrument_row.addWidget(QLabel("channels recorded", self))
         instrument_row.addWidget(self.channels_combo, 1)
+        azimuth_row = QHBoxLayout()
+        azimuth_row.addWidget(self.azimuth_ex_spin)
+        azimuth_row.addWidget(self.azimuth_ey_spin)
+        azimuth_row.addStretch(1)
+        rows = [("Data folder", self.folder_edit), ("Workspace folder", self.workspace_edit),
+                ("Survey name", self.name_edit), ("Instrument", instrument_row),
+                ("Time zone (IANA)", self.timezone_edit), ("Usual dipole length (m)", self.dipole_spin),
+                ("Usual azimuths Ex, Ey (deg from magnetic north)", azimuth_row),
+                ("Electric gain (EDL)", self.gain_edit), ("Logger clock zone (Orange Box)", self.clock_edit),
+                ("Site table", self.table_edit)]
         grid = QGridLayout(self)
-        for row, (text, widget) in enumerate([
-            ("Data folder", self.folder_edit), ("Workspace folder", self.workspace_edit),
-            ("Survey name", self.name_edit), ("Instrument", instrument_row),
-            ("Time zone (IANA)", self.timezone_edit), ("Site table", self.table_edit),
-        ]):
+        for row, (text, widget) in enumerate(rows):
             grid.addWidget(QLabel(text, self), row, 0)
             if isinstance(widget, QHBoxLayout):
                 grid.addLayout(widget, row, 1)
@@ -215,24 +239,41 @@ class NewSurveyDialog(QDialog):
                 grid.addWidget(widget, row, 1)
         grid.addWidget(folder_button, 0, 2)
         grid.addWidget(workspace_button, 1, 2)
-        grid.addWidget(table_button, 5, 2)
-        grid.addWidget(self.out_label, 6, 0, 1, 3)
-        grid.addWidget(buttons, 7, 0, 1, 3)
+        grid.addWidget(table_button, len(rows) - 1, 2)
+        grid.addWidget(self.out_label, len(rows), 0, 1, 3)
+        grid.addWidget(buttons, len(rows) + 1, 0, 1, 3)
         grid.setColumnStretch(1, 1)
         self.resize(640, self.sizeHint().height())
 
         self.folder_edit.textChanged.connect(self._folder_changed)
         self.name_edit.textChanged.connect(self._show_out)
         self.instrument_combo.currentTextChanged.connect(self._fill_channels)
+        self.instrument_combo.currentTextChanged.connect(self._dipole_enabled)
         self._fill_channels(self.instrument_combo.currentText())
+        self._dipole_enabled(self.instrument_combo.currentText())
         self._show_out()
 
+    def _spin(self, low: float, high: float, value: float) -> QDoubleSpinBox:
+        """Return a number box of two decimals between `low` and `high`, set to `value`."""
+        spin = QDoubleSpinBox(self)
+        spin.setRange(low, high)
+        spin.setDecimals(2)
+        spin.setValue(value)
+        return spin
+
     def _fill_channels(self, instrument: str) -> None:
-        """Fill the channels combo with the instrument's presets, its default selected."""
+        """Fill the channels combo with the instrument's presets, its default selected; empty and off for `AUTO`."""
         self.channels_combo.clear()
         self.channels_combo.addItems(list(CHANNEL_PRESETS.get(instrument, {})))
         if instrument in CHANNEL_PRESETS:
             self.channels_combo.setCurrentText(default_preset(instrument))
+        self.channels_combo.setEnabled(instrument != AUTO)
+
+    def _dipole_enabled(self, instrument: str) -> None:
+        """Disable the usual dipole length for a Phoenix survey, whose receivers record their lengths."""
+        phoenix = instrument == "phoenix"
+        self.dipole_spin.setEnabled(not phoenix)
+        self.dipole_spin.setToolTip(PHOENIX_DIPOLES_TIP if phoenix else "")
 
     def _pick_folder(self) -> None:
         """Browse for the data folder."""
@@ -265,12 +306,14 @@ class NewSurveyDialog(QDialog):
         return self.surveys_dir / self.name_edit.text().strip() / "survey.yaml"
 
     def _show_out(self) -> None:
-        """Show the path the survey.yaml will be written to."""
+        """Show the path the survey.yaml will be written to, and the name's length when it is too long."""
         name = self.name_edit.text().strip()
-        self.out_label.setText(f"writes {self.out_path()}" if name else "")
+        long = (f" (the name has {len(name)} characters: {SURVEY_NAME_MAX} at most)"
+                if len(name) > SURVEY_NAME_MAX else "")
+        self.out_label.setText(f"writes {self.out_path()}{long}" if name else "")
 
     def _accept(self) -> None:
-        """Accept when the data folder exists and the name can be a new survey's; otherwise warn.
+        """Accept when the data folder exists, the name can be a new survey's and the gain is a number; otherwise warn.
 
         A name `mt_workbench.survey.check_survey_name` refuses is shown with
         its message and the form stays open. A survey that exists keeps its
@@ -289,17 +332,39 @@ class NewSurveyDialog(QDialog):
             except ValueError as exc:
                 QMessageBox.warning(self, "New survey", str(exc))
                 return
+        gain = self.gain_edit.text().strip()
+        try:
+            gain_ok = not gain or float(gain) > 0
+        except ValueError:
+            gain_ok = False
+        if not gain_ok:
+            QMessageBox.warning(self, "New survey", f"Electric gain (EDL) {gain!r} is not a number above 0: type "
+                                                    "the gain alone, such as 10, or leave the box empty.")
+            return
         self.accept()
 
     def values(self) -> dict:
-        """Return the dialog's values; empty optional fields are None."""
+        """Return the dialog's values; empty optional fields are None, and the instrument and channels under `AUTO`.
+
+        The usual dipole length is None when the box is disabled (Phoenix)
+        or reads `USUAL_DIPOLE_LENGTH`, and the azimuths are None when they
+        read `USUAL_AZIMUTHS`, so the command line carries them only when
+        changed.
+        """
+        instrument = self.instrument_combo.currentText()
+        dipole = self.dipole_spin.value()
+        azimuths = (self.azimuth_ex_spin.value(), self.azimuth_ey_spin.value())
         return {
             "data_root": self.folder_edit.text().strip(),
             "workspace": self.workspace_edit.text().strip() or None,
             "name": self.name_edit.text().strip(),
-            "instrument": self.instrument_combo.currentText(),
-            "channels": self.channels_combo.currentText() or None,
+            "instrument": None if instrument == AUTO else instrument,
+            "channels": (self.channels_combo.currentText() or None) if instrument != AUTO else None,
             "timezone": self.timezone_edit.text().strip() or DEFAULT_TIMEZONE,
+            "dipole_length": dipole if self.dipole_spin.isEnabled() and dipole != USUAL_DIPOLE_LENGTH else None,
+            "azimuths": azimuths if azimuths != USUAL_AZIMUTHS else None,
+            "electric_gain": self.gain_edit.text().strip() or None,
+            "clock_timezone": self.clock_edit.text().strip() or None,
             "site_table": self.table_edit.text().strip() or None,
         }
 
@@ -312,14 +377,28 @@ def new_survey_argv(state, values: dict, out: Path) -> list[str]:
         values (dict): `NewSurveyDialog.values()`.
         out (Path): The survey.yaml to write.
 
+    Each optional flag is passed only when its value is given (not None):
+    `--instrument` and `--channels` not under `AUTO`, `--dipole-length` and
+    `--azimuths` only when changed from the usual values, `--electric-gain`
+    and `--clock-timezone` only when filled.
+
     Returns:
         list[str]: The command line.
     """
     argv = [state.python_exe, state.script("new_survey.py"), values["data_root"],
-            "--name", values["name"], "--instrument", values["instrument"],
-            "--timezone", values["timezone"], "--out", str(out)]
+            "--name", values["name"], "--timezone", values["timezone"], "--out", str(out)]
+    if values.get("instrument"):
+        argv += ["--instrument", values["instrument"]]
     if values.get("channels"):
         argv += ["--channels", values["channels"]]
+    if values.get("dipole_length") is not None:
+        argv += ["--dipole-length", str(values["dipole_length"])]
+    if values.get("azimuths") is not None:
+        argv += ["--azimuths", *(str(a) for a in values["azimuths"])]
+    if values.get("electric_gain"):
+        argv += ["--electric-gain", values["electric_gain"]]
+    if values.get("clock_timezone"):
+        argv += ["--clock-timezone", values["clock_timezone"]]
     if values.get("workspace"):
         argv += ["--workspace", values["workspace"]]
     if values.get("site_table"):
