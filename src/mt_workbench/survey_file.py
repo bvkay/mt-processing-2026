@@ -12,8 +12,9 @@ the channel keys of a site that names its own recorder.
 
 `plan` works on the text alone and returns the new text. `check` compares the
 new text with the old one and the request: the parsed file, the comments, the
-lines outside the edited entries, the line endings, and `Survey.site` for
-every site the edit reaches. `commit` writes only when `check` finds nothing,
+lines outside the edited entries, the lines of each edited entry other than
+the keys asked, the line endings, and `Survey.site` for every site the edit
+reaches. `commit` writes only when `check` finds nothing,
 keeps the file as it was in survey.yaml.previous, and moves the new text into
 place from a temporary file. Anything the writer cannot do on the text alone
 raises `SurveyFileRefused`, with a message that says what to fix.
@@ -624,6 +625,51 @@ def _twice(text: str) -> list[tuple[str, int]]:
     return loader.twice
 
 
+def _kept(lines: list[str], made: dict) -> dict:
+    """Return {site, or None for `defaults:`: its lines less the lines of the keys asked} for an edit."""
+    out = {}
+    if made["defaults"] and _block(lines, "defaults") is not None:
+        head, end = _block(lines, "defaults")
+        out[None] = (head, _back_off(lines, head, end, 0), made["defaults"])
+    if made["sites"]:
+        block = _block(lines, "sites")
+        n, entries = _entries(lines, *block) if block else (None, {})
+        for site, keys in made["sites"].items():
+            if len(entries.get(site, [])) != 1:
+                raise SurveyFileRefused(f"site {site!r} is not one entry")
+            head, stop, _rest = entries[site][0]
+            out[site] = (head, _back_off(lines, head, stop, n), keys)
+    for part, (head, stop, keys) in out.items():
+        _m, spans = _key_spans(lines, head, stop, "defaults:" if part is None else f"site {part!r}")
+        asked = {i for key in keys if key in spans for i in range(*spans[key])}
+        out[part] = [lines[i] for i in range(head, stop) if i not in asked]
+    return out
+
+
+def _kept_lines(old: str, new: str, made: dict) -> list[str]:
+    """Return a problem for each edited entry, or `defaults:`, whose lines other than the keys asked differ.
+
+    The lines are found in the old and the new text separately, so a comment
+    moved, a value rewritten or a blank line added inside an edited entry is
+    seen even where the parsed file and the comment list stay the same.
+    """
+    texts = [_lines(old), _lines(new)]
+    nl = _newline(old)
+    for lines in texts:
+        if lines and not lines[-1].endswith("\n"):
+            lines[-1] += nl  # the last line compared with its ending, as the line diff does
+    try:
+        before, after = _kept(texts[0], made), _kept(texts[1], made)
+    except SurveyFileRefused as exc:
+        return [f"the new text: {exc}"]
+    problems = []
+    for part in before:
+        if before[part] != after.get(part):
+            label = "the defaults block" if part is None else f"site {part!r}"
+            problems.append(f"{label}: a line other than those of the keys asked would change")
+    return problems
+
+
 def _refusals(config: dict, names: list) -> dict:
     """Return {site: message} for each named site that `Survey.site` refuses, read with no data folder."""
     config = {**config, "data_root": NO_DATA_ROOT}
@@ -649,7 +695,8 @@ def check(old: str, new: str, made: dict) -> list[str]:
     appears twice that did not before; the comment texts are the same
     list; every line removed, changed or inserted lies inside an
     edited entry or the defaults block, or at the point where a new entry
-    or block goes; every line keeps the file's ending; and `Survey.site`
+    or block goes; inside an edited entry or `defaults:`, every line that
+    is not a line of a key asked stays as it was; every line keeps the file's ending; and `Survey.site`
     reads every site the edit reaches unless it was refused before.
 
     Args:
@@ -683,6 +730,7 @@ def check(old: str, new: str, made: dict) -> list[str]:
         problems.append("a key or site name appears twice: " + ", ".join(f"{k} (line {line})" for k, line in twice))
     if comment_texts(old) != comment_texts(new):
         problems.append("the comments would change (a comment reworded, moved or lost)")
+    problems += _kept_lines(old, new, made)
 
     nl = _newline(old)
     old_lines, new_lines = _lines(old), _lines(new)

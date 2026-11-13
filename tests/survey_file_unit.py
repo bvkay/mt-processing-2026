@@ -54,7 +54,13 @@ Usage:
   the "comment above it stays" summary line;
 - three tampered new texts (a comment reworded; a comment moved to its
   entry's foot; a comment moved from one edited entry into another, both in
-  `made`) are not refused by `check`;
+  `made`) are not refused by `check`; the inline comment of a key asked
+  reworded is not refused by the comment check;
+- a line of an edited entry or of `defaults:` that is not a line of a key
+  asked is changed in a new text (a comment moved below its key, or to the
+  entry's foot with no comment after it; a value rewritten to the same
+  number; trailing blanks on the header; a blank line added) and `check`
+  does not refuse it;
 - a key or a site entry written twice in a new text (the old key line kept
   above the new one, an unasked key line repeated, a copy of another entry
   or of the new entry at the point of an add) is not refused by `check`;
@@ -541,6 +547,30 @@ def test_tampered() -> None:
     new_add, made_add, _ = sf.plan(LF, add={"S04": {"latitude": -31.4}})
     copied = new_add + "  S01L:\n    derived_from: S01\n    sample_rate: 1.0\n"
     doubled = new_add + "  S04:\n    latitude: -31.4\n"
+    new, made, _ = sf.plan(LF, sites={"S02": {"timing": "x"}})
+    below = new.replace("    # measured twice\n    longitude: 140.1\n", "    longitude: 140.1\n    # measured twice\n")
+    foot = new.replace("    # the next key was typed from the sheet\n", "").replace(
+        "    timing: x\n", "    timing: x\n    # the next key was typed from the sheet\n")
+    digits = new.replace("    latitude: -31.1\n", "    latitude: -31.10\n")
+    blanks = new.replace("  S02:\n", "  S02:  \n")
+    extra = new.replace("    longitude: 140.1\n", "    longitude: 140.1\n\n")
+    new_d, made_d, _ = sf.plan(LF, defaults={"clock_timezone": "Australia/Perth"})
+    in_defaults = new_d.replace("  azimuth_ex: 0.0\n", "  azimuth_ex: 0.00\n")
+    for label, old_made, text in (("a comment moved below the key it describes", made, below),
+                                  ("a comment moved to its entry's foot, no comment after it", made, foot),
+                                  ("an unasked value of the edited entry rewritten", made, digits),
+                                  ("trailing blanks on the edited entry's header", made, blanks),
+                                  ("a blank line inserted in the edited entry", made, extra),
+                                  ("an unasked value of defaults: rewritten", made_d, in_defaults)):
+        problems = sf.check(LF, text, old_made)
+        check(f"{label}: refused by check", text not in (new, new_d)
+              and any("other than those of the keys asked" in p for p in problems), str(problems))
+
+    new, made, _ = sf.plan(LF, sites={"S01": {"dipole_length_ex": 53.5}})
+    retold = new.replace("53.5  # taped", "53.5  # taped twice")
+    problems = sf.check(LF, retold, made)
+    check("the inline comment of the key asked reworded: refused by check", retold != new
+          and any("the comments would change" in p for p in problems), str(problems))
     for label, old_made, text in (("the old key line kept above the new one", made, kept_old),
                                   ("an unasked key line written twice", made, repeated),
                                   ("a copy of the entry S01L at the point of an add", made_add, copied),
