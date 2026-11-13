@@ -54,6 +54,8 @@ REPLACE_TRIES = 20
 REPLACE_WAIT_S = 3.0
 # a data_root that cannot exist, so the read-back of `check` opens no data folder
 NO_DATA_ROOT = "<no data root>"
+# how a problem of the read-back by `Survey.site` starts
+READ_BACK = "the survey would no longer read site"
 
 
 class SurveyFileRefused(ValueError):
@@ -227,13 +229,14 @@ def _block(lines: list[str], top: str):
     heads = [i for i, line in enumerate(lines)
              if _content(line) and _indent(line) == 0 and (key := _key(line)) and key[1] == top]
     if len(heads) > 1:
-        raise SurveyFileRefused(f"the file has {len(heads)} top-level '{top}:' lines")
+        raise SurveyFileRefused(f"the file has {len(heads)} top-level '{top}:' lines: join them into one by hand, "
+                                f"then try again")
     if not heads:
         return None
     head = heads[0]
     if _has_value(_key(lines[head])[2]):
-        raise SurveyFileRefused(f"'{top}:' holds its value on its own line ({lines[head].strip()!r}): only a "
-                                f"block of one entry per line is edited")
+        raise SurveyFileRefused(f"'{top}:' has its value on the same line ({lines[head].strip()!r}): put each entry "
+                                f"on lines of its own below it by hand")
     end = next((k for k in range(head + 1, len(lines)) if _content(lines[k]) and _indent(lines[k]) == 0),
                len(lines))
     return head, end
@@ -294,7 +297,7 @@ def _key_spans(lines: list[str], head: int, stop: int, label: str):
             raise SurveyFileRefused(f"{label}: line {k + 1} is not a 'key: value' line at the entry's indent, nor "
                                     f"a '- ' item of a key above with no value")
         if key[1] in spans:
-            raise SurveyFileRefused(f"{label}: key {key[1]} appears twice")
+            raise SurveyFileRefused(f"{label}: key {key[1]} appears twice: delete one of them by hand")
         last, j = k, k + 1
         while j < stop:
             line = lines[j]
@@ -449,7 +452,7 @@ def _locate(lines, block, name):
                                     f"({lines[number].strip()}); quote it by hand first")
         raise SurveyFileRefused(_no_entry(name, entries))
     if len(found) > 1:
-        raise SurveyFileRefused(f"site {name!r} appears twice in sites:")
+        raise SurveyFileRefused(f"site {name!r} appears twice in sites: delete or rename one of them by hand")
     head, stop, rest = found[0]
     if _has_value(rest):
         raise SurveyFileRefused(f"site {name!r} holds its entry on its header line: edit it by hand")
@@ -493,8 +496,8 @@ def plan(text: str, *, sites: dict | None = None, add: dict | None = None,
         raise SurveyFileRefused(f"survey.yaml does not parse: {exc}; fix it by hand first") from exc
     anchors = [t for t in tokens if isinstance(t, (yaml.AnchorToken, yaml.AliasToken))]
     if anchors:
-        raise SurveyFileRefused(f"survey.yaml uses YAML anchors or aliases (line {anchors[0].start_mark.line + 1}): "
-                                f"the writer edits plain files only; edit it by hand")
+        raise SurveyFileRefused(f"survey.yaml uses YAML anchors or aliases (line {anchors[0].start_mark.line + 1}), "
+                                f"which an edit here cannot keep: edit it by hand")
     merges = [t for key, t in zip(tokens, tokens[1:]) if isinstance(key, yaml.KeyToken)
               and isinstance(t, yaml.ScalarToken) and t.plain and t.value == "<<"]
     if merges:
@@ -568,7 +571,7 @@ def plan(text: str, *, sites: dict | None = None, add: dict | None = None,
             block = (len(lines) - 1, len(lines))
         n, all_entries = _entries(lines, *block)
         if name in all_entries:
-            raise SurveyFileRefused(f"site {name!r} already has an entry")
+            raise SurveyFileRefused(f"site {name!r} already has an entry: leave out --add to change its keys")
         entry = {k: v for k, v in _lean(dict(values), new_defaults, {}).items() if v is not REMOVE}
         if not entry:
             raise SurveyFileRefused(f"site {name!r} would get an empty entry (every value equals defaults:): give "
@@ -794,7 +797,7 @@ def check(old: str, new: str, made: dict) -> list[str]:
     if made["defaults"]:
         names = list(dict.fromkeys(list(new_config.get("sites") or {}) + names))
     before, after = _refusals(old_config, names), _refusals(new_config, names)
-    problems += [f"{s}: Survey.site would refuse it: {after[s]}" for s in names if s in after and s not in before]
+    problems += [f"{READ_BACK} {s}: {after[s]}; change that value" for s in names if s in after and s not in before]
     return problems
 
 
@@ -835,7 +838,10 @@ def commit(path, old: str, new: str, made: dict, *, dry_run: bool = False) -> Ed
         return Edit(path, False, None, made)
     problems = check(old, new, made)
     if problems:
-        raise SurveyFileRefused("survey.yaml was not written: " + "; ".join(problems))
+        if all(p.startswith(READ_BACK) for p in problems):  # a value the survey cannot read: the student's to change
+            raise SurveyFileRefused("survey.yaml was not written: " + "; ".join(problems))
+        raise SurveyFileRefused("survey.yaml was not written; this is a fault of the edit, not of your file: keep this "
+                                "message and report it: " + "; ".join(problems))
     if dry_run:
         return Edit(path, False, None, made)
     planned = old.encode("utf-8")

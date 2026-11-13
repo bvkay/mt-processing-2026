@@ -82,10 +82,12 @@ Usage:
   key with an alias and one with a flow mapping, two `sites:` lines, a
   value with a line break (LF, CR LF, U+0085, U+2028 or U+2029, also in a
   list item), a line that is not a key at the entry's indent, a mistyped
-  site name, a site asked of a file with no `sites:` block) writes
+  site name, a site asked of a file with no `sites:` block, a key written
+  twice in the entry edited, an add of a site that has an entry) writes
   anything, or its message does not name the site, the line or the shape
-  (the closest entries for a mistyped name); or another entry of the file
-  with the flow entry cannot be edited;
+  (the closest entries for a mistyped name) and, for the shapes a student
+  fixes by hand, what to do; or another entry of the file with the flow
+  entry cannot be edited;
 - after a write, survey.yaml.previous is not the old bytes, or a `*.tmp`
   file is left; with `os.replace` raising PermissionError twice the third
   try does not succeed; with survey.yaml read-only the commit is not refused
@@ -93,7 +95,8 @@ Usage:
   after the flag is cleared the next commit fails;
 - `commit` with a new text that also changes another site (a tampered
   text) does not refuse with the file untouched, or makes
-  survey.yaml.previous;
+  survey.yaml.previous, or its message does not say that the fault is in
+  the edit and not in the file;
 - the file changed between `plan` and `commit` is not refused before
   survey.yaml.previous is made.
 
@@ -223,13 +226,18 @@ REFUSED = {  # name: (text, request, a fragment the message holds)
                                 {"sites": {"S01": {"channels": ["hx", "hy"]}}},
                                 "the value of channels in S01 carries a comment"),
     "duplicate site": (HEAD + "sites:\n  S01:\n    latitude: 1.0\n  S01:\n    latitude: 3.0\n",
-                       {"sites": {"S01": {"latitude": 2.0}}}, "'S01' appears twice"),
+                       {"sites": {"S01": {"latitude": 2.0}}}, "'S01' appears twice in sites: delete or rename one"),
+    "duplicate key": (HEAD + "sites:\n  S01:\n    latitude: 1.0\n    latitude: 3.0\n",
+                      {"sites": {"S01": {"elevation": 2.0}}}, "key latitude appears twice: delete one of them by hand"),
+    "an add of a site with an entry": (HEAD + "sites:\n  S01:\n    latitude: 1.0\n", {"add": {"S01": {"elevation": 2.0}}},
+                                       "already has an entry: leave out --add to change its keys"),
     "mixed endings": ("name: t\r\ndata_root: X\nsites:\n  S01:\n    latitude: 1.0\n",
                       {"sites": {"S01": {"latitude": 2.0}}}, "mixes CRLF (1) and LF (4)"),
     "tab": (HEAD + "sites:\n  S01:\n\tlatitude: 1.0\n", {"sites": {"S01": {"latitude": 2.0}}}, "line 7"),
-    "sites: {}": (HEAD + "sites: {}\n", {"add": {"S01": {"latitude": 2.0}}}, "'sites: {}'"),
+    "sites: {}": (HEAD + "sites: {}\n", {"add": {"S01": {"latitude": 2.0}}},
+                  "'sites:' has its value on the same line ('sites: {}'): put each entry on lines of its own"),
     "anchors": ("name: t\ndata_root: X\ndefaults: &d\n  dipole_length_ex: 50.0\nsites:\n  S01:\n    latitude: 1.0\n",
-                {"sites": {"S01": {"latitude": 2.0}}}, "anchors or aliases (line 3)"),
+                {"sites": {"S01": {"latitude": 2.0}}}, "anchors or aliases (line 3), which an edit here cannot keep"),
     "merge key": ("name: t\ndata_root: X\nbase: &d\n  latitude: 1.0\nsites:\n  S01:\n    <<: *d\n",
                   {"sites": {"S01": {"latitude": 2.0}}}, "anchors or aliases (line 3)"),
     "merge key without an alias": (HEAD + "sites:\n  S01:\n    latitude: 1.0\n  S02:\n    <<: {serial: '1'}\n",
@@ -239,7 +247,8 @@ REFUSED = {  # name: (text, request, a fragment the message holds)
     "a site and no sites: block": (HEAD, {"sites": {"S01": {"latitude": 2.0}}},
                                    "site 'S01' has no entry in survey.yaml: check the spelling"),
     "two sites: lines": (HEAD + "sites:\n  S01:\n    latitude: 1.0\nsites:\n  S02:\n    latitude: 1.0\n",
-                         {"sites": {"S01": {"latitude": 2.0}}}, "2 top-level 'sites:' lines"),
+                         {"sites": {"S01": {"latitude": 2.0}}},
+                         "2 top-level 'sites:' lines: join them into one by hand"),
     "line break": (HEAD + "sites:\n  S01:\n    latitude: 1.0\n", {"sites": {"S01": {"notes": "a\nb"}}},
                    "line break"),
     "carriage return and line feed": (HEAD + "sites:\n  S01:\n    latitude: 1.0\n",
@@ -705,8 +714,9 @@ def test_commit() -> None:
     new, made, _ = sf.plan(LF, sites={"S01": {"timing": "x"}})
     tampered = new.replace("    latitude: -31.2\n", "    latitude: -31.3\n")
     message = refused(lambda: sf.commit(path, LF, tampered, made))
-    check("commit of a text that also changes another site: refused, file untouched, no earlier copy made",
-          tampered != new and message is not None and read(path) == LF
+    check("commit of a text that also changes another site: refused as a fault of the edit, file untouched, no "
+          "earlier copy made", tampered != new and message is not None and "a fault of the edit" in message
+          and read(path) == LF
           and not (path.parent / "survey.yaml.previous").exists(), str(message))
 
     path = put("meanwhile", LF)
