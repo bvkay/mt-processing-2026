@@ -81,10 +81,11 @@ Usage:
   duplicate site, mixed line endings, a tab, `sites: {}`, anchors, a merge
   key with an alias and one with a flow mapping, two `sites:` lines, a
   value with a line break (LF, CR LF, U+0085, U+2028 or U+2029, also in a
-  list item), a line that is not a key at the entry's indent) writes
-  anything, or its message does not name
-  the site, the line or the shape; or another entry of the file with the
-  flow entry cannot be edited;
+  list item), a line that is not a key at the entry's indent, a mistyped
+  site name, a site asked of a file with no `sites:` block) writes
+  anything, or its message does not name the site, the line or the shape
+  (the closest entries for a mistyped name); or another entry of the file
+  with the flow entry cannot be edited;
 - after a write, survey.yaml.previous is not the old bytes, or a `*.tmp`
   file is left; with `os.replace` raising PermissionError twice the third
   try does not succeed; with survey.yaml read-only the commit is not refused
@@ -232,6 +233,10 @@ REFUSED = {  # name: (text, request, a fragment the message holds)
                   {"sites": {"S01": {"latitude": 2.0}}}, "anchors or aliases (line 3)"),
     "merge key without an alias": (HEAD + "sites:\n  S01:\n    latitude: 1.0\n  S02:\n    <<: {serial: '1'}\n",
                                    {"sites": {"S01": {"latitude": 2.0}}}, "merge key (<<) on line 9"),
+    "mistyped site name": (HEAD + "sites:\n  S01:\n    latitude: 1.0\n", {"sites": {"S1": {"latitude": 2.0}}},
+                           "site 'S1' has no entry in survey.yaml (closest: S01): check the spelling"),
+    "a site and no sites: block": (HEAD, {"sites": {"S01": {"latitude": 2.0}}},
+                                   "site 'S01' has no entry in survey.yaml: check the spelling"),
     "two sites: lines": (HEAD + "sites:\n  S01:\n    latitude: 1.0\nsites:\n  S02:\n    latitude: 1.0\n",
                          {"sites": {"S01": {"latitude": 2.0}}}, "2 top-level 'sites:' lines"),
     "line break": (HEAD + "sites:\n  S01:\n    latitude: 1.0\n", {"sites": {"S01": {"notes": "a\nb"}}},

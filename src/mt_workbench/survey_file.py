@@ -429,6 +429,13 @@ def _edit_defaults(lines, changes, nl, summary) -> list[str]:
     return lines[:at] + new + lines[at:]
 
 
+def _no_entry(name, entries: dict) -> str:
+    """The refusal for a site with no entry, naming the entries closest to a mistyped name."""
+    close = difflib.get_close_matches(name, [k for k in entries if isinstance(k, str)], n=3)
+    return (f"site {name!r} has no entry in survey.yaml" + (f" (closest: {', '.join(close)})" if close else "")
+            + ": check the spelling; a site folder with no entry is added with Add sites")
+
+
 def _locate(lines, block, name):
     """Return (header, end) of a site's entry, refusing a name the writer cannot edit safely."""
     _n, entries = _entries(lines, *block)
@@ -439,8 +446,7 @@ def _locate(lines, block, name):
         if number is not None:
             raise SurveyFileRefused(f"site {name!r} is written as a number in survey.yaml "
                                     f"({lines[number].strip()}); quote it by hand first")
-        raise SurveyFileRefused(f"site {name!r} has no entry: add it first (Add sites, or scripts/new_survey.py "
-                                f"again)")
+        raise SurveyFileRefused(_no_entry(name, entries))
     if len(found) > 1:
         raise SurveyFileRefused(f"site {name!r} appears twice in sites:")
     head, stop, rest = found[0]
@@ -529,8 +535,7 @@ def plan(text: str, *, sites: dict | None = None, add: dict | None = None,
     if requests:
         block = _block(lines, "sites")
         if block is None:
-            raise SurveyFileRefused(f"site {next(iter(requests))!r} has no entry: add it first (Add sites, or "
-                                    f"scripts/new_survey.py again)")
+            raise SurveyFileRefused(_no_entry(next(iter(requests)), {}))
         n, all_entries = _entries(lines, *block)
         offset = _key_offset(lines, all_entries, n)
         places = {name: _locate(lines, block, name) for name in requests}
