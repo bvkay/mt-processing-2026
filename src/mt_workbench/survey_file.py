@@ -852,9 +852,9 @@ def commit(path, old: str, new: str, made: dict, *, dry_run: bool = False) -> Ed
                 return Edit(path, True, previous, made)
             except PermissionError as exc:
                 if attempt == REPLACE_TRIES - 1:
-                    raise SurveyFileRefused(f"survey.yaml could not be replaced ({exc}): close the program that "
-                                            f"holds it or clear its read-only flag, then save again; nothing "
-                                            f"written") from exc
+                    raise SurveyFileRefused("survey.yaml is open in another program or read-only, so it was not "
+                                            "saved: close that program (or clear the read-only flag) and save "
+                                            "again") from exc
                 time.sleep(REPLACE_WAIT_S)
     finally:
         if os.path.exists(temporary):

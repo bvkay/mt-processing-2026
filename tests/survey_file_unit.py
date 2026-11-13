@@ -89,7 +89,8 @@ Usage:
 - after a write, survey.yaml.previous is not the old bytes, or a `*.tmp`
   file is left; with `os.replace` raising PermissionError twice the third
   try does not succeed; with survey.yaml read-only the commit is not refused
-  with the file intact, or after the flag is cleared the next commit fails;
+  with the file intact and a message that names no temporary file, or
+  after the flag is cleared the next commit fails;
 - `commit` with a new text that also changes another site (a tampered
   text) does not refuse with the file untouched, or makes
   survey.yaml.previous;
@@ -692,7 +693,9 @@ def test_commit() -> None:
         intact = read(path) == before and not list(path.parent.glob("*.tmp"))
     finally:
         os.chmod(path, stat.S_IREAD | stat.S_IWRITE)
-    check("a read-only survey.yaml: refused with the file intact", message is not None and intact, str(message))
+    check("a read-only survey.yaml: refused with the file intact and a message that says what to do",
+          message is not None and intact and "open in another program or read-only" in message
+          and ".tmp" not in message, str(message))
     result = sf.edit(path, sites={"S02": {"timing": "three"}})
     check("after the flag is cleared the next commit writes", result.written
           and yaml.safe_load(read(path))["sites"]["S02"]["timing"] == "three", "")
