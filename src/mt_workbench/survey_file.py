@@ -16,7 +16,7 @@ lines outside the edited entries, the lines of each edited entry other than
 the keys asked, the line endings, and `Survey.site` for every site the edit
 reaches. `commit` writes only when `check` finds nothing,
 keeps the file as it was in survey.yaml.previous, and moves the new text into
-place from a temporary file. Anything the writer cannot do on the text alone
+place from a temporary file. An edit that cannot be made on the text alone
 raises `SurveyFileRefused`, with a message that says what to fix.
 
 @author: ben kay (ben@auscope.org.au)
@@ -59,7 +59,7 @@ READ_BACK = "the survey would no longer read site"
 
 
 class SurveyFileRefused(ValueError):
-    """The writer will not make this edit; the file is left as it was. The message says why and what to do."""
+    """This edit is refused; the file is left as it was. The message says why and what to do."""
 
 
 @dataclass
@@ -87,7 +87,7 @@ def same(a, b) -> bool:
 
     A bool equals only a bool, int and float compare as numbers, lists
     item by item, mappings key by key in order; anything else needs the
-    same type and ``==``. Plain ``==`` takes ``True == 1.0``.
+    same type and ``==``. Plain ``==`` counts ``True == 1.0`` as equal.
     """
     if isinstance(a, bool) or isinstance(b, bool):
         return isinstance(a, bool) and isinstance(b, bool) and a == b
@@ -441,7 +441,7 @@ def _no_entry(name, entries: dict) -> str:
 
 
 def _locate(lines, block, name):
-    """Return (header, end) of a site's entry, refusing a name the writer cannot edit safely."""
+    """Return (header, end) of a site's entry, refusing a name that cannot be edited safely."""
     _n, entries = _entries(lines, *block)
     found = entries.get(name, [])
     if not found:
@@ -485,8 +485,8 @@ def plan(text: str, *, sites: dict | None = None, add: dict | None = None,
         tuple: (new text, made, summary), as `Edit` holds them.
 
     Raises:
-        SurveyFileRefused: If the file or the request is one the writer
-            does not edit; the message says what to do.
+        SurveyFileRefused: If the file or the request cannot be edited
+            safely on the text alone; the message says what to do.
     """
     nl = _newline(text)
     try:

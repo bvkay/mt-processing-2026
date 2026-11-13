@@ -19,10 +19,8 @@ is a dry run that prints the sites it reaches unless `--yes` is given. A
 change of a usual dipole length or azimuth writes the old value into each
 site that took it, so no site's dipoles move.
 
-Exit status: 0 written, nothing to change, or a dry run; 2 refused (the
-message says why and what to do).
-
-Usage:
+Usage (exit status 0 when written, nothing to change or a dry run; 2 when
+refused, with a message that says why and what to do):
     python scripts/survey_set.py <survey.yaml> SITE key=value [key=value ...] [--add]
     python scripts/survey_set.py <survey.yaml> defaults key=value [key=value ...] [--yes]
 

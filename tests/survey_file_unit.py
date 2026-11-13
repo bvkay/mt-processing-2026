@@ -4,7 +4,7 @@ Unit test for mt_workbench.survey_file
 
 Edits synthetic survey files built here (LF, CRLF, Kalkaroo-like groups, a
 file with no defaults: block, a note with a euro sign, and one file per shape
-the writer refuses) and copies of the eight survey files tracked in the
+that is refused) and copies of the eight survey files tracked in the
 repository, all in the test's scratch folder, and judges every edit by its own
 reading of the text: the line diff against the entry span found here, the
 own-line comments, the line endings, the parsed file and `Survey.site` of
