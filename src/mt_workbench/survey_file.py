@@ -459,12 +459,18 @@ def plan(text: str, *, sites: dict | None = None, add: dict | None = None,
     nl = _newline(text)
     try:
         config = yaml.safe_load(text) or {}
-        anchors = [t for t in yaml.scan(text) if isinstance(t, (yaml.AnchorToken, yaml.AliasToken))]
+        tokens = list(yaml.scan(text))
     except yaml.YAMLError as exc:
         raise SurveyFileRefused(f"survey.yaml does not parse: {exc}; fix it by hand first") from exc
+    anchors = [t for t in tokens if isinstance(t, (yaml.AnchorToken, yaml.AliasToken))]
     if anchors:
         raise SurveyFileRefused(f"survey.yaml uses YAML anchors or aliases (line {anchors[0].start_mark.line + 1}): "
                                 f"the writer edits plain files only; edit it by hand")
+    merges = [t for key, t in zip(tokens, tokens[1:]) if isinstance(key, yaml.KeyToken)
+              and isinstance(t, yaml.ScalarToken) and t.plain and t.value == "<<"]
+    if merges:
+        raise SurveyFileRefused(f"survey.yaml uses a YAML merge key (<<) on line {merges[0].start_mark.line + 1}: "
+                                f"edit it by hand")
     if not isinstance(config, dict):
         raise SurveyFileRefused("survey.yaml is not a block of 'key: value' lines: edit it by hand")
     entries = _mapping(config, "sites")
@@ -608,9 +614,9 @@ class _KeysTwice(yaml.SafeLoader):
     """A loader that lists every key written twice in one mapping; `yaml.safe_load` keeps the last silently."""
 
     def construct_mapping(self, node, deep=False):
-        keys = [self.construct_object(k, deep=deep) for k, _v in node.value]
-        self.twice += [(str(key), node.value[i][0].start_mark.line + 1) for i, key in enumerate(keys)
-                       if key in keys[:i]]
+        nodes = [k for k, _v in node.value if k.tag != "tag:yaml.org,2002:merge"]  # '<<' has no constructor
+        keys = [self.construct_object(k, deep=deep) for k in nodes]
+        self.twice += [(str(key), nodes[i].start_mark.line + 1) for i, key in enumerate(keys) if key in keys[:i]]
         return super().construct_mapping(node, deep)
 
 

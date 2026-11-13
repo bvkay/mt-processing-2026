@@ -72,8 +72,9 @@ Usage:
   rewritten;
 - a refused shape (a flow entry on its header, an unquoted numeric name, a
   duplicate site, mixed line endings, a tab, `sites: {}`, anchors, a merge
-  key, two `sites:` lines, a value with a line break, a line that is not a
-  key at the entry's indent) writes anything, or its message does not name
+  key with an alias and one with a flow mapping, two `sites:` lines, a
+  value with a line break, a line that is not a key at the entry's indent)
+  writes anything, or its message does not name
   the site, the line or the shape; or another entry of the file with the
   flow entry cannot be edited;
 - after a write, survey.yaml.previous is not the old bytes, or a `*.tmp`
@@ -219,6 +220,8 @@ REFUSED = {  # name: (text, request, a fragment the message holds)
                 {"sites": {"S01": {"latitude": 2.0}}}, "anchors or aliases (line 3)"),
     "merge key": ("name: t\ndata_root: X\nbase: &d\n  latitude: 1.0\nsites:\n  S01:\n    <<: *d\n",
                   {"sites": {"S01": {"latitude": 2.0}}}, "anchors or aliases (line 3)"),
+    "merge key without an alias": (HEAD + "sites:\n  S01:\n    latitude: 1.0\n  S02:\n    <<: {serial: '1'}\n",
+                                   {"sites": {"S01": {"latitude": 2.0}}}, "merge key (<<) on line 9"),
     "two sites: lines": (HEAD + "sites:\n  S01:\n    latitude: 1.0\nsites:\n  S02:\n    latitude: 1.0\n",
                          {"sites": {"S01": {"latitude": 2.0}}}, "2 top-level 'sites:' lines"),
     "line break": (HEAD + "sites:\n  S01:\n    latitude: 1.0\n", {"sites": {"S01": {"notes": "a\nb"}}},
