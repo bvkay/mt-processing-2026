@@ -39,6 +39,9 @@ else what its folder holds, else the survey's `instrument:`.
 
 - The columns Bx By Bz E1 E2 E3 E4 are stored as hx hy hz ex ey e3 e4, the
   electrics in mV/km as the logger writes them: no dipole length is applied.
+- A new LEMI-424 survey declares `E1 E2 Bx By Bz`; the other choice is
+  `E1 E2 E3 E4 Bx By Bz`, and a site that differs carries its own
+  `channels:`.
 - E1 and E2 are recorded with the opposite sign to x north, y east. The
   samples stay as written, and the sign is a stage of each electric chain
   (`e_sign`).

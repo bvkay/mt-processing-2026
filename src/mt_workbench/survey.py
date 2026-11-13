@@ -324,8 +324,9 @@ CHANNEL_PRESETS: dict[str, dict[str, list[str]]] = {
         "Bx By Bz": ["hx", "hy", "hz"],
     },
     "lemi424": {
-        "E1 E2 E3 E4 Bx By Bz": ["ex", "ey", "e3", "e4", "hx", "hy", "hz"],
+        # two electric channels at most sites; a site with four carries its own `channels:`
         "E1 E2 Bx By Bz": ["ex", "ey", "hx", "hy", "hz"],
+        "E1 E2 E3 E4 Bx By Bz": ["ex", "ey", "e3", "e4", "hx", "hy", "hz"],
         "Bx By Bz": ["hx", "hy", "hz"],
     },
     "edl": {

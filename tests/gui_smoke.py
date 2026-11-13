@@ -478,10 +478,11 @@ Usage:
      window each, "2024-10-25 00:00 UTC (1.0 h)" and "2019-01-10 00:00 UTC
      (1.0 h)" (a one-hour record under the 24 h window `window_hours` gives
      both 1 Hz and 10 Hz);
-(30) a click on MBJ21's window does not, within 60 s, draw seven panels,
-     hx hy hz ex ey e3 e4 top to bottom, left labels starting "Bx (", "By (",
-     "Bz (", "Ex (", "Ey (", "E3 (", "E4 (", pens #4fc3f7 on the three
-     magnetics and #ff5252 on the four electrics, whose Ex curve equals
+(30) a click on MBJ21's window does not, within 60 s, draw five panels,
+     hx hy hz ex ey top to bottom (its declared channels, the LEMI-424
+     default), left labels starting "Bx (", "By (", "Bz (", "Ex (",
+     "Ey (", pens #4fc3f7 on the three magnetics and #ff5252 on the two
+     electrics, whose Ex curve equals
      (atol 1e-6 of its spread) minus the 12th column (E1) of the sample file
      read here with numpy, while the archive's ex samples equal that column
      itself (the logger's words; the e_sign convention -1 is the stage
@@ -491,7 +492,7 @@ Usage:
      finite positive curves in exactly one magnetic and one electric pen (no
      remote), the Coherence tab's local panels labelled "By-Ex (Zxy)",
      "Bx-Ey (Zyx)", "Bx-By (magnetic)" and "Ex-Ey (electric)", and the
-     Spectrogram tab one image per channel, hx .. e4, labelled by `label`;
+     Spectrogram tab one image per channel, hx .. ey, labelled by `label`;
 (31) a click on EGFLP02's window does not draw five panels, hx hy hz ex ey,
      labelled "Bx (", "By (", "Bz (", "Ex (", "Ey (", pens blue, blue, blue,
      red, red, whose Ex curve equals the sample's EX file (recorded
@@ -1157,8 +1158,7 @@ def make_survey_copy() -> Path:
 # (30)/(31): the panels a LEMI-424 and an EDL window must draw, stated here rather than taken from the GUI
 MIXED_SITES = {"S01": "lemi423", "MBJ21": "lemi424", "EGFLP02": "edl"}
 LEMI424_PANELS = [("hx", "Bx", theme.B_COLOUR), ("hy", "By", theme.B_COLOUR), ("hz", "Bz", theme.B_COLOUR),
-                  ("ex", "Ex", theme.E_COLOUR), ("ey", "Ey", theme.E_COLOUR), ("e3", "E3", theme.E_COLOUR),
-                  ("e4", "E4", theme.E_COLOUR)]
+                  ("ex", "Ex", theme.E_COLOUR), ("ey", "Ey", theme.E_COLOUR)]
 EDL_PANELS = [("hx", "Bx", theme.B_COLOUR), ("hy", "By", theme.B_COLOUR), ("hz", "Bz", theme.B_COLOUR),
               ("ex", "Ex", theme.E_COLOUR), ("ey", "Ey", theme.E_COLOUR)]
 EDL_EX_GAIN = -50.0 * 10.0  # the reader's dipole filter (-L, L = 50 m) times the x10 terminal box

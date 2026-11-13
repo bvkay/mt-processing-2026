@@ -104,7 +104,7 @@ them from MBJ21, LEMI-424, and EGFLP02, EDL, into the scratch folder and
 into that survey's scratch workspace fails the test if the archive does not
 open read-only with exactly one run, named sr1_0001 (LEMI-424) / sr10_0001
 (EDL), whose channels are exactly the stored names the survey declares
-(ex ey e3 e4 hx hy hz, no temperature channel / ex ey hx hy hz) at 1.0 /
+(ex ey hx hy hz, no temperature channel / ex ey hx hy hz) at 1.0 /
 10.0 Hz with 3600 / 36000 samples from 2024-10-25T00:00:00 / 2019-01-10T00:00:00
 UTC; if the EDL hx chain is not the reader's Bartington coefficient
 (142.857 nT -> uV) or the LEMI-424 ex chain is not the one stage
@@ -978,7 +978,7 @@ def test_new_instruments_one_hour() -> None:
     survey = Survey.from_yaml(instrument_samples.MIXED_YAML)
     assert survey.workspace.is_relative_to(instrument_samples.SCRATCH), survey.workspace
     cases = (
-        ("MBJ21", "lemi424", "sr1_0001", ["ex", "ey", "e3", "e4", "hx", "hy", "hz"], 1.0, 3600,
+        ("MBJ21", "lemi424", "sr1_0001", ["ex", "ey", "hx", "hy", "hz"], 1.0, 3600,
          "2024-10-25T00:00:00", "ex", instrument_samples.LEMI424_FILE, 11),
         ("EGFLP02", "edl", "sr10_0001", ["ex", "ey", "hx", "hy", "hz"], 10.0, 36000,
          "2019-01-10T00:00:00", "ex", f"{instrument_samples.EDL_DAY}/{instrument_samples.EDL_STAMP}.EX", None),

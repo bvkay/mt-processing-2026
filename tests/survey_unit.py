@@ -26,7 +26,10 @@ declare `Australia/Adelaide` **above** their `sites:` block, where
 file unchanged; or the channel presets (`CHANNEL_PRESETS`, `preset_label`,
 `channels_from_label`) break: a preset of either instrument does not round
 trip label -> list -> label; the LEMI-423 default (the first preset) is not
-"Ex Ey Bx By" = [ex, ey, hx, hy]; the same set in another order or case does
+"Ex Ey Bx By" = [ex, ey, hx, hy]; the LEMI-424 default is not "E1 E2 Bx By
+Bz" = [ex, ey, hx, hy, hz] with "E1 E2 E3 E4 Bx By Bz" the second preset
+(a LEMI-424 site records two electric channels at most surveys); the same
+set in another order or case does
 not get the preset's label; "Bx By Bz" does not mean hx hy hz on a LEMI-423
 and on a LEMI-424 (stored names); a custom list is not written "a, b, c" and read
 back unchanged; a typed "hx hy" is not [hx, hy]; None is not "all columns"
@@ -264,6 +267,9 @@ def test_channel_presets() -> None:
         print(f"  {instrument}: {len(presets)} presets round trip; default {default_preset(instrument)!r}")
     assert default_preset("lemi423") == "Ex Ey Bx By"
     assert default_preset("edl") == "Ex Ey Bx By Bz"
+    assert list(CHANNEL_PRESETS["lemi424"])[:2] == ["E1 E2 Bx By Bz", "E1 E2 E3 E4 Bx By Bz"], \
+        list(CHANNEL_PRESETS["lemi424"])
+    assert channels_from_label(default_preset("lemi424"), "lemi424") == ["ex", "ey", "hx", "hy", "hz"]
     assert channels_from_label("Ex Ey Bx By Bz", "edl") == ["ex", "ey", "hx", "hy", "hz"]
     assert channels_from_label("Ex Ey Bx By", "lemi423") == ["ex", "ey", "hx", "hy"]
     assert preset_label(["HX", "hy", "Ey", "ex"], "lemi423") == "Ex Ey Bx By"
