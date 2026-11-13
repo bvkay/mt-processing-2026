@@ -108,7 +108,9 @@ This test fails if:
   raw data? The present archive is replaced." with the sentence on the
   filtered variant for a site with declared filters; or the command it
   queues is anything but `<python> scripts/ingest_site.py <survey.yaml> S02
-  --force`; or the status line does not report the finished job;
+  --force`; or the status line does not report the finished job; or,
+  after the job, the archive and dc level cells of S02 do not read the
+  archive as it is, or an unsaved edit of S01 is dropped;
 - with S02L, S02D and S02SL derived from S02 and holding archives (and
   S02X derived from it with none), the question of Rebuild archive and the
   status line after a Save that changed S02's swap do not name S02L with
@@ -699,6 +701,19 @@ def test_rebuild(app, window, check) -> None:
     tab._job_finished(len(state.runner.jobs) - 1, True)
     check("the status line reports the finished rebuild", tab.status_label.text() == "rebuilt S02.h5 from its raw data",
           repr(tab.status_label.text()))
+    # the finished job refreshes the archive and dc level cells of S02 and keeps an unsaved edit of S01
+    was = find(tab.table, "S01", "dipole_length_ex").text()
+    find(tab.table, "S01", "dipole_length_ex").setText("44")
+    (mth5 / "S02.h5").unlink()  # the archive as the job left it: here, none
+    state.runner.jobs.append(metadata_edit_job("rebuild MTH5 S02", []))
+    tab._job_finished(len(state.runner.jobs) - 1, True)
+    cells = (find(tab.table, "S02", "archive").text(), find(tab.table, "S02", "dc level").text())
+    edits = tab.pending()
+    check("after a rebuild job the archive and dc level cells of S02 read the archive as it is, and the unsaved "
+          "edit of S01 is kept", cells == ("no", "-") and edits == {"S01": {"dipole_length_ex": 44.0}},
+          f"cells {cells}, unsaved {edits}")
+    (mth5 / "S02.h5").write_bytes(b"")
+    find(tab.table, "S01", "dipole_length_ex").setText(was)
     (path.parent / "filters.yaml").unlink()
     window.open_survey(path)
     pump(app)

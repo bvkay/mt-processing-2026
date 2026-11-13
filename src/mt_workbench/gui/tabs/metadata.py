@@ -910,12 +910,33 @@ class MetadataTab(QWidget):
         self._update_rebuild()
         return index
 
+    def _refresh_archive_cells(self, site: str) -> None:
+        """Read the archive and dc level cells of one row again; the other cells, edited or not, stay as they are."""
+        row = next((r for r in range(self.table.rowCount()) if self.table.item(r, 0).text() == site), None)
+        if row is None or self.state.survey is None:
+            return
+        archived = self.state.has_archive(site)
+        sorting = self.table.isSortingEnabled()
+        self.table.setSortingEnabled(False)  # the row stays where it is while its cells are replaced
+        self.table.blockSignals(True)
+        self.table.setItem(row, COLUMNS.index("archive"), _yes_no(archived))
+        self.table.setItem(row, COLUMNS.index(DC_LEVEL), _dc_level_item(
+            self.state.survey.name, site, self.state.archive_path(site) if archived else None))
+        self.table.blockSignals(False)
+        self.table.setSortingEnabled(sorting)
+        self._update_rebuild()
+
     def _job_finished(self, index: int, ok: bool) -> None:
-        """Open what a New survey or Add sites job wrote, and report an Add sites or Rebuild archive job."""
+        """Open what a New survey or Add sites job wrote, and report an Add sites or Rebuild archive job.
+
+        A Rebuild archive job refreshes the archive and dc level cells of its
+        site's row alone, so unsaved edits of the table are kept.
+        """
         metadata_edit.handle_new_survey_finished(self, self.state, index, ok)
         job = self.state.runner.jobs[index] if 0 <= index < len(self.state.runner.jobs) else None
         if job is not None and job.label.startswith(REBUILD):
             site = job.label[len(REBUILD):].strip()
+            self._refresh_archive_cells(site)
             self._status(f"rebuilt {site}.h5 from its raw data" if ok else
                          f"could not rebuild {site}.h5: the console strip says why", None if ok else BAD_COLOUR)
             return
