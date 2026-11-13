@@ -86,7 +86,8 @@ Usage:
   try does not succeed; with survey.yaml read-only the commit is not refused
   with the file intact, or after the flag is cleared the next commit fails;
 - `commit` with a new text that also changes another site (a tampered
-  text) does not refuse with the file untouched;
+  text) does not refuse with the file untouched, or makes
+  survey.yaml.previous;
 - the file changed between `plan` and `commit` is not refused.
 
 The mutations this test catches, each made in a copy of the module: (a) values
@@ -678,8 +679,9 @@ def test_commit() -> None:
     new, made, _ = sf.plan(LF, sites={"S01": {"timing": "x"}})
     tampered = new.replace("    latitude: -31.2\n", "    latitude: -31.3\n")
     message = refused(lambda: sf.commit(path, LF, tampered, made))
-    check("commit of a text that also changes another site: refused, file untouched",
-          tampered != new and message is not None and read(path) == LF, str(message))
+    check("commit of a text that also changes another site: refused, file untouched, no earlier copy made",
+          tampered != new and message is not None and read(path) == LF
+          and not (path.parent / "survey.yaml.previous").exists(), str(message))
 
     path = put("meanwhile", LF)
     new, made, _ = sf.plan(LF, sites={"S01": {"timing": "x"}})
