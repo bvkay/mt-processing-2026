@@ -31,7 +31,8 @@ Usage:
   value does not remove the key, or `Survey.site` does not then read the
   default; or a key equal to the default that was not asked about is removed;
 - `logger_pid` set on a derived site to the value in `defaults:` is not
-  written;
+  written; or `logger_pid` asked equal to `defaults:` on a site that holds
+  another value is removed in place of written;
 - with `remote: R1` added to `defaults:`, the burst entry asked for
   `remote: R1` does not get the key, or `Survey.site("S01H").remote` is not R1;
 - the entry with its own `instrument:` asked for `channels` equal to the
@@ -440,6 +441,11 @@ def test_lean() -> None:
     s01l = yaml.safe_load(read(path))["sites"]["S01L"]
     check("logger_pid equal to defaults: is written on a derived site", s01l.get("logger_pid") == "10.1234/abcd",
           str(s01l))
+    path = put("lean_pid_own", LF.replace("    serial: '036'\n", "    serial: '036'\n    logger_pid: 10.1/other\n"))
+    sf.edit(path, sites={"S01": {"logger_pid": "10.1234/abcd"}})
+    s01 = yaml.safe_load(read(path))["sites"]["S01"]
+    check("logger_pid asked equal to defaults: on a site holding another value is written, not removed",
+          s01.get("logger_pid") == "10.1234/abcd", str(s01))
 
     path = put("burst", GROUPS)
     sf.edit(path, defaults={"remote": "R1"})
