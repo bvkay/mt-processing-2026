@@ -78,6 +78,7 @@ This test fails if:
   folder S06 put there after the survey was opened; or its caption lacks
   the command's line on the usual dipoles and its count line; or a double
   click on a finding does not set `State.site` to its site and select its row;
+  or opening another survey leaves a finding or the caption of the list;
 - Save of a survey.yaml that is read-only, or that another program holds
   open, holds the window for more than five seconds, writes the file, or
   does not say in its box that the file is open in another program or
@@ -144,7 +145,8 @@ survey.yaml that exists; the yellow line and the question for every
 the instrument passed under auto; `--dipole-length` passed when unchanged;
 Add sites run with unsaved edits; Add sites given `--force`; Add sites
 and Check on the folders listed when the survey was opened; the Check
-double click not setting the site; Save with the writer's twenty tries;
+double click not setting the site; the Check list left in place when
+another survey is opened; Save with the writer's twenty tries;
 every tick written as swap_e; an untick written as false; a tick written
 into the first row's site; no rebuild asked after a swap change; Rebuild
 archive enabled without an archive, for a folder with no entry, or while a
@@ -520,6 +522,11 @@ def test_check(app, window, check) -> None:
     selected = [tab.table.item(i.row(), 0).text() for i in tab.table.selectionModel().selectedRows()]
     check("a double click on S03's finding sets State.site and selects S03's row",
           window.state.site == "S03" and selected == ["S03"], f"site {window.state.site}, selected {selected}")
+    window.open_survey(make_survey())  # another survey (here a new copy) opened in the same window
+    pump(app)
+    check("opening another survey empties and hides the Check list",
+          table.rowCount() == 0 and table.isHidden() and tab.check_label.text() == "" and tab.check_label.isHidden(),
+          f"{table.rowCount()} row(s), list hidden {table.isHidden()}, caption {tab.check_label.text()!r}")
 
 
 def test_save_held(app, window, check) -> None:
